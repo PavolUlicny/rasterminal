@@ -64,6 +64,8 @@ int main(int argc, char *argv[])
     Renderer renderer;
 
     float fps_smooth = 60.0f; // exponential moving average
+    bool spinning = false;
+    const float spin_speed = 0.8f; // radians/sec
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
@@ -90,7 +92,9 @@ int main(int argc, char *argv[])
                 break;
             if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
                 goto quit;
-            if (k == platform::KEY_1)
+            if (k == platform::KEY_SPACE)
+                spinning = !spinning;
+            else if (k == platform::KEY_1)
                 renderer.mode = ShadingMode::Wireframe;
             else if (k == platform::KEY_2)
                 renderer.mode = ShadingMode::Flat;
@@ -101,6 +105,10 @@ int main(int argc, char *argv[])
             else
                 camera.process_key(k, dt);
         }
+
+        // ── Auto-rotation ────────────────────────────────────────────────
+        if (spinning)
+            camera.yaw += spin_speed * dt;
 
         // ── Resize detection ─────────────────────────────────────────────
         {
@@ -133,8 +141,9 @@ int main(int argc, char *argv[])
                 break;
             }
             char hud[128];
-            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ",
-                          mode_str, (int)fps_smooth, model_name.c_str());
+            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ",
+                          mode_str, (int)fps_smooth, model_name.c_str(),
+                          spinning ? "spin ON" : "spin OFF");
             fb.set_hud(hud);
         }
 

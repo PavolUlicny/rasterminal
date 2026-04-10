@@ -112,6 +112,7 @@ namespace platform
         KEY_RIGHT, // yaw
         KEY_PLUS,
         KEY_MINUS, // fov
+        KEY_SPACE, // toggle auto-rotation
     };
 
     // Returns the next pressed key, or KEY_NONE if nothing is in the buffer.
@@ -168,6 +169,8 @@ namespace platform
             return KEY_PLUS;
         case '-':
             return KEY_MINUS;
+        case ' ':
+            return KEY_SPACE;
         }
         return KEY_NONE;
 
@@ -236,6 +239,8 @@ namespace platform
             return KEY_PLUS;
         case '-':
             return KEY_MINUS;
+        case ' ':
+            return KEY_SPACE;
         }
         return KEY_NONE;
 #endif
