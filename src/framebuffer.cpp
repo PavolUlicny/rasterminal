@@ -42,7 +42,9 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height)
 
 Framebuffer::~Framebuffer()
 {
-    std::fputs("\033[0m\033[?25h", stdout); // reset colors, restore cursor
+    // Clear the rendered frame, reset colours, restore cursor, then move to
+    // top-left so the shell prompt appears on a clean screen.
+    std::fputs("\033[2J\033[H\033[0m\033[?25h", stdout);
     std::fflush(stdout);
 }
 
