@@ -29,8 +29,8 @@ mat4 Camera::projection(int pixel_width, int pixel_height) const
 
 void Camera::process_key(platform::Key key, float dt)
 {
-    const float orbit_speed = 1.5f; // radians/sec
-    const float zoom_speed = 3.0f;  // units/sec
+    const float orbit_speed = 2.5f; // radians/sec
+    const float zoom_speed = 5.0f;  // units/sec
 
     switch (key)
     {

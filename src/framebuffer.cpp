@@ -76,8 +76,9 @@ void Framebuffer::present()
 {
     m_buf.clear();
 
-    // Clear entire screen and move cursor to (1,1) before each frame.
-    m_buf += "\033[2J\033[H";
+    // Move cursor to (1,1) before each frame — no erase needed because every
+    // cell is overwritten unconditionally, so old content never shows through.
+    m_buf += "\033[H";
 
     const int term_rows = m_height / 2;
 
