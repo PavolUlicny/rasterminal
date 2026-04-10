@@ -3,10 +3,12 @@ CXXFLAGS = -std=c++17 -Wall -Wextra -O2
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
-       src/framebuffer.cpp
+       src/framebuffer.cpp \
+       src/mesh.cpp
 
 HDRS = src/linalg.h \
        src/framebuffer.h \
+       src/mesh.h \
        src/platform.h
 
 $(TARGET): $(SRCS) $(HDRS)
