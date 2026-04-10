@@ -6,7 +6,7 @@
 #include <conio.h>
 #include <windows.h>
 #else
-#include <fcntl.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -64,15 +64,14 @@ namespace platform
         detail::saved_termios() = raw;
 
         // Disable echo and canonical (line-buffered) mode.
+        // VMIN=0 / VTIME=0: read() returns immediately with 0 bytes if nothing available.
         raw.c_lflag &= ~(ECHO | ICANON);
-        // Return immediately even if no bytes available.
         raw.c_cc[VMIN] = 0;
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-
-        // Non-blocking reads on stdin.
-        int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
-        fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+        // Do NOT set O_NONBLOCK on stdin: in a terminal fd 0/1/2 share the same
+        // open file description, so O_NONBLOCK on fd 0 also makes stdout
+        // non-blocking, causing large fwrites to silently truncate.
 #endif
     }
 
@@ -170,6 +169,12 @@ namespace platform
         return KEY_NONE;
 
 #else
+        // poll() with timeout=0 checks for available input without blocking
+        // and without O_NONBLOCK (which would corrupt stdout's blocking mode).
+        struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+        if (poll(&pfd, 1, 0) <= 0)
+            return KEY_NONE;
+
         char c;
         if (read(STDIN_FILENO, &c, 1) <= 0)
             return KEY_NONE;
