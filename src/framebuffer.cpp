@@ -157,6 +157,26 @@ void Framebuffer::present()
         m_buf += "\033[0m";
     }
 
+    // HUD: one status line immediately below the pixel rows.
+    if (!m_hud.empty())
+    {
+        // Position cursor at the row after the last pixel row (1-based).
+        tmp[0] = '\033';
+        tmp[1] = '[';
+        n = 2;
+        n += write_int(tmp + n, term_rows + 1);
+        tmp[n++] = ';';
+        tmp[n++] = '1';
+        tmp[n++] = 'H';
+        m_buf.append(tmp, n);
+
+        // Dark background, muted text.
+        m_buf += "\033[48;2;18;18;18m\033[38;2;160;160;160m";
+        m_buf += m_hud;
+        m_buf += "\033[K"; // erase to end of line (clears leftover from wider text)
+        m_buf += "\033[0m";
+    }
+
     std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
     std::fflush(stdout);
 }

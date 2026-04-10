@@ -34,6 +34,10 @@ public:
 
     void set_pixel(int x, int y, Color color);
 
+    // Set a one-line status string rendered below the pixel rows each frame.
+    // Call before present(). Pass an empty string to clear.
+    void set_hud(const std::string &text) { m_hud = text; }
+
     // Flush the pixel buffer to the terminal as a single write.
     void present();
 
@@ -42,4 +46,5 @@ private:
     std::vector<Color> m_color;
     std::vector<float> m_depth;
     std::string m_buf; // reused output buffer, avoids per-frame allocation
+    std::string m_hud; // status line written below pixel rows
 };

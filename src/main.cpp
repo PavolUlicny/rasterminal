@@ -8,6 +8,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
+#include <string>
 #include <thread>
 
 int main(int argc, char *argv[])
@@ -41,16 +43,27 @@ int main(int argc, char *argv[])
         camera.distance = radius * 2.0f;
     }
 
+    // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
+    std::string model_name = obj_path;
+    {
+        size_t slash = model_name.find_last_of("/\\");
+        if (slash != std::string::npos)
+            model_name = model_name.substr(slash + 1);
+    }
+
     platform::enable_raw_mode();
 
     int cols, rows;
     platform::get_terminal_size(cols, rows);
 
-    // Each terminal cell is 2 vertical pixels (▀ half-block).
-    Framebuffer fb(cols, rows * 2);
+    // Reserve the last terminal row for the HUD status line.
+    // Each pixel cell covers 2 vertical pixels via ▀ half-block.
+    Framebuffer fb(cols, (rows - 1) * 2);
 
     Light light;
     Renderer renderer;
+
+    float fps_smooth = 60.0f; // exponential moving average
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
@@ -64,6 +77,9 @@ int main(int argc, char *argv[])
         // Cap dt so a stall doesn't cause a huge jump.
         if (dt > 0.1f)
             dt = 0.1f;
+
+        if (dt > 0.0f)
+            fps_smooth = fps_smooth * 0.9f + (1.0f / dt) * 0.1f;
 
         // ── Input ─────────────────────────────────────────────────────────
         // Drain all queued keys so held keys feel responsive.
@@ -94,8 +110,32 @@ int main(int argc, char *argv[])
             {
                 cols = new_cols;
                 rows = new_rows;
-                fb.resize(cols, rows * 2);
+                fb.resize(cols, (rows - 1) * 2);
             }
+        }
+
+        // ── HUD ───────────────────────────────────────────────────────────
+        {
+            const char *mode_str = nullptr;
+            switch (renderer.mode)
+            {
+            case ShadingMode::Wireframe:
+                mode_str = "Wireframe";
+                break;
+            case ShadingMode::Flat:
+                mode_str = "Flat";
+                break;
+            case ShadingMode::Gouraud:
+                mode_str = "Gouraud";
+                break;
+            case ShadingMode::Phong:
+                mode_str = "Phong";
+                break;
+            }
+            char hud[128];
+            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ",
+                          mode_str, (int)fps_smooth, model_name.c_str());
+            fb.set_hud(hud);
         }
 
         // ── Render ────────────────────────────────────────────────────────
