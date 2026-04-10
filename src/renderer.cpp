@@ -141,6 +141,65 @@ static void rasterize(Framebuffer &fb,
     }
 }
 
+// Rasterize a triangle with per-pixel Blinn-Phong lighting (Phong shading).
+// Perspective-correct interpolates world-space position and normal to each
+// pixel, then evaluates compute_lighting() there.
+static void rasterize_phong(Framebuffer &fb,
+                            vec3 sa, vec3 sb, vec3 sc,
+                            float wa, float wb, float wc,
+                            vec3 pa, vec3 pb, vec3 pc,
+                            vec3 na, vec3 nb, vec3 nc,
+                            const vec3 &eye, const Light &light)
+{
+    const int W = fb.width();
+    const int H = fb.height();
+
+    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
+    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
+    int y0 = std::max(0, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
+    int y1 = std::min(H - 1, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+
+    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+    if (std::abs(denom) < 1e-6f)
+        return;
+    float inv_d = 1.0f / denom;
+
+    float inv_wa = 1.0f / wa;
+    float inv_wb = 1.0f / wb;
+    float inv_wc = 1.0f / wc;
+
+    for (int y = y0; y <= y1; y++)
+    {
+        for (int x = x0; x <= x1; x++)
+        {
+            float px = (float)x + 0.5f;
+            float py = (float)y + 0.5f;
+
+            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
+            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
+            float bc = 1.0f - ba - bb;
+
+            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+                continue;
+
+            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            if (!fb.test_and_set_depth(x, y, depth))
+                continue;
+
+            // Perspective-correct interpolation of world-space position and normal.
+            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
+            float w_corr = 1.0f / inv_w;
+
+            vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
+            vec3 nrm = (na * (ba * inv_wa) + nb * (bb * inv_wb) + nc * (bc * inv_wc)) * w_corr;
+            // nrm is interpolated linearly; normalize before lighting so length
+            // variations across the triangle don't affect the result.
+
+            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, light)));
+        }
+    }
+}
+
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
 void Renderer::render(const Mesh &mesh, const Camera &camera,
@@ -191,6 +250,15 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         }
 
         // ── Shading ───────────────────────────────────────────────────
+        if (mode == ShadingMode::Phong)
+        {
+            rasterize_phong(fb, sa, sb, sc, ca.w, cb.w, cc.w,
+                            va.pos, vb.pos, vc.pos,
+                            va.normal, vb.normal, vc.normal,
+                            eye, light);
+            continue;
+        }
+
         vec3 col_a, col_b, col_c;
 
         if (mode == ShadingMode::Flat)
@@ -224,6 +292,9 @@ void Renderer::cycle_shading()
         mode = ShadingMode::Gouraud;
         break;
     case ShadingMode::Gouraud:
+        mode = ShadingMode::Phong;
+        break;
+    case ShadingMode::Phong:
         mode = ShadingMode::Wireframe;
         break;
     }

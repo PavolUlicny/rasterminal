@@ -9,7 +9,8 @@ enum class ShadingMode
 {
     Wireframe,
     Flat,
-    Gouraud
+    Gouraud,
+    Phong
 };
 
 struct Renderer
@@ -18,6 +19,6 @@ struct Renderer
 
     void render(const Mesh &, const Camera &, const Light &, Framebuffer &) const;
 
-    // Cycle: Wireframe → Flat → Gouraud → Wireframe
+    // Cycle: Wireframe → Flat → Gouraud → Phong → Wireframe
     void cycle_shading();
 };

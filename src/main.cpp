@@ -80,6 +80,8 @@ int main(int argc, char *argv[])
                 renderer.mode = ShadingMode::Flat;
             else if (k == platform::KEY_3)
                 renderer.mode = ShadingMode::Gouraud;
+            else if (k == platform::KEY_4)
+                renderer.mode = ShadingMode::Phong;
             else
                 camera.process_key(k, dt);
         }

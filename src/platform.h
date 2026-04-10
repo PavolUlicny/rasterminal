@@ -104,7 +104,8 @@ namespace platform
         KEY_ESCAPE, // quit
         KEY_1,
         KEY_2,
-        KEY_3, // shading modes
+        KEY_3,
+        KEY_4, // shading modes
         KEY_UP,
         KEY_DOWN, // zoom / pitch
         KEY_LEFT,
@@ -161,6 +162,8 @@ namespace platform
             return KEY_2;
         case '3':
             return KEY_3;
+        case '4':
+            return KEY_4;
         case '+':
             return KEY_PLUS;
         case '-':
@@ -227,6 +230,8 @@ namespace platform
             return KEY_2;
         case '3':
             return KEY_3;
+        case '4':
+            return KEY_4;
         case '+':
             return KEY_PLUS;
         case '-':
