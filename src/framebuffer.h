@@ -23,6 +23,10 @@ public:
     int width() const { return m_width; }
     int height() const { return m_height; }
 
+    // Resize pixel buffer to new dimensions and clear. Emits a one-shot
+    // \033[2J so any leftover content from the old (larger) size is wiped.
+    void resize(int pixel_width, int pixel_height);
+
     void clear(Color bg = {0, 0, 0});
 
     // Returns true if depth test passes, and writes the new depth value.

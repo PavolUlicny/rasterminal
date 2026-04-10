@@ -84,6 +84,18 @@ int main(int argc, char *argv[])
                 camera.process_key(k, dt);
         }
 
+        // ── Resize detection ─────────────────────────────────────────────
+        {
+            int new_cols, new_rows;
+            platform::get_terminal_size(new_cols, new_rows);
+            if (new_cols != cols || new_rows != rows)
+            {
+                cols = new_cols;
+                rows = new_rows;
+                fb.resize(cols, rows * 2);
+            }
+        }
+
         // ── Render ────────────────────────────────────────────────────────
         fb.clear();
         renderer.render(mesh, camera, light, fb);

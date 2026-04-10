@@ -46,6 +46,20 @@ Framebuffer::~Framebuffer()
     std::fflush(stdout);
 }
 
+void Framebuffer::resize(int pixel_width, int pixel_height)
+{
+    m_width = pixel_width;
+    m_height = pixel_height;
+    m_color.assign(pixel_width * pixel_height, Color{});
+    m_depth.assign(pixel_width * pixel_height, std::numeric_limits<float>::infinity());
+    m_buf.clear();
+    m_buf.reserve(pixel_width * (pixel_height / 2) * 50);
+
+    // Wipe any leftover content from the previous (possibly larger) terminal.
+    std::fputs("\033[2J", stdout);
+    std::fflush(stdout);
+}
+
 void Framebuffer::clear(Color bg)
 {
     std::fill(m_color.begin(), m_color.end(), bg);
