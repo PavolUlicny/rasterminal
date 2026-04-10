@@ -7,10 +7,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <thread>
+
+static volatile sig_atomic_t g_interrupted = 0;
+static void signal_handler(int) { g_interrupted = 1; }
 
 int main(int argc, char *argv[])
 {
@@ -51,6 +55,9 @@ int main(int argc, char *argv[])
             model_name = model_name.substr(slash + 1);
     }
 
+    std::signal(SIGINT, signal_handler);  // Ctrl+C
+    std::signal(SIGTERM, signal_handler); // kill
+
     platform::enable_raw_mode();
 
     int cols, rows;
@@ -84,6 +91,9 @@ int main(int argc, char *argv[])
             fps_smooth = fps_smooth * 0.9f + (1.0f / dt) * 0.1f;
 
         // ── Input ─────────────────────────────────────────────────────────
+        if (g_interrupted)
+            goto quit;
+
         // Drain all queued keys so held keys feel responsive.
         while (true)
         {
