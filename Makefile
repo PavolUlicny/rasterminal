@@ -5,12 +5,15 @@ TARGET   = rasterminal
 SRCS = src/main.cpp \
        src/framebuffer.cpp \
        src/mesh.cpp \
-       src/camera.cpp
+       src/camera.cpp \
+       src/renderer.cpp
 
 HDRS = src/linalg.h \
        src/framebuffer.h \
        src/mesh.h \
        src/camera.h \
+       src/light.h \
+       src/renderer.h \
        src/platform.h
 
 $(TARGET): $(SRCS) $(HDRS)

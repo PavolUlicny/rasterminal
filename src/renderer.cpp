@@ -1,0 +1,230 @@
+#include "renderer.h"
+
+#include <algorithm>
+#include <cmath>
+
+// ─── internal helpers ─────────────────────────────────────────────────────────
+
+static Color vec3_to_color(vec3 c)
+{
+    return {
+        (uint8_t)(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+        (uint8_t)(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+        (uint8_t)(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
+}
+
+// Conservative frustum rejection: returns true if all three clip-space vertices
+// lie entirely outside any single frustum half-space. Does not clip — just
+// avoids processing triangles that are obviously invisible.
+static bool clip_reject(const vec4 &a, const vec4 &b, const vec4 &c)
+{
+    if (a.w <= 0.0f || b.w <= 0.0f || c.w <= 0.0f)
+        return true;
+    if (a.x > a.w && b.x > b.w && c.x > c.w)
+        return true;
+    if (a.x < -a.w && b.x < -b.w && c.x < -c.w)
+        return true;
+    if (a.y > a.w && b.y > b.w && c.y > c.w)
+        return true;
+    if (a.y < -a.w && b.y < -b.w && c.y < -c.w)
+        return true;
+    if (a.z > a.w && b.z > b.w && c.z > c.w)
+        return true;
+    if (a.z < -a.w && b.z < -b.w && c.z < -c.w)
+        return true;
+    return false;
+}
+
+// NDC → screen-space pixel coordinates.
+// NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
+// z is kept as NDC depth for the z-buffer.
+static vec3 ndc_to_screen(vec3 ndc, int W, int H)
+{
+    return {
+        (ndc.x + 1.0f) * 0.5f * (float)W,
+        (1.0f - ndc.y) * 0.5f * (float)H,
+        ndc.z};
+}
+
+// DDA line rasterizer with per-pixel depth testing.
+static void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
+{
+    int x0 = (int)std::round(a.x), y0 = (int)std::round(a.y);
+    int x1 = (int)std::round(b.x), y1 = (int)std::round(b.y);
+
+    int dx = std::abs(x1 - x0);
+    int dy = std::abs(y1 - y0);
+    int steps = std::max(dx, dy);
+
+    if (steps == 0)
+    {
+        if (fb.test_and_set_depth(x0, y0, a.z))
+            fb.set_pixel(x0, y0, color);
+        return;
+    }
+
+    float sx = (float)(x1 - x0) / (float)steps;
+    float sy = (float)(y1 - y0) / (float)steps;
+    float sz = (b.z - a.z) / (float)steps;
+
+    float x = (float)x0, y = (float)y0, z = a.z;
+    for (int i = 0; i <= steps; i++)
+    {
+        int px = (int)std::round(x), py = (int)std::round(y);
+        if (fb.test_and_set_depth(px, py, z))
+            fb.set_pixel(px, py, color);
+        x += sx;
+        y += sy;
+        z += sz;
+    }
+}
+
+// Rasterize a triangle using screen-space barycentric coordinates.
+// sa/sb/sc hold (screen_x, screen_y, ndc_z).
+// wa/wb/wc are clip-space w values for perspective-correct interpolation.
+// col_a/b/c are per-vertex Blinn-Phong colours in [0,1].
+static void rasterize(Framebuffer &fb,
+                      vec3 sa, vec3 sb, vec3 sc,
+                      float wa, float wb, float wc,
+                      vec3 col_a, vec3 col_b, vec3 col_c)
+{
+    const int W = fb.width();
+    const int H = fb.height();
+
+    // Bounding box, clamped to framebuffer
+    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
+    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
+    int y0 = std::max(0, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
+    int y1 = std::min(H - 1, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+
+    // Barycentric denominator (proportional to 2× signed screen area)
+    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+    if (std::abs(denom) < 1e-6f)
+        return;
+    float inv_d = 1.0f / denom;
+
+    // Reciprocal clip-space w for perspective-correct interpolation
+    float inv_wa = 1.0f / wa;
+    float inv_wb = 1.0f / wb;
+    float inv_wc = 1.0f / wc;
+
+    for (int y = y0; y <= y1; y++)
+    {
+        for (int x = x0; x <= x1; x++)
+        {
+            float px = (float)x + 0.5f;
+            float py = (float)y + 0.5f;
+
+            // Screen-space barycentric weights
+            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
+            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
+            float bc = 1.0f - ba - bb;
+
+            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+                continue;
+
+            // z_ndc is linear in screen space (projection makes it A + B/z_view,
+            // which is linear in NDC x/y), so plain barycentric is correct here —
+            // perspective correction would distort it and break depth ordering.
+            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+
+            // Perspective-correct weight for colour interpolation.
+            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
+
+            if (!fb.test_and_set_depth(x, y, depth))
+                continue;
+
+            vec3 col = (col_a * (ba * inv_wa) + col_b * (bb * inv_wb) + col_c * (bc * inv_wc)) * (1.0f / inv_w);
+
+            fb.set_pixel(x, y, vec3_to_color(col));
+        }
+    }
+}
+
+// ─── Renderer::render ─────────────────────────────────────────────────────────
+
+void Renderer::render(const Mesh &mesh, const Camera &camera,
+                      const Light &light, Framebuffer &fb) const
+{
+    const mat4 view = camera.view();
+    const mat4 proj = camera.projection(fb.width(), fb.height());
+    const mat4 vp = proj * view;
+    const vec3 eye = camera.eye();
+    const int W = fb.width();
+    const int H = fb.height();
+
+    for (const Triangle &tri : mesh.triangles)
+    {
+        const Vertex &va = mesh.vertices[tri.v[0]];
+        const Vertex &vb = mesh.vertices[tri.v[1]];
+        const Vertex &vc = mesh.vertices[tri.v[2]];
+
+        // ── Transform to clip space ───────────────────────────────────
+        vec4 ca = vp * vec4(va.pos, 1.0f);
+        vec4 cb = vp * vec4(vb.pos, 1.0f);
+        vec4 cc = vp * vec4(vc.pos, 1.0f);
+
+        if (clip_reject(ca, cb, cc))
+            continue;
+
+        // ── Perspective divide → NDC → screen ─────────────────────────
+        vec3 sa = ndc_to_screen(ca.perspective_divide(), W, H);
+        vec3 sb = ndc_to_screen(cb.perspective_divide(), W, H);
+        vec3 sc = ndc_to_screen(cc.perspective_divide(), W, H);
+
+        // ── Backface culling (screen-space signed area) ───────────────
+        // Screen y increases downward, which flips handedness vs NDC.
+        // OBJ front faces are CCW in world/NDC → CW in screen → area < 0.
+        // Cull area >= 0 (back faces and degenerate triangles).
+        float area = (sb.x - sa.x) * (sc.y - sa.y) - (sc.x - sa.x) * (sb.y - sa.y);
+        if (area >= 0.0f)
+            continue;
+
+        // ── Wireframe ─────────────────────────────────────────────────
+        if (mode == ShadingMode::Wireframe)
+        {
+            const Color wf = {200, 200, 200};
+            draw_line(fb, sa, sb, wf);
+            draw_line(fb, sb, sc, wf);
+            draw_line(fb, sc, sa, wf);
+            continue;
+        }
+
+        // ── Shading ───────────────────────────────────────────────────
+        vec3 col_a, col_b, col_c;
+
+        if (mode == ShadingMode::Flat)
+        {
+            // Single colour from face normal at face centroid
+            vec3 fn = normalize(cross(vb.pos - va.pos, vc.pos - va.pos));
+            vec3 fc = (va.pos + vb.pos + vc.pos) * (1.0f / 3.0f);
+            col_a = col_b = col_c = compute_lighting(fc, fn, eye, light);
+        }
+        else // Gouraud
+        {
+            col_a = compute_lighting(va.pos, va.normal, eye, light);
+            col_b = compute_lighting(vb.pos, vb.normal, eye, light);
+            col_c = compute_lighting(vc.pos, vc.normal, eye, light);
+        }
+
+        rasterize(fb, sa, sb, sc, ca.w, cb.w, cc.w, col_a, col_b, col_c);
+    }
+}
+
+// ─── Renderer::cycle_shading ──────────────────────────────────────────────────
+
+void Renderer::cycle_shading()
+{
+    switch (mode)
+    {
+    case ShadingMode::Wireframe:
+        mode = ShadingMode::Flat;
+        break;
+    case ShadingMode::Flat:
+        mode = ShadingMode::Gouraud;
+        break;
+    case ShadingMode::Gouraud:
+        mode = ShadingMode::Wireframe;
+        break;
+    }
+}
