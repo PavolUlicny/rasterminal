@@ -152,10 +152,12 @@ bool Mesh::load_obj(const std::string &path)
         else if (p[0] == 'f' && p[1] == ' ')
         {
             p += 2;
-            FaceVertex fverts[4];
+
+            // Read all face vertices (OBJ supports arbitrary polygon sizes).
+            FaceVertex fverts[32]; // 32 is well beyond any real-world polygon
             int count = 0;
 
-            while (count < 4)
+            while (count < (int)(sizeof(fverts) / sizeof(fverts[0])))
             {
                 FaceVertex fv;
                 if (!parse_face_vertex(&p, fv,
@@ -166,22 +168,15 @@ bool Mesh::load_obj(const std::string &path)
                 fverts[count++] = fv;
             }
 
-            // Triangle
-            if (count >= 3)
+            // Fan triangulation: (0,1,2), (0,2,3), (0,3,4), …
+            // Works correctly for convex polygons (the common case in OBJ).
+            uint32_t v0 = get_vertex(fverts[0]);
+            for (int i = 1; i + 1 < count; i++)
             {
                 Triangle t;
-                t.v[0] = get_vertex(fverts[0]);
-                t.v[1] = get_vertex(fverts[1]);
-                t.v[2] = get_vertex(fverts[2]);
-                triangles.push_back(t);
-            }
-            // Quad: second triangle is (0, 2, 3)
-            if (count == 4)
-            {
-                Triangle t;
-                t.v[0] = get_vertex(fverts[0]);
-                t.v[1] = get_vertex(fverts[2]);
-                t.v[2] = get_vertex(fverts[3]);
+                t.v[0] = v0;
+                t.v[1] = get_vertex(fverts[i]);
+                t.v[2] = get_vertex(fverts[i + 1]);
                 triangles.push_back(t);
             }
         }
