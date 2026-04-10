@@ -42,3 +42,6 @@
 
 # compiled binary
 rasterminal
+
+# editor
+.vscode/
