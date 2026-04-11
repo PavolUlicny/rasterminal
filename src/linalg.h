@@ -29,6 +29,7 @@ struct vec3
     vec3 operator+(const vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
     vec3 operator-(const vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
     vec3 operator*(float t) const { return {x * t, y * t, z * t}; }
+    vec3 operator*(const vec3 &o) const { return {x * o.x, y * o.y, z * o.z}; } // component-wise
     vec3 operator/(float t) const { return {x / t, y / t, z / t}; }
     vec3 operator-() const { return {-x, -y, -z}; }
 
