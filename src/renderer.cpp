@@ -201,6 +201,109 @@ static void rasterize_phong(Framebuffer &fb,
     }
 }
 
+// ─── Near-plane clipping ──────────────────────────────────────────────────────
+// A clip-space vertex bundled with the world-space attributes needed for lighting.
+struct ClipVert
+{
+    vec4 c;      // clip-space position (w = -z_view; > 0 means in front of camera)
+    vec3 pos;    // world-space position
+    vec3 normal; // world-space normal
+};
+
+// Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
+// division-by-near-zero in the perspective divide and the rendering artefacts
+// that occur when a triangle straddles the camera plane.
+//
+// Produces 0 (fully behind), 1, or 2 output triangles written into out[0..n-1].
+// Returns the count.  Winding order is preserved for all outputs.
+static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3])
+{
+    // Must match the camera near plane (camera.cpp: perspective(..., 0.1f, ...)).
+    // Too small a value produces off-screen NDC coordinates whose magnitude
+    // overwhelms float precision in the barycentric computation.
+    constexpr float NEAR_W = 0.1f;
+
+    const bool ia = a.c.w > NEAR_W;
+    const bool ib = b.c.w > NEAR_W;
+    const bool ic = c.c.w > NEAR_W;
+    const int n = (int)ia + (int)ib + (int)ic;
+
+    if (n == 3)
+    {
+        out[0][0] = a;
+        out[0][1] = b;
+        out[0][2] = c;
+        return 1;
+    }
+    if (n == 0)
+    {
+        return 0;
+    }
+
+    // Interpolate all attributes from an inside vertex v0 toward an outside
+    // vertex v1 to find the exact w = NEAR_W crossing.
+    auto cross_edge = [&](const ClipVert &v0, const ClipVert &v1) -> ClipVert
+    {
+        float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
+        return {v0.c + (v1.c - v0.c) * t,
+                v0.pos + (v1.pos - v0.pos) * t,
+                v0.normal + (v1.normal - v0.normal) * t};
+    };
+
+    if (n == 1)
+    {
+        // Rotate so the single inside vertex is first.
+        if (ib)
+        {
+            ClipVert t = a;
+            a = b;
+            b = c;
+            c = t;
+        }
+        else if (ic)
+        {
+            ClipVert t = a;
+            a = c;
+            c = b;
+            b = t;
+        }
+        // a inside; b, c outside → one clipped triangle.
+        out[0][0] = a;
+        out[0][1] = cross_edge(a, b);
+        out[0][2] = cross_edge(a, c);
+        return 1;
+    }
+
+    // n == 2: rotate so the single outside vertex is last.
+    if (!ic)
+    { /* a, b inside, c outside — already correct */
+    }
+    else if (!ia)
+    {
+        ClipVert t = a;
+        a = b;
+        b = c;
+        c = t;
+    }
+    else
+    {
+        ClipVert t = b;
+        b = a;
+        a = c;
+        c = t;
+    }
+    // a, b inside; c outside → clipped quad → two triangles.
+    ClipVert ac = cross_edge(a, c);
+    ClipVert bc = cross_edge(b, c);
+    out[0][0] = a;
+    out[0][1] = b;
+    out[0][2] = bc;
+    out[1][0] = a;
+    out[1][1] = bc;
+    out[1][2] = ac;
+    return 2;
+}
+
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
 void Renderer::render(const Mesh &mesh, const Camera &camera,
@@ -225,63 +328,71 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                                   : mesh.materials[0];
 
         // ── Transform to clip space ───────────────────────────────────
-        vec4 ca = vp * vec4(va.pos, 1.0f);
-        vec4 cb = vp * vec4(vb.pos, 1.0f);
-        vec4 cc = vp * vec4(vc.pos, 1.0f);
+        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal};
+        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal};
+        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal};
 
-        if (clip_reject(ca, cb, cc))
-            continue;
+        // ── Near-plane clip → 0, 1, or 2 triangles ───────────────────
+        ClipVert clipped[2][3];
+        int n_tris = clip_near(cva, cvb, cvc, clipped);
 
-        // ── Perspective divide → NDC → screen ─────────────────────────
-        vec3 sa = ndc_to_screen(ca.perspective_divide(), W, H);
-        vec3 sb = ndc_to_screen(cb.perspective_divide(), W, H);
-        vec3 sc = ndc_to_screen(cc.perspective_divide(), W, H);
-
-        // ── Backface culling (screen-space signed area) ───────────────
-        // Screen y increases downward, which flips handedness vs NDC.
-        // OBJ front faces are CCW in world/NDC → CW in screen → area < 0.
-        // Cull area >= 0 (back faces and degenerate triangles).
-        float area = (sb.x - sa.x) * (sc.y - sa.y) - (sc.x - sa.x) * (sb.y - sa.y);
-        if (area >= 0.0f)
-            continue;
-
-        // ── Wireframe ─────────────────────────────────────────────────
-        if (mode == ShadingMode::Wireframe)
+        for (int ti = 0; ti < n_tris; ti++)
         {
-            const Color wf = {200, 200, 200};
-            draw_line(fb, sa, sb, wf);
-            draw_line(fb, sb, sc, wf);
-            draw_line(fb, sc, sa, wf);
-            continue;
-        }
+            const ClipVert &a = clipped[ti][0];
+            const ClipVert &b = clipped[ti][1];
+            const ClipVert &c = clipped[ti][2];
 
-        // ── Shading ───────────────────────────────────────────────────
-        if (mode == ShadingMode::Phong)
-        {
-            rasterize_phong(fb, sa, sb, sc, ca.w, cb.w, cc.w,
-                            va.pos, vb.pos, vc.pos,
-                            va.normal, vb.normal, vc.normal,
-                            eye, light, mat);
-            continue;
-        }
+            // Conservative frustum rejection against the remaining 5 planes.
+            if (clip_reject(a.c, b.c, c.c))
+                continue;
 
-        vec3 col_a, col_b, col_c;
+            // ── Perspective divide → NDC → screen ─────────────────────
+            vec3 sa = ndc_to_screen(a.c.perspective_divide(), W, H);
+            vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
+            vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
 
-        if (mode == ShadingMode::Flat)
-        {
-            // Single colour from face normal at face centroid
-            vec3 fn = normalize(cross(vb.pos - va.pos, vc.pos - va.pos));
-            vec3 fc = (va.pos + vb.pos + vc.pos) * (1.0f / 3.0f);
-            col_a = col_b = col_c = compute_lighting(fc, fn, eye, light, mat);
-        }
-        else // Gouraud
-        {
-            col_a = compute_lighting(va.pos, va.normal, eye, light, mat);
-            col_b = compute_lighting(vb.pos, vb.normal, eye, light, mat);
-            col_c = compute_lighting(vc.pos, vc.normal, eye, light, mat);
-        }
+            // ── Backface culling (screen-space signed area) ────────────
+            float area = (sb.x - sa.x) * (sc.y - sa.y) - (sc.x - sa.x) * (sb.y - sa.y);
+            if (area >= 0.0f)
+                continue;
 
-        rasterize(fb, sa, sb, sc, ca.w, cb.w, cc.w, col_a, col_b, col_c);
+            // ── Wireframe ─────────────────────────────────────────────
+            if (mode == ShadingMode::Wireframe)
+            {
+                const Color wf = {200, 200, 200};
+                draw_line(fb, sa, sb, wf);
+                draw_line(fb, sb, sc, wf);
+                draw_line(fb, sc, sa, wf);
+                continue;
+            }
+
+            // ── Shading ───────────────────────────────────────────────
+            if (mode == ShadingMode::Phong)
+            {
+                rasterize_phong(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,
+                                a.pos, b.pos, c.pos,
+                                a.normal, b.normal, c.normal,
+                                eye, light, mat);
+                continue;
+            }
+
+            vec3 col_a, col_b, col_c;
+
+            if (mode == ShadingMode::Flat)
+            {
+                vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
+                col_a = col_b = col_c = compute_lighting(fc, fn, eye, light, mat);
+            }
+            else // Gouraud
+            {
+                col_a = compute_lighting(a.pos, a.normal, eye, light, mat);
+                col_b = compute_lighting(b.pos, b.normal, eye, light, mat);
+                col_c = compute_lighting(c.pos, c.normal, eye, light, mat);
+            }
+
+            rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c);
+        }
     }
 }
 
