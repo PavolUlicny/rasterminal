@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <unordered_map>
 
 // ─── vertex deduplication key ─────────────────────────────────────────────────
@@ -91,6 +92,69 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
     return true;
 }
 
+// ─── load_mtl ─────────────────────────────────────────────────────────────────
+// Parse a .mtl file and append materials to mesh.materials.
+// Returns a map from material name → index in mesh.materials.
+
+static std::unordered_map<std::string, uint32_t>
+load_mtl(const std::string &path, std::vector<Material> &materials)
+{
+    std::unordered_map<std::string, uint32_t> mat_map;
+
+    FILE *f = std::fopen(path.c_str(), "r");
+    if (!f)
+        return mat_map;
+
+    char line[256];
+    int current = -1; // index of material being built (-1 = none yet)
+
+    while (std::fgets(line, sizeof(line), f))
+    {
+        const char *p = line;
+        while (*p == ' ' || *p == '\t')
+            p++;
+
+        if (std::strncmp(p, "newmtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+        {
+            // Extract name (strip trailing whitespace/newline)
+            p += 7;
+            while (*p == ' ' || *p == '\t')
+                p++;
+            std::string name(p);
+            while (!name.empty() && (name.back() == '\n' || name.back() == '\r' || name.back() == ' '))
+                name.pop_back();
+
+            current = (int)materials.size();
+            materials.push_back(Material{});
+            mat_map[name] = (uint32_t)current;
+        }
+        else if (current >= 0)
+        {
+            if (std::strncmp(p, "Kd", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
+            {
+                float r, g, b;
+                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
+                    materials[current].diffuse = {r, g, b};
+            }
+            else if (std::strncmp(p, "Ks", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
+            {
+                float r, g, b;
+                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
+                    materials[current].specular = {r, g, b};
+            }
+            else if (std::strncmp(p, "Ns", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
+            {
+                float ns;
+                if (std::sscanf(p + 3, "%f", &ns) == 1)
+                    materials[current].shininess = ns;
+            }
+        }
+    }
+
+    std::fclose(f);
+    return mat_map;
+}
+
 // ─── Mesh::load_obj ───────────────────────────────────────────────────────────
 
 bool Mesh::load_obj(const std::string &path)
@@ -98,6 +162,18 @@ bool Mesh::load_obj(const std::string &path)
     FILE *f = std::fopen(path.c_str(), "r");
     if (!f)
         return false;
+
+    // Directory of the OBJ file, used to resolve relative mtllib paths.
+    std::string obj_dir;
+    {
+        size_t slash = path.find_last_of("/\\");
+        obj_dir = (slash != std::string::npos) ? path.substr(0, slash + 1) : "";
+    }
+
+    // Index 0 is always the default material (white, slight specular).
+    materials.push_back(Material{});
+    std::unordered_map<std::string, uint32_t> mat_map;
+    uint32_t current_mat = 0;
 
     std::vector<vec3> pos_pool;
     std::vector<vec3> norm_pool;
@@ -149,6 +225,25 @@ bool Mesh::load_obj(const std::string &path)
             std::sscanf(p + 3, "%f %f", &uv.x, &uv.y);
             uv_pool.push_back(uv);
         }
+        else if (std::strncmp(p, "mtllib", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+        {
+            // Load the material library.  The filename follows "mtllib ".
+            std::string mtl_name(p + 7);
+            while (!mtl_name.empty() && (mtl_name.back() == '\n' || mtl_name.back() == '\r' || mtl_name.back() == ' '))
+                mtl_name.pop_back();
+
+            // MTL materials are appended starting at index 1 (0 = default).
+            mat_map = load_mtl(obj_dir + mtl_name, materials);
+        }
+        else if (std::strncmp(p, "usemtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+        {
+            std::string mat_name(p + 7);
+            while (!mat_name.empty() && (mat_name.back() == '\n' || mat_name.back() == '\r' || mat_name.back() == ' '))
+                mat_name.pop_back();
+
+            auto it = mat_map.find(mat_name);
+            current_mat = (it != mat_map.end()) ? it->second : 0;
+        }
         else if (p[0] == 'f' && p[1] == ' ')
         {
             p += 2;
@@ -177,6 +272,7 @@ bool Mesh::load_obj(const std::string &path)
                 t.v[0] = v0;
                 t.v[1] = get_vertex(fverts[i]);
                 t.v[2] = get_vertex(fverts[i + 1]);
+                t.material_idx = current_mat;
                 triangles.push_back(t);
             }
         }

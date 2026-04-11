@@ -149,7 +149,8 @@ static void rasterize_phong(Framebuffer &fb,
                             float wa, float wb, float wc,
                             vec3 pa, vec3 pb, vec3 pc,
                             vec3 na, vec3 nb, vec3 nc,
-                            const vec3 &eye, const Light &light)
+                            const vec3 &eye, const Light &light,
+                            const Material &mat)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -195,7 +196,7 @@ static void rasterize_phong(Framebuffer &fb,
             // nrm is interpolated linearly; normalize before lighting so length
             // variations across the triangle don't affect the result.
 
-            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, light)));
+            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, light, mat)));
         }
     }
 }
@@ -217,6 +218,11 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         const Vertex &va = mesh.vertices[tri.v[0]];
         const Vertex &vb = mesh.vertices[tri.v[1]];
         const Vertex &vc = mesh.vertices[tri.v[2]];
+
+        // Material lookup (index 0 is always the default).
+        const Material &mat = (tri.material_idx < mesh.materials.size())
+                                  ? mesh.materials[tri.material_idx]
+                                  : mesh.materials[0];
 
         // ── Transform to clip space ───────────────────────────────────
         vec4 ca = vp * vec4(va.pos, 1.0f);
@@ -255,7 +261,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             rasterize_phong(fb, sa, sb, sc, ca.w, cb.w, cc.w,
                             va.pos, vb.pos, vc.pos,
                             va.normal, vb.normal, vc.normal,
-                            eye, light);
+                            eye, light, mat);
             continue;
         }
 
@@ -266,13 +272,13 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             // Single colour from face normal at face centroid
             vec3 fn = normalize(cross(vb.pos - va.pos, vc.pos - va.pos));
             vec3 fc = (va.pos + vb.pos + vc.pos) * (1.0f / 3.0f);
-            col_a = col_b = col_c = compute_lighting(fc, fn, eye, light);
+            col_a = col_b = col_c = compute_lighting(fc, fn, eye, light, mat);
         }
         else // Gouraud
         {
-            col_a = compute_lighting(va.pos, va.normal, eye, light);
-            col_b = compute_lighting(vb.pos, vb.normal, eye, light);
-            col_c = compute_lighting(vc.pos, vc.normal, eye, light);
+            col_a = compute_lighting(va.pos, va.normal, eye, light, mat);
+            col_b = compute_lighting(vb.pos, vb.normal, eye, light, mat);
+            col_c = compute_lighting(vc.pos, vc.normal, eye, light, mat);
         }
 
         rasterize(fb, sa, sb, sc, ca.w, cb.w, cc.w, col_a, col_b, col_c);

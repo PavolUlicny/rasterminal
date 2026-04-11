@@ -1,5 +1,6 @@
 #pragma once
 
+#include "light.h" // for Material
 #include "linalg.h"
 #include <cstdint>
 #include <string>
@@ -14,15 +15,18 @@ struct Vertex
 
 struct Triangle
 {
-    uint32_t v[3]; // indices into Mesh::vertices
+    uint32_t v[3];             // indices into Mesh::vertices
+    uint32_t material_idx = 0; // index into Mesh::materials (0 = default)
 };
 
 struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<Triangle> triangles;
+    std::vector<Material> materials; // index 0 is always the default white material
 
-    // Load geometry from an OBJ file. Returns false on failure.
+    // Load geometry from an OBJ file; also loads the associated .mtl if present.
+    // Returns false on failure.
     bool load_obj(const std::string &path);
 
 private:
