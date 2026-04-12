@@ -163,12 +163,14 @@ static void rasterize_phong(Framebuffer &fb,
                             float wa, float wb, float wc,
                             vec3 pa, vec3 pb, vec3 pc,
                             vec3 na, vec3 nb, vec3 nc,
+                            vec3 tana, vec3 tanb, vec3 tanc,
                             vec2 uva, vec2 uvb, vec2 uvc,
                             const vec3 &eye,
                             const Light *lights, int n_lights,
                             const vec3 &ambient,
                             const Material &mat,
-                            const Texture *tex)
+                            const Texture *tex,
+                            const Texture *nmap)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -211,15 +213,34 @@ static void rasterize_phong(Framebuffer &fb,
 
             vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
             vec3 nrm = (na * (ba * inv_wa) + nb * (bb * inv_wb) + nc * (bc * inv_wc)) * w_corr;
-            // nrm is interpolated linearly; normalize before lighting so length
-            // variations across the triangle don't affect the result.
+
+            // Compute UV once — needed by both diffuse and normal map.
+            vec2 uv{};
+            if (tex || nmap)
+                uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+
+            // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
+            if (nmap)
+            {
+                vec3 tan = (tana * (ba * inv_wa) + tanb * (bb * inv_wb) + tanc * (bc * inv_wc)) * w_corr;
+
+                // Unpack normal map texel from [0,1] to [-1,1].
+                vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
+
+                // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
+                // then derive B so TBN is a proper orthonormal basis.
+                vec3 N = normalize(nrm);
+                vec3 T = normalize(tan - N * dot(N, tan));
+                vec3 B = cross(N, T);
+
+                // Transform tangent-space normal to world space.
+                nrm = T * nm.x + B * nm.y + N * nm.z;
+                // nrm will be normalized inside compute_lighting.
+            }
 
             Material px_mat = mat;
             if (tex)
-            {
-                vec2 uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
                 px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
-            }
 
             fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat)));
         }
@@ -230,10 +251,11 @@ static void rasterize_phong(Framebuffer &fb,
 // A clip-space vertex bundled with the world-space attributes needed for lighting.
 struct ClipVert
 {
-    vec4 c;      // clip-space position (w = -z_view; > 0 means in front of camera)
-    vec3 pos;    // world-space position
-    vec3 normal; // world-space normal
-    vec2 uv;     // texture coordinates
+    vec4 c;       // clip-space position (w = -z_view; > 0 means in front of camera)
+    vec3 pos;     // world-space position
+    vec3 normal;  // world-space normal
+    vec3 tangent; // world-space tangent (for TBN normal mapping)
+    vec2 uv;      // texture coordinates
 };
 
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
@@ -274,6 +296,7 @@ static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3])
         return {v0.c + (v1.c - v0.c) * t,
                 v0.pos + (v1.pos - v0.pos) * t,
                 v0.normal + (v1.normal - v0.normal) * t,
+                v0.tangent + (v1.tangent - v0.tangent) * t,
                 v0.uv + (v1.uv - v0.uv) * t};
     };
 
@@ -360,10 +383,14 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         if (mat.diffuse_tex >= 0 && mat.diffuse_tex < (int)mesh.textures.size())
             tex = &mesh.textures[(size_t)mat.diffuse_tex];
 
+        const Texture *nmap = nullptr;
+        if (mat.normal_tex >= 0 && mat.normal_tex < (int)mesh.textures.size())
+            nmap = &mesh.textures[(size_t)mat.normal_tex];
+
         // ── Transform to clip space ───────────────────────────────────
-        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.uv};
-        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.uv};
-        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.uv};
+        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv};
+        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv};
+        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv};
 
         // ── Near-plane clip → 0, 1, or 2 triangles ───────────────────
         ClipVert clipped[2][3];
@@ -405,8 +432,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 rasterize_phong(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,
                                 a.pos, b.pos, c.pos,
                                 a.normal, b.normal, c.normal,
+                                a.tangent, b.tangent, c.tangent,
                                 a.uv, b.uv, c.uv,
-                                eye, lights, n_lights, ambient, mat, tex);
+                                eye, lights, n_lights, ambient, mat, tex, nmap);
                 continue;
             }
 

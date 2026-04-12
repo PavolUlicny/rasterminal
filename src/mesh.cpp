@@ -172,6 +172,41 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                     }
                 }
             }
+            else if ((std::strncmp(p, "map_Kn", 6) == 0 && (p[6] == ' ' || p[6] == '\t')) ||
+                     (std::strncmp(p, "map_bump", 8) == 0 && (p[8] == ' ' || p[8] == '\t')))
+            {
+                // Normal map (tangent-space).  Handles both map_Kn and map_bump.
+                int prefix_len = (p[4] == 'K') ? 7 : 9; // "map_Kn " or "map_bump "
+                const char *q = p + prefix_len;
+                // Skip any MTL option tokens of the form "-flag [value]" (e.g. -bm 0.5).
+                while (*q == '-')
+                {
+                    while (*q && *q != ' ' && *q != '\t')
+                        q++; // skip flag name
+                    while (*q == ' ' || *q == '\t')
+                        q++; // skip whitespace
+                    // If what follows looks like a number, skip it too (it's the value).
+                    if (*q == '-' || (*q >= '0' && *q <= '9') || *q == '.')
+                        while (*q && *q != ' ' && *q != '\t')
+                            q++;
+                    while (*q == ' ' || *q == '\t')
+                        q++;
+                }
+                std::string tex_name(q);
+                while (!tex_name.empty() &&
+                       (tex_name.back() == '\n' || tex_name.back() == '\r' || tex_name.back() == ' '))
+                    tex_name.pop_back();
+
+                if (!tex_name.empty())
+                {
+                    Texture tex;
+                    if (tex.load_png(mtl_dir + tex_name))
+                    {
+                        materials[current].normal_tex = (int)textures.size();
+                        textures.push_back(std::move(tex));
+                    }
+                }
+            }
         }
     }
 
@@ -308,7 +343,66 @@ bool Mesh::load_obj(const std::string &path)
     if (!has_normals)
         compute_normals();
 
+    compute_tangents();
+
     return !triangles.empty();
+}
+
+// ─── Mesh::compute_tangents ───────────────────────────────────────────────────
+
+void Mesh::compute_tangents()
+{
+    for (auto &v : vertices)
+        v.tangent = vec3{};
+
+    // Accumulate tangent vectors from each triangle's UV layout.
+    // For triangle (P0,P1,P2) with UVs (u0,v0),(u1,v1),(u2,v2):
+    //   T = (dP1*dv2 - dP2*dv1) / (du1*dv2 - du2*dv1)
+    for (const auto &tri : triangles)
+    {
+        const Vertex &v0 = vertices[tri.v[0]];
+        const Vertex &v1 = vertices[tri.v[1]];
+        const Vertex &v2 = vertices[tri.v[2]];
+
+        vec3 dp1 = v1.pos - v0.pos;
+        vec3 dp2 = v2.pos - v0.pos;
+        float du1 = v1.uv.x - v0.uv.x;
+        float dv1 = v1.uv.y - v0.uv.y;
+        float du2 = v2.uv.x - v0.uv.x;
+        float dv2 = v2.uv.y - v0.uv.y;
+
+        float det = du1 * dv2 - du2 * dv1;
+        if (std::abs(det) < 1e-8f)
+            continue;
+
+        vec3 T = (dp1 * dv2 - dp2 * dv1) * (1.0f / det);
+
+        vertices[tri.v[0]].tangent += T;
+        vertices[tri.v[1]].tangent += T;
+        vertices[tri.v[2]].tangent += T;
+    }
+
+    // Gram-Schmidt orthonormalize each tangent against its vertex normal.
+    // If no UV data produced a tangent, fall back to an arbitrary perpendicular.
+    for (auto &v : vertices)
+    {
+        const vec3 &n = v.normal;
+        vec3 &t = v.tangent;
+
+        float len = t.length();
+        if (len < 1e-6f)
+        {
+            // No UV contribution — pick an arbitrary vector perpendicular to n.
+            vec3 up = (std::abs(n.z) < 0.9f) ? vec3{0.0f, 0.0f, 1.0f}
+                                             : vec3{1.0f, 0.0f, 0.0f};
+            t = normalize(cross(n, up));
+        }
+        else
+        {
+            // T' = normalize(T - (N·T)*N)
+            t = normalize(t - n * dot(n, t));
+        }
+    }
 }
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ struct Vertex
 {
     vec3 pos;
     vec3 normal;
+    vec3 tangent; // world-space tangent; bitangent = cross(normal, tangent)
     vec2 uv;
 };
 
@@ -25,7 +26,7 @@ struct Mesh
     std::vector<Vertex> vertices;
     std::vector<Triangle> triangles;
     std::vector<Material> materials; // index 0 is always the default white material
-    std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex indexes here
+    std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
     // Returns false on failure.
@@ -35,4 +36,8 @@ private:
     // Average adjacent face normals to produce smooth per-vertex normals.
     // Called automatically by load_obj when the file has no vn data.
     void compute_normals();
+
+    // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
+    // Called automatically by load_obj after normals are finalised.
+    void compute_tangents();
 };
