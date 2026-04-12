@@ -18,7 +18,7 @@ static void signal_handler(int) { g_interrupted = 1; }
 
 int main(int argc, char *argv[])
 {
-    const char *obj_path = (argc > 1) ? argv[1] : "models/teapot.obj";
+    const char *obj_path = (argc > 1) ? argv[1] : "models/obj/teapot.obj";
 
     Mesh mesh;
     if (!mesh.load_model(obj_path))
