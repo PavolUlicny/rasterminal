@@ -338,6 +338,7 @@ static void rasterize_phong(Framebuffer &fb,
                             vec3 na, vec3 nb, vec3 nc,
                             vec3 tana, vec3 tanb, vec3 tanc,
                             vec2 uva, vec2 uvb, vec2 uvc,
+                            float aoa, float aob, float aoc,
                             const vec3 &eye,
                             const Light *lights, int n_lights,
                             const vec3 &ambient,
@@ -416,11 +417,13 @@ static void rasterize_phong(Framebuffer &fb,
             if (tex)
                 px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
 
+            float ao = (aoa * (ba * inv_wa) + aob * (bb * inv_wb) + aoc * (bc * inv_wc)) * w_corr;
+
             // Shadow test: if the key light (index 0) is blocked, skip it.
             bool shadowed = smap && smap->in_shadow(pos);
             vec3 color = shadowed
-                             ? compute_lighting(pos, nrm, eye, lights + 1, n_lights - 1, ambient, px_mat)
-                             : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat);
+                             ? compute_lighting(pos, nrm, eye, lights + 1, n_lights - 1, ambient, px_mat, ao)
+                             : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat, ao);
             fb.set_pixel(x, y, vec3_to_color(color));
         }
     }
@@ -435,6 +438,7 @@ struct ClipVert
     vec3 normal;  // world-space normal
     vec3 tangent; // world-space tangent (for TBN normal mapping)
     vec2 uv;      // texture coordinates
+    float ao;     // baked ambient occlusion factor
 };
 
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
@@ -477,7 +481,8 @@ static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3],
                 v0.pos + (v1.pos - v0.pos) * t,
                 v0.normal + (v1.normal - v0.normal) * t,
                 v0.tangent + (v1.tangent - v0.tangent) * t,
-                v0.uv + (v1.uv - v0.uv) * t};
+                v0.uv + (v1.uv - v0.uv) * t,
+                v0.ao + (v1.ao - v0.ao) * t};
     };
 
     if (n == 1)
@@ -577,9 +582,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             nmap = &mesh.textures[(size_t)mat.normal_tex];
 
         // ── Transform to clip space ───────────────────────────────────
-        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv};
-        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv};
-        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv};
+        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
+        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
+        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao};
 
         // ── Near-plane clip → 0, 1, or 2 triangles ───────────────────
         ClipVert clipped[2][3];
@@ -623,6 +628,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                                 a.normal, b.normal, c.normal,
                                 a.tangent, b.tangent, c.tangent,
                                 a.uv, b.uv, c.uv,
+                                a.ao, b.ao, c.ao,
                                 eye, lights, n_lights, ambient, mat, tex, nmap, psmap);
                 continue;
             }
@@ -634,17 +640,18 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             {
                 vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                 vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                col_a = col_b = col_c = compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat);
-                shad_a = shad_b = shad_c = compute_lighting(fc, fn, eye, lights + 1, n_lights - 1, ambient, mat);
+                float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                col_a = col_b = col_c = compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat, face_ao);
+                shad_a = shad_b = shad_c = compute_lighting(fc, fn, eye, lights + 1, n_lights - 1, ambient, mat, face_ao);
             }
             else // Gouraud
             {
-                col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat);
-                col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat);
-                col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat);
-                shad_a = compute_lighting(a.pos, a.normal, eye, lights + 1, n_lights - 1, ambient, mat);
-                shad_b = compute_lighting(b.pos, b.normal, eye, lights + 1, n_lights - 1, ambient, mat);
-                shad_c = compute_lighting(c.pos, c.normal, eye, lights + 1, n_lights - 1, ambient, mat);
+                col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
+                col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
+                col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                shad_a = compute_lighting(a.pos, a.normal, eye, lights + 1, n_lights - 1, ambient, mat, a.ao);
+                shad_b = compute_lighting(b.pos, b.normal, eye, lights + 1, n_lights - 1, ambient, mat, b.ao);
+                shad_c = compute_lighting(c.pos, c.normal, eye, lights + 1, n_lights - 1, ambient, mat, c.ao);
             }
 
             rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,

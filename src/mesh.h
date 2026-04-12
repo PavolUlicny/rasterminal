@@ -13,6 +13,7 @@ struct Vertex
     vec3 normal;
     vec3 tangent; // world-space tangent; bitangent = cross(normal, tangent)
     vec2 uv;
+    float ao = 1.0f; // baked ambient occlusion (1 = fully lit, 0 = fully occluded)
 };
 
 struct Triangle
@@ -54,4 +55,9 @@ private:
     // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
     // Called automatically by load_obj after normals are finalised.
     void compute_tangents();
+
+    // Bake a per-vertex ambient occlusion factor from mesh curvature.
+    // Concave areas (cavities, creases) receive lower AO; convex areas stay at 1.
+    // Called automatically by all loaders after normals and tangents are computed.
+    void compute_ao();
 };

@@ -28,12 +28,13 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
                              const vec3 &eye_pos,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,
-                             const Material &mat = {})
+                             const Material &mat = {},
+                             float ao = 1.0f)
 {
     vec3 n = normalize(normal);
     vec3 v = normalize(eye_pos - pos);
 
-    vec3 result = ambient * mat.diffuse;
+    vec3 result = ambient * mat.diffuse * ao;
 
     for (int i = 0; i < n_lights; i++)
     {

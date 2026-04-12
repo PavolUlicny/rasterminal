@@ -589,6 +589,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!has_normals)
         compute_normals();
     compute_tangents();
+    compute_ao();
 
     return true;
 }
