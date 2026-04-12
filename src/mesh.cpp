@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "texture.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -94,10 +95,13 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
 
 // ─── load_mtl ─────────────────────────────────────────────────────────────────
 // Parse a .mtl file and append materials to mesh.materials.
+// Textures referenced by map_Kd are loaded into mesh.textures.
+// mtl_dir is the directory of the .mtl file (used to resolve relative paths).
 // Returns a map from material name → index in mesh.materials.
 
 static std::unordered_map<std::string, uint32_t>
-load_mtl(const std::string &path, std::vector<Material> &materials)
+load_mtl(const std::string &path, std::vector<Material> &materials,
+         std::vector<Texture> &textures, const std::string &mtl_dir)
 {
     std::unordered_map<std::string, uint32_t> mat_map;
 
@@ -105,7 +109,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials)
     if (!f)
         return mat_map;
 
-    char line[256];
+    char line[512];
     int current = -1; // index of material being built (-1 = none yet)
 
     while (std::fgets(line, sizeof(line), f))
@@ -116,7 +120,6 @@ load_mtl(const std::string &path, std::vector<Material> &materials)
 
         if (std::strncmp(p, "newmtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
         {
-            // Extract name (strip trailing whitespace/newline)
             p += 7;
             while (*p == ' ' || *p == '\t')
                 p++;
@@ -147,6 +150,27 @@ load_mtl(const std::string &path, std::vector<Material> &materials)
                 float ns;
                 if (std::sscanf(p + 3, "%f", &ns) == 1)
                     materials[current].shininess = ns;
+            }
+            else if (std::strncmp(p, "map_Kd", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+            {
+                // Diffuse texture map.  The filename follows the directive.
+                const char *q = p + 7;
+                while (*q == ' ' || *q == '\t')
+                    q++;
+                std::string tex_name(q);
+                while (!tex_name.empty() &&
+                       (tex_name.back() == '\n' || tex_name.back() == '\r' || tex_name.back() == ' '))
+                    tex_name.pop_back();
+
+                if (!tex_name.empty())
+                {
+                    Texture tex;
+                    if (tex.load_png(mtl_dir + tex_name))
+                    {
+                        materials[current].diffuse_tex = (int)textures.size();
+                        textures.push_back(std::move(tex));
+                    }
+                }
             }
         }
     }
@@ -233,7 +257,8 @@ bool Mesh::load_obj(const std::string &path)
                 mtl_name.pop_back();
 
             // MTL materials are appended starting at index 1 (0 = default).
-            mat_map = load_mtl(obj_dir + mtl_name, materials);
+            // Pass obj_dir so relative texture paths resolve correctly.
+            mat_map = load_mtl(obj_dir + mtl_name, materials, textures, obj_dir);
         }
         else if (std::strncmp(p, "usemtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
         {

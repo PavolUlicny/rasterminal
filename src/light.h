@@ -4,12 +4,13 @@
 
 #include <cmath>
 
-// Per-surface material properties (from MTL Kd/Ks/Ns or defaults).
+// Per-surface material properties (from MTL Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
     vec3 diffuse = {1.0f, 1.0f, 1.0f};
     vec3 specular = {0.4f, 0.4f, 0.4f};
     float shininess = 32.0f;
+    int diffuse_tex = -1; // index into Mesh::textures, or -1 if none
 };
 
 struct Light

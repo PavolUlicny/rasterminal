@@ -2,6 +2,7 @@
 
 #include "light.h" // for Material
 #include "linalg.h"
+#include "texture.h" // for Texture
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@ struct Mesh
     std::vector<Vertex> vertices;
     std::vector<Triangle> triangles;
     std::vector<Material> materials; // index 0 is always the default white material
+    std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex indexes here
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
     // Returns false on failure.

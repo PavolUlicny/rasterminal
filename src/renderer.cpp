@@ -83,10 +83,14 @@ static void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // sa/sb/sc hold (screen_x, screen_y, ndc_z).
 // wa/wb/wc are clip-space w values for perspective-correct interpolation.
 // col_a/b/c are per-vertex Blinn-Phong colours in [0,1].
+// uva/uvb/uvc are per-vertex texture coordinates.
+// tex may be nullptr if no diffuse texture is active.
 static void rasterize(Framebuffer &fb,
                       vec3 sa, vec3 sb, vec3 sc,
                       float wa, float wb, float wc,
-                      vec3 col_a, vec3 col_b, vec3 col_c)
+                      vec3 col_a, vec3 col_b, vec3 col_c,
+                      vec2 uva, vec2 uvb, vec2 uvc,
+                      const Texture *tex)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -128,13 +132,20 @@ static void rasterize(Framebuffer &fb,
             // perspective correction would distort it and break depth ordering.
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
-            // Perspective-correct weight for colour interpolation.
+            // Perspective-correct weight for colour and UV interpolation.
             float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
+            float w_corr = 1.0f / inv_w;
 
             if (!fb.test_and_set_depth(x, y, depth))
                 continue;
 
-            vec3 col = (col_a * (ba * inv_wa) + col_b * (bb * inv_wb) + col_c * (bc * inv_wc)) * (1.0f / inv_w);
+            vec3 col = (col_a * (ba * inv_wa) + col_b * (bb * inv_wb) + col_c * (bc * inv_wc)) * w_corr;
+
+            if (tex)
+            {
+                vec2 uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+                col = col * tex->sample_rgb(uv.x, uv.y);
+            }
 
             fb.set_pixel(x, y, vec3_to_color(col));
         }
@@ -144,15 +155,20 @@ static void rasterize(Framebuffer &fb,
 // Rasterize a triangle with per-pixel Blinn-Phong lighting (Phong shading).
 // Perspective-correct interpolates world-space position and normal to each
 // pixel, then evaluates compute_lighting() there.
+// uva/uvb/uvc are per-vertex texture coordinates.
+// tex may be nullptr if no diffuse texture is active; when present its RGB is
+// multiplied into mat.diffuse before the lighting calculation.
 static void rasterize_phong(Framebuffer &fb,
                             vec3 sa, vec3 sb, vec3 sc,
                             float wa, float wb, float wc,
                             vec3 pa, vec3 pb, vec3 pc,
                             vec3 na, vec3 nb, vec3 nc,
+                            vec2 uva, vec2 uvb, vec2 uvc,
                             const vec3 &eye,
                             const Light *lights, int n_lights,
                             const vec3 &ambient,
-                            const Material &mat)
+                            const Material &mat,
+                            const Texture *tex)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -198,7 +214,14 @@ static void rasterize_phong(Framebuffer &fb,
             // nrm is interpolated linearly; normalize before lighting so length
             // variations across the triangle don't affect the result.
 
-            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, lights, n_lights, ambient, mat)));
+            Material px_mat = mat;
+            if (tex)
+            {
+                vec2 uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+                px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
+            }
+
+            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat)));
         }
     }
 }
@@ -210,6 +233,7 @@ struct ClipVert
     vec4 c;      // clip-space position (w = -z_view; > 0 means in front of camera)
     vec3 pos;    // world-space position
     vec3 normal; // world-space normal
+    vec2 uv;     // texture coordinates
 };
 
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
@@ -249,7 +273,8 @@ static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3])
         float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
         return {v0.c + (v1.c - v0.c) * t,
                 v0.pos + (v1.pos - v0.pos) * t,
-                v0.normal + (v1.normal - v0.normal) * t};
+                v0.normal + (v1.normal - v0.normal) * t,
+                v0.uv + (v1.uv - v0.uv) * t};
     };
 
     if (n == 1)
@@ -330,10 +355,15 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                                   ? mesh.materials[tri.material_idx]
                                   : mesh.materials[0];
 
+        // ── Texture lookup for this triangle ─────────────────────────
+        const Texture *tex = nullptr;
+        if (mat.diffuse_tex >= 0 && mat.diffuse_tex < (int)mesh.textures.size())
+            tex = &mesh.textures[(size_t)mat.diffuse_tex];
+
         // ── Transform to clip space ───────────────────────────────────
-        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal};
-        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal};
-        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal};
+        ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.uv};
+        ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.uv};
+        ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.uv};
 
         // ── Near-plane clip → 0, 1, or 2 triangles ───────────────────
         ClipVert clipped[2][3];
@@ -375,7 +405,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 rasterize_phong(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,
                                 a.pos, b.pos, c.pos,
                                 a.normal, b.normal, c.normal,
-                                eye, lights, n_lights, ambient, mat);
+                                a.uv, b.uv, c.uv,
+                                eye, lights, n_lights, ambient, mat, tex);
                 continue;
             }
 
@@ -394,7 +425,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat);
             }
 
-            rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c);
+            rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c,
+                      a.uv, b.uv, c.uv, tex);
         }
     }
 }

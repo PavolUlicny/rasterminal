@@ -1,0 +1,64 @@
+#include "texture.h"
+
+#include <cmath>
+#include <algorithm>
+
+// stb_image: single-header image loader (public domain).
+// Supports JPEG, PNG, BMP, TGA, GIF, PSD, HDR, PNM.
+// The implementation is compiled here and nowhere else.
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+// ─── Texture::load_png ───────────────────────────────────────────────────────
+// Despite the name kept for API compatibility, this now loads any format that
+// stb_image supports: JPEG, PNG, BMP, TGA, etc.
+
+bool Texture::load_png(const std::string &path)
+{
+    int w, h, channels;
+    // Force 4 output channels (RGBA) regardless of source format.
+    uint8_t *data = stbi_load(path.c_str(), &w, &h, &channels, 4);
+    if (!data)
+        return false;
+
+    width = w;
+    height = h;
+    pixels.assign(data, data + (size_t)w * (size_t)h * 4);
+    stbi_image_free(data);
+    return true;
+}
+
+// ─── Texture::sample_rgb ─────────────────────────────────────────────────────
+
+vec3 Texture::sample_rgb(float u, float v) const
+{
+    // Wrap UV to [0, 1).
+    u = u - std::floor(u);
+    v = v - std::floor(v);
+
+    // Flip V: OBJ UV v = 0 is the bottom of the image;
+    // most image formats store row 0 at the top.
+    v = 1.0f - v;
+
+    float fx = u * (float)(width - 1);
+    float fy = v * (float)(height - 1);
+
+    int x0 = std::max(0, (int)std::floor(fx));
+    int y0 = std::max(0, (int)std::floor(fy));
+    int x1 = std::min(x0 + 1, width - 1);
+    int y1 = std::min(y0 + 1, height - 1);
+
+    float tx = fx - (float)x0;
+    float ty = fy - (float)y0;
+
+    auto get = [&](int x, int y) -> vec3
+    {
+        const uint8_t *p = pixels.data() + ((size_t)y * (size_t)width + (size_t)x) * 4;
+        constexpr float inv255 = 1.0f / 255.0f;
+        return {p[0] * inv255, p[1] * inv255, p[2] * inv255};
+    };
+
+    vec3 top = get(x0, y0) * (1.0f - tx) + get(x1, y0) * tx;
+    vec3 bottom = get(x0, y1) * (1.0f - tx) + get(x1, y1) * tx;
+    return top * (1.0f - ty) + bottom * ty;
+}

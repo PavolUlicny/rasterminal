@@ -6,7 +6,8 @@ SRCS = src/main.cpp \
        src/framebuffer.cpp \
        src/mesh.cpp \
        src/camera.cpp \
-       src/renderer.cpp
+       src/renderer.cpp \
+       src/texture.cpp
 
 HDRS = src/linalg.h \
        src/framebuffer.h \
@@ -14,7 +15,9 @@ HDRS = src/linalg.h \
        src/camera.h \
        src/light.h \
        src/renderer.h \
-       src/platform.h
+       src/platform.h \
+       src/texture.h \
+       src/stb_image.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
