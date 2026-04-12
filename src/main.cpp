@@ -80,7 +80,7 @@ int main(int argc, char *argv[])
 
     float fps_smooth = 60.0f; // exponential moving average
     bool spinning = false;
-    bool bg_white = false;
+    int bg_mode = 0;               // 0=black, 1=gray, 2=white
     const float spin_speed = 0.8f; // radians/sec
 
     using clock = std::chrono::steady_clock;
@@ -122,7 +122,7 @@ int main(int argc, char *argv[])
             else if (k == platform::KEY_4)
                 renderer.mode = ShadingMode::Phong;
             else if (k == platform::KEY_B)
-                bg_white = !bg_white;
+                bg_mode = (bg_mode + 1) % 3;
             else
                 camera.process_key(k, dt);
         }
@@ -165,12 +165,16 @@ int main(int argc, char *argv[])
             std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  bg: %s  ",
                           mode_str, (int)fps_smooth, model_name.c_str(),
                           spinning ? "spin ON" : "spin OFF",
-                          bg_white ? "white" : "black");
+                          bg_mode == 0 ? "black" : bg_mode == 1 ? "gray"
+                                                                : "white");
             fb.set_hud(hud);
         }
 
         // ── Render ────────────────────────────────────────────────────────
-        fb.clear(bg_white ? Color{240, 240, 240} : Color{0, 0, 0});
+        const Color bg_color = bg_mode == 0   ? Color{0, 0, 0}
+                               : bg_mode == 1 ? Color{128, 128, 128}
+                                              : Color{240, 240, 240};
+        fb.clear(bg_color);
         renderer.render(mesh, camera, lights, 2, ambient, fb);
         fb.present();
 
