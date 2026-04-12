@@ -120,6 +120,8 @@ int main(int argc, char *argv[])
                 renderer.mode = ShadingMode::Gouraud;
             else if (k == platform::KEY_4)
                 renderer.mode = ShadingMode::Phong;
+            else if (k == platform::KEY_B)
+                bg_white = !bg_white;
             else
                 camera.process_key(k, dt);
         }
@@ -159,14 +161,15 @@ int main(int argc, char *argv[])
                 break;
             }
             char hud[128];
-            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ",
+            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  bg: %s  ",
                           mode_str, (int)fps_smooth, model_name.c_str(),
-                          spinning ? "spin ON" : "spin OFF");
+                          spinning ? "spin ON" : "spin OFF",
+                          bg_white ? "white" : "black");
             fb.set_hud(hud);
         }
 
         // ── Render ────────────────────────────────────────────────────────
-        fb.clear();
+        fb.clear(bg_white ? Color{240, 240, 240} : Color{0, 0, 0});
         renderer.render(mesh, camera, lights, 2, ambient, fb);
         fb.present();
 
