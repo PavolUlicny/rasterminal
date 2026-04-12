@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
     const char *obj_path = (argc > 1) ? argv[1] : "models/teapot.obj";
 
     Mesh mesh;
-    if (!mesh.load_obj(obj_path))
+    if (!mesh.load_model(obj_path))
     {
         std::fprintf(stderr, "Failed to load '%s'\n", obj_path);
         return 1;

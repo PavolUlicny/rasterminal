@@ -28,9 +28,18 @@ struct Mesh
     std::vector<Material> materials; // index 0 is always the default white material
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
 
+    // Dispatch loader: picks load_obj or load_ply based on file extension.
+    // Returns false on failure or unknown extension.
+    bool load_model(const std::string &path);
+
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
     // Returns false on failure.
     bool load_obj(const std::string &path);
+
+    // Load geometry from a PLY file (ASCII or binary little/big-endian).
+    // Supports vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
+    // Returns false on failure.
+    bool load_ply(const std::string &path);
 
 private:
     // Average adjacent face normals to produce smooth per-vertex normals.
