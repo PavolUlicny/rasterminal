@@ -5,6 +5,8 @@ TARGET   = rasterminal
 SRCS = src/main.cpp \
        src/framebuffer.cpp \
        src/mesh.cpp \
+       src/mesh_obj.cpp \
+       src/mesh_ply.cpp \
        src/camera.cpp \
        src/renderer.cpp \
        src/texture.cpp
