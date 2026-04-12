@@ -20,6 +20,8 @@ bool Mesh::load_model(const std::string &path)
         return load_obj(path);
     if (ext == "ply")
         return load_ply(path);
+    if (ext == "stl")
+        return load_stl(path);
 
     return false;
 }

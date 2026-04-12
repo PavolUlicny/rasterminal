@@ -24,13 +24,13 @@ mat4 Camera::view() const
 mat4 Camera::projection(int pixel_width, int pixel_height) const
 {
     float aspect = (float)pixel_width / (float)pixel_height;
-    return perspective(fov, aspect, 0.1f, 100.0f);
+    return perspective(fov, aspect, near_plane, far_plane);
 }
 
 void Camera::process_key(platform::Key key, float dt)
 {
-    const float orbit_speed = 2.5f; // radians/sec
-    const float zoom_speed = 5.0f;  // units/sec
+    const float orbit_speed = 2.5f;           // radians/sec
+    const float zoom_speed = distance * 1.5f; // scales with distance so zoom feels consistent
 
     switch (key)
     {

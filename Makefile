@@ -7,6 +7,7 @@ SRCS = src/main.cpp \
        src/mesh.cpp \
        src/mesh_obj.cpp \
        src/mesh_ply.cpp \
+       src/mesh_stl.cpp \
        src/camera.cpp \
        src/renderer.cpp \
        src/texture.cpp

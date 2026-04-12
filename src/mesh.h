@@ -41,6 +41,11 @@ struct Mesh
     // Returns false on failure.
     bool load_ply(const std::string &path);
 
+    // Load geometry from an STL file (ASCII or binary).
+    // No UV or material support (STL has none). Normals are always recomputed
+    // for smooth per-vertex shading. Returns false on failure.
+    bool load_stl(const std::string &path);
+
 private:
     // Average adjacent face normals to produce smooth per-vertex normals.
     // Called automatically by load_obj when the file has no vn data.

@@ -10,6 +10,8 @@ struct Camera
     float yaw = 0.0f;    // radians, horizontal rotation around Y
     float pitch = 0.3f;  // radians, elevation above XZ plane
     float fov = 1.0472f; // radians, 60 degrees
+    float near_plane = 0.01f;
+    float far_plane = 100.0f;
 
     // World-space position of the camera eye, derived from orbit parameters.
     vec3 eye() const;

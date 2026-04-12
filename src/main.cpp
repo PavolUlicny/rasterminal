@@ -45,6 +45,9 @@ int main(int argc, char *argv[])
         float radius = (hi - lo).length() * 0.5f;
         camera.target = centre;
         camera.distance = radius * 2.0f;
+        // Scale near/far to the model so arbitrarily-sized models aren't clipped.
+        camera.near_plane = radius * 0.01f;
+        camera.far_plane = radius * 20.0f;
     }
 
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").

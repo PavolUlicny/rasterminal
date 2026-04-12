@@ -443,12 +443,13 @@ struct ClipVert
 //
 // Produces 0 (fully behind), 1, or 2 output triangles written into out[0..n-1].
 // Returns the count.  Winding order is preserved for all outputs.
-static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3])
+static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3],
+                     float near_w)
 {
-    // Must match the camera near plane (camera.cpp: perspective(..., 0.1f, ...)).
+    // near_w must match camera.near_plane: the clip-space w at the near plane.
     // Too small a value produces off-screen NDC coordinates whose magnitude
     // overwhelms float precision in the barycentric computation.
-    constexpr float NEAR_W = 0.1f;
+    const float NEAR_W = near_w;
 
     const bool ia = a.c.w > NEAR_W;
     const bool ib = b.c.w > NEAR_W;
@@ -582,7 +583,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
 
         // ── Near-plane clip → 0, 1, or 2 triangles ───────────────────
         ClipVert clipped[2][3];
-        int n_tris = clip_near(cva, cvb, cvc, clipped);
+        int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
 
         for (int ti = 0; ti < n_tris; ti++)
         {
