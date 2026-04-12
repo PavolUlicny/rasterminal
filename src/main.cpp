@@ -74,12 +74,13 @@ int main(int argc, char *argv[])
     lights[0].color = {1.0f, 0.9f, 0.75f};
     lights[1].direction = {-0.667f, -0.333f, -0.667f};
     lights[1].color = {0.15f, 0.25f, 0.5f};
-    const vec3 ambient = {0.05f, 0.05f, 0.08f};
+    const vec3 ambient = {0.2f, 0.2f, 0.25f};
 
     Renderer renderer;
 
     float fps_smooth = 60.0f; // exponential moving average
     bool spinning = false;
+    bool bg_white = false;
     const float spin_speed = 0.8f; // radians/sec
 
     using clock = std::chrono::steady_clock;
