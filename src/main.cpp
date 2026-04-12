@@ -71,10 +71,10 @@ int main(int argc, char *argv[])
     // Fill light: dim cool blue from lower-left-back, providing contrast.
     Light lights[2];
     lights[0].direction = {0.408f, 0.816f, 0.408f};
-    lights[0].color     = {1.0f, 0.9f, 0.75f};
+    lights[0].color = {1.0f, 0.9f, 0.75f};
     lights[1].direction = {-0.667f, -0.333f, -0.667f};
-    lights[1].color     = {0.15f, 0.25f, 0.5f};
-    const vec3 ambient  = {0.05f, 0.05f, 0.08f};
+    lights[1].color = {0.15f, 0.25f, 0.5f};
+    const vec3 ambient = {0.05f, 0.05f, 0.08f};
 
     Renderer renderer;
 

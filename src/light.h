@@ -16,7 +16,7 @@ struct Light
 {
     // Direction toward the light source (world space, unit vector).
     vec3 direction = {0.408f, 0.816f, 0.408f};
-    vec3 color     = {1.0f, 1.0f, 1.0f};
+    vec3 color = {1.0f, 1.0f, 1.0f};
 };
 
 // Blinn-Phong illumination summed over an array of directional lights.
@@ -35,7 +35,7 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
 
     for (int i = 0; i < n_lights; i++)
     {
-        const vec3 &l  = lights[i].direction;
+        const vec3 &l = lights[i].direction;
         const vec3 &lc = lights[i].color;
 
         float diff = dot(n, l);

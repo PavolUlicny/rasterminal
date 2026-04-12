@@ -198,8 +198,7 @@ static void rasterize_phong(Framebuffer &fb,
             // nrm is interpolated linearly; normalize before lighting so length
             // variations across the triangle don't affect the result.
 
-            fb.set_pixel(x, y, vec3_to_color(
-                compute_lighting(pos, nrm, eye, lights, n_lights, ambient, mat)));
+            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, lights, n_lights, ambient, mat)));
         }
     }
 }
