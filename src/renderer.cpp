@@ -46,6 +46,163 @@ static vec3 ndc_to_screen(vec3 ndc, int W, int H)
         ndc.z};
 }
 
+// Orthographic projection: maps axis-aligned box to NDC cube [-1,1]^3.
+// l/r/b/t are left/right/bottom/top extents in light view space.
+// n/f are near/far distances (positive).
+static mat4 ortho(float l, float r, float b, float t, float n, float f)
+{
+    mat4 m = mat4::identity();
+    m.m[0][0] = 2.0f / (r - l);
+    m.m[1][1] = 2.0f / (t - b);
+    m.m[2][2] = -2.0f / (f - n);
+    m.m[3][0] = -(r + l) / (r - l);
+    m.m[3][1] = -(t + b) / (t - b);
+    m.m[3][2] = -(f + n) / (f - n);
+    return m;
+}
+
+// ─── Shadow map ───────────────────────────────────────────────────────────────
+// Off-screen depth buffer rendered from the key light's point of view.
+// Used in all shading modes to determine which pixels receive direct light.
+
+struct ShadowMap
+{
+    static constexpr int SIZE = 256;
+    float depth[SIZE * SIZE]; // NDC z (slope-biased on write), initialised to 1.0
+    mat4 light_vp;
+
+    void clear()
+    {
+        for (auto &d : depth)
+            d = 1.0f;
+    }
+
+    // Returns true if world_pos is occluded from the key light.
+    // Slope-scale bias is baked into the stored depths at build time, so only a
+    // tiny constant is needed here to guard against floating-point round-trip error.
+    bool in_shadow(vec3 world_pos) const
+    {
+        vec4 lc = light_vp * vec4(world_pos, 1.0f);
+        if (lc.w <= 0.0f)
+            return false;
+        vec3 ndc = lc.perspective_divide();
+        // Outside the light frustum → treat as lit (no shadow cast here).
+        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f)
+            return false;
+        float u = (ndc.x + 1.0f) * 0.5f;
+        float v = (ndc.y + 1.0f) * 0.5f;
+        int px = clamp((int)(u * SIZE), 0, SIZE - 1);
+        int py = clamp((int)(v * SIZE), 0, SIZE - 1);
+        constexpr float fp_eps = 0.001f;
+        return ndc.z > depth[py * SIZE + px] + fp_eps;
+    }
+};
+
+// Build a shadow map for the given directional light by depth-rasterizing the
+// mesh with an orthographic projection fitted to the mesh bounding sphere.
+// Only the key light (lights[0]) casts shadows; this function receives that light.
+static ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
+{
+    ShadowMap smap;
+    smap.clear();
+
+    if (mesh.vertices.empty())
+        return smap;
+
+    // Bounding sphere: centroid + max radius.
+    vec3 center{};
+    for (const auto &v : mesh.vertices)
+        center += v.pos;
+    center = center * (1.0f / (float)mesh.vertices.size());
+    float radius = 0.0f;
+    for (const auto &v : mesh.vertices)
+        radius = std::max(radius, (v.pos - center).length());
+    if (radius < 0.001f)
+        radius = 1.0f;
+
+    // Place a virtual camera at the light source, looking toward scene centre.
+    // light.direction is "toward the light", so eye is in that direction.
+    vec3 dir = normalize(light.direction);
+    vec3 eye_pos = center + dir * (radius * 3.0f);
+    vec3 world_up = (std::abs(dir.y) < 0.9f) ? vec3{0.0f, 1.0f, 0.0f} : vec3{1.0f, 0.0f, 0.0f};
+    mat4 light_view = look_at(eye_pos, center, world_up);
+
+    float ext = radius * 1.2f;
+    mat4 light_proj = ortho(-ext, ext, -ext, ext, radius * 0.5f, radius * 6.0f);
+    smap.light_vp = light_proj * light_view;
+
+    const int S = ShadowMap::SIZE;
+
+    // Depth-only rasterization into the shadow map.
+    for (const Triangle &tri : mesh.triangles)
+    {
+        const vec3 &pa = mesh.vertices[tri.v[0]].pos;
+        const vec3 &pb = mesh.vertices[tri.v[1]].pos;
+        const vec3 &pc = mesh.vertices[tri.v[2]].pos;
+
+        // Slope-scale bias: surfaces nearly tangent to the light direction need a
+        // larger depth offset to avoid self-shadowing acne.  We bake it into the
+        // stored depth so in_shadow() needs only a tiny epsilon.
+        // bias = base / max(n·l, min_clamp)  →  large bias for glancing angles.
+        vec3 face_n = normalize(cross(pb - pa, pc - pa));
+        float n_dot_l = dot(face_n, dir);
+        float slope_bias = (n_dot_l > 0.01f) ? 0.007f / n_dot_l : 0.5f;
+
+        vec4 ca = smap.light_vp * vec4(pa, 1.0f);
+        vec4 cb = smap.light_vp * vec4(pb, 1.0f);
+        vec4 cc = smap.light_vp * vec4(pc, 1.0f);
+
+        if (clip_reject(ca, cb, cc))
+            continue;
+
+        // Ortho projection: w is always 1, perspective divide is safe.
+        vec3 ndc_a = ca.perspective_divide();
+        vec3 ndc_b = cb.perspective_divide();
+        vec3 ndc_c = cc.perspective_divide();
+
+        // Map NDC [-1,1] → shadow map pixels [0, S-1].
+        // Use (ndc + 1) / 2 * S consistently for both write and read.
+        auto to_spx = [&](vec3 ndc) -> vec3
+        {
+            return {(ndc.x + 1.0f) * 0.5f * S,
+                    (ndc.y + 1.0f) * 0.5f * S,
+                    ndc.z};
+        };
+        vec3 sa = to_spx(ndc_a);
+        vec3 sb = to_spx(ndc_b);
+        vec3 sc = to_spx(ndc_c);
+
+        int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
+        int x1 = std::min(S - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
+        int y0 = std::max(0, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
+        int y1 = std::min(S - 1, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+
+        float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+        if (std::abs(denom) < 1e-6f)
+            continue;
+        float inv_d = 1.0f / denom;
+
+        for (int y = y0; y <= y1; y++)
+        {
+            for (int x = x0; x <= x1; x++)
+            {
+                float px = x + 0.5f, py = y + 0.5f;
+                float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
+                float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
+                float bc = 1.0f - ba - bb;
+                if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+                    continue;
+                float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
+                float &stored = smap.depth[y * S + x];
+                if (d < stored)
+                    stored = d;
+            }
+        }
+    }
+
+    return smap;
+}
+
 // DDA line rasterizer with per-pixel depth testing.
 static void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 {
@@ -82,15 +239,20 @@ static void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // Rasterize a triangle using screen-space barycentric coordinates.
 // sa/sb/sc hold (screen_x, screen_y, ndc_z).
 // wa/wb/wc are clip-space w values for perspective-correct interpolation.
-// col_a/b/c are per-vertex Blinn-Phong colours in [0,1].
+// col_a/b/c are per-vertex Blinn-Phong colours when lit; shad_a/b/c when in shadow.
+// pa/pb/pc are world-space positions used for the per-pixel shadow test.
 // uva/uvb/uvc are per-vertex texture coordinates.
 // tex may be nullptr if no diffuse texture is active.
+// smap may be nullptr if shadows are disabled.
 static void rasterize(Framebuffer &fb,
                       vec3 sa, vec3 sb, vec3 sc,
                       float wa, float wb, float wc,
                       vec3 col_a, vec3 col_b, vec3 col_c,
+                      vec3 shad_a, vec3 shad_b, vec3 shad_c,
+                      vec3 pa, vec3 pb, vec3 pc,
                       vec2 uva, vec2 uvb, vec2 uvc,
-                      const Texture *tex)
+                      const Texture *tex,
+                      const ShadowMap *smap)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -139,7 +301,18 @@ static void rasterize(Framebuffer &fb,
             if (!fb.test_and_set_depth(x, y, depth))
                 continue;
 
-            vec3 col = (col_a * (ba * inv_wa) + col_b * (bb * inv_wb) + col_c * (bc * inv_wc)) * w_corr;
+            // Per-pixel shadow test using interpolated world position.
+            bool shadowed = false;
+            if (smap)
+            {
+                vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
+                shadowed = smap->in_shadow(pos);
+            }
+            const vec3 &ca = shadowed ? shad_a : col_a;
+            const vec3 &cb = shadowed ? shad_b : col_b;
+            const vec3 &cc = shadowed ? shad_c : col_c;
+
+            vec3 col = (ca * (ba * inv_wa) + cb * (bb * inv_wb) + cc * (bc * inv_wc)) * w_corr;
 
             if (tex)
             {
@@ -170,7 +343,8 @@ static void rasterize_phong(Framebuffer &fb,
                             const vec3 &ambient,
                             const Material &mat,
                             const Texture *tex,
-                            const Texture *nmap)
+                            const Texture *nmap,
+                            const ShadowMap *smap)
 {
     const int W = fb.width();
     const int H = fb.height();
@@ -242,7 +416,12 @@ static void rasterize_phong(Framebuffer &fb,
             if (tex)
                 px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
 
-            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat)));
+            // Shadow test: if the key light (index 0) is blocked, skip it.
+            bool shadowed = smap && smap->in_shadow(pos);
+            vec3 color = shadowed
+                             ? compute_lighting(pos, nrm, eye, lights + 1, n_lights - 1, ambient, px_mat)
+                             : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat);
+            fb.set_pixel(x, y, vec3_to_color(color));
         }
     }
 }
@@ -367,6 +546,15 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     const int W = fb.width();
     const int H = fb.height();
 
+    // Build shadow map from key light (lights[0]) before the main render pass.
+    ShadowMap smap;
+    const ShadowMap *psmap = nullptr;
+    if (n_lights > 0)
+    {
+        smap = build_shadow_map(mesh, lights[0]);
+        psmap = &smap;
+    }
+
     for (const Triangle &tri : mesh.triangles)
     {
         const Vertex &va = mesh.vertices[tri.v[0]];
@@ -434,27 +622,34 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                                 a.normal, b.normal, c.normal,
                                 a.tangent, b.tangent, c.tangent,
                                 a.uv, b.uv, c.uv,
-                                eye, lights, n_lights, ambient, mat, tex, nmap);
+                                eye, lights, n_lights, ambient, mat, tex, nmap, psmap);
                 continue;
             }
 
-            vec3 col_a, col_b, col_c;
+            vec3 col_a, col_b, col_c;    // lit colors
+            vec3 shad_a, shad_b, shad_c; // shadow colors (key light removed)
 
             if (mode == ShadingMode::Flat)
             {
                 vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                 vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                 col_a = col_b = col_c = compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat);
+                shad_a = shad_b = shad_c = compute_lighting(fc, fn, eye, lights + 1, n_lights - 1, ambient, mat);
             }
             else // Gouraud
             {
                 col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat);
                 col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat);
                 col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat);
+                shad_a = compute_lighting(a.pos, a.normal, eye, lights + 1, n_lights - 1, ambient, mat);
+                shad_b = compute_lighting(b.pos, b.normal, eye, lights + 1, n_lights - 1, ambient, mat);
+                shad_c = compute_lighting(c.pos, c.normal, eye, lights + 1, n_lights - 1, ambient, mat);
             }
 
-            rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c,
-                      a.uv, b.uv, c.uv, tex);
+            rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,
+                      col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                      a.pos, b.pos, c.pos,
+                      a.uv, b.uv, c.uv, tex, psmap);
         }
     }
 }
