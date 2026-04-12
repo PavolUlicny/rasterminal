@@ -67,7 +67,15 @@ int main(int argc, char *argv[])
     // Each pixel cell covers 2 vertical pixels via ▀ half-block.
     Framebuffer fb(cols, (rows - 1) * 2);
 
-    Light light;
+    // Key light: warm white from upper-right-front.
+    // Fill light: dim cool blue from lower-left-back, providing contrast.
+    Light lights[2];
+    lights[0].direction = {0.408f, 0.816f, 0.408f};
+    lights[0].color     = {1.0f, 0.9f, 0.75f};
+    lights[1].direction = {-0.667f, -0.333f, -0.667f};
+    lights[1].color     = {0.15f, 0.25f, 0.5f};
+    const vec3 ambient  = {0.05f, 0.05f, 0.08f};
+
     Renderer renderer;
 
     float fps_smooth = 60.0f; // exponential moving average
@@ -159,7 +167,7 @@ int main(int argc, char *argv[])
 
         // ── Render ────────────────────────────────────────────────────────
         fb.clear();
-        renderer.render(mesh, camera, light, fb);
+        renderer.render(mesh, camera, lights, 2, ambient, fb);
         fb.present();
 
         // ── Frame cap (≈60 fps) ───────────────────────────────────────────

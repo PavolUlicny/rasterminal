@@ -149,7 +149,9 @@ static void rasterize_phong(Framebuffer &fb,
                             float wa, float wb, float wc,
                             vec3 pa, vec3 pb, vec3 pc,
                             vec3 na, vec3 nb, vec3 nc,
-                            const vec3 &eye, const Light &light,
+                            const vec3 &eye,
+                            const Light *lights, int n_lights,
+                            const vec3 &ambient,
                             const Material &mat)
 {
     const int W = fb.width();
@@ -196,7 +198,8 @@ static void rasterize_phong(Framebuffer &fb,
             // nrm is interpolated linearly; normalize before lighting so length
             // variations across the triangle don't affect the result.
 
-            fb.set_pixel(x, y, vec3_to_color(compute_lighting(pos, nrm, eye, light, mat)));
+            fb.set_pixel(x, y, vec3_to_color(
+                compute_lighting(pos, nrm, eye, lights, n_lights, ambient, mat)));
         }
     }
 }
@@ -307,7 +310,8 @@ static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3])
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
 void Renderer::render(const Mesh &mesh, const Camera &camera,
-                      const Light &light, Framebuffer &fb) const
+                      const Light *lights, int n_lights, const vec3 &ambient,
+                      Framebuffer &fb) const
 {
     const mat4 view = camera.view();
     const mat4 proj = camera.projection(fb.width(), fb.height());
@@ -372,7 +376,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 rasterize_phong(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w,
                                 a.pos, b.pos, c.pos,
                                 a.normal, b.normal, c.normal,
-                                eye, light, mat);
+                                eye, lights, n_lights, ambient, mat);
                 continue;
             }
 
@@ -382,13 +386,13 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             {
                 vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                 vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                col_a = col_b = col_c = compute_lighting(fc, fn, eye, light, mat);
+                col_a = col_b = col_c = compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat);
             }
             else // Gouraud
             {
-                col_a = compute_lighting(a.pos, a.normal, eye, light, mat);
-                col_b = compute_lighting(b.pos, b.normal, eye, light, mat);
-                col_c = compute_lighting(c.pos, c.normal, eye, light, mat);
+                col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat);
+                col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat);
+                col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat);
             }
 
             rasterize(fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c);

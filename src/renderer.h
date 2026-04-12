@@ -17,7 +17,9 @@ struct Renderer
 {
     ShadingMode mode = ShadingMode::Gouraud;
 
-    void render(const Mesh &, const Camera &, const Light &, Framebuffer &) const;
+    void render(const Mesh &, const Camera &,
+                const Light *lights, int n_lights, const vec3 &ambient,
+                Framebuffer &) const;
 
     // Cycle: Wireframe → Flat → Gouraud → Phong → Wireframe
     void cycle_shading();
