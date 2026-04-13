@@ -1,0 +1,121 @@
+#pragma once
+
+#include "framebuffer.h"
+#include "light.h"
+#include "linalg.h"
+#include "mesh.h"
+#include "shadow.h"
+#include "texture.h"
+
+// ─── ClipVert ─────────────────────────────────────────────────────────────────
+// A clip-space vertex bundled with the world-space attributes needed for
+// lighting and near-plane clipping.
+
+struct ClipVert
+{
+    vec4 c;       // clip-space position (w = -z_view; > 0 means in front of camera)
+    vec3 pos;     // world-space position
+    vec3 normal;  // world-space normal
+    vec3 tangent; // world-space tangent (for TBN normal mapping)
+    vec2 uv;      // texture coordinates
+    float ao;     // baked ambient occlusion factor
+};
+
+// ─── RasterTri ────────────────────────────────────────────────────────────────
+// All data needed to rasterize one visible, clipped, backface-culled triangle.
+// Phase 1 workers fill these; Phase 2 workers consume them.
+
+struct RasterTri
+{
+    vec3 sa, sb, sc;     // screen-space positions (x, y, ndc_z)
+    float wa, wb, wc;    // clip-space w (for perspective-correct interp)
+    vec3 pa, pb, pc;     // world-space positions
+    vec2 uva, uvb, uvc;  // texture coordinates
+    float aoa, aob, aoc; // baked ambient occlusion
+
+    // Flat / Gouraud only — lighting evaluated once in Phase 1.
+    vec3 col_a, col_b, col_c;    // fully lit (all lights)
+    vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
+
+    // Phong only — lighting evaluated per pixel in Phase 2.
+    vec3 na, nb, nc;       // world-space normals
+    vec3 tana, tanb, tanc; // world-space tangents
+    vec3 eye;
+    const Light *lights;
+    int n_lights;
+    vec3 ambient;
+    const Material *mat; // pointer into mesh.materials — valid for the frame lifetime
+
+    // Shared by all shading modes
+    const Texture *tex;    // diffuse texture (nullptr if none)
+    const Texture *nmap;   // normal map     (nullptr if none; Phong only)
+    const ShadowMap *smap; // pre-built shadow map (nullptr if disabled)
+};
+
+// ─── clip_reject ──────────────────────────────────────────────────────────────
+// Conservative frustum rejection: returns true if all three clip-space vertices
+// lie entirely outside any single frustum half-space. Does not clip — just
+// avoids processing triangles that are obviously invisible.
+// Defined inline here so renderer.cpp, rasterize.cpp, and shadow.cpp can all
+// use it without a separate translation unit.
+
+inline bool clip_reject(const vec4 &a, const vec4 &b, const vec4 &c)
+{
+    if (a.w <= 0.0f || b.w <= 0.0f || c.w <= 0.0f)
+        return true;
+    if (a.x > a.w && b.x > b.w && c.x > c.w)
+        return true;
+    if (a.x < -a.w && b.x < -b.w && c.x < -c.w)
+        return true;
+    if (a.y > a.w && b.y > b.w && c.y > c.w)
+        return true;
+    if (a.y < -a.w && b.y < -b.w && c.y < -c.w)
+        return true;
+    if (a.z > a.w && b.z > b.w && c.z > c.w)
+        return true;
+    if (a.z < -a.w && b.z < -b.w && c.z < -c.w)
+        return true;
+    return false;
+}
+
+// ─── Rasterization primitives ─────────────────────────────────────────────────
+
+// Clip triangle (a,b,c) against the near plane w = near_w.
+// Produces 0 (fully behind), 1, or 2 output triangles written into out[0..n-1].
+// Returns the count. Winding order is preserved for all outputs.
+int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near_w);
+
+// DDA line rasterizer with per-pixel depth testing (wireframe).
+void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color);
+
+// Rasterize one triangle with pre-computed per-vertex Flat/Gouraud colours.
+// y_min/y_max define this thread's exclusive pixel row band.
+void rasterize(Framebuffer &fb,
+               vec3 sa, vec3 sb, vec3 sc,
+               float wa, float wb, float wc,
+               vec3 col_a, vec3 col_b, vec3 col_c,
+               vec3 shad_a, vec3 shad_b, vec3 shad_c,
+               vec3 pa, vec3 pb, vec3 pc,
+               vec2 uva, vec2 uvb, vec2 uvc,
+               const Texture *tex,
+               const ShadowMap *smap,
+               int y_min, int y_max);
+
+// Rasterize one triangle with per-pixel Blinn-Phong lighting (Phong shading).
+// y_min/y_max define this thread's exclusive pixel row band.
+void rasterize_phong(Framebuffer &fb,
+                     vec3 sa, vec3 sb, vec3 sc,
+                     float wa, float wb, float wc,
+                     vec3 pa, vec3 pb, vec3 pc,
+                     vec3 na, vec3 nb, vec3 nc,
+                     vec3 tana, vec3 tanb, vec3 tanc,
+                     vec2 uva, vec2 uvb, vec2 uvc,
+                     float aoa, float aob, float aoc,
+                     const vec3 &eye,
+                     const Light *lights, int n_lights,
+                     const vec3 &ambient,
+                     const Material &mat,
+                     const Texture *tex,
+                     const Texture *nmap,
+                     const ShadowMap *smap,
+                     int y_min, int y_max);

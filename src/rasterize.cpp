@@ -1,0 +1,349 @@
+#include "rasterize.h"
+
+#include <algorithm>
+#include <cmath>
+
+// ─── internal helpers ─────────────────────────────────────────────────────────
+
+static Color vec3_to_color(vec3 c)
+{
+    return {
+        (uint8_t)(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+        (uint8_t)(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+        (uint8_t)(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
+}
+
+// ─── clip_near ────────────────────────────────────────────────────────────────
+// Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
+// division-by-near-zero in the perspective divide and the rendering artefacts
+// that occur when a triangle straddles the camera plane.
+//
+// near_w must match camera.near_plane: the clip-space w at the near plane.
+// Too small a value produces off-screen NDC coordinates whose magnitude
+// overwhelms float precision in the barycentric computation.
+
+int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near_w)
+{
+    const float NEAR_W = near_w;
+
+    const bool ia = a.c.w > NEAR_W;
+    const bool ib = b.c.w > NEAR_W;
+    const bool ic = c.c.w > NEAR_W;
+    const int n = (int)ia + (int)ib + (int)ic;
+
+    if (n == 3)
+    {
+        out[0][0] = a;
+        out[0][1] = b;
+        out[0][2] = c;
+        return 1;
+    }
+    if (n == 0)
+        return 0;
+
+    // Interpolate all attributes from an inside vertex v0 toward an outside
+    // vertex v1 to find the exact w = NEAR_W crossing.
+    auto cross_edge = [&](const ClipVert &v0, const ClipVert &v1) -> ClipVert
+    {
+        float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
+        return {v0.c + (v1.c - v0.c) * t,
+                v0.pos + (v1.pos - v0.pos) * t,
+                v0.normal + (v1.normal - v0.normal) * t,
+                v0.tangent + (v1.tangent - v0.tangent) * t,
+                v0.uv + (v1.uv - v0.uv) * t,
+                v0.ao + (v1.ao - v0.ao) * t};
+    };
+
+    if (n == 1)
+    {
+        // Rotate so the single inside vertex is first.
+        if (ib)
+        {
+            ClipVert t = a;
+            a = b;
+            b = c;
+            c = t;
+        }
+        else if (ic)
+        {
+            ClipVert t = a;
+            a = c;
+            c = b;
+            b = t;
+        }
+        // a inside; b, c outside → one clipped triangle.
+        out[0][0] = a;
+        out[0][1] = cross_edge(a, b);
+        out[0][2] = cross_edge(a, c);
+        return 1;
+    }
+
+    // n == 2: rotate so the single outside vertex is last.
+    if (!ic)
+    { /* a, b inside, c outside — already correct */
+    }
+    else if (!ia)
+    {
+        ClipVert t = a;
+        a = b;
+        b = c;
+        c = t;
+    }
+    else
+    {
+        ClipVert t = b;
+        b = a;
+        a = c;
+        c = t;
+    }
+    // a, b inside; c outside → clipped quad → two triangles.
+    ClipVert ac = cross_edge(a, c);
+    ClipVert bc = cross_edge(b, c);
+    out[0][0] = a;
+    out[0][1] = b;
+    out[0][2] = bc;
+    out[1][0] = a;
+    out[1][1] = bc;
+    out[1][2] = ac;
+    return 2;
+}
+
+// ─── draw_line ────────────────────────────────────────────────────────────────
+// DDA line rasterizer with per-pixel depth testing.
+
+void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
+{
+    int x0 = (int)std::round(a.x), y0 = (int)std::round(a.y);
+    int x1 = (int)std::round(b.x), y1 = (int)std::round(b.y);
+
+    int dx = std::abs(x1 - x0);
+    int dy = std::abs(y1 - y0);
+    int steps = std::max(dx, dy);
+
+    if (steps == 0)
+    {
+        if (fb.test_and_set_depth(x0, y0, a.z))
+            fb.set_pixel(x0, y0, color);
+        return;
+    }
+
+    float sx = (float)(x1 - x0) / (float)steps;
+    float sy = (float)(y1 - y0) / (float)steps;
+    float sz = (b.z - a.z) / (float)steps;
+
+    float x = (float)x0, y = (float)y0, z = a.z;
+    for (int i = 0; i <= steps; i++)
+    {
+        int px = (int)std::round(x), py = (int)std::round(y);
+        if (fb.test_and_set_depth(px, py, z))
+            fb.set_pixel(px, py, color);
+        x += sx;
+        y += sy;
+        z += sz;
+    }
+}
+
+// ─── rasterize ────────────────────────────────────────────────────────────────
+// Rasterize a triangle using screen-space barycentric coordinates.
+// sa/sb/sc hold (screen_x, screen_y, ndc_z).
+// wa/wb/wc are clip-space w values for perspective-correct interpolation.
+// col_a/b/c are per-vertex Blinn-Phong colours when lit; shad_a/b/c when in shadow.
+// pa/pb/pc are world-space positions used for the per-pixel shadow test.
+// uva/uvb/uvc are per-vertex texture coordinates.
+// tex may be nullptr if no diffuse texture is active.
+// smap may be nullptr if shadows are disabled.
+
+void rasterize(Framebuffer &fb,
+               vec3 sa, vec3 sb, vec3 sc,
+               float wa, float wb, float wc,
+               vec3 col_a, vec3 col_b, vec3 col_c,
+               vec3 shad_a, vec3 shad_b, vec3 shad_c,
+               vec3 pa, vec3 pb, vec3 pc,
+               vec2 uva, vec2 uvb, vec2 uvc,
+               const Texture *tex,
+               const ShadowMap *smap,
+               int y_min, int y_max)
+{
+    const int W = fb.width();
+
+    // Bounding box, clamped to this thread's y-band.
+    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
+    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
+    int y0 = std::max(y_min, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
+    int y1 = std::min(y_max, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+    // Early exit before expensive divisions — triangle doesn't touch this band.
+    if (y0 > y1 || x0 > x1)
+        return;
+
+    // Barycentric denominator (proportional to 2× signed screen area)
+    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+    if (std::abs(denom) < 1e-6f)
+        return;
+    float inv_d = 1.0f / denom;
+
+    // Reciprocal clip-space w for perspective-correct interpolation
+    float inv_wa = 1.0f / wa;
+    float inv_wb = 1.0f / wb;
+    float inv_wc = 1.0f / wc;
+
+    for (int y = y0; y <= y1; y++)
+    {
+        for (int x = x0; x <= x1; x++)
+        {
+            float px = (float)x + 0.5f;
+            float py = (float)y + 0.5f;
+
+            // Screen-space barycentric weights
+            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
+            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
+            float bc = 1.0f - ba - bb;
+
+            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+                continue;
+
+            // z_ndc is linear in screen space (projection makes it A + B/z_view,
+            // which is linear in NDC x/y), so plain barycentric is correct here —
+            // perspective correction would distort it and break depth ordering.
+            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+
+            // Perspective-correct weight for colour and UV interpolation.
+            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
+            float w_corr = 1.0f / inv_w;
+
+            if (!fb.test_and_set_depth(x, y, depth))
+                continue;
+
+            // Per-pixel shadow test using interpolated world position.
+            bool shadowed = false;
+            if (smap)
+            {
+                vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
+                shadowed = smap->in_shadow(pos);
+            }
+            const vec3 &ca = shadowed ? shad_a : col_a;
+            const vec3 &cb = shadowed ? shad_b : col_b;
+            const vec3 &cc = shadowed ? shad_c : col_c;
+
+            vec3 col = (ca * (ba * inv_wa) + cb * (bb * inv_wb) + cc * (bc * inv_wc)) * w_corr;
+
+            if (tex)
+            {
+                vec2 uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+                col = col * tex->sample_rgb(uv.x, uv.y);
+            }
+
+            fb.set_pixel(x, y, vec3_to_color(col));
+        }
+    }
+}
+
+// ─── rasterize_phong ──────────────────────────────────────────────────────────
+// Rasterize a triangle with per-pixel Blinn-Phong lighting (Phong shading).
+// Perspective-correct interpolates world-space position and normal to each
+// pixel, then evaluates compute_lighting() there.
+// uva/uvb/uvc are per-vertex texture coordinates.
+// tex may be nullptr if no diffuse texture is active; when present its RGB is
+// multiplied into mat.diffuse before the lighting calculation.
+
+void rasterize_phong(Framebuffer &fb,
+                     vec3 sa, vec3 sb, vec3 sc,
+                     float wa, float wb, float wc,
+                     vec3 pa, vec3 pb, vec3 pc,
+                     vec3 na, vec3 nb, vec3 nc,
+                     vec3 tana, vec3 tanb, vec3 tanc,
+                     vec2 uva, vec2 uvb, vec2 uvc,
+                     float aoa, float aob, float aoc,
+                     const vec3 &eye,
+                     const Light *lights, int n_lights,
+                     const vec3 &ambient,
+                     const Material &mat,
+                     const Texture *tex,
+                     const Texture *nmap,
+                     const ShadowMap *smap,
+                     int y_min, int y_max)
+{
+    const int W = fb.width();
+
+    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
+    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
+    int y0 = std::max(y_min, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
+    int y1 = std::min(y_max, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+    // Early exit before expensive divisions — triangle doesn't touch this band.
+    if (y0 > y1 || x0 > x1)
+        return;
+
+    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+    if (std::abs(denom) < 1e-6f)
+        return;
+    float inv_d = 1.0f / denom;
+
+    float inv_wa = 1.0f / wa;
+    float inv_wb = 1.0f / wb;
+    float inv_wc = 1.0f / wc;
+
+    for (int y = y0; y <= y1; y++)
+    {
+        for (int x = x0; x <= x1; x++)
+        {
+            float px = (float)x + 0.5f;
+            float py = (float)y + 0.5f;
+
+            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
+            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
+            float bc = 1.0f - ba - bb;
+
+            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+                continue;
+
+            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            if (!fb.test_and_set_depth(x, y, depth))
+                continue;
+
+            // Perspective-correct interpolation of world-space position and normal.
+            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
+            float w_corr = 1.0f / inv_w;
+
+            vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
+            vec3 nrm = (na * (ba * inv_wa) + nb * (bb * inv_wb) + nc * (bc * inv_wc)) * w_corr;
+
+            // Compute UV once — needed by both diffuse and normal map.
+            vec2 uv{};
+            if (tex || nmap)
+                uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+
+            // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
+            if (nmap)
+            {
+                vec3 tan = (tana * (ba * inv_wa) + tanb * (bb * inv_wb) + tanc * (bc * inv_wc)) * w_corr;
+
+                // Unpack normal map texel from [0,1] to [-1,1].
+                vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
+
+                // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
+                // then derive B so TBN is a proper orthonormal basis.
+                vec3 N = normalize(nrm);
+                vec3 T = normalize(tan - N * dot(N, tan));
+                vec3 B = cross(N, T);
+
+                // Transform tangent-space normal to world space.
+                nrm = T * nm.x + B * nm.y + N * nm.z;
+                // nrm will be normalized inside compute_lighting.
+            }
+
+            Material px_mat = mat;
+            if (tex)
+                px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
+
+            float ao = (aoa * (ba * inv_wa) + aob * (bb * inv_wb) + aoc * (bc * inv_wc)) * w_corr;
+
+            // Shadow test: if the key light (index 0) is blocked, skip it.
+            bool shadowed = smap && smap->in_shadow(pos);
+            const Light *sl = (n_lights > 0) ? lights + 1 : lights;
+            const int sc = (n_lights > 0) ? n_lights - 1 : 0;
+            vec3 color = shadowed
+                             ? compute_lighting(pos, nrm, eye, sl, sc, ambient, px_mat, ao)
+                             : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat, ao);
+            fb.set_pixel(x, y, vec3_to_color(color));
+        }
+    }
+}

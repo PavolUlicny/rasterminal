@@ -1,5 +1,5 @@
 CXX      = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -O2
+CXXFLAGS = -std=c++17 -Wall -Wextra -O3 -march=native -pthread
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -9,6 +9,8 @@ SRCS = src/main.cpp \
        src/mesh_ply.cpp \
        src/mesh_stl.cpp \
        src/camera.cpp \
+       src/shadow.cpp \
+       src/rasterize.cpp \
        src/renderer.cpp \
        src/texture.cpp
 
@@ -17,6 +19,8 @@ HDRS = src/linalg.h \
        src/mesh.h \
        src/camera.h \
        src/light.h \
+       src/shadow.h \
+       src/rasterize.h \
        src/renderer.h \
        src/platform.h \
        src/texture.h \
@@ -25,7 +29,7 @@ HDRS = src/linalg.h \
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
-debug: CXXFLAGS = -std=c++17 -Wall -Wextra -O0 -g
+debug: CXXFLAGS = -std=c++17 -Wall -Wextra -O0 -g -pthread
 debug: $(TARGET)
 
 clean:
