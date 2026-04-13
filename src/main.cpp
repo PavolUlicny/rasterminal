@@ -49,6 +49,7 @@ int main(int argc, char *argv[])
         camera.near_plane = radius * 0.01f;
         camera.far_plane = radius * 20.0f;
     }
+    const Camera initial_camera = camera;
 
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
     std::string model_name = obj_path;
@@ -136,6 +137,8 @@ int main(int argc, char *argv[])
                     bg_mode = (bg_mode + 1) % 3;
                 else if (k == platform::KEY_L)
                     lighting_mode = (lighting_mode + 1) % 3;
+                else if (k == platform::KEY_R)
+                    camera = initial_camera;
                 else
                     camera.process_key(k, dt);
             }

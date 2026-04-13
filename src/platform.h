@@ -138,6 +138,7 @@ namespace platform
         KEY_SPACE, // toggle auto-rotation
         KEY_B,     // toggle background colour
         KEY_L,     // cycle lighting preset
+        KEY_R,     // reset camera
     };
 
     struct InputEvent
@@ -203,6 +204,9 @@ namespace platform
             case 'l':
             case 'L':
                 return KEY_L;
+            case 'r':
+            case 'R':
+                return KEY_R;
             default:
                 return KEY_NONE;
             }
