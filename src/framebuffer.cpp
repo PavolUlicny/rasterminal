@@ -117,7 +117,9 @@ void Framebuffer::present()
         for (int col = 0; col < m_width; col++)
         {
             const Color &top = m_color[(row * 2) * m_width + col];
-            const Color &bot = m_color[(row * 2 + 1) * m_width + col];
+            // Guard against odd pixel height: reuse top pixel for bottom row.
+            const int bot_row = (row * 2 + 1 < m_height) ? row * 2 + 1 : row * 2;
+            const Color &bot = m_color[bot_row * m_width + col];
 
             // Foreground (top pixel): ESC[38;2;R;G;Bm
             tmp[0] = '\033';
@@ -173,10 +175,14 @@ void Framebuffer::present()
         m_buf.append(tmp, n);
 
         // Dark background, muted text.
+        // Disable auto-wrap so a long HUD string clips at the terminal edge
+        // instead of wrapping onto the next line and corrupting the display.
+        m_buf += "\033[?7l";
         m_buf += "\033[48;2;18;18;18m\033[38;2;160;160;160m";
         m_buf += m_hud;
         m_buf += "\033[K"; // erase to end of line (clears leftover from wider text)
         m_buf += "\033[0m";
+        m_buf += "\033[?7h"; // re-enable auto-wrap
     }
 
     std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
