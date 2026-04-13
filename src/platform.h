@@ -36,7 +36,7 @@ namespace platform
 #endif
     }
 
-    // ─── raw mode (non-blocking keyboard) ────────────────────────────────────────
+    // ─── raw mode ────────────────────────────────────────────────────────────────
 
 #ifndef _WIN32
     namespace detail
@@ -52,12 +52,12 @@ namespace platform
     inline void enable_raw_mode()
     {
 #ifdef _WIN32
-        // Windows console: enable ANSI and UTF-8, nothing else needed for _kbhit.
+        // Enable ANSI output and UTF-8.
         SetConsoleOutputCP(65001);
-        HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+        HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
-        GetConsoleMode(h, &mode);
-        SetConsoleMode(h, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        GetConsoleMode(hout, &mode);
+        SetConsoleMode(hout, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 #else
         termios raw;
         tcgetattr(STDIN_FILENO, &raw);
@@ -85,13 +85,36 @@ namespace platform
     // Erase the screen and move cursor to top-left. Call once at startup.
     inline void clear_screen()
     {
-        // \033[2J  — erase display
-        // \033[H   — cursor to top-left
         std::fputs("\033[2J\033[H", stdout);
         std::fflush(stdout);
     }
 
-    // ─── key codes ───────────────────────────────────────────────────────────────
+    // ─── mouse support ───────────────────────────────────────────────────────────
+    // Uses SGR extended mouse mode (\033[?1006h) — supported by all modern terminals
+    // including Windows Terminal. Reports: scroll wheel, left-button drag.
+
+    inline void enable_mouse()
+    {
+#ifdef _WIN32
+        // Allow VT input sequences (including mouse) on the input handle.
+        HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD mode = 0;
+        GetConsoleMode(hin, &mode);
+        SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
+#endif
+        // \033[?1006h — SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
+        // \033[?1002h — button-events mode: reports motion only while a button is held
+        std::fputs("\033[?1006h\033[?1002h", stdout);
+        std::fflush(stdout);
+    }
+
+    inline void disable_mouse()
+    {
+        std::fputs("\033[?1002l\033[?1006l", stdout);
+        std::fflush(stdout);
+    }
+
+    // ─── input events ────────────────────────────────────────────────────────────
 
     enum Key
     {
@@ -99,7 +122,7 @@ namespace platform
         KEY_W,
         KEY_A,
         KEY_S,
-        KEY_D, // camera movement
+        KEY_D, // camera orbit
         KEY_Q,
         KEY_ESCAPE, // quit
         KEY_1,
@@ -107,150 +130,204 @@ namespace platform
         KEY_3,
         KEY_4, // shading modes
         KEY_UP,
-        KEY_DOWN, // zoom / pitch
+        KEY_DOWN, // pitch
         KEY_LEFT,
         KEY_RIGHT, // yaw
         KEY_PLUS,
-        KEY_MINUS, // fov
+        KEY_MINUS, // zoom
         KEY_SPACE, // toggle auto-rotation
         KEY_B,     // toggle background colour
     };
 
-    // Returns the next pressed key, or KEY_NONE if nothing is in the buffer.
-    inline Key poll_key()
+    struct InputEvent
     {
-#ifdef _WIN32
-        if (!_kbhit())
-            return KEY_NONE;
-        int c = _getch();
-        if (c == 224) // extended key prefix
+        enum class Type
         {
-            c = _getch();
+            None,
+            Key,
+            ScrollUp,
+            ScrollDown,
+            MousePress,   // left button pressed
+            MouseRelease, // left button released
+            MouseMove,    // left button held and dragging
+        } type = Type::None;
+
+        Key key = KEY_NONE; // valid when type == Key
+        int btn = 0;        // mouse button (0 = left, 1 = middle, 2 = right)
+        int x = 0, y = 0;   // terminal cell position (1-based)
+    };
+
+    // ─── input parsing helpers ───────────────────────────────────────────────────
+
+    namespace detail
+    {
+        inline Key key_from_char(char c)
+        {
             switch (c)
             {
-            case 72:
-                return KEY_UP;
-            case 80:
-                return KEY_DOWN;
-            case 75:
-                return KEY_LEFT;
-            case 77:
-                return KEY_RIGHT;
+            case 'w':
+            case 'W':
+                return KEY_W;
+            case 'a':
+            case 'A':
+                return KEY_A;
+            case 's':
+            case 'S':
+                return KEY_S;
+            case 'd':
+            case 'D':
+                return KEY_D;
+            case 'q':
+            case 'Q':
+                return KEY_Q;
+            case 27:
+                return KEY_ESCAPE;
+            case '1':
+                return KEY_1;
+            case '2':
+                return KEY_2;
+            case '3':
+                return KEY_3;
+            case '4':
+                return KEY_4;
+            case '+':
+                return KEY_PLUS;
+            case '-':
+                return KEY_MINUS;
+            case ' ':
+                return KEY_SPACE;
+            case 'b':
+            case 'B':
+                return KEY_B;
+            default:
+                return KEY_NONE;
             }
-            return KEY_NONE;
         }
-        switch (c)
-        {
-        case 'w':
-        case 'W':
-            return KEY_W;
-        case 'a':
-        case 'A':
-            return KEY_A;
-        case 's':
-        case 'S':
-            return KEY_S;
-        case 'd':
-        case 'D':
-            return KEY_D;
-        case 'q':
-        case 'Q':
-            return KEY_Q;
-        case 27:
-            return KEY_ESCAPE;
-        case '1':
-            return KEY_1;
-        case '2':
-            return KEY_2;
-        case '3':
-            return KEY_3;
-        case '4':
-            return KEY_4;
-        case '+':
-            return KEY_PLUS;
-        case '-':
-            return KEY_MINUS;
-        case ' ':
-            return KEY_SPACE;
-        case 'b':
-        case 'B':
-            return KEY_B;
-        }
-        return KEY_NONE;
+    }
 
+    // ─── poll_event ──────────────────────────────────────────────────────────────
+    // Returns the next keyboard or mouse event, or InputEvent{Type::None} if the
+    // input buffer is empty. Non-blocking.
+
+    inline InputEvent poll_event()
+    {
+        InputEvent ev;
+
+#ifdef _WIN32
+        if (!_kbhit())
+            return ev;
+        // On Windows with ENABLE_VIRTUAL_TERMINAL_INPUT, mouse events arrive as
+        // VT escape sequences readable via _getch() byte-by-byte.
+        auto rb = []() -> char
+        { return static_cast<char>(_getch()); };
+        char c = rb();
 #else
-        // poll() with timeout=0 checks for available input without blocking
-        // and without O_NONBLOCK (which would corrupt stdout's blocking mode).
-        struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
-        if (poll(&pfd, 1, 0) <= 0)
-            return KEY_NONE;
-
-        char c;
-        if (read(STDIN_FILENO, &c, 1) <= 0)
-            return KEY_NONE;
-
-        // Escape sequence (arrow keys): ESC [ A/B/C/D
-        if (c == '\033')
         {
-            char seq[2];
-            if (read(STDIN_FILENO, &seq[0], 1) <= 0)
-                return KEY_ESCAPE;
-            if (read(STDIN_FILENO, &seq[1], 1) <= 0)
-                return KEY_ESCAPE;
-            if (seq[0] == '[')
+            struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+            if (poll(&pfd, 1, 0) <= 0)
+                return ev;
+        }
+        auto rb = []() -> char
+        {
+            char b = 0;
+            ssize_t n = read(STDIN_FILENO, &b, 1);
+            (void)n;
+            return b;
+        };
+        char c = rb();
+        if (c == 0)
+            return ev;
+#endif
+
+        // ── Regular character ────────────────────────────────────────────────────
+        if (c != '\033')
+        {
+            ev.type = InputEvent::Type::Key;
+            ev.key = detail::key_from_char(c);
+            return ev;
+        }
+
+        // ── Escape sequence ──────────────────────────────────────────────────────
+        char b1 = rb();
+        if (b1 != '[')
+        {
+            ev.type = InputEvent::Type::Key;
+            ev.key = KEY_ESCAPE;
+            return ev;
+        }
+
+        char b2 = rb();
+
+        // ── SGR mouse: \033[<btn;x;yM (press/scroll) or \033[<btn;x;ym (release) ──
+        if (b2 == '<')
+        {
+            int nums[3] = {};
+            int ni = 0;
+            char fin = 0;
+            for (;;)
             {
-                switch (seq[1])
+                char d = rb();
+                if (d == ';')
                 {
-                case 'A':
-                    return KEY_UP;
-                case 'B':
-                    return KEY_DOWN;
-                case 'C':
-                    return KEY_RIGHT;
-                case 'D':
-                    return KEY_LEFT;
+                    if (ni < 2)
+                        ni++;
+                }
+                else if (d >= '0' && d <= '9')
+                {
+                    nums[ni] = nums[ni] * 10 + (d - '0');
+                }
+                else
+                {
+                    fin = d; // 'M' = press/motion/scroll, 'm' = release
+                    break;
                 }
             }
-            return KEY_ESCAPE;
+
+            int btn = nums[0];
+            ev.x = nums[1];
+            ev.y = nums[2];
+            ev.btn = btn & 3; // low 2 bits = button number
+
+            if (btn == 64)
+                ev.type = InputEvent::Type::ScrollUp;
+            else if (btn == 65)
+                ev.type = InputEvent::Type::ScrollDown;
+            else if (btn >= 32)
+                ev.type = InputEvent::Type::MouseMove; // motion + button held
+            else if (fin == 'M')
+                ev.type = InputEvent::Type::MousePress;
+            else
+                ev.type = InputEvent::Type::MouseRelease;
+            return ev;
         }
 
-        switch (c)
+        // ── Arrow keys: \033[A/B/C/D ────────────────────────────────────────────
+        ev.type = InputEvent::Type::Key;
+        switch (b2)
         {
-        case 'w':
-        case 'W':
-            return KEY_W;
-        case 'a':
         case 'A':
-            return KEY_A;
-        case 's':
-        case 'S':
-            return KEY_S;
-        case 'd':
-        case 'D':
-            return KEY_D;
-        case 'q':
-        case 'Q':
-            return KEY_Q;
-        case '1':
-            return KEY_1;
-        case '2':
-            return KEY_2;
-        case '3':
-            return KEY_3;
-        case '4':
-            return KEY_4;
-        case '+':
-            return KEY_PLUS;
-        case '-':
-            return KEY_MINUS;
-        case ' ':
-            return KEY_SPACE;
-        case 'b':
+            ev.key = KEY_UP;
+            return ev;
         case 'B':
-            return KEY_B;
+            ev.key = KEY_DOWN;
+            return ev;
+        case 'C':
+            ev.key = KEY_RIGHT;
+            return ev;
+        case 'D':
+            ev.key = KEY_LEFT;
+            return ev;
+        default:
+            ev.key = KEY_ESCAPE;
+            return ev;
         }
-        return KEY_NONE;
-#endif
+    }
+
+    // poll_key: convenience wrapper for callers that only care about keyboard input.
+    inline Key poll_key()
+    {
+        InputEvent ev = poll_event();
+        return (ev.type == InputEvent::Type::Key) ? ev.key : KEY_NONE;
     }
 
 } // namespace platform

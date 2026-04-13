@@ -62,6 +62,8 @@ int main(int argc, char *argv[])
     std::signal(SIGTERM, signal_handler); // kill
 
     platform::enable_raw_mode();
+    platform::clear_screen();
+    platform::enable_mouse();
 
     int cols, rows;
     platform::get_terminal_size(cols, rows);
@@ -83,8 +85,9 @@ int main(int argc, char *argv[])
 
     float fps_smooth = 60.0f; // exponential moving average
     bool spinning = false;
-    int bg_mode = 0;               // 0=black, 1=gray, 2=white
-    const float spin_speed = 0.8f; // radians/sec
+    int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
+    int bg_mode = 0;                        // 0=black, 1=gray, 2=white
+    const float spin_speed = 0.8f;          // radians/sec
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
@@ -106,28 +109,59 @@ int main(int argc, char *argv[])
         if (g_interrupted)
             goto quit;
 
-        // Drain all queued keys so held keys feel responsive.
+        // Drain all queued input events so held keys and mouse feel responsive.
         while (true)
         {
-            platform::Key k = platform::poll_key();
-            if (k == platform::KEY_NONE)
+            platform::InputEvent ev = platform::poll_event();
+            if (ev.type == platform::InputEvent::Type::None)
                 break;
-            if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
-                goto quit;
-            if (k == platform::KEY_SPACE)
-                spinning = !spinning;
-            else if (k == platform::KEY_1)
-                renderer.mode = ShadingMode::Wireframe;
-            else if (k == platform::KEY_2)
-                renderer.mode = ShadingMode::Flat;
-            else if (k == platform::KEY_3)
-                renderer.mode = ShadingMode::Gouraud;
-            else if (k == platform::KEY_4)
-                renderer.mode = ShadingMode::Phong;
-            else if (k == platform::KEY_B)
-                bg_mode = (bg_mode + 1) % 3;
-            else
-                camera.process_key(k, dt);
+
+            if (ev.type == platform::InputEvent::Type::Key)
+            {
+                platform::Key k = ev.key;
+                if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
+                    goto quit;
+                if (k == platform::KEY_SPACE)
+                    spinning = !spinning;
+                else if (k == platform::KEY_1)
+                    renderer.mode = ShadingMode::Wireframe;
+                else if (k == platform::KEY_2)
+                    renderer.mode = ShadingMode::Flat;
+                else if (k == platform::KEY_3)
+                    renderer.mode = ShadingMode::Gouraud;
+                else if (k == platform::KEY_4)
+                    renderer.mode = ShadingMode::Phong;
+                else if (k == platform::KEY_B)
+                    bg_mode = (bg_mode + 1) % 3;
+                else
+                    camera.process_key(k, dt);
+            }
+            else if (ev.type == platform::InputEvent::Type::ScrollUp)
+            {
+                camera.distance *= 0.92f;
+                camera.distance = std::max(camera.distance, camera.near_plane * 2.0f);
+            }
+            else if (ev.type == platform::InputEvent::Type::ScrollDown)
+            {
+                camera.distance *= 1.08f;
+                camera.distance = std::min(camera.distance, camera.far_plane * 0.5f);
+            }
+            else if (ev.type == platform::InputEvent::Type::MousePress)
+            {
+                // Record position so the first drag delta starts from here.
+                mouse_last_x = ev.x;
+                mouse_last_y = ev.y;
+            }
+            else if (ev.type == platform::InputEvent::Type::MouseMove)
+            {
+                int dx = ev.x - mouse_last_x;
+                int dy = ev.y - mouse_last_y;
+                camera.yaw -= (float)dx * 0.02f;
+                camera.pitch += (float)dy * 0.04f;
+                camera.pitch = clamp(camera.pitch, -1.553f, 1.553f);
+                mouse_last_x = ev.x;
+                mouse_last_y = ev.y;
+            }
         }
 
         // ── Auto-rotation ────────────────────────────────────────────────
@@ -193,6 +227,7 @@ int main(int argc, char *argv[])
     }
 
 quit:
+    platform::disable_mouse();
     platform::disable_raw_mode();
     return 0;
 }
