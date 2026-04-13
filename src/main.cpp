@@ -88,7 +88,7 @@ int main(int argc, char *argv[])
 
     Renderer renderer;
 
-    float fps_smooth = 60.0f; // exponential moving average
+    float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
     bool spinning = false;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = 0;                        // 0=black, 1=gray, 2=white
@@ -102,14 +102,19 @@ int main(int argc, char *argv[])
     {
         // ── Frame timing ──────────────────────────────────────────────────
         auto now = clock::now();
-        float dt = std::chrono::duration<float>(now - prev).count();
+        float raw_dt = std::chrono::duration<float>(now - prev).count();
         prev = now;
-        // Cap dt so a stall doesn't cause a huge jump.
-        if (dt > 0.1f)
-            dt = 0.1f;
+        // Cap dt used for movement/spin so a stall doesn't cause a huge jump.
+        float dt = (raw_dt > 0.1f) ? 0.1f : raw_dt;
 
-        if (dt > 0.0f)
-            fps_smooth = fps_smooth * 0.9f + (1.0f / dt) * 0.1f;
+        // Use raw_dt for fps so the 0.1s cap doesn't corrupt slow-model readings.
+        // Skip the near-zero first frame (prev was just set); seed directly on
+        // the second frame so the display is accurate from the start.
+        if (raw_dt > 0.001f)
+        {
+            float fps = 1.0f / raw_dt;
+            fps_smooth = (fps_smooth < 0.0f) ? fps : fps_smooth * 0.9f + fps * 0.1f;
+        }
 
         // ── Input ─────────────────────────────────────────────────────────
         if (g_interrupted)
@@ -211,7 +216,7 @@ int main(int argc, char *argv[])
                                                                                         : "flat";
             char hud[160];
             std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
-                          mode_str, (int)fps_smooth, model_name.c_str(),
+                          mode_str, (fps_smooth < 0.0f) ? 0 : (int)fps_smooth, model_name.c_str(),
                           spinning ? "spin ON" : "spin OFF",
                           lighting_str,
                           bg_mode == 0 ? "black" : bg_mode == 1 ? "gray"
