@@ -147,7 +147,13 @@ int main(int argc, char *argv[])
                 else if (k == platform::KEY_L)
                     lighting_mode = (lighting_mode + 1) % 3;
                 else if (k == platform::KEY_R)
+                {
                     camera = initial_camera;
+                    renderer.mode = ShadingMode::Gouraud;
+                    lighting_mode = 0;
+                    bg_mode = 0;
+                    spinning = false;
+                }
                 else
                     camera.process_key(k, dt);
             }
