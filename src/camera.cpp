@@ -27,7 +27,7 @@ mat4 Camera::view() const
 
 mat4 Camera::projection(int pixel_width, int pixel_height) const
 {
-    float aspect = (float)pixel_width / (float)pixel_height;
+    float aspect = (pixel_width > 0 && pixel_height > 0) ? (float)pixel_width / (float)pixel_height : 1.0f;
     return perspective(fov, aspect, near_plane, far_plane);
 }
 
