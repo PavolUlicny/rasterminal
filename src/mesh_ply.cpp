@@ -121,6 +121,53 @@ bool Mesh::load_ply(const std::string &path)
         std::vector<Prop> props;
     };
 
+    // Helpers shared by ASCII and binary paths.
+    auto apply_prop = [](Vertex &v, Prop::Sem sem, float val)
+    {
+        switch (sem)
+        {
+        case Prop::X:
+            v.pos.x = val;
+            break;
+        case Prop::Y:
+            v.pos.y = val;
+            break;
+        case Prop::Z:
+            v.pos.z = val;
+            break;
+        case Prop::NX:
+            v.normal.x = val;
+            break;
+        case Prop::NY:
+            v.normal.y = val;
+            break;
+        case Prop::NZ:
+            v.normal.z = val;
+            break;
+        case Prop::S:
+            v.uv.x = val;
+            break;
+        case Prop::T:
+            v.uv.y = val;
+            break;
+        default:
+            break;
+        }
+    };
+
+    auto push_face = [&](uint32_t *fv, int actual)
+    {
+        for (int j = 1; j + 1 < actual; j++)
+        {
+            Triangle t;
+            t.v[0] = fv[0];
+            t.v[1] = fv[j];
+            t.v[2] = fv[j + 1];
+            t.material_idx = 0;
+            triangles.push_back(t);
+        }
+    };
+
     // ── Parse header ──────────────────────────────────────────────────────────
 
     char line[1024];
@@ -270,35 +317,7 @@ bool Mesh::load_ply(const std::string &path)
                         }
                         float val = 0.0f;
                         sf(val);
-                        switch (prop.sem)
-                        {
-                        case Prop::X:
-                            v.pos.x = val;
-                            break;
-                        case Prop::Y:
-                            v.pos.y = val;
-                            break;
-                        case Prop::Z:
-                            v.pos.z = val;
-                            break;
-                        case Prop::NX:
-                            v.normal.x = val;
-                            break;
-                        case Prop::NY:
-                            v.normal.y = val;
-                            break;
-                        case Prop::NZ:
-                            v.normal.z = val;
-                            break;
-                        case Prop::S:
-                            v.uv.x = val;
-                            break;
-                        case Prop::T:
-                            v.uv.y = val;
-                            break;
-                        default:
-                            break;
-                        }
+                        apply_prop(v, prop.sem, val);
                     }
                     vertices.push_back(v);
                 }
@@ -324,15 +343,7 @@ bool Mesh::load_ply(const std::string &path)
                             if (j < actual)
                                 fv[j] = idx;
                         }
-                        for (int j = 1; j + 1 < actual; j++)
-                        {
-                            Triangle t;
-                            t.v[0] = fv[0];
-                            t.v[1] = fv[j];
-                            t.v[2] = fv[j + 1];
-                            t.material_idx = 0;
-                            triangles.push_back(t);
-                        }
+                        push_face(fv, actual);
                         break; // only the first list property is face indices
                     }
                 }
@@ -496,35 +507,7 @@ bool Mesh::load_ply(const std::string &path)
                             continue;
                         }
                         float val = read_scalar(prop.type);
-                        switch (prop.sem)
-                        {
-                        case Prop::X:
-                            v.pos.x = val;
-                            break;
-                        case Prop::Y:
-                            v.pos.y = val;
-                            break;
-                        case Prop::Z:
-                            v.pos.z = val;
-                            break;
-                        case Prop::NX:
-                            v.normal.x = val;
-                            break;
-                        case Prop::NY:
-                            v.normal.y = val;
-                            break;
-                        case Prop::NZ:
-                            v.normal.z = val;
-                            break;
-                        case Prop::S:
-                            v.uv.x = val;
-                            break;
-                        case Prop::T:
-                            v.uv.y = val;
-                            break;
-                        default:
-                            break;
-                        }
+                        apply_prop(v, prop.sem, val);
                     }
                     vertices.push_back(v);
                 }
@@ -547,15 +530,7 @@ bool Mesh::load_ply(const std::string &path)
                             if (j < actual)
                                 fv[j] = (uint32_t)idx;
                         }
-                        for (int j = 1; j + 1 < actual; j++)
-                        {
-                            Triangle t;
-                            t.v[0] = fv[0];
-                            t.v[1] = fv[j];
-                            t.v[2] = fv[j + 1];
-                            t.material_idx = 0;
-                            triangles.push_back(t);
-                        }
+                        push_face(fv, actual);
                         break; // only the first list property is face indices
                     }
                 }
