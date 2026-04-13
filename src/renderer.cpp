@@ -65,43 +65,26 @@ static mat4 ortho(float l, float r, float b, float t, float n, float f)
 // Off-screen depth buffer rendered from the key light's point of view.
 // Used in all shading modes to determine which pixels receive direct light.
 
-struct ShadowMap
+// ─── ShadowMap ────────────────────────────────────────────────────────────────
+
+bool ShadowMap::in_shadow(vec3 world_pos) const
 {
-    static constexpr int SIZE = 256;
-    float depth[SIZE * SIZE]; // NDC z (slope-biased on write), initialised to 1.0
-    mat4 light_vp;
+    vec4 lc = light_vp * vec4(world_pos, 1.0f);
+    if (lc.w <= 0.0f)
+        return false;
+    vec3 ndc = lc.perspective_divide();
+    // Outside the light frustum → treat as lit (no shadow cast here).
+    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f)
+        return false;
+    float u = (ndc.x + 1.0f) * 0.5f;
+    float v = (ndc.y + 1.0f) * 0.5f;
+    int px = clamp((int)(u * SIZE), 0, SIZE - 1);
+    int py = clamp((int)(v * SIZE), 0, SIZE - 1);
+    constexpr float fp_eps = 0.001f;
+    return ndc.z > depth[py * SIZE + px] + fp_eps;
+}
 
-    void clear()
-    {
-        for (auto &d : depth)
-            d = 1.0f;
-    }
-
-    // Returns true if world_pos is occluded from the key light.
-    // Slope-scale bias is baked into the stored depths at build time, so only a
-    // tiny constant is needed here to guard against floating-point round-trip error.
-    bool in_shadow(vec3 world_pos) const
-    {
-        vec4 lc = light_vp * vec4(world_pos, 1.0f);
-        if (lc.w <= 0.0f)
-            return false;
-        vec3 ndc = lc.perspective_divide();
-        // Outside the light frustum → treat as lit (no shadow cast here).
-        if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f)
-            return false;
-        float u = (ndc.x + 1.0f) * 0.5f;
-        float v = (ndc.y + 1.0f) * 0.5f;
-        int px = clamp((int)(u * SIZE), 0, SIZE - 1);
-        int py = clamp((int)(v * SIZE), 0, SIZE - 1);
-        constexpr float fp_eps = 0.001f;
-        return ndc.z > depth[py * SIZE + px] + fp_eps;
-    }
-};
-
-// Build a shadow map for the given directional light by depth-rasterizing the
-// mesh with an orthographic projection fitted to the mesh bounding sphere.
-// Only the key light (lights[0]) casts shadows; this function receives that light.
-static ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
+ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
 {
     ShadowMap smap;
     smap.clear();
@@ -543,7 +526,7 @@ static int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3],
 
 void Renderer::render(const Mesh &mesh, const Camera &camera,
                       const Light *lights, int n_lights, const vec3 &ambient,
-                      Framebuffer &fb) const
+                      Framebuffer &fb, const ShadowMap *smap) const
 {
     const mat4 view = camera.view();
     const mat4 proj = camera.projection(fb.width(), fb.height());
@@ -552,14 +535,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     const int W = fb.width();
     const int H = fb.height();
 
-    // Build shadow map from key light (lights[0]) before the main render pass.
-    ShadowMap smap;
-    const ShadowMap *psmap = nullptr;
-    if (n_lights > 0)
-    {
-        smap = build_shadow_map(mesh, lights[0]);
-        psmap = &smap;
-    }
+    // Use the pre-built shadow map if provided and there are lights.
+    const ShadowMap *psmap = (n_lights > 0) ? smap : nullptr;
 
     for (const Triangle &tri : mesh.triangles)
     {

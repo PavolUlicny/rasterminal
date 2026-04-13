@@ -82,6 +82,10 @@ int main(int argc, char *argv[])
     lights[1].color = {0.15f, 0.25f, 0.5f};
     const vec3 ambient = {0.2f, 0.2f, 0.25f};
 
+    // Build shadow map once — the key light and mesh geometry are static,
+    // so the map never changes regardless of camera movement or spin.
+    const ShadowMap shadow_map = build_shadow_map(mesh, lights[0]);
+
     Renderer renderer;
 
     float fps_smooth = 60.0f; // exponential moving average
@@ -226,7 +230,7 @@ int main(int argc, char *argv[])
         int n_lights = lighting_mode == 0 ? 2 : lighting_mode == 1 ? 1
                                                                    : 0;
         const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
-        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
+        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb, &shadow_map);
         fb.present();
 
         // ── Frame cap (≈60 fps) ───────────────────────────────────────────
