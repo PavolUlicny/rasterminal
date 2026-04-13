@@ -137,6 +137,7 @@ namespace platform
         KEY_MINUS, // zoom
         KEY_SPACE, // toggle auto-rotation
         KEY_B,     // toggle background colour
+        KEY_L,     // cycle lighting preset
     };
 
     struct InputEvent
@@ -199,6 +200,9 @@ namespace platform
             case 'b':
             case 'B':
                 return KEY_B;
+            case 'l':
+            case 'L':
+                return KEY_L;
             default:
                 return KEY_NONE;
             }

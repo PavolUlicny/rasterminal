@@ -87,6 +87,7 @@ int main(int argc, char *argv[])
     bool spinning = false;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = 0;                        // 0=black, 1=gray, 2=white
+    int lighting_mode = 0;                  // 0=dual, 1=single, 2=flat ambient
     const float spin_speed = 0.8f;          // radians/sec
 
     using clock = std::chrono::steady_clock;
@@ -133,6 +134,8 @@ int main(int argc, char *argv[])
                     renderer.mode = ShadingMode::Phong;
                 else if (k == platform::KEY_B)
                     bg_mode = (bg_mode + 1) % 3;
+                else if (k == platform::KEY_L)
+                    lighting_mode = (lighting_mode + 1) % 3;
                 else
                     camera.process_key(k, dt);
             }
@@ -197,10 +200,13 @@ int main(int argc, char *argv[])
                 mode_str = "Phong";
                 break;
             }
-            char hud[128];
-            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  bg: %s  ",
+            const char *lighting_str = lighting_mode == 0 ? "dual" : lighting_mode == 1 ? "single"
+                                                                                        : "flat";
+            char hud[160];
+            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
                           mode_str, (int)fps_smooth, model_name.c_str(),
                           spinning ? "spin ON" : "spin OFF",
+                          lighting_str,
                           bg_mode == 0 ? "black" : bg_mode == 1 ? "gray"
                                                                 : "white");
             fb.set_hud(hud);
@@ -211,7 +217,13 @@ int main(int argc, char *argv[])
                                : bg_mode == 1 ? Color{128, 128, 128}
                                               : Color{240, 240, 240};
         fb.clear(bg_color);
-        renderer.render(mesh, camera, lights, 2, ambient, fb);
+        // Select light set based on lighting mode.
+        // Flat ambient: no directional lights, bright ambient so the full model is visible.
+        const vec3 flat_ambient = {0.85f, 0.85f, 0.85f};
+        int n_lights = lighting_mode == 0 ? 2 : lighting_mode == 1 ? 1
+                                                                   : 0;
+        const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
+        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
         fb.present();
 
         // ── Frame cap (≈60 fps) ───────────────────────────────────────────
