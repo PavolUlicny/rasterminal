@@ -158,7 +158,6 @@ int main(int argc, char *argv[])
                 int dy = ev.y - mouse_last_y;
                 camera.yaw -= (float)dx * 0.02f;
                 camera.pitch += (float)dy * 0.04f;
-                camera.pitch = clamp(camera.pitch, -1.553f, 1.553f);
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
             }

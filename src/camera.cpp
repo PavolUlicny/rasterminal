@@ -18,7 +18,11 @@ vec3 Camera::eye() const
 
 mat4 Camera::view() const
 {
-    return look_at(eye(), target, {0.0f, 1.0f, 0.0f});
+    // Flip the up vector when the camera passes over the top or bottom pole
+    // so full vertical rotation works without gimbal lock.
+    vec3 up = (std::cos(pitch) >= 0.0f) ? vec3{0.0f, 1.0f, 0.0f}
+                                        : vec3{0.0f, -1.0f, 0.0f};
+    return look_at(eye(), target, up);
 }
 
 mat4 Camera::projection(int pixel_width, int pixel_height) const
@@ -60,8 +64,5 @@ void Camera::process_key(platform::Key key, float dt)
         break;
     }
 
-    // Clamp pitch to ~±89° to prevent gimbal lock when the eye is directly
-    // above or below the target (where up={0,1,0} becomes parallel to forward).
-    pitch = clamp(pitch, -1.553f, 1.553f);
     distance = clamp(distance, 0.1f, 500.0f);
 }
