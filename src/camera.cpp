@@ -64,5 +64,5 @@ void Camera::process_key(platform::Key key, float dt)
         break;
     }
 
-    distance = clamp(distance, 0.1f, 500.0f);
+    distance = clamp(distance, near_plane * 2.0f, far_plane * 0.5f);
 }
