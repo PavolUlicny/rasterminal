@@ -30,6 +30,7 @@ int main(int argc, char *argv[])
     int init_lighting = 0; // 0=dual, 1=single, 2=flat
     bool init_spin = false;
     bool init_shadow = true;
+    bool init_ao = true;
 
     // Returns the next argv value for a flag that requires one, or nullptr on error.
     auto require_val = [&](int &i, const char *flag) -> const char *
@@ -196,6 +197,15 @@ int main(int argc, char *argv[])
             }
             init_spin = true;
         }
+        else if (arg == "--no-ao")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return 1;
+            }
+            init_ao = false;
+        }
         else if (arg == "--no-shadow")
         {
             if (eq_val != nullptr)
@@ -222,7 +232,7 @@ int main(int argc, char *argv[])
         obj_path = "models/obj/teapot.obj";
 
     Mesh mesh;
-    if (!mesh.load_model(obj_path))
+    if (!mesh.load_model(obj_path, init_ao))
     {
         std::fprintf(stderr, "Error: failed to load '%s'\n"
                              "       Supported formats: .obj, .ply, .stl\n",

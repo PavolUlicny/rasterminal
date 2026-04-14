@@ -31,7 +31,7 @@ struct Mesh
 
     // Dispatch loader: picks load_obj or load_ply based on file extension.
     // Returns false on failure or unknown extension.
-    bool load_model(const std::string &path);
+    bool load_model(const std::string &path, bool ao = true);
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
     // Returns false on failure.
@@ -49,15 +49,15 @@ struct Mesh
 
 private:
     // Average adjacent face normals to produce smooth per-vertex normals.
-    // Called automatically by load_obj when the file has no vn data.
+    // Called by each loader when the file provides no normal data.
     void compute_normals();
 
     // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
-    // Called automatically by load_obj after normals are finalised.
+    // Called by load_model() after the format-specific loader returns.
     void compute_tangents();
 
     // Bake a per-vertex ambient occlusion factor from mesh curvature.
     // Concave areas (cavities, creases) receive lower AO; convex areas stay at 1.
-    // Called automatically by all loaders after normals and tangents are computed.
+    // Called by load_model() after compute_tangents(), unless ao=false was passed.
     void compute_ao();
 };

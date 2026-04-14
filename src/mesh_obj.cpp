@@ -344,8 +344,5 @@ bool Mesh::load_obj(const std::string &path)
     if (!has_normals)
         compute_normals();
 
-    compute_tangents();
-    compute_ao();
-
     return !triangles.empty();
 }

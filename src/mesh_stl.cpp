@@ -153,8 +153,6 @@ bool Mesh::load_stl(const std::string &path)
 
     // STL has no vertex sharing so normals must always be computed.
     compute_normals();
-    compute_tangents();
-    compute_ao();
 
     return true;
 }

@@ -6,7 +6,7 @@
 
 // ─── Mesh::load_model ─────────────────────────────────────────────────────────
 
-bool Mesh::load_model(const std::string &path)
+bool Mesh::load_model(const std::string &path, bool ao)
 {
     size_t dot = path.find_last_of('.');
     if (dot == std::string::npos)
@@ -17,14 +17,22 @@ bool Mesh::load_model(const std::string &path)
         if (c >= 'A' && c <= 'Z')
             c += 32;
 
+    bool ok = false;
     if (ext == "obj")
-        return load_obj(path);
-    if (ext == "ply")
-        return load_ply(path);
-    if (ext == "stl")
-        return load_stl(path);
+        ok = load_obj(path);
+    else if (ext == "ply")
+        ok = load_ply(path);
+    else if (ext == "stl")
+        ok = load_stl(path);
 
-    return false;
+    if (!ok)
+        return false;
+
+    compute_tangents();
+    if (ao)
+        compute_ao();
+
+    return true;
 }
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────
