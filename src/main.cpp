@@ -6,9 +6,13 @@
 #include "renderer.h"
 
 #include <algorithm>
+#include <cctype>
+#include <cerrno>
 #include <chrono>
+#include <climits>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -18,14 +22,27 @@ static void signal_handler(int) { g_interrupted = 1; }
 
 int main(int argc, char *argv[])
 {
-    const char *obj_path = "models/obj/teapot.obj";
+    const char *obj_path = nullptr;
     int n_threads = -1; // -1 = auto (min(hw_concurrency, 4))
+    ShadingMode init_shading = ShadingMode::Gouraud;
+
+    // Returns the next argv value for a flag that requires one, or nullptr on error.
+    auto require_val = [&](int &i, const char *flag) -> const char *
+    {
+        if (i + 1 >= argc)
+        {
+            std::fprintf(stderr, "Error: %s requires a value\n", flag);
+            return nullptr;
+        }
+        return argv[++i];
+    };
 
     auto parse_threads = [](const char *flag, const char *val, int &out) -> bool
     {
         char *end = nullptr;
+        errno = 0;
         long v = std::strtol(val, &end, 10);
-        if (end == val || *end != '\0' || v < 0)
+        if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
         {
             std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
             return false;
@@ -34,32 +51,97 @@ int main(int argc, char *argv[])
         return true;
     };
 
+    auto parse_shading = [](const char *flag, const char *val, ShadingMode &out) -> bool
+    {
+        std::string v = val;
+        std::transform(v.begin(), v.end(), v.begin(),
+                       [](unsigned char c)
+                       { return (char)std::tolower(c); });
+        if (v == "wireframe" || v == "1")
+            out = ShadingMode::Wireframe;
+        else if (v == "flat" || v == "2")
+            out = ShadingMode::Flat;
+        else if (v == "gouraud" || v == "3")
+            out = ShadingMode::Gouraud;
+        else if (v == "phong" || v == "4")
+            out = ShadingMode::Phong;
+        else
+        {
+            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected wireframe|flat|gouraud|phong or 1-4)\n", flag, val);
+            return false;
+        }
+        return true;
+    };
+
     for (int i = 1; i < argc; i++)
     {
-        if (!std::strcmp(argv[i], "-j") || !std::strcmp(argv[i], "--threads"))
+        // Split --flag=value into flag name + value pointer.
+        // For --flag value or -f value forms, eq_val stays nullptr.
+        const char *eq_val = nullptr;
+        std::string arg = argv[i];
+        if (arg.size() > 2 && arg[0] == '-' && arg[1] == '-')
         {
-            if (i + 1 >= argc)
+            size_t eq = arg.find('=');
+            if (eq != std::string::npos)
             {
-                std::fprintf(stderr, "Error: %s requires a numeric value\n", argv[i]);
-                return 1;
+                eq_val = argv[i] + eq + 1;
+                arg = arg.substr(0, eq);
             }
-            const char *flag = argv[i];
-            if (!parse_threads(flag, argv[++i], n_threads))
+        }
+        const char *flag = arg.c_str();
+
+        // Helper: get value either from --flag=val or the next argv token.
+        auto get_val = [&](int &i) -> const char *
+        {
+            if (eq_val != nullptr)
+                return eq_val;
+            return require_val(i, flag);
+        };
+
+        if (arg == "-j" || arg == "--threads")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_threads(flag, val, n_threads))
                 return 1;
         }
-        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0')
+        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0' && eq_val == nullptr)
         {
             if (!parse_threads("-j", argv[i] + 2, n_threads))
                 return 1;
         }
+        else if (arg == "-s" || arg == "--shading")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_shading(flag, val, init_shading))
+                return 1;
+        }
+        else if (std::strncmp(argv[i], "-s", 2) == 0 && argv[i][2] != '\0' && eq_val == nullptr)
+        {
+            if (!parse_shading("-s", argv[i] + 2, init_shading))
+                return 1;
+        }
+        else if (argv[i][0] == '-')
+        {
+            std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
+            return 1;
+        }
+        else if (obj_path != nullptr)
+        {
+            std::fprintf(stderr, "Error: unexpected argument '%s' (model path already set to '%s')\n", argv[i], obj_path);
+            return 1;
+        }
         else
             obj_path = argv[i];
     }
+    if (obj_path == nullptr)
+        obj_path = "models/obj/teapot.obj";
 
     Mesh mesh;
     if (!mesh.load_model(obj_path))
     {
-        std::fprintf(stderr, "Failed to load '%s'\n", obj_path);
+        std::fprintf(stderr, "Error: failed to load '%s'\n"
+                             "       Supported formats: .obj, .ply, .stl\n",
+                     obj_path);
         return 1;
     }
 
@@ -123,6 +205,7 @@ int main(int argc, char *argv[])
     const ShadowMap shadow_map = build_shadow_map(mesh, lights[0]);
 
     Renderer renderer(n_threads);
+    renderer.mode = init_shading;
 
     float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
     bool spinning = false;
