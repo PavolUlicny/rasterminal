@@ -82,13 +82,6 @@ namespace platform
 #endif
     }
 
-    // Erase the screen and move cursor to top-left. Call once at startup.
-    inline void clear_screen()
-    {
-        std::fputs("\033[2J\033[H", stdout);
-        std::fflush(stdout);
-    }
-
     // ─── mouse support ───────────────────────────────────────────────────────────
     // Uses SGR extended mouse mode (\033[?1006h) — supported by all modern terminals
     // including Windows Terminal. Reports: scroll wheel, left-button drag.

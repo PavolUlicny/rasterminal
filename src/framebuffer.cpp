@@ -36,15 +36,16 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height)
     // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
     m_buf.reserve(pixel_width * (pixel_height / 2) * 50);
 
-    std::fputs("\033[?25l", stdout); // hide cursor
+    std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
+    std::fputs("\033[?25l", stdout);   // hide cursor
     std::fflush(stdout);
 }
 
 Framebuffer::~Framebuffer()
 {
-    // Clear the rendered frame, reset colours, restore cursor, then move to
-    // top-left so the shell prompt appears on a clean screen.
-    std::fputs("\033[2J\033[H\033[0m\033[?25h", stdout);
+    // Restore cursor, reset colours, then leave the alternate screen buffer —
+    // this restores the terminal to exactly the state it was in before launch.
+    std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
     std::fflush(stdout);
 }
 

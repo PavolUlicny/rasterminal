@@ -320,7 +320,6 @@ int main(int argc, char *argv[])
     std::signal(SIGTERM, signal_handler); // kill
 
     platform::enable_raw_mode();
-    platform::clear_screen();
     platform::enable_mouse();
 
     int cols, rows;
