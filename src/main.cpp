@@ -27,6 +27,7 @@ int main(int argc, char *argv[])
     ShadingMode init_shading = ShadingMode::Gouraud;
     int init_bg = 0;       // 0=black, 1=gray, 2=white
     int init_lighting = 0; // 0=dual, 1=single, 2=flat
+    bool init_spin = false;
 
     // Returns the next argv value for a flag that requires one, or nullptr on error.
     auto require_val = [&](int &i, const char *flag) -> const char *
@@ -184,6 +185,15 @@ int main(int argc, char *argv[])
             if (!parse_lighting("-l", argv[i] + 2, init_lighting))
                 return 1;
         }
+        else if (arg == "-S" || arg == "--spin")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return 1;
+            }
+            init_spin = true;
+        }
         else if (argv[i][0] == '-')
         {
             std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
@@ -191,7 +201,7 @@ int main(int argc, char *argv[])
         }
         else if (obj_path != nullptr)
         {
-            std::fprintf(stderr, "Error: unexpected argument '%s' (model path already set to '%s')\n", argv[i], obj_path);
+            std::fprintf(stderr, "Error: unexpected argument '%s'\n", argv[i]);
             return 1;
         }
         else
@@ -272,7 +282,7 @@ int main(int argc, char *argv[])
     renderer.mode = init_shading;
 
     float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
-    bool spinning = false;
+    bool spinning = init_spin;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = init_bg;                  // 0=black, 1=gray, 2=white
     int lighting_mode = init_lighting;      // 0=dual, 1=single, 2=flat ambient
