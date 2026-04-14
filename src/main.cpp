@@ -25,7 +25,8 @@ int main(int argc, char *argv[])
     const char *obj_path = nullptr;
     int n_threads = -1; // -1 = auto (min(hw_concurrency, 4))
     ShadingMode init_shading = ShadingMode::Gouraud;
-    int init_bg = 0; // 0=black, 1=gray, 2=white
+    int init_bg = 0;       // 0=black, 1=gray, 2=white
+    int init_lighting = 0; // 0=dual, 1=single, 2=flat
 
     // Returns the next argv value for a flag that requires one, or nullptr on error.
     auto require_val = [&](int &i, const char *flag) -> const char *
@@ -94,6 +95,26 @@ int main(int argc, char *argv[])
         return true;
     };
 
+    auto parse_lighting = [](const char *flag, const char *val, int &out) -> bool
+    {
+        std::string v = val;
+        std::transform(v.begin(), v.end(), v.begin(),
+                       [](unsigned char c)
+                       { return (char)std::tolower(c); });
+        if (v == "dual" || v == "1")
+            out = 0;
+        else if (v == "single" || v == "2")
+            out = 1;
+        else if (v == "flat" || v == "3")
+            out = 2;
+        else
+        {
+            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected dual|single|flat or 1-3)\n", flag, val);
+            return false;
+        }
+        return true;
+    };
+
     for (int i = 1; i < argc; i++)
     {
         // Split --flag=value into flag name + value pointer.
@@ -150,6 +171,17 @@ int main(int argc, char *argv[])
         else if (std::strncmp(argv[i], "-b", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bg("-b", argv[i] + 2, init_bg))
+                return 1;
+        }
+        else if (arg == "-l" || arg == "--lighting")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_lighting(flag, val, init_lighting))
+                return 1;
+        }
+        else if (std::strncmp(argv[i], "-l", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        {
+            if (!parse_lighting("-l", argv[i] + 2, init_lighting))
                 return 1;
         }
         else if (argv[i][0] == '-')
@@ -243,7 +275,7 @@ int main(int argc, char *argv[])
     bool spinning = false;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = init_bg;                  // 0=black, 1=gray, 2=white
-    int lighting_mode = 0;                  // 0=dual, 1=single, 2=flat ambient
+    int lighting_mode = init_lighting;      // 0=dual, 1=single, 2=flat ambient
     const float spin_speed = 0.8f;          // radians/sec
 
     using clock = std::chrono::steady_clock;
