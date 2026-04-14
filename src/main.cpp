@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -28,6 +29,7 @@ int main(int argc, char *argv[])
     int init_bg = 0;       // 0=black, 1=gray, 2=white
     int init_lighting = 0; // 0=dual, 1=single, 2=flat
     bool init_spin = false;
+    bool init_shadow = true;
 
     // Returns the next argv value for a flag that requires one, or nullptr on error.
     auto require_val = [&](int &i, const char *flag) -> const char *
@@ -194,6 +196,15 @@ int main(int argc, char *argv[])
             }
             init_spin = true;
         }
+        else if (arg == "--no-shadow")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return 1;
+            }
+            init_shadow = false;
+        }
         else if (argv[i][0] == '-')
         {
             std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
@@ -276,7 +287,9 @@ int main(int argc, char *argv[])
 
     // Build shadow map once — the key light and mesh geometry are static,
     // so the map never changes regardless of camera movement or spin.
-    const ShadowMap shadow_map = build_shadow_map(mesh, lights[0]);
+    std::optional<ShadowMap> shadow_map;
+    if (init_shadow)
+        shadow_map = build_shadow_map(mesh, lights[0]);
 
     Renderer renderer(n_threads);
     renderer.mode = init_shading;
@@ -434,7 +447,8 @@ int main(int argc, char *argv[])
         int n_lights = lighting_mode == 0 ? 2 : lighting_mode == 1 ? 1
                                                                    : 0;
         const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
-        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb, &shadow_map);
+        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
+                        shadow_map ? &*shadow_map : nullptr);
         fb.present();
 
         // ── Frame cap (≈60 fps) ───────────────────────────────────────────
