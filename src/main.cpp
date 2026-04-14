@@ -18,7 +18,43 @@ static void signal_handler(int) { g_interrupted = 1; }
 
 int main(int argc, char *argv[])
 {
-    const char *obj_path = (argc > 1) ? argv[1] : "models/obj/teapot.obj";
+    const char *obj_path = "models/obj/teapot.obj";
+    int n_threads = -1; // -1 = auto (min(hw_concurrency, 4))
+
+    auto parse_threads = [](const char *flag, const char *val, int &out) -> bool
+    {
+        char *end = nullptr;
+        long v = std::strtol(val, &end, 10);
+        if (end == val || *end != '\0' || v < 0)
+        {
+            std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
+            return false;
+        }
+        out = (int)v;
+        return true;
+    };
+
+    for (int i = 1; i < argc; i++)
+    {
+        if (!std::strcmp(argv[i], "-j") || !std::strcmp(argv[i], "--threads"))
+        {
+            if (i + 1 >= argc)
+            {
+                std::fprintf(stderr, "Error: %s requires a numeric value\n", argv[i]);
+                return 1;
+            }
+            const char *flag = argv[i];
+            if (!parse_threads(flag, argv[++i], n_threads))
+                return 1;
+        }
+        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0')
+        {
+            if (!parse_threads("-j", argv[i] + 2, n_threads))
+                return 1;
+        }
+        else
+            obj_path = argv[i];
+    }
 
     Mesh mesh;
     if (!mesh.load_model(obj_path))
@@ -86,7 +122,7 @@ int main(int argc, char *argv[])
     // so the map never changes regardless of camera movement or spin.
     const ShadowMap shadow_map = build_shadow_map(mesh, lights[0]);
 
-    Renderer renderer;
+    Renderer renderer(n_threads);
 
     float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
     bool spinning = false;

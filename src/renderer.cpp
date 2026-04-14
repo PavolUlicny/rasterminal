@@ -18,9 +18,15 @@ static vec3 ndc_to_screen(vec3 ndc, int W, int H)
 
 // ─── Renderer: constructor / destructor ───────────────────────────────────────
 
-Renderer::Renderer()
+Renderer::Renderer(int n_threads)
 {
-    m_n_workers = std::max(1, (int)std::thread::hardware_concurrency());
+    int hw = std::max(1, (int)std::thread::hardware_concurrency());
+    // -1 = auto (default): min(hw, 4)
+    //  0 = all hardware threads
+    //  N = exactly N, clamped to [1, hw]
+    int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw
+                                                                   : n_threads;
+    m_n_workers = std::clamp(req, 1, hw);
     m_threads.reserve((size_t)m_n_workers);
     m_band_tris.resize((size_t)m_n_workers);
     m_band_mutexes = std::make_unique<std::mutex[]>((size_t)m_n_workers);

@@ -27,9 +27,10 @@ struct Renderer
 {
     ShadingMode mode = ShadingMode::Gouraud;
 
-    // Spawns hardware_concurrency() worker threads that persist for the
-    // lifetime of the Renderer. Threads sleep between frames.
-    Renderer();
+    // Spawns worker threads that persist for the lifetime of the Renderer.
+    // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads, N = exactly N.
+    // Clamped to [1, hardware_concurrency].
+    explicit Renderer(int n_threads = -1);
     ~Renderer();
 
     Renderer(const Renderer &) = delete;
