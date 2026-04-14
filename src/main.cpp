@@ -196,10 +196,10 @@ int main(int argc, char *argv[])
                 return 1;
             }
             std::printf(
-                "Usage: rasterminal [options] [model]\n"
+                "Usage: rasterminal [options] <model>\n"
                 "\n"
                 "Render a 3D model in the terminal using unicode half-block characters\n"
-                "and 24-bit ANSI color. Defaults to models/obj/teapot.obj.\n"
+                "and 24-bit ANSI color.\n"
                 "\n"
                 "Supported formats:\n"
                 "  .obj   Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
@@ -268,7 +268,12 @@ int main(int argc, char *argv[])
             obj_path = argv[i];
     }
     if (obj_path == nullptr)
-        obj_path = "models/obj/teapot.obj";
+    {
+        std::fprintf(stderr, "Error: no model specified\n"
+                             "       Usage: rasterminal [options] <model>\n"
+                             "       Run 'rasterminal --help' for more information.\n");
+        return 1;
+    }
 
     Mesh mesh;
     if (!mesh.load_model(obj_path, init_ao))
