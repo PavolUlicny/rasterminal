@@ -188,6 +188,45 @@ int main(int argc, char *argv[])
             if (!parse_lighting("-l", argv[i] + 2, init_lighting))
                 return 1;
         }
+        else if (arg == "-h" || arg == "--help")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return 1;
+            }
+            std::printf(
+                "Usage: rasterminal [options] [model]\n"
+                "\n"
+                "Render a 3D model in the terminal using unicode half-block characters\n"
+                "and 24-bit ANSI color. Defaults to models/obj/teapot.obj.\n"
+                "\n"
+                "Supported formats:\n"
+                "  .obj   Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
+                "  .ply   ASCII or binary (little/big-endian)\n"
+                "  .stl   ASCII or binary\n"
+                "\n"
+                "Options:\n"
+                "  -s, --shading <mode>    Initial shading mode (default: gouraud)\n"
+                "                           wireframe|flat|gouraud|phong  or  1-4\n"
+                "  -b, --bg <color>        Initial background color (default: black)\n"
+                "                           black|gray|white  or  1-3\n"
+                "  -l, --lighting <mode>   Initial lighting mode (default: dual)\n"
+                "                           dual|single|flat  or  1-3\n"
+                "  -S, --spin              Start with auto-rotation enabled\n"
+                "  -j, --threads <n>       Worker thread count (0=all, default=min(hw,4))\n"
+                "      --no-shadow         Disable shadow map\n"
+                "      --no-ao             Disable ambient occlusion\n"
+                "  -h, --help              Show this message\n"
+                "\n"
+                "Controls:\n"
+                "  1-4          Shading mode           B       Cycle background\n"
+                "  Space        Toggle spin            L       Cycle lighting\n"
+                "  WASD/arrows  Orbit camera           R       Reset view\n"
+                "  +/-          Zoom                   Q       Quit\n"
+                "  Mouse drag   Orbit                  Scroll  Zoom\n");
+            return 0;
+        }
         else if (arg == "-S" || arg == "--spin")
         {
             if (eq_val != nullptr)
