@@ -270,6 +270,17 @@ bool Mesh::load_ply(const std::string &path)
                 // else SKIP
             }
 
+            // Reject unknown types immediately — size 0 would desync the binary reader.
+            bool unknown_type = prop.is_list
+                                    ? (prop.list_count_t == PType::UNKNOWN || prop.list_elem_t == PType::UNKNOWN)
+                                    : (prop.type == PType::UNKNOWN);
+            if (unknown_type)
+            {
+                std::fclose(f);
+                rollback();
+                return false;
+            }
+
             elements[(size_t)cur].props.push_back(prop);
         }
         // Comments and other directives are ignored.
@@ -307,15 +318,13 @@ bool Mesh::load_ply(const std::string &path)
     if (fmt == Fmt::ASCII)
     {
         // ASCII: fscanf skips whitespace and newlines automatically.
-        // Store return values to satisfy warn_unused_result on GCC.
-        int _r;
+        // Set truncated on any read failure so the caller rejects partial data.
         auto sf = [&](float &v)
-        { _r = std::fscanf(f, " %f", &v); };
+        { if (std::fscanf(f, " %f", &v) != 1) truncated = true; };
         auto si = [&](int &v)
-        { _r = std::fscanf(f, " %d", &v); };
+        { if (std::fscanf(f, " %d", &v) != 1) truncated = true; };
         auto su = [&](unsigned int &v)
-        { _r = std::fscanf(f, " %u", &v); };
-        (void)_r;
+        { if (std::fscanf(f, " %u", &v) != 1) truncated = true; };
 
         for (auto &elem : elements)
         {
