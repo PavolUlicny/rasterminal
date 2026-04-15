@@ -191,22 +191,22 @@ void Renderer::worker_func(int t)
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-                            const int sc = (n_lights > 0) ? n_lights - 1 : 0;
+                            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
                             rt.col_a = rt.col_b = rt.col_c =
                                 compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat, face_ao);
                             rt.shad_a = rt.shad_b = rt.shad_c =
-                                compute_lighting(fc, fn, eye, sl, sc, ambient, mat, face_ao);
+                                compute_lighting(fc, fn, eye, sl, n_shadow, ambient, mat, face_ao);
                         }
                         else // Gouraud
                         {
                             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-                            const int sc = (n_lights > 0) ? n_lights - 1 : 0;
+                            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
                             rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
                             rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
                             rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
-                            rt.shad_a = compute_lighting(a.pos, a.normal, eye, sl, sc, ambient, mat, a.ao);
-                            rt.shad_b = compute_lighting(b.pos, b.normal, eye, sl, sc, ambient, mat, b.ao);
-                            rt.shad_c = compute_lighting(c.pos, c.normal, eye, sl, sc, ambient, mat, c.ao);
+                            rt.shad_a = compute_lighting(a.pos, a.normal, eye, sl, n_shadow, ambient, mat, a.ao);
+                            rt.shad_b = compute_lighting(b.pos, b.normal, eye, sl, n_shadow, ambient, mat, b.ao);
+                            rt.shad_c = compute_lighting(c.pos, c.normal, eye, sl, n_shadow, ambient, mat, c.ao);
                         }
 
                         // Bucket into every y-band this triangle overlaps.

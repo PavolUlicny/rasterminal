@@ -339,9 +339,9 @@ void rasterize_phong(Framebuffer &fb,
             // Shadow test: if the key light (index 0) is blocked, skip it.
             bool shadowed = smap && smap->in_shadow(pos);
             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-            const int sc = (n_lights > 0) ? n_lights - 1 : 0;
+            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color = shadowed
-                             ? compute_lighting(pos, nrm, eye, sl, sc, ambient, px_mat, ao)
+                             ? compute_lighting(pos, nrm, eye, sl, n_shadow, ambient, px_mat, ao)
                              : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat, ao);
             fb.set_pixel(x, y, vec3_to_color(color));
         }

@@ -22,7 +22,7 @@ struct Texture
     // Sample the texture at normalised (u, v) with bilinear interpolation.
     // UV coordinates repeat (wrap mode).
     // V is flipped so that OBJ convention (v = 0 at bottom) maps correctly
-    // to PNG storage order (row 0 at top).
+    // to image storage order (row 0 at top).
     // Returns RGB in [0, 1].
     vec3 sample_rgb(float u, float v) const;
 };
