@@ -282,7 +282,7 @@ bool Mesh::load_ply(const std::string &path)
     // ── Read data ─────────────────────────────────────────────────────────────
 
     vertices.reserve((size_t)vert_elem->count);
-    if (face_elem)
+    if (face_elem && face_elem->count > 0)
         triangles.reserve((size_t)face_elem->count);
 
     if (fmt == Fmt::ASCII)
