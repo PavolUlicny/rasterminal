@@ -551,11 +551,15 @@ bool Mesh::load_ply(const std::string &path)
                         if (prop.is_list)
                         {
                             int cnt = read_int(prop.list_count_t);
-                            p += (size_t)cnt * (size_t)ptype_size(prop.list_elem_t);
+                            size_t skip = (size_t)cnt * (size_t)ptype_size(prop.list_elem_t);
+                            if (p + skip > end) { truncated = true; break; }
+                            p += skip;
                         }
                         else
                         {
-                            p += (size_t)ptype_size(prop.type);
+                            size_t skip = (size_t)ptype_size(prop.type);
+                            if (p + skip > end) { truncated = true; break; }
+                            p += skip;
                         }
                     }
                 }
