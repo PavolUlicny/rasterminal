@@ -496,6 +496,74 @@ bool Mesh::load_ply(const std::string &path)
         auto read_int = [&](PType t) -> int
         { return (int)read_scalar(t); };
 
+        // Read an integer type directly as uint32 — avoids float conversion,
+        // which loses precision for indices >= 2^24.
+        auto read_uint_direct = [&](PType t) -> uint32_t
+        {
+            if (p + (size_t)ptype_size(t) > end)
+            {
+                truncated = true;
+                return 0;
+            }
+            switch (t)
+            {
+            case PType::I8:
+            {
+                int8_t v;
+                std::memcpy(&v, p, 1);
+                p += 1;
+                return (uint32_t)(int32_t)v;
+            }
+            case PType::U8:
+            {
+                uint8_t v = *p;
+                p += 1;
+                return v;
+            }
+            case PType::I16:
+            {
+                uint16_t b;
+                std::memcpy(&b, p, 2);
+                p += 2;
+                if (be)
+                    b = bs16(b);
+                int16_t v;
+                std::memcpy(&v, &b, 2);
+                return (uint32_t)(int32_t)v;
+            }
+            case PType::U16:
+            {
+                uint16_t b;
+                std::memcpy(&b, p, 2);
+                p += 2;
+                if (be)
+                    b = bs16(b);
+                return b;
+            }
+            case PType::I32:
+            {
+                uint32_t b;
+                std::memcpy(&b, p, 4);
+                p += 4;
+                if (be)
+                    b = bs32(b);
+                return b; // reinterpret signed as unsigned bits
+            }
+            case PType::U32:
+            {
+                uint32_t b;
+                std::memcpy(&b, p, 4);
+                p += 4;
+                if (be)
+                    b = bs32(b);
+                return b;
+            }
+            default:
+                // F32/F64 face indices are non-standard; fall back to float path.
+                return (uint32_t)(int32_t)read_scalar(t);
+            }
+        };
+
         for (auto &elem : elements)
         {
             for (int i = 0; i < elem.count; i++)
@@ -535,9 +603,9 @@ bool Mesh::load_ply(const std::string &path)
                         int actual = (cnt < 64) ? cnt : 64;
                         for (int j = 0; j < cnt; j++)
                         {
-                            int idx = read_int(prop.list_elem_t);
+                            uint32_t idx = read_uint_direct(prop.list_elem_t);
                             if (j < actual)
-                                fv[j] = (uint32_t)idx;
+                                fv[j] = idx;
                         }
                         push_face(fv, actual);
                         break; // only the first list property is face indices
