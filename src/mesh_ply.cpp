@@ -157,8 +157,11 @@ bool Mesh::load_ply(const std::string &path)
 
     auto push_face = [&](uint32_t *fv, int actual)
     {
+        uint32_t n_verts = (uint32_t)vertices.size();
         for (int j = 1; j + 1 < actual; j++)
         {
+            if (fv[0] >= n_verts || fv[j] >= n_verts || fv[j + 1] >= n_verts)
+                continue;
             Triangle t;
             t.v[0] = fv[0];
             t.v[1] = fv[j];
