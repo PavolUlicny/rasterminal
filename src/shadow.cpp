@@ -50,7 +50,8 @@ bool ShadowMap::in_shadow(vec3 world_pos) const
         return false;
     vec3 ndc = lc.perspective_divide();
     // Outside the light frustum → treat as lit (no shadow cast here).
-    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f)
+    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f ||
+        ndc.z < -1.0f || ndc.z > 1.0f)
         return false;
     float u = (ndc.x + 1.0f) * 0.5f;
     float v = (ndc.y + 1.0f) * 0.5f;
