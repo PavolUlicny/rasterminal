@@ -130,37 +130,48 @@ bool Mesh::load_stl(const std::string &path)
         vertices.reserve((size_t)tri_count * 3);
         triangles.reserve((size_t)tri_count);
 
+        // STL is always little-endian. Decode explicitly so the loader is
+        // correct on big-endian hosts instead of reading host-native bytes.
+        auto le_f32 = [](const uint8_t *b) -> float
+        {
+            uint32_t u = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
+                         ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+            float v;
+            std::memcpy(&v, &u, 4);
+            return v;
+        };
+
         bool truncated = false;
         for (uint32_t i = 0; i < tri_count; i++)
         {
-            // 3 floats: face normal (ignored — we recompute per-vertex normals)
-            float ignored[3];
-            if (std::fread(ignored, 4, 3, f) != 3)
+            // 12 bytes: face normal (ignored — we recompute per-vertex normals)
+            uint8_t ignored[12];
+            if (std::fread(ignored, 1, 12, f) != 12)
             {
                 truncated = true;
                 break;
             }
 
-            // 3 × 3 floats: vertices
-            float raw[9];
-            if (std::fread(raw, 4, 9, f) != 9)
+            // 36 bytes: 3 × 3 floats (vertices), little-endian
+            uint8_t raw[36];
+            if (std::fread(raw, 1, 36, f) != 36)
             {
                 truncated = true;
                 break;
             }
 
             // 2-byte attribute (ignored)
-            uint16_t attr;
-            if (std::fread(&attr, 2, 1, f) != 1)
+            uint8_t attr[2];
+            if (std::fread(attr, 1, 2, f) != 2)
             {
                 truncated = true;
                 break;
             }
 
             uint32_t base = (uint32_t)vertices.size();
-            vertices.push_back({{raw[0], raw[1], raw[2]}, {}, {}, {}});
-            vertices.push_back({{raw[3], raw[4], raw[5]}, {}, {}, {}});
-            vertices.push_back({{raw[6], raw[7], raw[8]}, {}, {}, {}});
+            vertices.push_back({{le_f32(raw + 0), le_f32(raw + 4), le_f32(raw + 8)}, {}, {}, {}});
+            vertices.push_back({{le_f32(raw + 12), le_f32(raw + 16), le_f32(raw + 20)}, {}, {}, {}});
+            vertices.push_back({{le_f32(raw + 24), le_f32(raw + 28), le_f32(raw + 32)}, {}, {}, {}});
 
             Triangle t;
             t.v[0] = base;
