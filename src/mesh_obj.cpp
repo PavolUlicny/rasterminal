@@ -256,6 +256,7 @@ bool Mesh::load_obj(const std::string &path)
     std::unordered_map<FaceVertex, uint32_t, FaceVertexHash> vertex_map;
 
     bool has_normals = false;
+    bool all_have_normals = true; // false if any face vertex has no normal reference
     char line[512];
 
     // Returns the index of an existing or newly created Vertex.
@@ -267,7 +268,13 @@ bool Mesh::load_obj(const std::string &path)
 
         Vertex v;
         v.pos = (fv.pi >= 0 && fv.pi < (int)pos_pool.size()) ? pos_pool[(size_t)fv.pi] : vec3{};
-        v.normal = (fv.ni >= 0 && fv.ni < (int)norm_pool.size()) ? norm_pool[(size_t)fv.ni] : vec3{};
+        if (fv.ni >= 0 && fv.ni < (int)norm_pool.size())
+            v.normal = norm_pool[(size_t)fv.ni];
+        else
+        {
+            v.normal = vec3{};
+            all_have_normals = false; // this vertex has no file-provided normal
+        }
         v.uv = (fv.ti >= 0 && fv.ti < (int)uv_pool.size()) ? uv_pool[(size_t)fv.ti] : vec2{};
 
         uint32_t idx = (uint32_t)vertices.size();
@@ -363,7 +370,9 @@ bool Mesh::load_obj(const std::string &path)
         return false;
     }
 
-    if (!has_normals)
+    // Recompute if no normals were in the file, or if some face vertices
+    // had no normal reference (mixed file) — zero normals light incorrectly.
+    if (!has_normals || !all_have_normals)
         compute_normals();
 
     return true;
