@@ -49,7 +49,8 @@ bool Mesh::load_ply(const std::string &path)
         I32,
         U32,
         F32,
-        F64
+        F64,
+        UNKNOWN // unrecognised type — size 0 triggers truncation guard
     };
 
     auto ptype_size = [](PType t) -> int
@@ -68,8 +69,10 @@ bool Mesh::load_ply(const std::string &path)
             return 4;
         case PType::F64:
             return 8;
+        case PType::UNKNOWN:
+            return 0; // triggers bounds check → truncated flag
         }
-        return 4;
+        return 0;
     };
 
     auto parse_ptype = [](const char *s) -> PType
@@ -90,7 +93,7 @@ bool Mesh::load_ply(const std::string &path)
             return PType::F32;
         if (!std::strcmp(s, "double") || !std::strcmp(s, "float64"))
             return PType::F64;
-        return PType::F32;
+        return PType::UNKNOWN;
     };
 
     // Byte-swap helpers for big-endian binary files.
@@ -504,6 +507,8 @@ bool Mesh::load_ply(const std::string &path)
                 result = (float)d;
                 break;
             }
+            case PType::UNKNOWN:
+                break; // size 0 — bounds check above already set truncated
             }
             return result;
         };
@@ -581,7 +586,10 @@ bool Mesh::load_ply(const std::string &path)
             for (int i = 0; i < elem.count; i++)
             {
                 if (p >= end)
+                {
+                    truncated = true;
                     break;
+                }
 
                 if (&elem == vert_elem)
                 {
