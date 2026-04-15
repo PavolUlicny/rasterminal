@@ -19,7 +19,7 @@ static int write_int(char *buf, int v)
     int len = 0;
     while (v > 0)
     {
-        tmp[len++] = '0' + (v % 10);
+        tmp[len++] = (char)('0' + (v % 10));
         v /= 10;
     }
     for (int i = 0; i < len; i++)
@@ -30,11 +30,11 @@ static int write_int(char *buf, int v)
 Framebuffer::Framebuffer(int pixel_width, int pixel_height)
     : m_width(pixel_width),
       m_height(pixel_height),
-      m_color(pixel_width * pixel_height),
-      m_depth(pixel_width * pixel_height, std::numeric_limits<float>::infinity())
+      m_color((size_t)(pixel_width * pixel_height)),
+      m_depth((size_t)(pixel_width * pixel_height), std::numeric_limits<float>::infinity())
 {
     // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
-    m_buf.reserve(pixel_width * (pixel_height / 2) * 50);
+    m_buf.reserve((size_t)(pixel_width * (pixel_height / 2) * 50));
 
     std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
     std::fputs("\033[?25l", stdout);   // hide cursor
@@ -53,10 +53,10 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
 {
     m_width = pixel_width;
     m_height = pixel_height;
-    m_color.assign(pixel_width * pixel_height, Color{});
-    m_depth.assign(pixel_width * pixel_height, std::numeric_limits<float>::infinity());
+    m_color.assign((size_t)(pixel_width * pixel_height), Color{});
+    m_depth.assign((size_t)(pixel_width * pixel_height), std::numeric_limits<float>::infinity());
     m_buf.clear();
-    m_buf.reserve(pixel_width * (pixel_height / 2) * 50);
+    m_buf.reserve((size_t)(pixel_width * (pixel_height / 2) * 50));
 
     // Wipe any leftover content from the previous (possibly larger) terminal.
     std::fputs("\033[2J", stdout);
@@ -73,7 +73,7 @@ bool Framebuffer::test_and_set_depth(int x, int y, float depth)
 {
     if (x < 0 || x >= m_width || y < 0 || y >= m_height)
         return false;
-    float &d = m_depth[y * m_width + x];
+    float &d = m_depth[(size_t)(y * m_width + x)];
     if (depth < d)
     {
         d = depth;
@@ -86,7 +86,7 @@ void Framebuffer::set_pixel(int x, int y, Color color)
 {
     if (x < 0 || x >= m_width || y < 0 || y >= m_height)
         return;
-    m_color[y * m_width + x] = color;
+    m_color[(size_t)(y * m_width + x)] = color;
 }
 
 void Framebuffer::present()
@@ -113,14 +113,14 @@ void Framebuffer::present()
         tmp[n++] = ';';
         tmp[n++] = '1';
         tmp[n++] = 'H';
-        m_buf.append(tmp, n);
+        m_buf.append(tmp, (size_t)n);
 
         for (int col = 0; col < m_width; col++)
         {
-            const Color &top = m_color[(row * 2) * m_width + col];
+            const Color &top = m_color[(size_t)((row * 2) * m_width + col)];
             // Guard against odd pixel height: reuse top pixel for bottom row.
             const int bot_row = (row * 2 + 1 < m_height) ? row * 2 + 1 : row * 2;
-            const Color &bot = m_color[bot_row * m_width + col];
+            const Color &bot = m_color[(size_t)(bot_row * m_width + col)];
 
             // Foreground (top pixel): ESC[38;2;R;G;Bm
             tmp[0] = '\033';
@@ -137,7 +137,7 @@ void Framebuffer::present()
             tmp[n++] = ';';
             n += write_int(tmp + n, top.b);
             tmp[n++] = 'm';
-            m_buf.append(tmp, n);
+            m_buf.append(tmp, (size_t)n);
 
             // Background (bottom pixel): ESC[48;2;R;G;Bm
             tmp[0] = '\033';
@@ -154,7 +154,7 @@ void Framebuffer::present()
             tmp[n++] = ';';
             n += write_int(tmp + n, bot.b);
             tmp[n++] = 'm';
-            m_buf.append(tmp, n);
+            m_buf.append(tmp, (size_t)n);
 
             m_buf.append(UPPER_HALF, 3);
         }
@@ -173,7 +173,7 @@ void Framebuffer::present()
         tmp[n++] = ';';
         tmp[n++] = '1';
         tmp[n++] = 'H';
-        m_buf.append(tmp, n);
+        m_buf.append(tmp, (size_t)n);
 
         // Dark background, muted text.
         // Disable auto-wrap so a long HUD string clips at the terminal edge

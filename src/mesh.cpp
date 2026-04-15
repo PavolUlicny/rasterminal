@@ -131,7 +131,7 @@ void Mesh::compute_tangents()
 
 void Mesh::compute_ao()
 {
-    const int n = (int)vertices.size();
+    const size_t n = vertices.size();
 
     // Build edge-adjacency: for each vertex, collect all vertices it shares a
     // triangle edge with (duplicates are harmless — they just weight denser areas).
@@ -147,7 +147,7 @@ void Mesh::compute_ao()
         }
     }
 
-    for (int i = 0; i < n; i++)
+    for (size_t i = 0; i < n; i++)
     {
         if (adj[i].empty())
         {

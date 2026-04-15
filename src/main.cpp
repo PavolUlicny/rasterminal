@@ -137,11 +137,11 @@ int main(int argc, char *argv[])
         const char *flag = arg.c_str();
 
         // Helper: get value either from --flag=val or the next argv token.
-        auto get_val = [&](int &i) -> const char *
+        auto get_val = [&](int &arg_i) -> const char *
         {
             if (eq_val != nullptr)
                 return eq_val;
-            return require_val(i, flag);
+            return require_val(arg_i, flag);
         };
 
         if (arg == "-j" || arg == "--threads")

@@ -138,19 +138,19 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
             {
                 float r, g, b;
                 if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[current].diffuse = {r, g, b};
+                    materials[(size_t)current].diffuse = {r, g, b};
             }
             else if (std::strncmp(p, "Ks", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
             {
                 float r, g, b;
                 if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[current].specular = {r, g, b};
+                    materials[(size_t)current].specular = {r, g, b};
             }
             else if (std::strncmp(p, "Ns", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
             {
                 float ns;
                 if (std::sscanf(p + 3, "%f", &ns) == 1)
-                    materials[current].shininess = ns;
+                    materials[(size_t)current].shininess = ns;
             }
             else if (std::strncmp(p, "map_Kd", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
             {
@@ -168,7 +168,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                     Texture tex;
                     if (tex.load(mtl_dir + tex_name))
                     {
-                        materials[current].diffuse_tex = (int)textures.size();
+                        materials[(size_t)current].diffuse_tex = (int)textures.size();
                         textures.push_back(std::move(tex));
                     }
                 }
@@ -203,7 +203,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                     Texture tex;
                     if (tex.load(mtl_dir + tex_name))
                     {
-                        materials[current].normal_tex = (int)textures.size();
+                        materials[(size_t)current].normal_tex = (int)textures.size();
                         textures.push_back(std::move(tex));
                     }
                 }
@@ -252,9 +252,9 @@ bool Mesh::load_obj(const std::string &path)
             return it->second;
 
         Vertex v;
-        v.pos = (fv.pi >= 0 && fv.pi < (int)pos_pool.size()) ? pos_pool[fv.pi] : vec3{};
-        v.normal = (fv.ni >= 0 && fv.ni < (int)norm_pool.size()) ? norm_pool[fv.ni] : vec3{};
-        v.uv = (fv.ti >= 0 && fv.ti < (int)uv_pool.size()) ? uv_pool[fv.ti] : vec2{};
+        v.pos = (fv.pi >= 0 && fv.pi < (int)pos_pool.size()) ? pos_pool[(size_t)fv.pi] : vec3{};
+        v.normal = (fv.ni >= 0 && fv.ni < (int)norm_pool.size()) ? norm_pool[(size_t)fv.ni] : vec3{};
+        v.uv = (fv.ti >= 0 && fv.ti < (int)uv_pool.size()) ? uv_pool[(size_t)fv.ti] : vec2{};
 
         uint32_t idx = (uint32_t)vertices.size();
         vertices.push_back(v);
