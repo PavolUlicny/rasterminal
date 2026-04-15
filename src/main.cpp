@@ -300,6 +300,8 @@ int main(int argc, char *argv[])
         }
         vec3 centre = (lo + hi) * 0.5f;
         float radius = (hi - lo).length() * 0.5f;
+        if (radius < 1e-4f)
+            radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
         camera.target = centre;
         camera.distance = radius * 2.0f;
         // Scale near/far to the model so arbitrarily-sized models aren't clipped.
