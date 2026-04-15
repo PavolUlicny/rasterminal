@@ -29,7 +29,7 @@ struct Mesh
     std::vector<Material> materials; // index 0 is always the default white material
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
 
-    // Dispatch loader: picks load_obj or load_ply based on file extension.
+    // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
     // Returns false on failure or unknown extension.
     bool load_model(const std::string &path, bool ao = true);
 
