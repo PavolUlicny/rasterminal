@@ -29,6 +29,17 @@ bool Mesh::load_stl(const std::string &path)
     if (!f)
         return false;
 
+    // STL stores all binary scalars as little-endian.
+    auto read_u32_le = [](FILE *fp, uint32_t &out) -> bool
+    {
+        uint8_t b[4];
+        if (std::fread(b, 1, 4, fp) != 4)
+            return false;
+        out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
+              ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+        return true;
+    };
+
     // ── Detect ASCII vs binary ────────────────────────────────────────────────
     // ASCII STL starts with "solid" (possibly with leading whitespace).
     // Binary STL has an 80-byte header that may also start with "solid", so
@@ -55,7 +66,7 @@ bool Mesh::load_stl(const std::string &path)
     if (is_ascii)
     {
         uint32_t tri_count = 0;
-        if (std::fread(&tri_count, 4, 1, f) == 1)
+        if (read_u32_le(f, tri_count))
         {
             long pos = std::ftell(f);
             std::fseek(f, 0, SEEK_END);
@@ -120,7 +131,7 @@ bool Mesh::load_stl(const std::string &path)
         // File position is right after the 80-byte header.
         // Next 4 bytes: triangle count.
         uint32_t tri_count = 0;
-        if (std::fread(&tri_count, 4, 1, f) != 1)
+        if (!read_u32_le(f, tri_count))
         {
             std::fclose(f);
             rollback();
