@@ -315,7 +315,10 @@ bool Mesh::load_obj(const std::string &path)
 
             // MTL materials are appended starting at index 1 (0 = default).
             // Pass obj_dir so relative texture paths resolve correctly.
-            mat_map = load_mtl(obj_dir + mtl_name, materials, textures, obj_dir);
+            // Merge rather than replace so multiple mtllib blocks accumulate.
+            auto new_map = load_mtl(obj_dir + mtl_name, materials, textures, obj_dir);
+            for (auto &kv : new_map)
+                mat_map[kv.first] = kv.second;
         }
         else if (std::strncmp(p, "usemtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
         {
