@@ -291,7 +291,8 @@ bool Mesh::load_obj(const std::string &path)
     while (std::fgets(line, sizeof(line), f))
     {
         const char *p = line;
-        while (*p == ' ' || *p == '\t') p++; // OBJ allows leading whitespace
+        while (*p == ' ' || *p == '\t')
+            p++; // OBJ allows leading whitespace
 
         if (p[0] == 'v' && p[1] == ' ')
         {

@@ -30,11 +30,11 @@ static int write_int(char *buf, int v)
 Framebuffer::Framebuffer(int pixel_width, int pixel_height)
     : m_width(pixel_width),
       m_height(pixel_height),
-      m_color((size_t)(pixel_width * pixel_height)),
-      m_depth((size_t)(pixel_width * pixel_height), std::numeric_limits<float>::infinity())
+      m_color((size_t)pixel_width * (size_t)pixel_height),
+      m_depth((size_t)pixel_width * (size_t)pixel_height, std::numeric_limits<float>::infinity())
 {
     // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
-    m_buf.reserve((size_t)(pixel_width * (pixel_height / 2) * 50));
+    m_buf.reserve((size_t)pixel_width * (size_t)(pixel_height / 2) * 50u);
 
     std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
     std::fputs("\033[?25l", stdout);   // hide cursor
@@ -53,10 +53,10 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
 {
     m_width = pixel_width;
     m_height = pixel_height;
-    m_color.assign((size_t)(pixel_width * pixel_height), Color{});
-    m_depth.assign((size_t)(pixel_width * pixel_height), std::numeric_limits<float>::infinity());
+    m_color.assign((size_t)pixel_width * (size_t)pixel_height, Color{});
+    m_depth.assign((size_t)pixel_width * (size_t)pixel_height, std::numeric_limits<float>::infinity());
     m_buf.clear();
-    m_buf.reserve((size_t)(pixel_width * (pixel_height / 2) * 50));
+    m_buf.reserve((size_t)pixel_width * (size_t)(pixel_height / 2) * 50u);
 
     // Wipe any leftover content from the previous (possibly larger) terminal.
     std::fputs("\033[2J", stdout);

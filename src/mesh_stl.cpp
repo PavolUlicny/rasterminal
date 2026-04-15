@@ -127,8 +127,8 @@ bool Mesh::load_stl(const std::string &path)
             return false;
         }
 
-        vertices.reserve(tri_count * 3);
-        triangles.reserve(tri_count);
+        vertices.reserve((size_t)tri_count * 3);
+        triangles.reserve((size_t)tri_count);
 
         bool truncated = false;
         for (uint32_t i = 0; i < tri_count; i++)
