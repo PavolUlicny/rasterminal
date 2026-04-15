@@ -110,7 +110,7 @@ void Renderer::worker_func(int t)
                 int end = std::min(start + CHUNK, total);
                 for (int i = start; i < end; i++)
                 {
-                    const Triangle &tri = mesh->triangles[i];
+                    const Triangle &tri = mesh->triangles[(size_t)i];
                     const Vertex &va = mesh->vertices[tri.v[0]];
                     const Vertex &vb = mesh->vertices[tri.v[1]];
                     const Vertex &vc = mesh->vertices[tri.v[2]];
@@ -221,21 +221,21 @@ void Renderer::worker_func(int t)
                         int b_hi = n - 1;
                         while (b_hi > b_lo && H * b_hi / n > tri_y1)
                             --b_hi;
-                        for (int b = b_lo; b <= b_hi; b++)
-                            local_bands[b].push_back(rt);
+                        for (int band = b_lo; band <= b_hi; band++)
+                            local_bands[(size_t)band].push_back(rt);
                     }
                 }
             } // while (true) work-stealing loop
 
             // Flush local staging into the shared per-band lists.
             // Each band has its own mutex so workers rarely contend.
-            for (int b = 0; b < n; b++)
+            for (int band = 0; band < n; band++)
             {
-                if (!local_bands[b].empty())
+                if (!local_bands[(size_t)band].empty())
                 {
-                    std::lock_guard<std::mutex> lk(m_band_mutexes[b]);
-                    auto &dst = m_band_tris[b];
-                    dst.insert(dst.end(), local_bands[b].begin(), local_bands[b].end());
+                    std::lock_guard<std::mutex> band_lk(m_band_mutexes[(size_t)band]);
+                    auto &dst = m_band_tris[(size_t)band];
+                    dst.insert(dst.end(), local_bands[(size_t)band].begin(), local_bands[(size_t)band].end());
                 }
             }
         }
@@ -268,7 +268,7 @@ void Renderer::worker_func(int t)
             int y_min = m_H * t / n;
             int y_max = m_H * (t + 1) / n - 1;
 
-            for (const RasterTri &rt : m_band_tris[t])
+            for (const RasterTri &rt : m_band_tris[(size_t)t])
             {
                 if (m_phong)
                     rasterize_phong(*m_fb,

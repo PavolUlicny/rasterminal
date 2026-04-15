@@ -65,7 +65,7 @@ namespace platform
 
         // Disable echo and canonical (line-buffered) mode.
         // VMIN=0 / VTIME=0: read() returns immediately with 0 bytes if nothing available.
-        raw.c_lflag &= ~(ECHO | ICANON);
+        raw.c_lflag &= ~static_cast<tcflag_t>(ECHO | ICANON);
         raw.c_cc[VMIN] = 0;
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);

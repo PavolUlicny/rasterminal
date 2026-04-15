@@ -54,8 +54,8 @@ bool ShadowMap::in_shadow(vec3 world_pos) const
         return false;
     float u = (ndc.x + 1.0f) * 0.5f;
     float v = (ndc.y + 1.0f) * 0.5f;
-    int px = clamp((int)(u * SIZE), 0, SIZE - 1);
-    int py = clamp((int)(v * SIZE), 0, SIZE - 1);
+    int px = clamp(static_cast<int>(u * static_cast<float>(SIZE)), 0, SIZE - 1);
+    int py = clamp(static_cast<int>(v * static_cast<float>(SIZE)), 0, SIZE - 1);
     constexpr float fp_eps = 0.001f;
     return ndc.z > depth[py * SIZE + px] + fp_eps;
 }
@@ -145,7 +145,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         {
             for (int x = x0; x <= x1; x++)
             {
-                float px = x + 0.5f, py = y + 0.5f;
+                float px = static_cast<float>(x) + 0.5f, py = static_cast<float>(y) + 0.5f;
                 float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
                 float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
                 float bc = 1.0f - ba - bb;
