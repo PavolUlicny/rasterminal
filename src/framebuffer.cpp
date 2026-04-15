@@ -15,7 +15,7 @@ static int write_int(char *buf, int v)
         buf[0] = '0';
         return 1;
     }
-    char tmp[4];
+    char tmp[12]; // 10 digits max for INT_MAX (2147483647) + headroom
     int len = 0;
     while (v > 0)
     {
