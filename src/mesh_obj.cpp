@@ -166,7 +166,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                 if (!tex_name.empty())
                 {
                     Texture tex;
-                    if (tex.load_png(mtl_dir + tex_name))
+                    if (tex.load(mtl_dir + tex_name))
                     {
                         materials[current].diffuse_tex = (int)textures.size();
                         textures.push_back(std::move(tex));
@@ -201,7 +201,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                 if (!tex_name.empty())
                 {
                     Texture tex;
-                    if (tex.load_png(mtl_dir + tex_name))
+                    if (tex.load(mtl_dir + tex_name))
                     {
                         materials[current].normal_tex = (int)textures.size();
                         textures.push_back(std::move(tex));

@@ -15,11 +15,9 @@
 #include "stb_image.h"
 #pragma GCC diagnostic pop
 
-// ─── Texture::load_png ───────────────────────────────────────────────────────
-// Despite the name kept for API compatibility, this now loads any format that
-// stb_image supports: JPEG, PNG, BMP, TGA, etc.
+// ─── Texture::load ───────────────────────────────────────────────────────────
 
-bool Texture::load_png(const std::string &path)
+bool Texture::load(const std::string &path)
 {
     int w, h, channels;
     // Force 4 output channels (RGBA) regardless of source format.
