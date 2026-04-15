@@ -6,8 +6,14 @@
 // stb_image: single-header image loader (public domain).
 // Supports JPEG, PNG, BMP, TGA, GIF, PSD, HDR, PNM.
 // The implementation is compiled here and nowhere else.
+// Suppress warnings from vendored third-party code.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wduplicated-branches"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#pragma GCC diagnostic pop
 
 // ─── Texture::load_png ───────────────────────────────────────────────────────
 // Despite the name kept for API compatibility, this now loads any format that
