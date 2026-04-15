@@ -1,6 +1,8 @@
 #include "mesh.h"
 #include "texture.h"
 
+#include <cerrno>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -56,9 +58,20 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
     if (!*p || *p == '\n' || *p == '\r')
         return false;
 
+    // Parse a raw OBJ index, reject if strtol overflows long or the value
+    // doesn't fit in int (face indices > INT_MAX are not valid OBJ).
+    auto parse_idx = [](const char *s, char **e) -> std::pair<int, bool>
+    {
+        errno = 0;
+        long v = std::strtol(s, e, 10);
+        if (*e == s || errno == ERANGE || v > INT_MAX || v < INT_MIN)
+            return {0, false};
+        return {(int)v, true};
+    };
+
     char *end;
-    int raw_pi = (int)strtol(p, &end, 10);
-    if (end == p)
+    auto [raw_pi, pi_ok] = parse_idx(p, &end);
+    if (!pi_ok)
         return false;
     p = end;
 
@@ -71,8 +84,8 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
         p++;
         if (*p != '/')
         {
-            int raw_ti = (int)strtol(p, &end, 10);
-            if (end != p)
+            auto [raw_ti, ti_ok] = parse_idx(p, &end);
+            if (ti_ok)
             {
                 out.ti = resolve(raw_ti, nuv);
                 p = end;
@@ -81,8 +94,8 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
         if (*p == '/')
         {
             p++;
-            int raw_ni = (int)strtol(p, &end, 10);
-            if (end != p)
+            auto [raw_ni, ni_ok] = parse_idx(p, &end);
+            if (ni_ok)
             {
                 out.ni = resolve(raw_ni, nnorm);
                 p = end;
@@ -309,7 +322,7 @@ bool Mesh::load_obj(const std::string &path)
         }
         else if (p[0] == 'v' && p[1] == 't')
         {
-            vec2 uv;
+            vec2 uv{};
             std::sscanf(p + 3, "%f %f", &uv.x, &uv.y);
             uv_pool.push_back(uv);
         }
