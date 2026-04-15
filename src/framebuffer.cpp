@@ -186,6 +186,8 @@ void Framebuffer::present()
         m_buf += "\033[?7h"; // re-enable auto-wrap
     }
 
-    std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
-    std::fflush(stdout);
+    // Return values intentionally ignored: a write failure to a terminal means
+    // the session is already broken; there is no meaningful recovery path here.
+    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
+    (void)std::fflush(stdout);
 }
