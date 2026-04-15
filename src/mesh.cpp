@@ -6,8 +6,18 @@
 
 // ─── Mesh::load_model ─────────────────────────────────────────────────────────
 
+void Mesh::clear()
+{
+    vertices.clear();
+    triangles.clear();
+    materials.clear();
+    textures.clear();
+}
+
 bool Mesh::load_model(const std::string &path, bool ao)
 {
+    clear();
+
     size_t dot = path.find_last_of('.');
     if (dot == std::string::npos)
         return false;
@@ -26,7 +36,10 @@ bool Mesh::load_model(const std::string &path, bool ao)
         ok = load_stl(path);
 
     if (!ok)
+    {
+        clear();
         return false;
+    }
 
     compute_tangents();
     if (ao)

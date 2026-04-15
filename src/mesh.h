@@ -30,8 +30,11 @@ struct Mesh
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
 
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
-    // Returns false on failure or unknown extension.
+    // Clears all mesh state before loading. Returns false on failure or unknown extension.
     bool load_model(const std::string &path, bool ao = true);
+
+    // Clear all geometry, material, and texture data.
+    void clear();
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
     // Returns false on failure.
