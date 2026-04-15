@@ -30,10 +30,12 @@ bool Mesh::load_stl(const std::string &path)
     }
 
     // Trim leading whitespace when checking for "solid".
+    // Bound the scan to the 80-byte header — it is not null-terminated.
     const char *h = header;
-    while (*h == ' ' || *h == '\t')
+    const char *h_end = header + 80;
+    while (h < h_end && (*h == ' ' || *h == '\t'))
         h++;
-    bool is_ascii = (std::strncmp(h, "solid", 5) == 0);
+    bool is_ascii = (h + 5 <= h_end && std::strncmp(h, "solid", 5) == 0);
 
     // Binary STL: after the 80-byte header comes a uint32 triangle count.
     // If that count × 50 + 84 equals the file size, it's almost certainly binary.
