@@ -633,9 +633,11 @@ bool Mesh::load_ply(const std::string &path)
                     {
                         if (prop.is_list)
                         {
-                            int cnt = read_int(prop.list_count_t);
+                            // Read count directly as uint32 to avoid negative/overflow via float.
+                            uint32_t cnt = read_uint_direct(prop.list_count_t);
                             size_t skip = (size_t)cnt * (size_t)ptype_size(prop.list_elem_t);
-                            if (p + skip > end)
+                            // Use remaining-bytes check to avoid pointer-arithmetic overflow.
+                            if (skip > (size_t)(end - p))
                             {
                                 truncated = true;
                                 break;
@@ -645,7 +647,7 @@ bool Mesh::load_ply(const std::string &path)
                         else
                         {
                             size_t skip = (size_t)ptype_size(prop.type);
-                            if (p + skip > end)
+                            if (skip > (size_t)(end - p))
                             {
                                 truncated = true;
                                 break;
