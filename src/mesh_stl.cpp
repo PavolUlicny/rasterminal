@@ -117,22 +117,20 @@ bool Mesh::load_stl(const std::string &path)
         vertices.reserve(tri_count * 3);
         triangles.reserve(tri_count);
 
+        bool truncated = false;
         for (uint32_t i = 0; i < tri_count; i++)
         {
             // 3 floats: face normal (ignored — we recompute per-vertex normals)
             float ignored[3];
-            if (std::fread(ignored, 4, 3, f) != 3)
-                break;
+            if (std::fread(ignored, 4, 3, f) != 3) { truncated = true; break; }
 
             // 3 × 3 floats: vertices
             float raw[9];
-            if (std::fread(raw, 4, 9, f) != 9)
-                break;
+            if (std::fread(raw, 4, 9, f) != 9) { truncated = true; break; }
 
             // 2-byte attribute (ignored)
             uint16_t attr;
-            if (std::fread(&attr, 2, 1, f) != 1)
-                break;
+            if (std::fread(&attr, 2, 1, f) != 1) { truncated = true; break; }
 
             uint32_t base = (uint32_t)vertices.size();
             vertices.push_back({{raw[0], raw[1], raw[2]}, {}, {}, {}});
@@ -145,6 +143,12 @@ bool Mesh::load_stl(const std::string &path)
             t.v[2] = base + 2;
             t.material_idx = 0;
             triangles.push_back(t);
+        }
+
+        if (truncated)
+        {
+            std::fclose(f);
+            return false;
         }
     }
 
