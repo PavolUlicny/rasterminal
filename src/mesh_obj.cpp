@@ -301,6 +301,7 @@ bool Mesh::load_obj(const std::string &path)
         return idx;
     };
 
+    bool malformed = false;
     while (std::fgets(line, sizeof(line), f))
     {
         const char *p = line;
@@ -310,20 +311,32 @@ bool Mesh::load_obj(const std::string &path)
         if (p[0] == 'v' && p[1] == ' ')
         {
             vec3 v{};
-            std::sscanf(p + 2, "%f %f %f", &v.x, &v.y, &v.z);
+            if (std::sscanf(p + 2, "%f %f %f", &v.x, &v.y, &v.z) != 3)
+            {
+                malformed = true;
+                break;
+            }
             pos_pool.push_back(v);
         }
         else if (p[0] == 'v' && p[1] == 'n')
         {
             vec3 n{};
-            std::sscanf(p + 3, "%f %f %f", &n.x, &n.y, &n.z);
+            if (std::sscanf(p + 3, "%f %f %f", &n.x, &n.y, &n.z) != 3)
+            {
+                malformed = true;
+                break;
+            }
             norm_pool.push_back(n);
             has_normals = true;
         }
         else if (p[0] == 'v' && p[1] == 't')
         {
             vec2 uv{};
-            std::sscanf(p + 3, "%f %f", &uv.x, &uv.y);
+            if (std::sscanf(p + 3, "%f %f", &uv.x, &uv.y) < 2)
+            {
+                malformed = true;
+                break;
+            }
             uv_pool.push_back(uv);
         }
         else if (std::strncmp(p, "mtllib", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
@@ -393,7 +406,7 @@ bool Mesh::load_obj(const std::string &path)
 
     std::fclose(f);
 
-    if (triangles.empty())
+    if (malformed || triangles.empty())
     {
         rollback();
         return false;

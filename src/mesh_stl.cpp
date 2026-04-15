@@ -91,6 +91,7 @@ bool Mesh::load_stl(const std::string &path)
         char line[256];
         vec3 verts[3];
         int vert_count = 0;
+        bool malformed = false;
 
         while (std::fgets(line, sizeof(line), f))
         {
@@ -101,7 +102,11 @@ bool Mesh::load_stl(const std::string &path)
             if (std::strncmp(p, "vertex", 6) == 0)
             {
                 vec3 v{};
-                std::sscanf(p + 6, "%f %f %f", &v.x, &v.y, &v.z);
+                if (std::sscanf(p + 6, "%f %f %f", &v.x, &v.y, &v.z) != 3)
+                {
+                    malformed = true;
+                    break;
+                }
                 if (vert_count < 3)
                     verts[vert_count] = v;
                 vert_count++;
@@ -123,6 +128,13 @@ bool Mesh::load_stl(const std::string &path)
                 }
                 vert_count = 0;
             }
+        }
+
+        if (malformed)
+        {
+            std::fclose(f);
+            rollback();
+            return false;
         }
     }
     else
