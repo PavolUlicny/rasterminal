@@ -591,11 +591,14 @@ bool Mesh::load_ply(const std::string &path)
                         if (prop.is_list)
                         {
                             uint32_t cnt = read_uint_direct(prop.list_count_t);
-                            // Cap by remaining bytes so a malformed signed count can't DoS via huge loop.
+                            // Reject count that exceeds remaining buffer — fail-fast on malformed data.
                             size_t elem_sz = (size_t)ptype_size(prop.list_elem_t);
                             size_t remaining = (p < end) ? (size_t)(end - p) : 0u;
                             if (elem_sz > 0 && cnt > remaining / elem_sz)
-                                cnt = (uint32_t)(remaining / elem_sz);
+                            {
+                                truncated = true;
+                                break;
+                            }
                             for (uint32_t j = 0; j < cnt; j++)
                                 read_scalar(prop.list_elem_t);
                             continue;
@@ -616,11 +619,14 @@ bool Mesh::load_ply(const std::string &path)
                         }
 
                         uint32_t cnt = read_uint_direct(prop.list_count_t);
-                        // Cap by remaining bytes so a malformed signed count can't DoS via huge loop.
+                        // Reject count that exceeds remaining buffer — fail-fast on malformed data.
                         size_t elem_sz = (size_t)ptype_size(prop.list_elem_t);
                         size_t remaining = (p < end) ? (size_t)(end - p) : 0u;
                         if (elem_sz > 0 && cnt > remaining / elem_sz)
-                            cnt = (uint32_t)(remaining / elem_sz);
+                        {
+                            truncated = true;
+                            break;
+                        }
                         uint32_t fv[64];
                         uint32_t actual = (cnt < 64u) ? cnt : 64u;
                         for (uint32_t j = 0; j < cnt; j++)
