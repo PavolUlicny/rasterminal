@@ -285,6 +285,8 @@ bool Mesh::load_ply(const std::string &path)
     if (face_elem && face_elem->count > 0)
         triangles.reserve((size_t)face_elem->count);
 
+    bool truncated = false; // set by binary read_scalar on premature EOF
+
     if (fmt == Fmt::ASCII)
     {
         // ASCII: fscanf skips whitespace and newlines automatically.
@@ -396,10 +398,14 @@ bool Mesh::load_ply(const std::string &path)
         bool be = (fmt == Fmt::BE);
 
         // Read a typed scalar from the buffer and advance the pointer.
+        // Sets truncated=true and returns 0 if the buffer is exhausted early.
         auto read_scalar = [&](PType t) -> float
         {
             if (p + ptype_size(t) > end)
+            {
+                truncated = true;
                 return 0.0f;
+            }
             float result = 0.0f;
             switch (t)
             {
@@ -558,6 +564,9 @@ bool Mesh::load_ply(const std::string &path)
     }
 
     std::fclose(f);
+
+    if (truncated)
+        return false;
 
     if (vertices.empty() || triangles.empty())
         return false;
