@@ -169,10 +169,10 @@ bool Mesh::load_ply(const std::string &path)
         }
     };
 
-    auto push_face = [&](uint32_t *fv, int actual)
+    auto push_face = [&](uint32_t *fv, uint32_t actual)
     {
         uint32_t n_verts = (uint32_t)vertices.size();
-        for (int j = 1; j + 1 < actual; j++)
+        for (uint32_t j = 1; j + 1 < actual; j++)
         {
             if (fv[0] >= n_verts || fv[j] >= n_verts || fv[j + 1] >= n_verts)
                 continue;
@@ -351,11 +351,11 @@ bool Mesh::load_ply(const std::string &path)
                             continue;
                         }
 
-                        int cnt = 0;
-                        si(cnt);
+                        unsigned int cnt = 0;
+                        su(cnt);
                         uint32_t fv[64];
-                        int actual = (cnt < 64) ? cnt : 64;
-                        for (int j = 0; j < cnt; j++)
+                        uint32_t actual = (cnt < 64u) ? cnt : 64u;
+                        for (unsigned int j = 0; j < cnt; j++)
                         {
                             unsigned int idx = 0;
                             su(idx);
@@ -508,9 +508,6 @@ bool Mesh::load_ply(const std::string &path)
             return result;
         };
 
-        auto read_int = [&](PType t) -> int
-        { return (int)read_scalar(t); };
-
         // Read an integer type directly as uint32 — avoids float conversion,
         // which loses precision for indices >= 2^24.
         auto read_uint_direct = [&](PType t) -> uint32_t
@@ -593,8 +590,8 @@ bool Mesh::load_ply(const std::string &path)
                     {
                         if (prop.is_list)
                         {
-                            int cnt = read_int(prop.list_count_t);
-                            for (int j = 0; j < cnt; j++)
+                            uint32_t cnt = read_uint_direct(prop.list_count_t);
+                            for (uint32_t j = 0; j < cnt; j++)
                                 read_scalar(prop.list_elem_t);
                             continue;
                         }
@@ -613,10 +610,10 @@ bool Mesh::load_ply(const std::string &path)
                             continue;
                         }
 
-                        int cnt = read_int(prop.list_count_t);
+                        uint32_t cnt = read_uint_direct(prop.list_count_t);
                         uint32_t fv[64];
-                        int actual = (cnt < 64) ? cnt : 64;
-                        for (int j = 0; j < cnt; j++)
+                        uint32_t actual = (cnt < 64u) ? cnt : 64u;
+                        for (uint32_t j = 0; j < cnt; j++)
                         {
                             uint32_t idx = read_uint_direct(prop.list_elem_t);
                             if (j < actual)
