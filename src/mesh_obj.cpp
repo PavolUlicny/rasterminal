@@ -326,6 +326,8 @@ bool Mesh::load_obj(const std::string &path)
 
             // Fan triangulation: (0,1,2), (0,2,3), (0,3,4), …
             // Works correctly for convex polygons (the common case in OBJ).
+            if (count < 3)
+                continue;
             uint32_t v0 = get_vertex(fverts[0]);
             for (int i = 1; i + 1 < count; i++)
             {
