@@ -260,14 +260,19 @@ bool Mesh::load_obj(const std::string &path)
     char line[512];
 
     // Returns the index of an existing or newly created Vertex.
+    // Returns UINT32_MAX if the position index is out of range (invalid OBJ reference).
     auto get_vertex = [&](FaceVertex fv) -> uint32_t
     {
         auto it = vertex_map.find(fv);
         if (it != vertex_map.end())
             return it->second;
 
+        // Position is mandatory; reject the vertex if the index is invalid.
+        if (fv.pi < 0 || fv.pi >= (int)pos_pool.size())
+            return UINT32_MAX;
+
         Vertex v;
-        v.pos = (fv.pi >= 0 && fv.pi < (int)pos_pool.size()) ? pos_pool[(size_t)fv.pi] : vec3{};
+        v.pos = pos_pool[(size_t)fv.pi];
         if (fv.ni >= 0 && fv.ni < (int)norm_pool.size())
             v.normal = norm_pool[(size_t)fv.ni];
         else
@@ -353,12 +358,18 @@ bool Mesh::load_obj(const std::string &path)
             if (count < 3)
                 continue;
             uint32_t v0 = get_vertex(fverts[0]);
+            if (v0 == UINT32_MAX)
+                continue;
             for (int i = 1; i + 1 < count; i++)
             {
+                uint32_t v1 = get_vertex(fverts[i]);
+                uint32_t v2 = get_vertex(fverts[i + 1]);
+                if (v1 == UINT32_MAX || v2 == UINT32_MAX)
+                    continue;
                 Triangle t;
                 t.v[0] = v0;
-                t.v[1] = get_vertex(fverts[i]);
-                t.v[2] = get_vertex(fverts[i + 1]);
+                t.v[1] = v1;
+                t.v[2] = v2;
                 t.material_idx = current_mat;
                 triangles.push_back(t);
             }
