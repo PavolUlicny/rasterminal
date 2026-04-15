@@ -67,7 +67,8 @@ inline vec3 cross(const vec3 &a, const vec3 &b)
 
 inline vec3 normalize(const vec3 &v)
 {
-    return v / v.length();
+    float len = v.length();
+    return len > 1e-8f ? v / len : vec3{};
 }
 
 inline vec3 lerp(const vec3 &a, const vec3 &b, float t)
