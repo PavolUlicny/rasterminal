@@ -18,9 +18,9 @@ bool Mesh::load_stl(const std::string &path)
         return false;
 
     // ── Detect ASCII vs binary ────────────────────────────────────────────────
-    // Binary STL starts with an 80-byte header that is never "solid".
     // ASCII STL starts with "solid" (possibly with leading whitespace).
-    // Read the first 80 bytes and check.
+    // Binary STL has an 80-byte header that may also start with "solid", so
+    // the size check below is used to disambiguate when that happens.
 
     char header[80];
     if (std::fread(header, 1, 80, f) < 5)
