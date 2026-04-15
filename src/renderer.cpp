@@ -11,8 +11,8 @@
 static vec3 ndc_to_screen(vec3 ndc, int W, int H)
 {
     return {
-        (ndc.x + 1.0f) * 0.5f * (float)W,
-        (1.0f - ndc.y) * 0.5f * (float)H,
+        (ndc.x + 1.0f) * 0.5f * static_cast<float>(W),
+        (1.0f - ndc.y) * 0.5f * static_cast<float>(H),
         ndc.z};
 }
 
@@ -20,16 +20,16 @@ static vec3 ndc_to_screen(vec3 ndc, int W, int H)
 
 Renderer::Renderer(int n_threads)
 {
-    int hw = std::max(1, (int)std::thread::hardware_concurrency());
+    int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
     // -1 = auto (default): min(hw, 4)
     //  0 = all hardware threads
     //  N = exactly N, clamped to [1, hw]
     int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw
                                                                    : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
-    m_threads.reserve((size_t)m_n_workers);
-    m_band_tris.resize((size_t)m_n_workers);
-    m_band_mutexes = std::make_unique<std::mutex[]>((size_t)m_n_workers);
+    m_threads.reserve(static_cast<size_t>(m_n_workers));
+    m_band_tris.resize(static_cast<size_t>(m_n_workers));
+    m_band_mutexes = std::make_unique<std::mutex[]>(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
         m_threads.emplace_back(&Renderer::worker_func, this, t);
 }
@@ -88,13 +88,13 @@ void Renderer::worker_func(int t)
             int H = m_H;
             ShadingMode smode = m_smode;
 
-            int total = (int)mesh->triangles.size();
+            int total = static_cast<int>(mesh->triangles.size());
 
             // Thread-local per-band staging: persists across frames so vector
             // capacity is retained; only cleared, never reallocated after warmup.
             static thread_local std::vector<std::vector<RasterTri>> local_bands;
-            if ((int)local_bands.size() != n)
-                local_bands.resize((size_t)n);
+            if (static_cast<int>(local_bands.size()) != n)
+                local_bands.resize(static_cast<size_t>(n));
             for (auto &v : local_bands)
                 v.clear();
 
@@ -110,7 +110,7 @@ void Renderer::worker_func(int t)
                 int end = std::min(start + CHUNK, total);
                 for (int i = start; i < end; i++)
                 {
-                    const Triangle &tri = mesh->triangles[(size_t)i];
+                    const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
                     const Vertex &va = mesh->vertices[tri.v[0]];
                     const Vertex &vb = mesh->vertices[tri.v[1]];
                     const Vertex &vc = mesh->vertices[tri.v[2]];
@@ -120,12 +120,12 @@ void Renderer::worker_func(int t)
                                               : mesh->materials[0];
 
                     const Texture *tex = nullptr;
-                    if (mat.diffuse_tex >= 0 && mat.diffuse_tex < (int)mesh->textures.size())
-                        tex = &mesh->textures[(size_t)mat.diffuse_tex];
+                    if (mat.diffuse_tex >= 0 && mat.diffuse_tex < static_cast<int>(mesh->textures.size()))
+                        tex = &mesh->textures[static_cast<size_t>(mat.diffuse_tex)];
 
                     const Texture *nmap = nullptr;
-                    if (mat.normal_tex >= 0 && mat.normal_tex < (int)mesh->textures.size())
-                        nmap = &mesh->textures[(size_t)mat.normal_tex];
+                    if (mat.normal_tex >= 0 && mat.normal_tex < static_cast<int>(mesh->textures.size()))
+                        nmap = &mesh->textures[static_cast<size_t>(mat.normal_tex)];
 
                     ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
                     ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
@@ -213,8 +213,8 @@ void Renderer::worker_func(int t)
                         // Scan from the first band whose bottom edge reaches
                         // tri_y0 down to the last band whose top edge is still
                         // above tri_y1.  n is small (≤16) so the scan is cheap.
-                        int tri_y0 = std::max(0, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
-                        int tri_y1 = std::min(H - 1, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+                        int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+                        int tri_y1 = std::min(H - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
                         int b_lo = 0;
                         while (b_lo < n - 1 && H * (b_lo + 1) / n - 1 < tri_y0)
                             ++b_lo;
@@ -222,7 +222,7 @@ void Renderer::worker_func(int t)
                         while (b_hi > b_lo && H * b_hi / n > tri_y1)
                             --b_hi;
                         for (int band = b_lo; band <= b_hi; band++)
-                            local_bands[(size_t)band].push_back(rt);
+                            local_bands[static_cast<size_t>(band)].push_back(rt);
                     }
                 }
             } // while (true) work-stealing loop
@@ -231,11 +231,11 @@ void Renderer::worker_func(int t)
             // Each band has its own mutex so workers rarely contend.
             for (int band = 0; band < n; band++)
             {
-                if (!local_bands[(size_t)band].empty())
+                if (!local_bands[static_cast<size_t>(band)].empty())
                 {
-                    std::lock_guard<std::mutex> band_lk(m_band_mutexes[(size_t)band]);
-                    auto &dst = m_band_tris[(size_t)band];
-                    dst.insert(dst.end(), local_bands[(size_t)band].begin(), local_bands[(size_t)band].end());
+                    std::lock_guard<std::mutex> band_lk(m_band_mutexes[static_cast<size_t>(band)]);
+                    auto &dst = m_band_tris[static_cast<size_t>(band)];
+                    dst.insert(dst.end(), local_bands[static_cast<size_t>(band)].begin(), local_bands[static_cast<size_t>(band)].end());
                 }
             }
         }
@@ -268,7 +268,7 @@ void Renderer::worker_func(int t)
             int y_min = m_H * t / n;
             int y_max = m_H * (t + 1) / n - 1;
 
-            for (const RasterTri &rt : m_band_tris[(size_t)t])
+            for (const RasterTri &rt : m_band_tris[static_cast<size_t>(t)])
             {
                 if (m_phong)
                     rasterize_phong(*m_fb,
@@ -360,10 +360,10 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     // Cap active workers to framebuffer height / 2 so no band is empty.
     // On resize the band vectors and mutexes are rebuilt to match.
     const int n_active = std::max(1, std::min(m_n_workers, H / 2));
-    if (n_active != (int)m_band_tris.size())
+    if (n_active != static_cast<int>(m_band_tris.size()))
     {
-        m_band_tris.resize((size_t)n_active);
-        m_band_mutexes = std::make_unique<std::mutex[]>((size_t)n_active);
+        m_band_tris.resize(static_cast<size_t>(n_active));
+        m_band_mutexes = std::make_unique<std::mutex[]>(static_cast<size_t>(n_active));
     }
 
     // An internal spin-barrier inside worker_func separates the two phases,

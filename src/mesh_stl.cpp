@@ -35,8 +35,8 @@ bool Mesh::load_stl(const std::string &path)
         uint8_t b[4];
         if (std::fread(b, 1, 4, fp) != 4)
             return false;
-        out = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
-              ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+        out = static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
+              (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
         return true;
     };
 
@@ -73,7 +73,7 @@ bool Mesh::load_stl(const std::string &path)
             long file_size = std::ftell(f);
             std::fseek(f, pos, SEEK_SET);
 
-            if (file_size == (long)(84 + (uint64_t)tri_count * 50))
+            if (file_size == static_cast<long>(84 + static_cast<uint64_t>(tri_count) * 50))
                 is_ascii = false;
             else
                 std::fseek(f, 80, SEEK_SET); // rewind past header for ASCII path
@@ -115,7 +115,7 @@ bool Mesh::load_stl(const std::string &path)
             {
                 if (vert_count >= 3)
                 {
-                    uint32_t base = (uint32_t)vertices.size();
+                    uint32_t base = static_cast<uint32_t>(vertices.size());
                     vertices.push_back({verts[0], {}, {}, {}});
                     vertices.push_back({verts[1], {}, {}, {}});
                     vertices.push_back({verts[2], {}, {}, {}});
@@ -150,15 +150,15 @@ bool Mesh::load_stl(const std::string &path)
             return false;
         }
 
-        vertices.reserve((size_t)tri_count * 3);
-        triangles.reserve((size_t)tri_count);
+        vertices.reserve(static_cast<size_t>(tri_count) * 3);
+        triangles.reserve(static_cast<size_t>(tri_count));
 
         // STL is always little-endian. Decode explicitly so the loader is
         // correct on big-endian hosts instead of reading host-native bytes.
         auto le_f32 = [](const uint8_t *b) -> float
         {
-            uint32_t u = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
-                         ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
+            uint32_t u = static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
+                         (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
             float v;
             std::memcpy(&v, &u, 4);
             return v;
@@ -191,7 +191,7 @@ bool Mesh::load_stl(const std::string &path)
                 break;
             }
 
-            uint32_t base = (uint32_t)vertices.size();
+            uint32_t base = static_cast<uint32_t>(vertices.size());
             vertices.push_back({{le_f32(raw + 0), le_f32(raw + 4), le_f32(raw + 8)}, {}, {}, {}});
             vertices.push_back({{le_f32(raw + 12), le_f32(raw + 16), le_f32(raw + 20)}, {}, {}, {}});
             vertices.push_back({{le_f32(raw + 24), le_f32(raw + 28), le_f32(raw + 32)}, {}, {}, {}});

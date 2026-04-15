@@ -175,7 +175,7 @@ void Mesh::compute_ao()
         vec3 centroid{};
         for (uint32_t j : adj[i])
             centroid += vertices[j].pos;
-        centroid = centroid * (1.0f / (float)adj[i].size());
+        centroid = centroid * (1.0f / static_cast<float>(adj[i].size()));
 
         vec3 d = centroid - p;
         float len = d.length();

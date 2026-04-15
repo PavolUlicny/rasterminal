@@ -73,7 +73,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
     vec3 center{};
     for (const auto &v : mesh.vertices)
         center += v.pos;
-    center = center * (1.0f / (float)mesh.vertices.size());
+    center = center * (1.0f / static_cast<float>(mesh.vertices.size()));
     float radius = 0.0f;
     for (const auto &v : mesh.vertices)
         radius = std::max(radius, (v.pos - center).length());
@@ -132,10 +132,10 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         vec3 sb = to_spx(ndc_b);
         vec3 sc = to_spx(ndc_c);
 
-        int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
-        int x1 = std::min(S - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
-        int y0 = std::max(0, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
-        int y1 = std::min(S - 1, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+        int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
+        int x1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+        int y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+        int y1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
 
         float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
         if (std::abs(denom) < 1e-6f)

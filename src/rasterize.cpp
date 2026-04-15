@@ -8,9 +8,9 @@
 static Color vec3_to_color(vec3 c)
 {
     return {
-        (uint8_t)(clamp(c.x, 0.0f, 1.0f) * 255.0f),
-        (uint8_t)(clamp(c.y, 0.0f, 1.0f) * 255.0f),
-        (uint8_t)(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
+        static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+        static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+        static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
 }
 
 // ─── clip_near ────────────────────────────────────────────────────────────────
@@ -29,7 +29,7 @@ int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near
     const bool ia = a.c.w > NEAR_W;
     const bool ib = b.c.w > NEAR_W;
     const bool ic = c.c.w > NEAR_W;
-    const int n = (int)ia + (int)ib + (int)ic;
+    const int n = static_cast<int>(ia) + static_cast<int>(ib) + static_cast<int>(ic);
 
     if (n == 3)
     {
@@ -113,8 +113,8 @@ int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near
 
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 {
-    int x0 = (int)std::round(a.x), y0 = (int)std::round(a.y);
-    int x1 = (int)std::round(b.x), y1 = (int)std::round(b.y);
+    int x0 = static_cast<int>(std::round(a.x)), y0 = static_cast<int>(std::round(a.y));
+    int x1 = static_cast<int>(std::round(b.x)), y1 = static_cast<int>(std::round(b.y));
 
     int dx = std::abs(x1 - x0);
     int dy = std::abs(y1 - y0);
@@ -127,14 +127,14 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
         return;
     }
 
-    float sx = (float)(x1 - x0) / (float)steps;
-    float sy = (float)(y1 - y0) / (float)steps;
-    float sz = (b.z - a.z) / (float)steps;
+    float sx = static_cast<float>(x1 - x0) / static_cast<float>(steps);
+    float sy = static_cast<float>(y1 - y0) / static_cast<float>(steps);
+    float sz = (b.z - a.z) / static_cast<float>(steps);
 
-    float x = (float)x0, y = (float)y0, z = a.z;
+    float x = static_cast<float>(x0), y = static_cast<float>(y0), z = a.z;
     for (int i = 0; i <= steps; i++)
     {
-        int px = (int)std::round(x), py = (int)std::round(y);
+        int px = static_cast<int>(std::round(x)), py = static_cast<int>(std::round(y));
         if (fb.test_and_set_depth(px, py, z))
             fb.set_pixel(px, py, color);
         x += sx;
@@ -167,10 +167,10 @@ void rasterize(Framebuffer &fb,
     const int W = fb.width();
 
     // Bounding box, clamped to this thread's y-band.
-    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
-    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
-    int y0 = std::max(y_min, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
-    int y1 = std::min(y_max, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+    int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
+    int x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+    int y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+    int y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
     // Early exit before expensive divisions — triangle doesn't touch this band.
     if (y0 > y1 || x0 > x1)
         return;
@@ -190,8 +190,8 @@ void rasterize(Framebuffer &fb,
     {
         for (int x = x0; x <= x1; x++)
         {
-            float px = (float)x + 0.5f;
-            float py = (float)y + 0.5f;
+            float px = static_cast<float>(x) + 0.5f;
+            float py = static_cast<float>(y) + 0.5f;
 
             // Screen-space barycentric weights
             float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
@@ -264,10 +264,10 @@ void rasterize_phong(Framebuffer &fb,
 {
     const int W = fb.width();
 
-    int x0 = std::max(0, (int)std::floor(std::min({sa.x, sb.x, sc.x})));
-    int x1 = std::min(W - 1, (int)std::ceil(std::max({sa.x, sb.x, sc.x})));
-    int y0 = std::max(y_min, (int)std::floor(std::min({sa.y, sb.y, sc.y})));
-    int y1 = std::min(y_max, (int)std::ceil(std::max({sa.y, sb.y, sc.y})));
+    int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
+    int x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+    int y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+    int y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
     // Early exit before expensive divisions — triangle doesn't touch this band.
     if (y0 > y1 || x0 > x1)
         return;
@@ -285,8 +285,8 @@ void rasterize_phong(Framebuffer &fb,
     {
         for (int x = x0; x <= x1; x++)
         {
-            float px = (float)x + 0.5f;
-            float py = (float)y + 0.5f;
+            float px = static_cast<float>(x) + 0.5f;
+            float py = static_cast<float>(y) + 0.5f;
 
             float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
             float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;

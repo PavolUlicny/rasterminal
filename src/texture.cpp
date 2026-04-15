@@ -27,7 +27,7 @@ bool Texture::load(const std::string &path)
 
     width = w;
     height = h;
-    pixels.assign(data, data + (size_t)w * (size_t)h * 4);
+    pixels.assign(data, data + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
     stbi_image_free(data);
     return true;
 }
@@ -44,20 +44,20 @@ vec3 Texture::sample_rgb(float u, float v) const
     // most image formats store row 0 at the top.
     v = 1.0f - v;
 
-    float fx = u * (float)(width - 1);
-    float fy = v * (float)(height - 1);
+    float fx = u * static_cast<float>(width - 1);
+    float fy = v * static_cast<float>(height - 1);
 
-    int x0 = std::max(0, (int)std::floor(fx));
-    int y0 = std::max(0, (int)std::floor(fy));
+    int x0 = std::max(0, static_cast<int>(std::floor(fx)));
+    int y0 = std::max(0, static_cast<int>(std::floor(fy)));
     int x1 = std::min(x0 + 1, width - 1);
     int y1 = std::min(y0 + 1, height - 1);
 
-    float tx = fx - (float)x0;
-    float ty = fy - (float)y0;
+    float tx = fx - static_cast<float>(x0);
+    float ty = fy - static_cast<float>(y0);
 
     auto get = [&](int x, int y) -> vec3
     {
-        const uint8_t *p = pixels.data() + ((size_t)y * (size_t)width + (size_t)x) * 4;
+        const uint8_t *p = pixels.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
         constexpr float inv255 = 1.0f / 255.0f;
         return {p[0] * inv255, p[1] * inv255, p[2] * inv255};
     };

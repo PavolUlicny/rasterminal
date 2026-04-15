@@ -98,7 +98,7 @@ bool Mesh::load_ply(const std::string &path)
 
     // Byte-swap helpers for big-endian binary files.
     auto bs16 = [](uint16_t v) -> uint16_t
-    { return (uint16_t)((v >> 8) | (v << 8)); };
+    { return static_cast<uint16_t>((v >> 8) | (v << 8)); };
     auto bs32 = [](uint32_t v) -> uint32_t
     {
         return ((v >> 24) & 0xFFu) | ((v >> 8) & 0xFF00u) |
@@ -106,9 +106,9 @@ bool Mesh::load_ply(const std::string &path)
     };
     auto bs64 = [&](uint64_t v) -> uint64_t
     {
-        uint32_t lo = bs32((uint32_t)(v & 0xFFFFFFFFu));
-        uint32_t hi = bs32((uint32_t)(v >> 32));
-        return ((uint64_t)lo << 32) | (uint64_t)hi;
+        uint32_t lo = bs32(static_cast<uint32_t>(v & 0xFFFFFFFFu));
+        uint32_t hi = bs32(static_cast<uint32_t>(v >> 32));
+        return (static_cast<uint64_t>(lo) << 32) | static_cast<uint64_t>(hi);
     };
 
     struct Prop
@@ -174,7 +174,7 @@ bool Mesh::load_ply(const std::string &path)
 
     auto push_face = [&](uint32_t *fv, uint32_t actual)
     {
-        uint32_t n_verts = (uint32_t)vertices.size();
+        uint32_t n_verts = static_cast<uint32_t>(vertices.size());
         for (uint32_t j = 1; j + 1 < actual; j++)
         {
             if (fv[0] >= n_verts || fv[j] >= n_verts || fv[j + 1] >= n_verts)
@@ -205,7 +205,7 @@ bool Mesh::load_ply(const std::string &path)
     while (std::fgets(line, sizeof(line), f))
     {
         // Strip trailing whitespace/newlines.
-        int len = (int)std::strlen(line);
+        int len = static_cast<int>(std::strlen(line));
         while (len > 0 && line[len - 1] <= ' ')
             line[--len] = '\0';
 
@@ -225,7 +225,7 @@ bool Mesh::load_ply(const std::string &path)
             int count = 0;
             std::sscanf(line + 8, "%63s %d", name, &count);
             elements.push_back({name, count, {}});
-            cur = (int)elements.size() - 1;
+            cur = static_cast<int>(elements.size()) - 1;
         }
         else if (std::strncmp(line, "property ", 9) == 0 && cur >= 0)
         {
@@ -281,7 +281,7 @@ bool Mesh::load_ply(const std::string &path)
                 return false;
             }
 
-            elements[(size_t)cur].props.push_back(prop);
+            elements[static_cast<size_t>(cur)].props.push_back(prop);
         }
         // Comments and other directives are ignored.
     }
@@ -309,9 +309,9 @@ bool Mesh::load_ply(const std::string &path)
 
     // ── Read data ─────────────────────────────────────────────────────────────
 
-    vertices.reserve((size_t)vert_elem->count);
+    vertices.reserve(static_cast<size_t>(vert_elem->count));
     if (face_elem && face_elem->count > 0)
-        triangles.reserve((size_t)face_elem->count);
+        triangles.reserve(static_cast<size_t>(face_elem->count));
 
     bool truncated = false; // set by binary read_scalar on premature EOF
 
@@ -411,7 +411,7 @@ bool Mesh::load_ply(const std::string &path)
         long file_end = std::ftell(f);
         std::fseek(f, data_start, SEEK_SET);
 
-        size_t data_len = (size_t)(file_end - data_start);
+        size_t data_len = static_cast<size_t>(file_end - data_start);
         std::vector<uint8_t> buf(data_len);
         if (std::fread(buf.data(), 1, data_len, f) != data_len)
         {
@@ -441,12 +441,12 @@ bool Mesh::load_ply(const std::string &path)
                 int8_t v;
                 std::memcpy(&v, p, 1);
                 p += 1;
-                result = (float)v;
+                result = static_cast<float>(v);
                 break;
             }
             case PType::U8:
             {
-                result = (float)*p;
+                result = static_cast<float>(*p);
                 p += 1;
                 break;
             }
@@ -459,7 +459,7 @@ bool Mesh::load_ply(const std::string &path)
                     b = bs16(b);
                 int16_t v;
                 std::memcpy(&v, &b, 2);
-                result = (float)v;
+                result = static_cast<float>(v);
                 break;
             }
             case PType::U16:
@@ -469,7 +469,7 @@ bool Mesh::load_ply(const std::string &path)
                 p += 2;
                 if (be)
                     b = bs16(b);
-                result = (float)b;
+                result = static_cast<float>(b);
                 break;
             }
             case PType::I32:
@@ -481,7 +481,7 @@ bool Mesh::load_ply(const std::string &path)
                     b = bs32(b);
                 int32_t v;
                 std::memcpy(&v, &b, 4);
-                result = (float)v;
+                result = static_cast<float>(v);
                 break;
             }
             case PType::U32:
@@ -491,7 +491,7 @@ bool Mesh::load_ply(const std::string &path)
                 p += 4;
                 if (be)
                     b = bs32(b);
-                result = (float)b;
+                result = static_cast<float>(b);
                 break;
             }
             case PType::F32:
@@ -513,7 +513,7 @@ bool Mesh::load_ply(const std::string &path)
                     b = bs64(b);
                 double d;
                 std::memcpy(&d, &b, 8);
-                result = (float)d;
+                result = static_cast<float>(d);
                 break;
             }
             case PType::UNKNOWN:
@@ -526,7 +526,7 @@ bool Mesh::load_ply(const std::string &path)
         // which loses precision for indices >= 2^24.
         auto read_uint_direct = [&](PType t) -> uint32_t
         {
-            if (p + (size_t)ptype_size(t) > end)
+            if (p + static_cast<size_t>(ptype_size(t)) > end)
             {
                 truncated = true;
                 return 0;
@@ -538,7 +538,7 @@ bool Mesh::load_ply(const std::string &path)
                 int8_t v;
                 std::memcpy(&v, p, 1);
                 p += 1;
-                return (uint32_t)(int32_t)v;
+                return static_cast<uint32_t>(static_cast<int32_t>(v));
             }
             case PType::U8:
             {
@@ -555,7 +555,7 @@ bool Mesh::load_ply(const std::string &path)
                     b = bs16(b);
                 int16_t v;
                 std::memcpy(&v, &b, 2);
-                return (uint32_t)(int32_t)v;
+                return static_cast<uint32_t>(static_cast<int32_t>(v));
             }
             case PType::U16:
             {
@@ -586,7 +586,7 @@ bool Mesh::load_ply(const std::string &path)
             }
             default:
                 // F32/F64 face indices are non-standard; fall back to float path.
-                return (uint32_t)(int32_t)read_scalar(t);
+                return static_cast<uint32_t>(static_cast<int32_t>(read_scalar(t)));
             }
         };
 
@@ -609,8 +609,8 @@ bool Mesh::load_ply(const std::string &path)
                         {
                             uint32_t cnt = read_uint_direct(prop.list_count_t);
                             // Reject count that exceeds remaining buffer — fail-fast on malformed data.
-                            size_t elem_sz = (size_t)ptype_size(prop.list_elem_t);
-                            size_t remaining = (p < end) ? (size_t)(end - p) : 0u;
+                            size_t elem_sz = static_cast<size_t>(ptype_size(prop.list_elem_t));
+                            size_t remaining = (p < end) ? static_cast<size_t>(end - p) : 0u;
                             if (elem_sz > 0 && cnt > remaining / elem_sz)
                             {
                                 truncated = true;
@@ -637,8 +637,8 @@ bool Mesh::load_ply(const std::string &path)
 
                         uint32_t cnt = read_uint_direct(prop.list_count_t);
                         // Reject count that exceeds remaining buffer — fail-fast on malformed data.
-                        size_t elem_sz = (size_t)ptype_size(prop.list_elem_t);
-                        size_t remaining = (p < end) ? (size_t)(end - p) : 0u;
+                        size_t elem_sz = static_cast<size_t>(ptype_size(prop.list_elem_t));
+                        size_t remaining = (p < end) ? static_cast<size_t>(end - p) : 0u;
                         if (elem_sz > 0 && cnt > remaining / elem_sz)
                         {
                             truncated = true;
@@ -665,9 +665,9 @@ bool Mesh::load_ply(const std::string &path)
                         {
                             // Read count directly as uint32 to avoid negative/overflow via float.
                             uint32_t cnt = read_uint_direct(prop.list_count_t);
-                            size_t skip = (size_t)cnt * (size_t)ptype_size(prop.list_elem_t);
+                            size_t skip = static_cast<size_t>(cnt) * static_cast<size_t>(ptype_size(prop.list_elem_t));
                             // Use remaining-bytes check to avoid pointer-arithmetic overflow.
-                            if (skip > (size_t)(end - p))
+                            if (skip > static_cast<size_t>(end - p))
                             {
                                 truncated = true;
                                 break;
@@ -676,8 +676,8 @@ bool Mesh::load_ply(const std::string &path)
                         }
                         else
                         {
-                            size_t skip = (size_t)ptype_size(prop.type);
-                            if (skip > (size_t)(end - p))
+                            size_t skip = static_cast<size_t>(ptype_size(prop.type));
+                            if (skip > static_cast<size_t>(end - p))
                             {
                                 truncated = true;
                                 break;

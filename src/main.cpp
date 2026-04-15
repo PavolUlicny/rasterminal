@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
             std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
             return false;
         }
-        out = (int)v;
+        out = static_cast<int>(v);
         return true;
     };
 
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
         std::string v = val;
         std::transform(v.begin(), v.end(), v.begin(),
                        [](unsigned char c)
-                       { return (char)std::tolower(c); });
+                       { return static_cast<char>(std::tolower(c)); });
         if (v == "wireframe" || v == "1")
             out = ShadingMode::Wireframe;
         else if (v == "flat" || v == "2")
@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
         std::string v = val;
         std::transform(v.begin(), v.end(), v.begin(),
                        [](unsigned char c)
-                       { return (char)std::tolower(c); });
+                       { return static_cast<char>(std::tolower(c)); });
         if (v == "black" || v == "1")
             out = 0;
         else if (v == "gray" || v == "grey" || v == "2")
@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
         std::string v = val;
         std::transform(v.begin(), v.end(), v.begin(),
                        [](unsigned char c)
-                       { return (char)std::tolower(c); });
+                       { return static_cast<char>(std::tolower(c)); });
         if (v == "dual" || v == "1")
             out = 0;
         else if (v == "single" || v == "2")
@@ -438,8 +438,8 @@ int main(int argc, char *argv[])
             {
                 int dx = ev.x - mouse_last_x;
                 int dy = ev.y - mouse_last_y;
-                camera.yaw -= (float)dx * 0.02f;
-                camera.pitch += (float)dy * 0.04f;
+                camera.yaw -= static_cast<float>(dx) * 0.02f;
+                camera.pitch += static_cast<float>(dy) * 0.04f;
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
             }
@@ -483,7 +483,7 @@ int main(int argc, char *argv[])
                                                                                         : "flat";
             char hud[160];
             std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
-                          mode_str, (fps_smooth < 0.0f) ? 0 : (int)fps_smooth, model_name.c_str(),
+                          mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
                           spinning ? "spin ON" : "spin OFF",
                           lighting_str,
                           bg_mode == 0 ? "black" : bg_mode == 1 ? "gray"

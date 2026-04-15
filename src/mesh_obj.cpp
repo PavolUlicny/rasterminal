@@ -28,9 +28,9 @@ struct FaceVertexHash
 {
     size_t operator()(const FaceVertex &fv) const
     {
-        size_t h = (size_t)(fv.pi + 1);
-        h ^= (size_t)(fv.ni + 1) * 2654435761u;
-        h ^= (size_t)(fv.ti + 1) * 40503u;
+        size_t h = static_cast<size_t>(fv.pi + 1);
+        h ^= static_cast<size_t>(fv.ni + 1) * 2654435761u;
+        h ^= static_cast<size_t>(fv.ti + 1) * 40503u;
         return h;
     }
 };
@@ -66,7 +66,7 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
         long v = std::strtol(s, e, 10);
         if (*e == s || errno == ERANGE || v > INT_MAX || v < INT_MIN)
             return {0, false};
-        return {(int)v, true};
+        return {static_cast<int>(v), true};
     };
 
     char *end;
@@ -141,9 +141,9 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
             while (!name.empty() && (name.back() == '\n' || name.back() == '\r' || name.back() == ' '))
                 name.pop_back();
 
-            current = (int)materials.size();
+            current = static_cast<int>(materials.size());
             materials.push_back(Material{});
-            mat_map[name] = (uint32_t)current;
+            mat_map[name] = static_cast<uint32_t>(current);
         }
         else if (current >= 0)
         {
@@ -151,19 +151,19 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
             {
                 float r, g, b;
                 if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[(size_t)current].diffuse = {r, g, b};
+                    materials[static_cast<size_t>(current)].diffuse = {r, g, b};
             }
             else if (std::strncmp(p, "Ks", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
             {
                 float r, g, b;
                 if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[(size_t)current].specular = {r, g, b};
+                    materials[static_cast<size_t>(current)].specular = {r, g, b};
             }
             else if (std::strncmp(p, "Ns", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
             {
                 float ns;
                 if (std::sscanf(p + 3, "%f", &ns) == 1)
-                    materials[(size_t)current].shininess = ns;
+                    materials[static_cast<size_t>(current)].shininess = ns;
             }
             else if (std::strncmp(p, "map_Kd", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
             {
@@ -181,7 +181,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                     Texture tex;
                     if (tex.load(mtl_dir + tex_name))
                     {
-                        materials[(size_t)current].diffuse_tex = (int)textures.size();
+                        materials[static_cast<size_t>(current)].diffuse_tex = static_cast<int>(textures.size());
                         textures.push_back(std::move(tex));
                     }
                 }
@@ -216,7 +216,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                     Texture tex;
                     if (tex.load(mtl_dir + tex_name))
                     {
-                        materials[(size_t)current].normal_tex = (int)textures.size();
+                        materials[static_cast<size_t>(current)].normal_tex = static_cast<int>(textures.size());
                         textures.push_back(std::move(tex));
                     }
                 }
@@ -281,21 +281,21 @@ bool Mesh::load_obj(const std::string &path)
             return it->second;
 
         // Position is mandatory; reject the vertex if the index is invalid.
-        if (fv.pi < 0 || fv.pi >= (int)pos_pool.size())
+        if (fv.pi < 0 || fv.pi >= static_cast<int>(pos_pool.size()))
             return UINT32_MAX;
 
         Vertex v;
-        v.pos = pos_pool[(size_t)fv.pi];
-        if (fv.ni >= 0 && fv.ni < (int)norm_pool.size())
-            v.normal = norm_pool[(size_t)fv.ni];
+        v.pos = pos_pool[static_cast<size_t>(fv.pi)];
+        if (fv.ni >= 0 && fv.ni < static_cast<int>(norm_pool.size()))
+            v.normal = norm_pool[static_cast<size_t>(fv.ni)];
         else
         {
             v.normal = vec3{};
             all_have_normals = false; // this vertex has no file-provided normal
         }
-        v.uv = (fv.ti >= 0 && fv.ti < (int)uv_pool.size()) ? uv_pool[(size_t)fv.ti] : vec2{};
+        v.uv = (fv.ti >= 0 && fv.ti < static_cast<int>(uv_pool.size())) ? uv_pool[static_cast<size_t>(fv.ti)] : vec2{};
 
-        uint32_t idx = (uint32_t)vertices.size();
+        uint32_t idx = static_cast<uint32_t>(vertices.size());
         vertices.push_back(v);
         vertex_map[fv] = idx;
         return idx;
@@ -370,13 +370,13 @@ bool Mesh::load_obj(const std::string &path)
             FaceVertex fverts[32]; // 32 is well beyond any real-world polygon
             int count = 0;
 
-            while (count < (int)(sizeof(fverts) / sizeof(fverts[0])))
+            while (count < static_cast<int>(sizeof(fverts) / sizeof(fverts[0])))
             {
                 FaceVertex fv;
                 if (!parse_face_vertex(&p, fv,
-                                       (int)pos_pool.size(),
-                                       (int)norm_pool.size(),
-                                       (int)uv_pool.size()))
+                                       static_cast<int>(pos_pool.size()),
+                                       static_cast<int>(norm_pool.size()),
+                                       static_cast<int>(uv_pool.size())))
                     break;
                 fverts[count++] = fv;
             }
@@ -385,8 +385,8 @@ bool Mesh::load_obj(const std::string &path)
             // Works correctly for convex polygons (the common case in OBJ).
             if (count < 3)
                 continue;
-            uint32_t v0 = get_vertex(fverts[0]);
-            if (v0 == UINT32_MAX)
+            uint32_t v0_idx = get_vertex(fverts[0]);
+            if (v0_idx == UINT32_MAX)
                 continue;
             for (int i = 1; i + 1 < count; i++)
             {
@@ -395,7 +395,7 @@ bool Mesh::load_obj(const std::string &path)
                 if (v1 == UINT32_MAX || v2 == UINT32_MAX)
                     continue;
                 Triangle t;
-                t.v[0] = v0;
+                t.v[0] = v0_idx;
                 t.v[1] = v1;
                 t.v[2] = v2;
                 t.material_idx = current_mat;
