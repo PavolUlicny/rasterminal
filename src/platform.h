@@ -235,6 +235,19 @@ namespace platform
             (void)n;
             return b;
         };
+        // Like rb() but returns 0 if no byte arrives within `ms` milliseconds.
+        // Used inside escape sequences to avoid blocking on a bare ESC or a
+        // fragmented sequence that will never complete.
+        auto rb_timeout = [](int ms) -> char
+        {
+            struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+            if (poll(&pfd, 1, ms) <= 0)
+                return 0;
+            char b = 0;
+            ssize_t n = read(STDIN_FILENO, &b, 1);
+            (void)n;
+            return b;
+        };
         char c = rb();
         if (c == 0)
             return ev;
@@ -249,7 +262,13 @@ namespace platform
         }
 
         // ── Escape sequence ──────────────────────────────────────────────────────
+        // Use a 50 ms timeout: imperceptible to the user but long enough to cover
+        // fragmented delivery over SSH.  If nothing arrives, treat \033 as bare ESC.
+#ifdef _WIN32
         char b1 = rb();
+#else
+        char b1 = rb_timeout(50);
+#endif
         if (b1 != '[')
         {
             ev.type = InputEvent::Type::Key;
@@ -257,7 +276,17 @@ namespace platform
             return ev;
         }
 
+#ifdef _WIN32
         char b2 = rb();
+#else
+        char b2 = rb_timeout(50);
+        if (b2 == 0)
+        {
+            ev.type = InputEvent::Type::Key;
+            ev.key = KEY_ESCAPE;
+            return ev;
+        }
+#endif
 
         // ── SGR mouse: \033[<btn;x;yM (press/scroll) or \033[<btn;x;ym (release) ──
         if (b2 == '<')
@@ -267,7 +296,13 @@ namespace platform
             char fin = 0;
             for (;;)
             {
+#ifdef _WIN32
                 char d = rb();
+#else
+                char d = rb_timeout(50);
+                if (d == 0)
+                    break; // incomplete sequence — discard
+#endif
                 if (d == ';')
                 {
                     if (ni < 2)
@@ -283,6 +318,10 @@ namespace platform
                     break;
                 }
             }
+
+            // Discard if sequence never completed (timeout or unknown terminator).
+            if (fin != 'M' && fin != 'm')
+                return ev; // Type::None
 
             int btn = nums[0];
             ev.x = nums[1];
