@@ -291,16 +291,17 @@ bool Mesh::load_obj(const std::string &path)
     while (std::fgets(line, sizeof(line), f))
     {
         const char *p = line;
+        while (*p == ' ' || *p == '\t') p++; // OBJ allows leading whitespace
 
         if (p[0] == 'v' && p[1] == ' ')
         {
-            vec3 v;
+            vec3 v{};
             std::sscanf(p + 2, "%f %f %f", &v.x, &v.y, &v.z);
             pos_pool.push_back(v);
         }
         else if (p[0] == 'v' && p[1] == 'n')
         {
-            vec3 n;
+            vec3 n{};
             std::sscanf(p + 3, "%f %f %f", &n.x, &n.y, &n.z);
             norm_pool.push_back(n);
             has_normals = true;
