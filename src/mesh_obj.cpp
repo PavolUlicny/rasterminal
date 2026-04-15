@@ -219,6 +219,20 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
 
 bool Mesh::load_obj(const std::string &path)
 {
+    // Save state so we can roll back on any failure path.
+    const size_t v0 = vertices.size();
+    const size_t t0 = triangles.size();
+    const size_t m0 = materials.size();
+    const size_t tx0 = textures.size();
+
+    auto rollback = [&]
+    {
+        vertices.resize(v0);
+        triangles.resize(t0);
+        materials.resize(m0);
+        textures.resize(tx0);
+    };
+
     FILE *f = std::fopen(path.c_str(), "r");
     if (!f)
         return false;
@@ -343,8 +357,14 @@ bool Mesh::load_obj(const std::string &path)
 
     std::fclose(f);
 
+    if (triangles.empty())
+    {
+        rollback();
+        return false;
+    }
+
     if (!has_normals)
         compute_normals();
 
-    return !triangles.empty();
+    return true;
 }

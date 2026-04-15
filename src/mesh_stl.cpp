@@ -13,6 +13,18 @@
 
 bool Mesh::load_stl(const std::string &path)
 {
+    // Save state so we can roll back on any failure path.
+    const size_t v0 = vertices.size();
+    const size_t t0 = triangles.size();
+    const size_t m0 = materials.size();
+
+    auto rollback = [&]
+    {
+        vertices.resize(v0);
+        triangles.resize(t0);
+        materials.resize(m0);
+    };
+
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f)
         return false;
@@ -111,6 +123,7 @@ bool Mesh::load_stl(const std::string &path)
         if (std::fread(&tri_count, 4, 1, f) != 1)
         {
             std::fclose(f);
+            rollback();
             return false;
         }
 
@@ -122,15 +135,27 @@ bool Mesh::load_stl(const std::string &path)
         {
             // 3 floats: face normal (ignored — we recompute per-vertex normals)
             float ignored[3];
-            if (std::fread(ignored, 4, 3, f) != 3) { truncated = true; break; }
+            if (std::fread(ignored, 4, 3, f) != 3)
+            {
+                truncated = true;
+                break;
+            }
 
             // 3 × 3 floats: vertices
             float raw[9];
-            if (std::fread(raw, 4, 9, f) != 9) { truncated = true; break; }
+            if (std::fread(raw, 4, 9, f) != 9)
+            {
+                truncated = true;
+                break;
+            }
 
             // 2-byte attribute (ignored)
             uint16_t attr;
-            if (std::fread(&attr, 2, 1, f) != 1) { truncated = true; break; }
+            if (std::fread(&attr, 2, 1, f) != 1)
+            {
+                truncated = true;
+                break;
+            }
 
             uint32_t base = (uint32_t)vertices.size();
             vertices.push_back({{raw[0], raw[1], raw[2]}, {}, {}, {}});
@@ -148,6 +173,7 @@ bool Mesh::load_stl(const std::string &path)
         if (truncated)
         {
             std::fclose(f);
+            rollback();
             return false;
         }
     }
@@ -155,7 +181,10 @@ bool Mesh::load_stl(const std::string &path)
     std::fclose(f);
 
     if (vertices.empty() || triangles.empty())
+    {
+        rollback();
         return false;
+    }
 
     // STL has no vertex sharing so normals must always be computed.
     compute_normals();
