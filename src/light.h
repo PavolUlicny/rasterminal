@@ -4,6 +4,34 @@
 
 #include <cmath>
 
+inline float specular_pow(float ndh, float shininess)
+{
+    // Common MTL shininess values get an exact multiply chain that is much
+    // cheaper than libm powf in the inner lighting loop.
+    if (shininess == 32.0f)
+    {
+        float x2 = ndh * ndh;
+        float x4 = x2 * x2;
+        float x8 = x4 * x4;
+        float x16 = x8 * x8;
+        return x16 * x16;
+    }
+    if (shininess == 16.0f)
+    {
+        float x2 = ndh * ndh;
+        float x4 = x2 * x2;
+        float x8 = x4 * x4;
+        return x8 * x8;
+    }
+    if (shininess == 8.0f)
+    {
+        float x2 = ndh * ndh;
+        float x4 = x2 * x2;
+        return x4 * x4;
+    }
+    return std::pow(ndh, shininess);
+}
+
 // Per-surface material properties (from MTL Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
@@ -47,7 +75,7 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
 
         float ndh = dot(n, normalize(l + v));
         if (ndh > 0.0f)
-            result += lc * mat.specular * std::pow(ndh, mat.shininess);
+            result += lc * mat.specular * specular_pow(ndh, mat.shininess);
     }
 
     return result;
