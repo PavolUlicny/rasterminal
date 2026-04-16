@@ -16,6 +16,22 @@ static vec3 ndc_to_screen(vec3 ndc, int W, int H)
         ndc.z};
 }
 
+// Choose a conservative dynamic chunk size for Phase 1 work stealing.
+// This keeps enough claims per worker for balance while bounding overhead.
+static int choose_phase1_chunk(int total_tris, int n_workers)
+{
+    constexpr int MIN_CHUNK = 64;
+    constexpr int MAX_CHUNK = 256;
+    constexpr int TARGET_CLAIMS_PER_WORKER = 12;
+
+    if (total_tris <= 0 || n_workers <= 0)
+        return MIN_CHUNK;
+
+    const int denom = n_workers * TARGET_CLAIMS_PER_WORKER;
+    const int raw = (total_tris + denom - 1) / denom; // ceil(total/denom)
+    return std::clamp(raw, MIN_CHUNK, MAX_CHUNK);
+}
+
 // ─── Renderer: constructor / destructor ───────────────────────────────────────
 
 Renderer::Renderer(int n_threads)
@@ -102,13 +118,13 @@ void Renderer::worker_func(int t)
             // Dynamic work stealing: each worker atomically claims the next
             // chunk of triangles. This balances load automatically regardless
             // of how visible triangles are distributed across the mesh.
-            constexpr int CHUNK = 256;
+            const int chunk = choose_phase1_chunk(total, n);
             while (true)
             {
-                int start = m_tri_cursor.fetch_add(CHUNK, std::memory_order_relaxed);
+                int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
                 if (start >= total)
                     break;
-                int end = std::min(start + CHUNK, total);
+                int end = std::min(start + chunk, total);
                 for (int i = start; i < end; i++)
                 {
                     const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
