@@ -186,32 +186,46 @@ void rasterize(Framebuffer &fb,
     float inv_wb = 1.0f / wb;
     float inv_wc = 1.0f / wc;
 
+    const float ba_dx = (sb.y - sc.y) * inv_d;
+    const float ba_dy = (sc.x - sb.x) * inv_d;
+    const float bb_dx = (sc.y - sa.y) * inv_d;
+    const float bb_dy = (sa.x - sc.x) * inv_d;
+
+    const float px0 = static_cast<float>(x0) + 0.5f;
+    const float py0 = static_cast<float>(y0) + 0.5f;
+    float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
+    float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+
     for (int y = y0; y <= y1; y++)
     {
+        float ba = ba_row;
+        float bb = bb_row;
         for (int x = x0; x <= x1; x++)
         {
-            float px = static_cast<float>(x) + 0.5f;
-            float py = static_cast<float>(y) + 0.5f;
-
-            // Screen-space barycentric weights
-            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
-            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
             float bc = 1.0f - ba - bb;
 
             if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+            {
+                ba += ba_dx;
+                bb += bb_dx;
                 continue;
+            }
 
             // z_ndc is linear in screen space (projection makes it A + B/z_view,
             // which is linear in NDC x/y), so plain barycentric is correct here —
             // perspective correction would distort it and break depth ordering.
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
+            if (!fb.test_and_set_depth(x, y, depth))
+            {
+                ba += ba_dx;
+                bb += bb_dx;
+                continue;
+            }
+
             // Perspective-correct weight for colour and UV interpolation.
             float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
             float w_corr = 1.0f / inv_w;
-
-            if (!fb.test_and_set_depth(x, y, depth))
-                continue;
 
             // Per-pixel shadow test using interpolated world position.
             bool shadowed = false;
@@ -233,7 +247,13 @@ void rasterize(Framebuffer &fb,
             }
 
             fb.set_pixel(x, y, vec3_to_color(col));
+
+            ba += ba_dx;
+            bb += bb_dx;
         }
+
+        ba_row += ba_dy;
+        bb_row += bb_dy;
     }
 }
 
@@ -281,23 +301,38 @@ void rasterize_phong(Framebuffer &fb,
     float inv_wb = 1.0f / wb;
     float inv_wc = 1.0f / wc;
 
+    const float ba_dx = (sb.y - sc.y) * inv_d;
+    const float ba_dy = (sc.x - sb.x) * inv_d;
+    const float bb_dx = (sc.y - sa.y) * inv_d;
+    const float bb_dy = (sa.x - sc.x) * inv_d;
+
+    const float px0 = static_cast<float>(x0) + 0.5f;
+    const float py0 = static_cast<float>(y0) + 0.5f;
+    float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
+    float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+
     for (int y = y0; y <= y1; y++)
     {
+        float ba = ba_row;
+        float bb = bb_row;
         for (int x = x0; x <= x1; x++)
         {
-            float px = static_cast<float>(x) + 0.5f;
-            float py = static_cast<float>(y) + 0.5f;
-
-            float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
-            float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
             float bc = 1.0f - ba - bb;
 
             if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+            {
+                ba += ba_dx;
+                bb += bb_dx;
                 continue;
+            }
 
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
             if (!fb.test_and_set_depth(x, y, depth))
+            {
+                ba += ba_dx;
+                bb += bb_dx;
                 continue;
+            }
 
             // Perspective-correct interpolation of world-space position and normal.
             float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
@@ -344,6 +379,12 @@ void rasterize_phong(Framebuffer &fb,
                              ? compute_lighting(pos, nrm, eye, sl, n_shadow, ambient, px_mat, ao)
                              : compute_lighting(pos, nrm, eye, lights, n_lights, ambient, px_mat, ao);
             fb.set_pixel(x, y, vec3_to_color(color));
+
+            ba += ba_dx;
+            bb += bb_dx;
         }
+
+        ba_row += ba_dy;
+        bb_row += bb_dy;
     }
 }
