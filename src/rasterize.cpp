@@ -22,7 +22,8 @@ static Color vec3_to_color(vec3 c)
 // Too small a value produces off-screen NDC coordinates whose magnitude
 // overwhelms float precision in the barycentric computation.
 
-int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near_w)
+int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
+              ClipVert out[2][3], float near_w)
 {
     const float NEAR_W = near_w;
 
@@ -40,6 +41,11 @@ int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near
     }
     if (n == 0)
         return 0;
+
+    // Only cases with partial visibility need local permutation/crossing.
+    ClipVert aa = a;
+    ClipVert bb = b;
+    ClipVert cc = c;
 
     // Interpolate all attributes from an inside vertex v0 toward an outside
     // vertex v1 to find the exact w = NEAR_W crossing.
@@ -59,22 +65,22 @@ int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near
         // Rotate so the single inside vertex is first.
         if (ib)
         {
-            ClipVert t = a;
-            a = b;
-            b = c;
-            c = t;
+            ClipVert t = aa;
+            aa = bb;
+            bb = cc;
+            cc = t;
         }
         else if (ic)
         {
-            ClipVert t = a;
-            a = c;
-            c = b;
-            b = t;
+            ClipVert t = aa;
+            aa = cc;
+            cc = bb;
+            bb = t;
         }
         // a inside; b, c outside → one clipped triangle.
-        out[0][0] = a;
-        out[0][1] = cross_edge(a, b);
-        out[0][2] = cross_edge(a, c);
+        out[0][0] = aa;
+        out[0][1] = cross_edge(aa, bb);
+        out[0][2] = cross_edge(aa, cc);
         return 1;
     }
 
@@ -84,25 +90,25 @@ int clip_near(ClipVert a, ClipVert b, ClipVert c, ClipVert out[2][3], float near
     }
     else if (!ia)
     {
-        ClipVert t = a;
-        a = b;
-        b = c;
-        c = t;
+        ClipVert t = aa;
+        aa = bb;
+        bb = cc;
+        cc = t;
     }
     else
     {
-        ClipVert t = b;
-        b = a;
-        a = c;
-        c = t;
+        ClipVert t = bb;
+        bb = aa;
+        aa = cc;
+        cc = t;
     }
     // a, b inside; c outside → clipped quad → two triangles.
-    ClipVert ac = cross_edge(a, c);
-    ClipVert bc = cross_edge(b, c);
-    out[0][0] = a;
-    out[0][1] = b;
+    ClipVert ac = cross_edge(aa, cc);
+    ClipVert bc = cross_edge(bb, cc);
+    out[0][0] = aa;
+    out[0][1] = bb;
     out[0][2] = bc;
-    out[1][0] = a;
+    out[1][0] = aa;
     out[1][1] = bc;
     out[1][2] = ac;
     return 2;
