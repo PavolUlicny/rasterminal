@@ -1,5 +1,5 @@
 #include "shadow.h"
-#include "rasterize.h"
+#include "clip.h"
 
 #include <algorithm>
 #include <cmath>
