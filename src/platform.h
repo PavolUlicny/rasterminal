@@ -26,7 +26,8 @@ namespace platform
         rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 #else
         struct winsize ws = {};
-        // Try all three standard fds — one of them is guaranteed to be a tty.
+        // Try all three standard fds; depending on how the process was launched,
+        // any subset may be attached to a terminal.
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
         if (ws.ws_col == 0)

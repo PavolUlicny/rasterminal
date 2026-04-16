@@ -53,9 +53,10 @@ struct RasterTri
 };
 
 // ─── clip_reject ──────────────────────────────────────────────────────────────
-// Conservative frustum rejection: returns true if all three clip-space vertices
-// lie entirely outside any single frustum half-space. Does not clip — just
-// avoids processing triangles that are obviously invisible.
+// Conservative frustum rejection: returns true if the triangle is definitely
+// not rasterizable in clip space. This includes any vertex with non-positive w
+// and triangles where all three vertices lie outside the same frustum half-space.
+// Does not clip — just avoids processing triangles that are obviously invisible.
 // Defined inline here so renderer.cpp, rasterize.cpp, and shadow.cpp can all
 // use it without a separate translation unit.
 

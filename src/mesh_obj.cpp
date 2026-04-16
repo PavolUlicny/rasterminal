@@ -109,7 +109,8 @@ static bool parse_face_vertex(const char **pp, FaceVertex &out,
 
 // ─── load_mtl ─────────────────────────────────────────────────────────────────
 // Parse a .mtl file and append materials to mesh.materials.
-// Textures referenced by map_Kd are loaded into mesh.textures.
+// Supported texture directives (e.g. map_Kd/map_Kn/map_bump) are loaded into
+// mesh.textures and referenced by material texture indices.
 // mtl_dir is the directory of the .mtl file (used to resolve relative paths).
 // Returns a map from material name → index in mesh.materials.
 
@@ -366,8 +367,9 @@ bool Mesh::load_obj(const std::string &path)
         {
             p += 2;
 
-            // Read all face vertices (OBJ supports arbitrary polygon sizes).
-            FaceVertex fverts[32]; // 32 is well beyond any real-world polygon
+            // Read face vertices up to a bounded local buffer; excess tokens on
+            // extremely large polygons are ignored by this loader.
+            FaceVertex fverts[32];
             int count = 0;
 
             while (count < static_cast<int>(sizeof(fverts) / sizeof(fverts[0])))

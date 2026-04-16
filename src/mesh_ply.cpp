@@ -9,7 +9,8 @@
 // ─── Mesh::load_ply ───────────────────────────────────────────────────────────
 // Supports ASCII, binary little-endian, and binary big-endian PLY files.
 // Reads vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
-// Unknown properties are skipped. Only element vertex and element face are used.
+// Unrecognized property names are skipped; unrecognized property types are rejected.
+// Only element vertex and element face are used.
 
 bool Mesh::load_ply(const std::string &path)
 {
@@ -50,7 +51,7 @@ bool Mesh::load_ply(const std::string &path)
         U32,
         F32,
         F64,
-        UNKNOWN // unrecognised type — size 0 triggers truncation guard
+        UNKNOWN // unrecognized type (rejected during header parse)
     };
 
     auto ptype_size = [](PType t) -> int
