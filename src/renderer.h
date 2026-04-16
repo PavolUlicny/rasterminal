@@ -54,6 +54,8 @@ private:
     std::mutex m_mutex;
     std::condition_variable m_cv_work; // workers block here between frames
     std::condition_variable m_cv_done; // render() blocks here until all done
+    std::mutex m_phase_mutex;
+    std::condition_variable m_cv_phase2; // parked workers wait here for Phase 2
 
     // Phase 1 (geometry) inputs:
     const Mesh *m_mesh = nullptr;

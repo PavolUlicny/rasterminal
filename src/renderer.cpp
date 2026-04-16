@@ -240,25 +240,29 @@ void Renderer::worker_func(int t)
             }
         }
 
-        // ── Internal barrier: spin until all workers finish Phase 1 ──────────
+        // ── Internal barrier: hybrid spin-then-park for Phase transition ─────
         // fetch_add returns the value BEFORE the increment, so the last worker
-        // to arrive sees (n-1) and sets m_phase2_ready to unblock the others.
+        // to arrive sees (n-1), releases m_phase2_ready, and wakes parked peers.
         if (m_phase1_done.fetch_add(1, std::memory_order_acq_rel) == n - 1)
         {
             m_phase2_ready.store(true, std::memory_order_release);
+            m_cv_phase2.notify_all();
         }
         else
         {
-            // Brief busy-spin before yielding: when workers finish Phase 1 within
-            // microseconds of each other (the common case), the signal is caught
-            // immediately without entering the OS scheduler. Only yield on heavy
-            // imbalance where the wait would otherwise burn a full core.
-            for (int spin = 0; !m_phase2_ready.load(std::memory_order_acquire); ++spin)
-                if (spin == 1000)
-                {
-                    spin = 0;
-                    std::this_thread::yield();
-                }
+            // Short optimistic spin keeps the common low-jitter case scheduler-free.
+            // If one worker straggles, park on a CV so we do not burn CPU cycles.
+            constexpr int PHASE2_SPIN_ITERS = 512;
+            int spin = 0;
+            while (spin < PHASE2_SPIN_ITERS && !m_phase2_ready.load(std::memory_order_acquire))
+                ++spin;
+
+            if (!m_phase2_ready.load(std::memory_order_acquire))
+            {
+                std::unique_lock<std::mutex> phase_lk(m_phase_mutex);
+                m_cv_phase2.wait(phase_lk, [this]
+                                 { return m_phase2_ready.load(std::memory_order_acquire); });
+            }
         }
 
         // ── Phase 2: rasterize ────────────────────────────────────────────────
@@ -366,8 +370,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_band_mutexes = std::make_unique<std::mutex[]>(static_cast<size_t>(n_active));
     }
 
-    // An internal spin-barrier inside worker_func separates the two phases,
-    // avoiding a second CV roundtrip. Reset barrier state before waking workers.
+    // An internal hybrid barrier (brief spin, then CV park) separates the
+    // two phases. Reset barrier state before waking workers.
     for (auto &v : m_band_tris)
         v.clear();
     m_tri_cursor.store(0, std::memory_order_relaxed);
