@@ -67,8 +67,7 @@ void Renderer::worker_func(int t)
         // Workers beyond the active cap for this frame go back to sleep.
         if (t >= n)
         {
-            std::lock_guard<std::mutex> done_lk(m_mutex);
-            if (--m_active == 0)
+            if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
                 m_cv_done.notify_one();
             continue;
         }
@@ -87,6 +86,8 @@ void Renderer::worker_func(int t)
             int W = m_W;
             int H = m_H;
             ShadingMode smode = m_smode;
+            const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
+            const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
             int total = static_cast<int>(mesh->triangles.size());
 
@@ -190,23 +191,19 @@ void Renderer::worker_func(int t)
                             vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
-                            const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-                            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
                             rt.col_a = rt.col_b = rt.col_c =
                                 compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat, face_ao);
                             rt.shad_a = rt.shad_b = rt.shad_c =
-                                compute_lighting(fc, fn, eye, sl, n_shadow, ambient, mat, face_ao);
+                                compute_lighting(fc, fn, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
                         }
                         else // Gouraud
                         {
-                            const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-                            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
                             rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
                             rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
                             rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
-                            rt.shad_a = compute_lighting(a.pos, a.normal, eye, sl, n_shadow, ambient, mat, a.ao);
-                            rt.shad_b = compute_lighting(b.pos, b.normal, eye, sl, n_shadow, ambient, mat, b.ao);
-                            rt.shad_c = compute_lighting(c.pos, c.normal, eye, sl, n_shadow, ambient, mat, c.ao);
+                            rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                            rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                            rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
                         }
 
                         // Bucket into every y-band this triangle overlaps.
@@ -298,8 +295,7 @@ void Renderer::worker_func(int t)
         }
 
         // Signal completion. If this is the last worker, wake render().
-        std::lock_guard<std::mutex> done_lk(m_mutex);
-        if (--m_active == 0)
+        if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
             m_cv_done.notify_one();
     }
 }
@@ -393,14 +389,14 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_fb = &fb;
         m_phong = (mode == ShadingMode::Phong);
         m_n_active = n_active;
-        m_active = m_n_workers; // all workers must check in, active or not
+        m_active.store(m_n_workers, std::memory_order_release); // all workers must check in, active or not
         ++m_generation;
     }
     m_cv_work.notify_all();
     {
         std::unique_lock<std::mutex> lk(m_mutex);
         m_cv_done.wait(lk, [this]
-                       { return m_active == 0; });
+                       { return m_active.load(std::memory_order_acquire) == 0; });
     }
 }
 

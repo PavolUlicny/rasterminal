@@ -82,7 +82,7 @@ private:
     std::atomic<int> m_phase1_done{0};       // counts workers that finished Phase 1
     std::atomic<bool> m_phase2_ready{false}; // set when all Phase 1 workers are done
 
-    int m_active = 0;     // workers not yet done with the current frame
-    int m_generation = 0; // bumped before each dispatch to wake workers
-    bool m_stop = false;  // set by destructor to terminate worker loops
+    std::atomic<int> m_active{0}; // workers not yet done with the current frame
+    int m_generation = 0;         // bumped before each dispatch to wake workers
+    bool m_stop = false;          // set by destructor to terminate worker loops
 };
