@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "mesh_loader.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -13,17 +14,7 @@
 
 bool Mesh::load_stl(const std::string &path)
 {
-    // Save state so we can roll back on any failure path.
-    const size_t v0 = vertices.size();
-    const size_t t0 = triangles.size();
-    const size_t m0 = materials.size();
-
-    auto rollback = [&]
-    {
-        vertices.resize(v0);
-        triangles.resize(t0);
-        materials.resize(m0);
-    };
+    MeshSnapshot snap(*this);
 
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f)
@@ -133,7 +124,6 @@ bool Mesh::load_stl(const std::string &path)
         if (malformed)
         {
             std::fclose(f);
-            rollback();
             return false;
         }
     }
@@ -146,7 +136,6 @@ bool Mesh::load_stl(const std::string &path)
         if (!read_u32_le(f, tri_count))
         {
             std::fclose(f);
-            rollback();
             return false;
         }
 
@@ -207,7 +196,6 @@ bool Mesh::load_stl(const std::string &path)
         if (truncated)
         {
             std::fclose(f);
-            rollback();
             return false;
         }
     }
@@ -215,13 +203,11 @@ bool Mesh::load_stl(const std::string &path)
     std::fclose(f);
 
     if (vertices.empty() || triangles.empty())
-    {
-        rollback();
         return false;
-    }
 
     // STL has no vertex sharing so normals must always be computed.
     compute_normals();
 
+    snap.commit();
     return true;
 }

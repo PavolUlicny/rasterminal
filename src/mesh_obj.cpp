@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "mesh_loader.h"
 #include "texture.h"
 
 #include <cerrno>
@@ -235,19 +236,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
 
 bool Mesh::load_obj(const std::string &path)
 {
-    // Save state so we can roll back on any failure path.
-    const size_t v0 = vertices.size();
-    const size_t t0 = triangles.size();
-    const size_t m0 = materials.size();
-    const size_t tx0 = textures.size();
-
-    auto rollback = [&]
-    {
-        vertices.resize(v0);
-        triangles.resize(t0);
-        materials.resize(m0);
-        textures.resize(tx0);
-    };
+    MeshSnapshot snap(*this);
 
     FILE *f = std::fopen(path.c_str(), "r");
     if (!f)
@@ -409,15 +398,13 @@ bool Mesh::load_obj(const std::string &path)
     std::fclose(f);
 
     if (malformed || triangles.empty())
-    {
-        rollback();
         return false;
-    }
 
     // Recompute if no normals were in the file, or if some face vertices
     // had no normal reference (mixed file) — zero normals light incorrectly.
     if (!has_normals || !all_have_normals)
         compute_normals();
 
+    snap.commit();
     return true;
 }

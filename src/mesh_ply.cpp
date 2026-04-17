@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "mesh_loader.h"
 
 #include <cstdio>
 #include <cstdint>
@@ -14,19 +15,7 @@
 
 bool Mesh::load_ply(const std::string &path)
 {
-    // Save state so we can roll back on any failure path.
-    const size_t v0 = vertices.size();
-    const size_t t0 = triangles.size();
-    const size_t m0 = materials.size();
-    const size_t tx0 = textures.size();
-
-    auto rollback = [&]
-    {
-        vertices.resize(v0);
-        triangles.resize(t0);
-        materials.resize(m0);
-        textures.resize(tx0);
-    };
+    MeshSnapshot snap(*this);
 
     FILE *f = std::fopen(path.c_str(), "rb"); // binary mode for both ASCII and binary PLY
     if (!f)
@@ -278,7 +267,6 @@ bool Mesh::load_ply(const std::string &path)
             if (unknown_type)
             {
                 std::fclose(f);
-                rollback();
                 return false;
             }
 
@@ -417,7 +405,6 @@ bool Mesh::load_ply(const std::string &path)
         if (std::fread(buf.data(), 1, data_len, f) != data_len)
         {
             std::fclose(f);
-            rollback();
             return false;
         }
 
@@ -694,21 +681,16 @@ bool Mesh::load_ply(const std::string &path)
     std::fclose(f);
 
     if (truncated)
-    {
-        rollback();
         return false;
-    }
 
     if (vertices.empty() || triangles.empty())
-    {
-        rollback();
         return false;
-    }
 
     materials.push_back(Material{});
 
     if (!has_normals)
         compute_normals();
 
+    snap.commit();
     return true;
 }
