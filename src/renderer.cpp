@@ -84,7 +84,10 @@ void Renderer::worker_func(int t)
         if (t >= n)
         {
             if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
+            {
+                std::lock_guard<std::mutex> done_lk(m_mutex);
                 m_cv_done.notify_one();
+            }
             continue;
         }
 
@@ -258,7 +261,10 @@ void Renderer::worker_func(int t)
         // to arrive sees (n-1), releases m_phase2_ready, and wakes parked peers.
         if (m_phase1_done.fetch_add(1, std::memory_order_acq_rel) == n - 1)
         {
-            m_phase2_ready.store(true, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> phase_lk(m_phase_mutex);
+                m_phase2_ready.store(true, std::memory_order_release);
+            }
             m_cv_phase2.notify_all();
         }
         else
@@ -312,7 +318,10 @@ void Renderer::worker_func(int t)
 
         // Signal completion. If this is the last worker, wake render().
         if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        {
+            std::lock_guard<std::mutex> done_lk(m_mutex);
             m_cv_done.notify_one();
+        }
     }
 }
 
