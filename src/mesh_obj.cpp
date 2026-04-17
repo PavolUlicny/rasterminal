@@ -37,6 +37,13 @@ struct FaceVertexHash
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+// Strip trailing newline, carriage-return, and space characters in-place.
+static void rtrim(std::string &s)
+{
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' '))
+        s.pop_back();
+}
+
 // Resolve a 1-based OBJ index (possibly negative) to a 0-based index.
 static int resolve(int raw, int count)
 {
@@ -139,8 +146,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
             while (*p == ' ' || *p == '\t')
                 p++;
             std::string name(p);
-            while (!name.empty() && (name.back() == '\n' || name.back() == '\r' || name.back() == ' '))
-                name.pop_back();
+            rtrim(name);
 
             current = static_cast<int>(materials.size());
             materials.push_back(Material{});
@@ -173,9 +179,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                 while (*q == ' ' || *q == '\t')
                     q++;
                 std::string tex_name(q);
-                while (!tex_name.empty() &&
-                       (tex_name.back() == '\n' || tex_name.back() == '\r' || tex_name.back() == ' '))
-                    tex_name.pop_back();
+                rtrim(tex_name);
 
                 if (!tex_name.empty())
                 {
@@ -208,9 +212,7 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                         q++;
                 }
                 std::string tex_name(q);
-                while (!tex_name.empty() &&
-                       (tex_name.back() == '\n' || tex_name.back() == '\r' || tex_name.back() == ' '))
-                    tex_name.pop_back();
+                rtrim(tex_name);
 
                 if (!tex_name.empty())
                 {
@@ -344,8 +346,7 @@ bool Mesh::load_obj(const std::string &path)
         {
             // Load the material library.  The filename follows "mtllib ".
             std::string mtl_name(p + 7);
-            while (!mtl_name.empty() && (mtl_name.back() == '\n' || mtl_name.back() == '\r' || mtl_name.back() == ' '))
-                mtl_name.pop_back();
+            rtrim(mtl_name);
 
             // MTL materials are appended starting at index 1 (0 = default).
             // Pass obj_dir so relative texture paths resolve correctly.
@@ -357,8 +358,7 @@ bool Mesh::load_obj(const std::string &path)
         else if (std::strncmp(p, "usemtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
         {
             std::string mat_name(p + 7);
-            while (!mat_name.empty() && (mat_name.back() == '\n' || mat_name.back() == '\r' || mat_name.back() == ' '))
-                mat_name.pop_back();
+            rtrim(mat_name);
 
             auto it = mat_map.find(mat_name);
             current_mat = (it != mat_map.end()) ? it->second : 0;
