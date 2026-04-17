@@ -13,6 +13,53 @@ static Color vec3_to_color(vec3 c)
         static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
 }
 
+// Precomputed barycentric rasterization setup for one triangle.
+struct TriSetup
+{
+    int x0, x1, y0, y1;           // pixel bounding box, clamped to band and screen
+    float inv_wa, inv_wb, inv_wc; // reciprocal clip-space w (perspective correction)
+    float ba_dx, ba_dy;           // ba gradient per pixel-column / pixel-row
+    float bb_dx, bb_dy;
+    float ba_row, bb_row; // ba/bb at pixel center (x0+0.5, y0+0.5)
+};
+
+// Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
+// W is the framebuffer width; y_min/y_max are the thread's row band.
+// Returns false if the triangle is degenerate or misses the band entirely.
+static bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
+                      float wa, float wb, float wc,
+                      int W, int y_min, int y_max,
+                      TriSetup &s)
+{
+    s.x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
+    s.x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+    s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+    s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+    if (s.y0 > s.y1 || s.x0 > s.x1)
+        return false;
+
+    // Barycentric denominator (proportional to 2× signed screen area).
+    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+    if (std::abs(denom) < 1e-6f)
+        return false;
+    float inv_d = 1.0f / denom;
+
+    s.inv_wa = 1.0f / wa;
+    s.inv_wb = 1.0f / wb;
+    s.inv_wc = 1.0f / wc;
+
+    s.ba_dx = (sb.y - sc.y) * inv_d;
+    s.ba_dy = (sc.x - sb.x) * inv_d;
+    s.bb_dx = (sc.y - sa.y) * inv_d;
+    s.bb_dy = (sa.x - sc.x) * inv_d;
+
+    const float px0 = static_cast<float>(s.x0) + 0.5f;
+    const float py0 = static_cast<float>(s.y0) + 0.5f;
+    s.ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
+    s.bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+    return true;
+}
+
 // ─── clip_near ────────────────────────────────────────────────────────────────
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
 // division-by-near-zero in the perspective divide and the rendering artefacts
@@ -171,42 +218,21 @@ void rasterize(Framebuffer &fb,
                int y_min, int y_max)
 {
     const int W = fb.width();
-
-    // Bounding box, clamped to this thread's y-band.
-    int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-    int x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
-    int y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-    int y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
-    // Early exit before expensive divisions — triangle doesn't touch this band.
-    if (y0 > y1 || x0 > x1)
+    TriSetup s;
+    if (!setup_tri(sa, sb, sc, wa, wb, wc, W, y_min, y_max, s))
         return;
 
-    // Barycentric denominator (proportional to 2× signed screen area)
-    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
-    if (std::abs(denom) < 1e-6f)
-        return;
-    float inv_d = 1.0f / denom;
+    const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
+    const float ba_dx = s.ba_dx, ba_dy = s.ba_dy;
+    const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
+    float ba_row = s.ba_row;
+    float bb_row = s.bb_row;
 
-    // Reciprocal clip-space w for perspective-correct interpolation
-    float inv_wa = 1.0f / wa;
-    float inv_wb = 1.0f / wb;
-    float inv_wc = 1.0f / wc;
-
-    const float ba_dx = (sb.y - sc.y) * inv_d;
-    const float ba_dy = (sc.x - sb.x) * inv_d;
-    const float bb_dx = (sc.y - sa.y) * inv_d;
-    const float bb_dy = (sa.x - sc.x) * inv_d;
-
-    const float px0 = static_cast<float>(x0) + 0.5f;
-    const float py0 = static_cast<float>(y0) + 0.5f;
-    float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
-    float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
-
-    for (int y = y0; y <= y1; y++)
+    for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
         float bb = bb_row;
-        for (int x = x0; x <= x1; x++)
+        for (int x = s.x0; x <= s.x1; x++)
         {
             float bc = 1.0f - ba - bb;
 
@@ -289,39 +315,21 @@ void rasterize_phong(Framebuffer &fb,
                      int y_min, int y_max)
 {
     const int W = fb.width();
-
-    int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-    int x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
-    int y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-    int y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
-    // Early exit before expensive divisions — triangle doesn't touch this band.
-    if (y0 > y1 || x0 > x1)
+    TriSetup s;
+    if (!setup_tri(sa, sb, sc, wa, wb, wc, W, y_min, y_max, s))
         return;
 
-    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
-    if (std::abs(denom) < 1e-6f)
-        return;
-    float inv_d = 1.0f / denom;
+    const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
+    const float ba_dx = s.ba_dx, ba_dy = s.ba_dy;
+    const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
+    float ba_row = s.ba_row;
+    float bb_row = s.bb_row;
 
-    float inv_wa = 1.0f / wa;
-    float inv_wb = 1.0f / wb;
-    float inv_wc = 1.0f / wc;
-
-    const float ba_dx = (sb.y - sc.y) * inv_d;
-    const float ba_dy = (sc.x - sb.x) * inv_d;
-    const float bb_dx = (sc.y - sa.y) * inv_d;
-    const float bb_dy = (sa.x - sc.x) * inv_d;
-
-    const float px0 = static_cast<float>(x0) + 0.5f;
-    const float py0 = static_cast<float>(y0) + 0.5f;
-    float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
-    float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
-
-    for (int y = y0; y <= y1; y++)
+    for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
         float bb = bb_row;
-        for (int x = x0; x <= x1; x++)
+        for (int x = s.x0; x <= s.x1; x++)
         {
             float bc = 1.0f - ba - bb;
 
