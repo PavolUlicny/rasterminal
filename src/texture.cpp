@@ -47,8 +47,8 @@ vec3 Texture::sample_rgb(float u, float v) const
     float fx = u * static_cast<float>(width - 1);
     float fy = v * static_cast<float>(height - 1);
 
-    int x0 = std::max(0, static_cast<int>(std::floor(fx)));
-    int y0 = std::max(0, static_cast<int>(std::floor(fy)));
+    int x0 = static_cast<int>(fx);
+    int y0 = static_cast<int>(fy);
     int x1 = std::min(x0 + 1, width - 1);
     int y1 = std::min(y0 + 1, height - 1);
 
