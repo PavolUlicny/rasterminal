@@ -204,17 +204,21 @@ void Renderer::worker_func(int t)
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                             rt.col_a = rt.col_b = rt.col_c =
                                 compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat, face_ao);
-                            rt.shad_a = rt.shad_b = rt.shad_c =
-                                compute_lighting(fc, fn, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
+                            if (psmap)
+                                rt.shad_a = rt.shad_b = rt.shad_c =
+                                    compute_lighting(fc, fn, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
                         }
                         else // Gouraud
                         {
                             rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
                             rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
                             rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
-                            rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                            rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                            rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                            if (psmap)
+                            {
+                                rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                                rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                                rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                            }
                         }
 
                         // Bucket into every y-band this triangle overlaps.
