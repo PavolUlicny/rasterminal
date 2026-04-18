@@ -8,8 +8,8 @@
 struct Color
 {
     uint8_t r, g, b;
-    Color() : r(0), g(0), b(0) {}
-    Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
+    constexpr Color() : r(0), g(0), b(0) {}
+    constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
 };
 
 class Framebuffer

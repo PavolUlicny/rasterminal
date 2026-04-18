@@ -21,6 +21,10 @@
 static volatile sig_atomic_t g_interrupted = 0;
 static void signal_handler(int) { g_interrupted = 1; }
 
+static constexpr Color BG_BLACK = {0, 0, 0};
+static constexpr Color BG_GRAY = {128, 128, 128};
+static constexpr Color BG_WHITE = {240, 240, 240};
+
 int main(int argc, char *argv[])
 {
     const char *obj_path = nullptr;
@@ -479,28 +483,73 @@ int main(int argc, char *argv[])
                 mode_str = "Phong";
                 break;
             }
-            const char *lighting_str = lighting_mode == 0 ? "dual" : lighting_mode == 1 ? "single"
-                                                                                        : "flat";
+            const char *lighting_str;
+            switch (lighting_mode)
+            {
+            case 1:
+                lighting_str = "single";
+                break;
+            case 2:
+                lighting_str = "flat";
+                break;
+            default:
+                lighting_str = "dual";
+                break;
+            }
+
+            const char *bg_str;
+            switch (bg_mode)
+            {
+            case 1:
+                bg_str = "gray";
+                break;
+            case 2:
+                bg_str = "white";
+                break;
+            default:
+                bg_str = "black";
+                break;
+            }
+
             char hud[160];
             std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
                           mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
                           spinning ? "spin ON" : "spin OFF",
-                          lighting_str,
-                          bg_mode == 0 ? "black" : bg_mode == 1 ? "gray"
-                                                                : "white");
+                          lighting_str, bg_str);
             fb.set_hud(hud);
         }
 
         // ── Render ────────────────────────────────────────────────────────
-        const Color bg_color = bg_mode == 0   ? Color{0, 0, 0}
-                               : bg_mode == 1 ? Color{128, 128, 128}
-                                              : Color{240, 240, 240};
+        Color bg_color;
+        switch (bg_mode)
+        {
+        case 1:
+            bg_color = BG_GRAY;
+            break;
+        case 2:
+            bg_color = BG_WHITE;
+            break;
+        default:
+            bg_color = BG_BLACK;
+            break;
+        }
         fb.clear(bg_color);
         // Select light set based on lighting mode.
         // Flat ambient: no directional lights, bright ambient so the full model is visible.
         const vec3 flat_ambient = {0.85f, 0.85f, 0.85f};
-        int n_lights = lighting_mode == 0 ? 2 : lighting_mode == 1 ? 1
-                                                                   : 0;
+        int n_lights;
+        switch (lighting_mode)
+        {
+        case 1:
+            n_lights = 1;
+            break;
+        case 2:
+            n_lights = 0;
+            break;
+        default:
+            n_lights = 2;
+            break;
+        }
         const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
         renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
                         shadow_map ? &*shadow_map : nullptr);
