@@ -381,22 +381,28 @@ void rasterize_phong(Framebuffer &fb,
                 // nrm will be normalized inside compute_lighting.
             }
 
-            Material px_mat = mat;
-            if (tex)
-                px_mat.diffuse = px_mat.diffuse * tex->sample_rgb(uv.x, uv.y);
-
             float ao = (aoa * (ba * inv_wa) + aob * (bb * inv_wb) + aoc * (bc * inv_wc)) * w_corr;
 
             // Precompute view vector once — reused by both shadow branches.
             vec3 v = normalize(eye - pos);
+
+            // Only copy Material when a texture modifies diffuse; otherwise use mat directly.
+            Material mat_tex;
+            const Material *use_mat = &mat;
+            if (tex)
+            {
+                mat_tex = mat;
+                mat_tex.diffuse = mat_tex.diffuse * tex->sample_rgb(uv.x, uv.y);
+                use_mat = &mat_tex;
+            }
 
             // Shadow test: if the key light (index 0) is blocked, skip it.
             bool shadowed = smap && smap->in_shadow(pos);
             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color = shadowed
-                             ? compute_lighting(nrm, v, sl, n_shadow, ambient, px_mat, ao)
-                             : compute_lighting(nrm, v, lights, n_lights, ambient, px_mat, ao);
+                             ? compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao)
+                             : compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
             fb.set_pixel(x, y, vec3_to_color(color));
 
             ba += ba_dx;
