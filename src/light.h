@@ -6,8 +6,8 @@
 
 inline float specular_pow(float ndh, float shininess)
 {
-    // Common MTL shininess values get an exact multiply chain that is much
-    // cheaper than libm powf in the inner lighting loop.
+    // Common MTL shininess values get an exact multiply chain; arbitrary
+    // values fall back to exp2f(s*log2f(x)) which is faster than std::pow.
     if (shininess == 32.0f)
     {
         float x2 = ndh * ndh;
@@ -29,7 +29,7 @@ inline float specular_pow(float ndh, float shininess)
         float x4 = x2 * x2;
         return x4 * x4;
     }
-    return std::pow(ndh, shininess);
+    return std::exp2f(shininess * std::log2f(ndh));
 }
 
 // Per-surface material properties (from MTL Kd/Ks/Ns/map_Kd or defaults).
