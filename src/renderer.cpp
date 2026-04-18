@@ -135,17 +135,9 @@ void Renderer::worker_func(int t)
                     const Vertex &vb = mesh->vertices[tri.v[1]];
                     const Vertex &vc = mesh->vertices[tri.v[2]];
 
-                    const Material &mat = (tri.material_idx < mesh->materials.size())
-                                              ? mesh->materials[tri.material_idx]
-                                              : mesh->materials[0];
-
-                    const Texture *tex = nullptr;
-                    if (mat.diffuse_tex >= 0 && mat.diffuse_tex < static_cast<int>(mesh->textures.size()))
-                        tex = &mesh->textures[static_cast<size_t>(mat.diffuse_tex)];
-
-                    const Texture *nmap = nullptr;
-                    if (mat.normal_tex >= 0 && mat.normal_tex < static_cast<int>(mesh->textures.size()))
-                        nmap = &mesh->textures[static_cast<size_t>(mat.normal_tex)];
+                    const Material &mat = mesh->mat_at(tri.material_idx);
+                    const Texture *tex = mesh->tex_at(mat.diffuse_tex);
+                    const Texture *nmap = mesh->tex_at(mat.normal_tex);
 
                     ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
                     ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};

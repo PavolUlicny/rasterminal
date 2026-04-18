@@ -29,6 +29,18 @@ struct Mesh
     std::vector<Material> materials; // index 0 is always the default white material
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
 
+    const Material &mat_at(uint32_t idx) const
+    {
+        return idx < materials.size() ? materials[idx] : materials[0];
+    }
+
+    const Texture *tex_at(int idx) const
+    {
+        return (idx >= 0 && idx < static_cast<int>(textures.size()))
+                   ? &textures[static_cast<size_t>(idx)]
+                   : nullptr;
+    }
+
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
     bool load_model(const std::string &path, bool ao = true);
