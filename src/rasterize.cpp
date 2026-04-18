@@ -5,6 +5,8 @@
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
+static constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
+
 static Color vec3_to_color(vec3 c)
 {
     return {
@@ -40,7 +42,7 @@ static bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
 
     // Barycentric denominator (proportional to 2× signed screen area).
     float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
-    if (std::abs(denom) < 1e-6f)
+    if (std::abs(denom) < DEGEN_AREA_EPS)
         return false;
     float inv_d = 1.0f / denom;
 
