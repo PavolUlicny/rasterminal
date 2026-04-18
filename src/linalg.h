@@ -67,8 +67,11 @@ inline vec3 cross(const vec3 &a, const vec3 &b)
 
 inline vec3 normalize(const vec3 &v)
 {
-    float len = v.length();
-    return len > 1e-8f ? v / len : vec3{};
+    float len_sq = v.length_sq();
+    if (len_sq < 1e-16f)
+        return {};
+    float inv_len = 1.0f / std::sqrt(len_sq);
+    return {v.x * inv_len, v.y * inv_len, v.z * inv_len};
 }
 
 inline vec3 lerp(const vec3 &a, const vec3 &b, float t)
