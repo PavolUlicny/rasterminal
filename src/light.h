@@ -51,16 +51,15 @@ struct Light
 
 // Blinn-Phong illumination summed over an array of directional lights.
 // ambient is a scene-level term added once (not per light).
+// v must be the unit view vector (normalize(eye - pos)) — precomputed by caller.
 // Returns RGB in [0, ~1+]; caller is responsible for clamping before display.
-inline vec3 compute_lighting(vec3 pos, vec3 normal,
-                             const vec3 &eye_pos,
+inline vec3 compute_lighting(vec3 normal, const vec3 &v,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,
                              const Material &mat = {},
                              float ao = 1.0f)
 {
     vec3 n = normalize(normal);
-    vec3 v = normalize(eye_pos - pos);
 
     vec3 result = ambient * mat.diffuse * ao;
 
@@ -79,4 +78,17 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
     }
 
     return result;
+}
+
+// Convenience overload: derives v from pos and eye_pos.
+// Used by Flat/Gouraud paths where v is not precomputed.
+inline vec3 compute_lighting(vec3 pos, vec3 normal,
+                             const vec3 &eye_pos,
+                             const Light *lights, int n_lights,
+                             const vec3 &ambient,
+                             const Material &mat = {},
+                             float ao = 1.0f)
+{
+    return compute_lighting(normal, normalize(eye_pos - pos),
+                            lights, n_lights, ambient, mat, ao);
 }
