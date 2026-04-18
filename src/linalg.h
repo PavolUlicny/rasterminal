@@ -100,7 +100,11 @@ struct vec4
 
     // perspective divide: clip space → NDC
     vec3 xyz() const { return {x, y, z}; }
-    vec3 perspective_divide() const { return {x / w, y / w, z / w}; }
+    vec3 perspective_divide() const
+    {
+        float inv_w = 1.0f / w;
+        return {x * inv_w, y * inv_w, z * inv_w};
+    }
 };
 
 // ─── mat4 ────────────────────────────────────────────────────────────────────
