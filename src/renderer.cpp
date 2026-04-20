@@ -195,10 +195,6 @@ void Renderer::worker_func(int t)
                             rt.tana = a.tangent;
                             rt.tanb = b.tangent;
                             rt.tanc = c.tangent;
-                            rt.eye = eye;
-                            rt.lights = lights;
-                            rt.n_lights = n_lights;
-                            rt.ambient = ambient;
                             rt.mat = &mat;
                         }
                         else if (smode == ShadingMode::Flat)
@@ -291,6 +287,15 @@ void Renderer::worker_func(int t)
             int y_min = m_H * t / n;
             int y_max = m_H * (t + 1) / n - 1;
 
+            // Per-frame Phong lighting constants — read from renderer state
+            // instead of duplicating into every RasterTri. Safe to read without
+            // a lock: m_* are written once under m_mutex before m_cv_work.notify_all()
+            // in render(), and no worker modifies them during the frame.
+            const vec3 &p2_eye = m_eye;
+            const Light *p2_lights = m_lights;
+            const int p2_n_lights = m_n_lights;
+            const vec3 &p2_ambient = m_ambient;
+
             for (const RasterTri &rt : m_band_tris[static_cast<size_t>(t)])
             {
                 if (m_phong)
@@ -301,7 +306,7 @@ void Renderer::worker_func(int t)
                                     rt.tana, rt.tanb, rt.tanc,
                                     rt.uva, rt.uvb, rt.uvc,
                                     rt.aoa, rt.aob, rt.aoc,
-                                    rt.eye, rt.lights, rt.n_lights, rt.ambient, *rt.mat,
+                                    p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
                                     rt.tex, rt.nmap, rt.smap,
                                     y_min, y_max);
                 else

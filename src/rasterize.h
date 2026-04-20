@@ -39,13 +39,11 @@ struct RasterTri
     vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
 
     // Phong only — lighting evaluated per pixel in Phase 2.
+    // eye / lights / n_lights / ambient are per-frame constants and supplied
+    // by the Phase 2 dispatcher rather than duplicated into every triangle.
     vec3 na, nb, nc;       // world-space normals
     vec3 tana, tanb, tanc; // world-space tangents
-    vec3 eye;
-    const Light *lights;
-    int n_lights;
-    vec3 ambient;
-    const Material *mat; // pointer into mesh.materials — valid for the frame lifetime
+    const Material *mat;   // pointer into mesh.materials — valid for the frame lifetime
 
     // Shared by all shading modes
     const Texture *tex;    // diffuse texture (nullptr if none)
