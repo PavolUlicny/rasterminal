@@ -135,6 +135,14 @@ void Renderer::worker_func(int t)
                     const Vertex &vb = mesh->vertices[tri.v[1]];
                     const Vertex &vc = mesh->vertices[tri.v[2]];
 
+                    // Pre-projection backface cull: test the world-space face plane
+                    // against the eye before any matrix transforms. Rejects ~half the
+                    // triangles of a closed mesh before clip-space work. Winding
+                    // assumption matches the old screen-space cull (CCW front).
+                    const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
+                    if (dot(fn, eye - va.pos) <= 0.0f)
+                        continue;
+
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = mesh->tex_at(mat.diffuse_tex);
                     const Texture *nmap = mesh->tex_at(mat.normal_tex);
@@ -158,10 +166,6 @@ void Renderer::worker_func(int t)
                         vec3 sa = ndc_to_screen(a.c.perspective_divide(), W, H);
                         vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
                         vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
-
-                        float area = (sb.x - sa.x) * (sc.y - sa.y) - (sc.x - sa.x) * (sb.y - sa.y);
-                        if (area >= 0.0f)
-                            continue;
 
                         RasterTri rt{};
                         rt.sa = sa;
@@ -344,6 +348,10 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             const Vertex &vb = mesh.vertices[tri.v[1]];
             const Vertex &vc = mesh.vertices[tri.v[2]];
 
+            const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
+            if (dot(fn, eye - va.pos) <= 0.0f)
+                continue;
+
             ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
             ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
             ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao};
@@ -363,10 +371,6 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 vec3 sa = ndc_to_screen(a.c.perspective_divide(), W, H);
                 vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
                 vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
-
-                float area = (sb.x - sa.x) * (sc.y - sa.y) - (sc.x - sa.x) * (sb.y - sa.y);
-                if (area >= 0.0f)
-                    continue;
 
                 const Color wf = {200, 200, 200};
                 draw_line(fb, sa, sb, wf);
