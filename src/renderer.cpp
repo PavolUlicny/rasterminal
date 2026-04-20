@@ -167,7 +167,12 @@ void Renderer::worker_func(int t)
                         vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
                         vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
 
-                        RasterTri rt{};
+                        // No zero-init: every field used downstream is explicitly
+                        // written below (mode-dependent). Fields unused by the
+                        // active shading path stay uninitialised but are never
+                        // read — rasterize() only touches col_*/shad_* and
+                        // rasterize_phong() only touches normals/tangents/mat.
+                        RasterTri rt;
                         rt.sa = sa;
                         rt.sb = sb;
                         rt.sc = sc;
