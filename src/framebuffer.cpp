@@ -69,26 +69,6 @@ void Framebuffer::clear(Color bg)
     std::fill(m_depth.begin(), m_depth.end(), std::numeric_limits<float>::infinity());
 }
 
-bool Framebuffer::test_and_set_depth(int x, int y, float depth)
-{
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height)
-        return false;
-    float &d = m_depth[static_cast<size_t>(y * m_width + x)];
-    if (depth < d)
-    {
-        d = depth;
-        return true;
-    }
-    return false;
-}
-
-void Framebuffer::set_pixel(int x, int y, Color color)
-{
-    if (x < 0 || x >= m_width || y < 0 || y >= m_height)
-        return;
-    m_color[static_cast<size_t>(y * m_width + x)] = color;
-}
-
 void Framebuffer::present()
 {
     m_buf.clear();

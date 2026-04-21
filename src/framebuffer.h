@@ -30,9 +30,25 @@ public:
     void clear(Color bg = {0, 0, 0});
 
     // Returns true if depth test passes, and writes the new depth value.
-    bool test_and_set_depth(int x, int y, float depth);
+    inline bool test_and_set_depth(int x, int y, float depth)
+    {
+        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+            return false;
+        float &d = m_depth[static_cast<size_t>(y * m_width + x)];
+        if (depth < d)
+        {
+            d = depth;
+            return true;
+        }
+        return false;
+    }
 
-    void set_pixel(int x, int y, Color color);
+    inline void set_pixel(int x, int y, Color color)
+    {
+        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+            return;
+        m_color[static_cast<size_t>(y * m_width + x)] = color;
+    }
 
     // Set a one-line status string rendered below the pixel rows each frame.
     // Call before present(). Pass an empty string to clear.
