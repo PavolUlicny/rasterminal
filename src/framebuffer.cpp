@@ -82,6 +82,13 @@ void Framebuffer::present()
     char tmp[32];
     int n;
 
+    // Track last-emitted fg/bg across all cells (including between rows) —
+    // cursor repositioning preserves SGR state, so a color set on one row
+    // carries over until the next explicit change. Saves 26–38 bytes per
+    // unchanged-color cell (e.g. background fill).
+    Color prev_fg{}, prev_bg{};
+    bool first_cell = true;
+
     for (int row = 0; row < term_rows; row++)
     {
         // Explicit cursor positioning: no reliance on newlines or auto-wrap.
@@ -102,45 +109,56 @@ void Framebuffer::present()
             const int bot_row = (row * 2 + 1 < m_height) ? row * 2 + 1 : row * 2;
             const Color &bot = m_color[static_cast<size_t>(bot_row * m_width + col)];
 
-            // Foreground (top pixel): ESC[38;2;R;G;Bm
-            tmp[0] = '\033';
-            tmp[1] = '[';
-            tmp[2] = '3';
-            tmp[3] = '8';
-            tmp[4] = ';';
-            tmp[5] = '2';
-            tmp[6] = ';';
-            n = 7;
-            n += write_int(tmp + n, top.r);
-            tmp[n++] = ';';
-            n += write_int(tmp + n, top.g);
-            tmp[n++] = ';';
-            n += write_int(tmp + n, top.b);
-            tmp[n++] = 'm';
-            m_buf.append(tmp, static_cast<size_t>(n));
+            // Foreground (top pixel): ESC[38;2;R;G;Bm — emit only on change.
+            if (first_cell || top.r != prev_fg.r || top.g != prev_fg.g || top.b != prev_fg.b)
+            {
+                tmp[0] = '\033';
+                tmp[1] = '[';
+                tmp[2] = '3';
+                tmp[3] = '8';
+                tmp[4] = ';';
+                tmp[5] = '2';
+                tmp[6] = ';';
+                n = 7;
+                n += write_int(tmp + n, top.r);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, top.g);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, top.b);
+                tmp[n++] = 'm';
+                m_buf.append(tmp, static_cast<size_t>(n));
+                prev_fg = top;
+            }
 
-            // Background (bottom pixel): ESC[48;2;R;G;Bm
-            tmp[0] = '\033';
-            tmp[1] = '[';
-            tmp[2] = '4';
-            tmp[3] = '8';
-            tmp[4] = ';';
-            tmp[5] = '2';
-            tmp[6] = ';';
-            n = 7;
-            n += write_int(tmp + n, bot.r);
-            tmp[n++] = ';';
-            n += write_int(tmp + n, bot.g);
-            tmp[n++] = ';';
-            n += write_int(tmp + n, bot.b);
-            tmp[n++] = 'm';
-            m_buf.append(tmp, static_cast<size_t>(n));
+            // Background (bottom pixel): ESC[48;2;R;G;Bm — emit only on change.
+            if (first_cell || bot.r != prev_bg.r || bot.g != prev_bg.g || bot.b != prev_bg.b)
+            {
+                tmp[0] = '\033';
+                tmp[1] = '[';
+                tmp[2] = '4';
+                tmp[3] = '8';
+                tmp[4] = ';';
+                tmp[5] = '2';
+                tmp[6] = ';';
+                n = 7;
+                n += write_int(tmp + n, bot.r);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, bot.g);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, bot.b);
+                tmp[n++] = 'm';
+                m_buf.append(tmp, static_cast<size_t>(n));
+                prev_bg = bot;
+            }
 
+            first_cell = false;
             m_buf.append(UPPER_HALF, 3);
         }
-
-        m_buf += "\033[0m";
     }
+
+    // Reset SGR once at the end of the pixel section — keeps the terminal clean
+    // when the HUD is empty and prevents bleed into HUD's own colour escapes.
+    m_buf += "\033[0m";
 
     // HUD: one status line immediately below the pixel rows.
     if (!m_hud.empty())
