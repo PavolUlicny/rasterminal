@@ -204,14 +204,14 @@ void Renderer::worker_func(int t)
                         }
                         else if (smode == ShadingMode::Flat)
                         {
-                            vec3 fn = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                            vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                             rt.col_a = rt.col_b = rt.col_c =
-                                compute_lighting(fc, fn, eye, lights, n_lights, ambient, mat, face_ao);
+                                compute_lighting(fc, face_n, eye, lights, n_lights, ambient, mat, face_ao);
                             if (psmap)
                                 rt.shad_a = rt.shad_b = rt.shad_c =
-                                    compute_lighting(fc, fn, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
+                                    compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
                         }
                         else // Gouraud
                         {
