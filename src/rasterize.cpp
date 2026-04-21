@@ -257,26 +257,26 @@ void rasterize(Framebuffer &fb,
                 continue;
             }
 
-            // Perspective-correct weight for colour and UV interpolation.
-            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
-            float w_corr = 1.0f / inv_w;
+            // Perspective-correct weights — computed once, reused for all attributes.
+            float pwa = ba * inv_wa, pwb = bb * inv_wb, pwc = bc * inv_wc;
+            float w_corr = 1.0f / (pwa + pwb + pwc);
 
             // Per-pixel shadow test using interpolated world position.
             bool shadowed = false;
             if (smap)
             {
-                vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
+                vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 shadowed = smap->in_shadow(pos);
             }
             const vec3 &ca = shadowed ? shad_a : col_a;
             const vec3 &cb = shadowed ? shad_b : col_b;
             const vec3 &cc = shadowed ? shad_c : col_c;
 
-            vec3 col = (ca * (ba * inv_wa) + cb * (bb * inv_wb) + cc * (bc * inv_wc)) * w_corr;
+            vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
             if (tex)
             {
-                vec2 uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+                vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
                 col = col * tex->sample_rgb(uv.x, uv.y);
             }
 
@@ -350,22 +350,22 @@ void rasterize_phong(Framebuffer &fb,
                 continue;
             }
 
-            // Perspective-correct interpolation of world-space position and normal.
-            float inv_w = ba * inv_wa + bb * inv_wb + bc * inv_wc;
-            float w_corr = 1.0f / inv_w;
+            // Perspective-correct weights — computed once, reused for all attributes.
+            float pwa = ba * inv_wa, pwb = bb * inv_wb, pwc = bc * inv_wc;
+            float w_corr = 1.0f / (pwa + pwb + pwc);
 
-            vec3 pos = (pa * (ba * inv_wa) + pb * (bb * inv_wb) + pc * (bc * inv_wc)) * w_corr;
-            vec3 nrm = (na * (ba * inv_wa) + nb * (bb * inv_wb) + nc * (bc * inv_wc)) * w_corr;
+            vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
+            vec3 nrm = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
             // Compute UV once — needed by both diffuse and normal map.
             vec2 uv{};
             if (tex || nmap)
-                uv = (uva * (ba * inv_wa) + uvb * (bb * inv_wb) + uvc * (bc * inv_wc)) * w_corr;
+                uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
             if (nmap)
             {
-                vec3 tan = (tana * (ba * inv_wa) + tanb * (bb * inv_wb) + tanc * (bc * inv_wc)) * w_corr;
+                vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
                 vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
@@ -381,7 +381,7 @@ void rasterize_phong(Framebuffer &fb,
                 // nrm will be normalized inside compute_lighting.
             }
 
-            float ao = (aoa * (ba * inv_wa) + aob * (bb * inv_wb) + aoc * (bc * inv_wc)) * w_corr;
+            float ao = (aoa * pwa + aob * pwb + aoc * pwc) * w_corr;
 
             // Precompute view vector once — reused by both shadow branches.
             vec3 v = normalize(eye - pos);
