@@ -236,9 +236,14 @@ void rasterize(Framebuffer &fb,
         float bb = bb_row;
         for (int x = s.x0; x <= s.x1; x++)
         {
+            if (ba < 0.0f || bb < 0.0f)
+            {
+                ba += ba_dx;
+                bb += bb_dx;
+                continue;
+            }
             float bc = 1.0f - ba - bb;
-
-            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+            if (bc < 0.0f)
             {
                 ba += ba_dx;
                 bb += bb_dx;
@@ -333,9 +338,14 @@ void rasterize_phong(Framebuffer &fb,
         float bb = bb_row;
         for (int x = s.x0; x <= s.x1; x++)
         {
+            if (ba < 0.0f || bb < 0.0f)
+            {
+                ba += ba_dx;
+                bb += bb_dx;
+                continue;
+            }
             float bc = 1.0f - ba - bb;
-
-            if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
+            if (bc < 0.0f)
             {
                 ba += ba_dx;
                 bb += bb_dx;
