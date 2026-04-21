@@ -1,5 +1,10 @@
 CXX      = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -O3 -march=native -pthread
+WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
+           -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
+           -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
+           -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation \
+           -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
+CXXFLAGS = -std=c++17 $(WARNINGS) -O3 -march=native -pthread
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -29,7 +34,7 @@ HDRS = src/linalg.h \
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
-debug: CXXFLAGS = -std=c++17 -Wall -Wextra -O0 -g -pthread
+debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread
 debug: $(TARGET)
 
 clean:
