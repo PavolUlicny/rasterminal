@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
     bool init_spin = false;
     bool init_shadow = true;
     bool init_ao = true;
+    bool init_hud = true;
 
     // Returns the next argv value for a flag that requires one, or nullptr on error.
     auto require_val = [&](int &i, const char *flag) -> const char *
@@ -221,6 +222,7 @@ int main(int argc, char *argv[])
                 "  -j, --threads <n>       Worker thread count (0=all, default=min(hw,4))\n"
                 "      --no-shadow         Disable shadow map\n"
                 "      --no-ao             Disable ambient occlusion\n"
+                "      --no-hud            Hide the HUD status line\n"
                 "  -h, --help              Show this message\n"
                 "\n"
                 "Controls:\n"
@@ -257,6 +259,15 @@ int main(int argc, char *argv[])
                 return 1;
             }
             init_shadow = false;
+        }
+        else if (arg == "--no-hud")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return 1;
+            }
+            init_hud = false;
         }
         else if (argv[i][0] == '-')
         {
@@ -331,9 +342,11 @@ int main(int argc, char *argv[])
     int cols, rows;
     platform::get_terminal_size(cols, rows);
 
-    // Reserve the last terminal row for the HUD status line.
     // Each pixel cell covers 2 vertical pixels via ▀ half-block.
-    Framebuffer fb(cols, (rows - 1) * 2);
+    // With the HUD enabled, the last terminal row is reserved for it;
+    // --no-hud reclaims that row for rendering.
+    const int hud_rows = init_hud ? 1 : 0;
+    Framebuffer fb(cols, (rows - hud_rows) * 2);
 
     // Key light: warm white from upper-right-front.
     // Fill light: dim cool blue from lower-left-back, providing contrast.
@@ -461,11 +474,12 @@ int main(int argc, char *argv[])
             {
                 cols = new_cols;
                 rows = new_rows;
-                fb.resize(cols, (rows - 1) * 2);
+                fb.resize(cols, (rows - hud_rows) * 2);
             }
         }
 
         // ── HUD ───────────────────────────────────────────────────────────
+        if (init_hud)
         {
             const char *mode_str = nullptr;
             switch (renderer.mode)
