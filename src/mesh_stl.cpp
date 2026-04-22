@@ -157,25 +157,52 @@ bool Mesh::load_stl(const std::string &path)
     uint32_t tri_count = 0;
     const bool have_tri_count = stl_read_u32_le(f, tri_count); // file position → 84
 
-    // If the header started with "solid", verify via file size:
-    // a valid binary STL satisfies file_size == 84 + tri_count × 50.
-    if (is_ascii && have_tri_count)
+    // Capture file size once — used for both ASCII/binary disambiguation and
+    // for validating tri_count against the actual file before reserve().
+    long file_size = -1;
+    if (have_tri_count)
     {
         long pos = std::ftell(f);
-        std::fseek(f, 0, SEEK_END);
-        long file_size = std::ftell(f);
-        std::fseek(f, pos, SEEK_SET);
-        if (file_size == static_cast<long>(84 + static_cast<uint64_t>(tri_count) * 50))
-            is_ascii = false;
+        if (pos >= 0 && std::fseek(f, 0, SEEK_END) == 0)
+            file_size = std::ftell(f);
+        if (pos < 0 || std::fseek(f, pos, SEEK_SET) != 0)
+        {
+            std::fclose(f);
+            return false;
+        }
     }
+
+    // Expected size of a binary STL with this tri_count: 84-byte header plus
+    // exactly 50 bytes per triangle. Computed in uint64_t to avoid overflow.
+    const uint64_t expected_binary_size = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
+
+    // If the header started with "solid", verify via exact file size match —
+    // this disambiguates the rare case of a binary STL whose 80-byte header
+    // happens to begin with "solid".
+    if (is_ascii && have_tri_count && file_size >= 0 &&
+        static_cast<uint64_t>(file_size) == expected_binary_size)
+        is_ascii = false;
 
     materials.push_back(Material{});
 
     bool ok = false;
     if (is_ascii)
+    {
         ok = load_stl_ascii(f, *this); // seeks to byte 0 itself
+    }
     else if (have_tri_count)
+    {
+        // Defence against malicious/corrupt tri_count: a valid binary STL
+        // must be at least 84 + 50 × tri_count bytes long. Without this
+        // check, a crafted tri_count (e.g. 0xFFFFFFFF) would reach the
+        // reserve() inside load_stl_binary and trigger std::bad_alloc.
+        if (file_size < 0 || static_cast<uint64_t>(file_size) < expected_binary_size)
+        {
+            std::fclose(f);
+            return false;
+        }
         ok = load_stl_binary(f, tri_count, *this); // file already at byte 84
+    }
 
     std::fclose(f);
 

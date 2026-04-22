@@ -729,6 +729,31 @@ bool Mesh::load_ply(const std::string &path)
     const PlyElem &vert_elem = hdr.elements[static_cast<size_t>(hdr.vert_idx)];
     const PlyElem &face_elem = hdr.elements[static_cast<size_t>(hdr.face_idx)];
 
+    // Validate element counts against the file's actual data section before
+    // reserve(). Each element occupies at least one byte in the data section
+    // (binary: smallest scalar/list-count is 1 B; ASCII: one digit + newline),
+    // so a count that exceeds the remaining bytes is definitionally malformed.
+    // This rejects the trivial DoS (e.g. count = INT_MAX, UINT32_MAX cast to
+    // int) without imposing an arbitrary cap — any file that *could* fit its
+    // claimed counts passes.
+    long data_start = std::ftell(f);
+    long file_end = -1;
+    if (data_start >= 0 && std::fseek(f, 0, SEEK_END) == 0)
+        file_end = std::ftell(f);
+    if (data_start < 0 || file_end < 0 || file_end < data_start ||
+        std::fseek(f, data_start, SEEK_SET) != 0)
+    {
+        std::fclose(f);
+        return false;
+    }
+    const uint64_t data_bytes = static_cast<uint64_t>(file_end - data_start);
+    if (vert_elem.count < 0 || static_cast<uint64_t>(vert_elem.count) > data_bytes ||
+        face_elem.count < 0 || static_cast<uint64_t>(face_elem.count) > data_bytes)
+    {
+        std::fclose(f);
+        return false;
+    }
+
     vertices.reserve(static_cast<size_t>(vert_elem.count));
     if (face_elem.count > 0)
         triangles.reserve(static_cast<size_t>(face_elem.count));
