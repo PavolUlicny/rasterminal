@@ -1,17 +1,41 @@
 #include "test.h"
 #include "../src/args.h"
 
+#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
 #include <vector>
 
-// Build a fake argv from a list of string literals and call parse_args.
-// argv[0] is always "rasterminal" (program name).
+// Build a fake argv and call parse_args with stdout/stderr redirected to
+// /dev/null so help text and error messages don't pollute the test output.
 static ParseResult run(std::initializer_list<const char *> tokens)
 {
     std::vector<const char *> argv{"rasterminal"};
     for (auto t : tokens)
         argv.push_back(t);
-    return parse_args(static_cast<int>(argv.size()),
-                      const_cast<char **>(argv.data()));
+
+    // Flush any pending buffered output before touching the fds.
+    std::fflush(stdout);
+    std::fflush(stderr);
+    int saved_out = dup(STDOUT_FILENO);
+    int saved_err = dup(STDERR_FILENO);
+    int devnull = open("/dev/null", O_WRONLY);
+    dup2(devnull, STDOUT_FILENO);
+    dup2(devnull, STDERR_FILENO);
+    close(devnull);
+
+    ParseResult result = parse_args(static_cast<int>(argv.size()),
+                                    const_cast<char **>(argv.data()));
+
+    // Drain any buffered output while fds still point to /dev/null, then restore.
+    std::fflush(stdout);
+    std::fflush(stderr);
+    dup2(saved_out, STDOUT_FILENO);
+    dup2(saved_err, STDERR_FILENO);
+    close(saved_out);
+    close(saved_err);
+
+    return result;
 }
 
 // ─── defaults ─────────────────────────────────────────────────────────────────
