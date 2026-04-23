@@ -8,6 +8,7 @@ CXXFLAGS = -std=c++17 $(WARNINGS) -O3 -march=native -pthread
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
+       src/args.cpp \
        src/framebuffer.cpp \
        src/mesh.cpp \
        src/mesh_obj.cpp \
@@ -19,7 +20,8 @@ SRCS = src/main.cpp \
        src/renderer.cpp \
        src/texture.cpp
 
-HDRS = src/linalg.h \
+HDRS = src/args.h \
+       src/linalg.h \
        src/framebuffer.h \
        src/mesh.h \
        src/camera.h \
@@ -54,6 +56,8 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_clip_near.cpp \
               tests/test_texture.cpp \
               tests/test_mesh_geometry.cpp \
+              tests/test_args.cpp \
+              src/args.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
               src/mesh_ply.cpp \

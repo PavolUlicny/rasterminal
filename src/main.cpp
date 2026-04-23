@@ -1,3 +1,4 @@
+#include "args.h"
 #include "camera.h"
 #include "framebuffer.h"
 #include "light.h"
@@ -6,10 +7,7 @@
 #include "renderer.h"
 
 #include <algorithm>
-#include <cctype>
-#include <cerrno>
 #include <chrono>
-#include <climits>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -27,275 +25,17 @@ static constexpr Color BG_WHITE = {240, 240, 240};
 
 int main(int argc, char *argv[])
 {
-    const char *obj_path = nullptr;
-    int n_threads = -1; // -1 = auto (min(hw_concurrency, 4))
-    ShadingMode init_shading = ShadingMode::Gouraud;
-    int init_bg = 0;       // 0=black, 1=gray, 2=white
-    int init_lighting = 0; // 0=dual, 1=single, 2=flat
-    bool init_spin = false;
-    bool init_shadow = true;
-    bool init_ao = true;
-    bool init_hud = true;
-
-    // Returns the next argv value for a flag that requires one, or nullptr on error.
-    auto require_val = [&](int &i, const char *flag) -> const char *
-    {
-        if (i + 1 >= argc)
-        {
-            std::fprintf(stderr, "Error: %s requires a value\n", flag);
-            return nullptr;
-        }
-        return argv[++i];
-    };
-
-    auto parse_threads = [](const char *flag, const char *val, int &out) -> bool
-    {
-        char *end = nullptr;
-        errno = 0;
-        long v = std::strtol(val, &end, 10);
-        if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
-        {
-            std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
-            return false;
-        }
-        out = static_cast<int>(v);
-        return true;
-    };
-
-    auto parse_shading = [](const char *flag, const char *val, ShadingMode &out) -> bool
-    {
-        std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        if (v == "wireframe" || v == "1")
-            out = ShadingMode::Wireframe;
-        else if (v == "flat" || v == "2")
-            out = ShadingMode::Flat;
-        else if (v == "gouraud" || v == "3")
-            out = ShadingMode::Gouraud;
-        else if (v == "phong" || v == "4")
-            out = ShadingMode::Phong;
-        else
-        {
-            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected wireframe|flat|gouraud|phong or 1-4)\n", flag, val);
-            return false;
-        }
-        return true;
-    };
-
-    auto parse_bg = [](const char *flag, const char *val, int &out) -> bool
-    {
-        std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        if (v == "black" || v == "1")
-            out = 0;
-        else if (v == "gray" || v == "grey" || v == "2")
-            out = 1;
-        else if (v == "white" || v == "3")
-            out = 2;
-        else
-        {
-            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected black|gray|white or 1-3)\n", flag, val);
-            return false;
-        }
-        return true;
-    };
-
-    auto parse_lighting = [](const char *flag, const char *val, int &out) -> bool
-    {
-        std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
-        if (v == "dual" || v == "1")
-            out = 0;
-        else if (v == "single" || v == "2")
-            out = 1;
-        else if (v == "flat" || v == "3")
-            out = 2;
-        else
-        {
-            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected dual|single|flat or 1-3)\n", flag, val);
-            return false;
-        }
-        return true;
-    };
-
-    for (int i = 1; i < argc; i++)
-    {
-        // Split --flag=value into flag name + value pointer.
-        // For --flag value or -f value forms, eq_val stays nullptr.
-        const char *eq_val = nullptr;
-        std::string arg = argv[i];
-        if (arg.size() > 2 && arg[0] == '-' && arg[1] == '-')
-        {
-            size_t eq = arg.find('=');
-            if (eq != std::string::npos)
-            {
-                eq_val = argv[i] + eq + 1;
-                arg = arg.substr(0, eq);
-            }
-        }
-        const char *flag = arg.c_str();
-
-        // Helper: get value either from --flag=val or the next argv token.
-        auto get_val = [&](int &arg_i) -> const char *
-        {
-            if (eq_val != nullptr)
-                return eq_val;
-            return require_val(arg_i, flag);
-        };
-
-        if (arg == "-j" || arg == "--threads")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_threads(flag, val, n_threads))
-                return 1;
-        }
-        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_threads("-j", argv[i] + 2, n_threads))
-                return 1;
-        }
-        else if (arg == "-s" || arg == "--shading")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_shading(flag, val, init_shading))
-                return 1;
-        }
-        else if (std::strncmp(argv[i], "-s", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_shading("-s", argv[i] + 2, init_shading))
-                return 1;
-        }
-        else if (arg == "-b" || arg == "--bg")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_bg(flag, val, init_bg))
-                return 1;
-        }
-        else if (std::strncmp(argv[i], "-b", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_bg("-b", argv[i] + 2, init_bg))
-                return 1;
-        }
-        else if (arg == "-l" || arg == "--lighting")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_lighting(flag, val, init_lighting))
-                return 1;
-        }
-        else if (std::strncmp(argv[i], "-l", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_lighting("-l", argv[i] + 2, init_lighting))
-                return 1;
-        }
-        else if (arg == "-h" || arg == "--help")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
-                return 1;
-            }
-            std::printf(
-                "Usage: rasterminal [options] <model>\n"
-                "\n"
-                "Render a 3D model in the terminal using unicode half-block characters\n"
-                "and 24-bit ANSI color.\n"
-                "\n"
-                "Supported formats:\n"
-                "  .obj   Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
-                "  .ply   ASCII or binary (little/big-endian)\n"
-                "  .stl   ASCII or binary\n"
-                "\n"
-                "Options:\n"
-                "  -s, --shading <mode>    Initial shading mode (default: gouraud)\n"
-                "                           wireframe|flat|gouraud|phong  or  1-4\n"
-                "  -b, --bg <color>        Initial background color (default: black)\n"
-                "                           black|gray|white  or  1-3\n"
-                "  -l, --lighting <mode>   Initial lighting mode (default: dual)\n"
-                "                           dual|single|flat  or  1-3\n"
-                "  -S, --spin              Start with auto-rotation enabled\n"
-                "  -j, --threads <n>       Worker thread count (0=all, default=min(hw,4))\n"
-                "      --no-shadow         Disable shadow map\n"
-                "      --no-ao             Disable ambient occlusion\n"
-                "      --no-hud            Hide the HUD status line\n"
-                "  -h, --help              Show this message\n"
-                "\n"
-                "Controls:\n"
-                "  1-4          Shading mode           B       Cycle background\n"
-                "  Space        Toggle spin            L       Cycle lighting\n"
-                "  WASD/arrows  Orbit camera           R       Reset view\n"
-                "  +/-          Zoom                   Q       Quit\n"
-                "  Mouse drag   Orbit                  Scroll  Zoom\n");
-            return 0;
-        }
-        else if (arg == "-S" || arg == "--spin")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
-                return 1;
-            }
-            init_spin = true;
-        }
-        else if (arg == "--no-ao")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
-                return 1;
-            }
-            init_ao = false;
-        }
-        else if (arg == "--no-shadow")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
-                return 1;
-            }
-            init_shadow = false;
-        }
-        else if (arg == "--no-hud")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
-                return 1;
-            }
-            init_hud = false;
-        }
-        else if (argv[i][0] == '-')
-        {
-            std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
-            return 1;
-        }
-        else if (obj_path != nullptr)
-        {
-            std::fprintf(stderr, "Error: unexpected argument '%s'\n", argv[i]);
-            return 1;
-        }
-        else
-            obj_path = argv[i];
-    }
-    if (obj_path == nullptr)
-    {
-        std::fprintf(stderr, "Error: no model specified\n"
-                             "       Usage: rasterminal [options] <model>\n"
-                             "       Run 'rasterminal --help' for more information.\n");
-        return 1;
-    }
+    ParseResult parsed = parse_args(argc, argv);
+    if (!parsed.ok)
+        return parsed.exit_code;
+    const ParsedArgs &args = parsed.args;
 
     Mesh mesh;
-    if (!mesh.load_model(obj_path, init_ao))
+    if (!mesh.load_model(args.model_path, args.ao))
     {
         std::fprintf(stderr, "Error: failed to load '%s'\n"
                              "       Supported formats: .obj, .ply, .stl\n",
-                     obj_path);
+                     args.model_path.c_str());
         return 1;
     }
 
@@ -326,7 +66,7 @@ int main(int argc, char *argv[])
     const Camera initial_camera = camera;
 
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
-    std::string model_name = obj_path;
+    std::string model_name = args.model_path;
     {
         size_t slash = model_name.find_last_of("/\\");
         if (slash != std::string::npos)
@@ -345,7 +85,7 @@ int main(int argc, char *argv[])
     // Each pixel cell covers 2 vertical pixels via ▀ half-block.
     // With the HUD enabled, the last terminal row is reserved for it;
     // --no-hud reclaims that row for rendering.
-    const int hud_rows = init_hud ? 1 : 0;
+    const int hud_rows = args.hud ? 1 : 0;
     Framebuffer fb(cols, (rows - hud_rows) * 2);
 
     // Key light: warm white from upper-right-front.
@@ -360,17 +100,17 @@ int main(int argc, char *argv[])
     // Build shadow map once — the key light and mesh geometry are static,
     // so the map never changes regardless of camera movement or spin.
     std::optional<ShadowMap> shadow_map;
-    if (init_shadow)
+    if (args.shadow)
         shadow_map = build_shadow_map(mesh, lights[0]);
 
-    Renderer renderer(n_threads);
-    renderer.mode = init_shading;
+    Renderer renderer(args.n_threads);
+    renderer.mode = static_cast<ShadingMode>(args.shading);
 
     float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
-    bool spinning = init_spin;
+    bool spinning = args.spin;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
-    int bg_mode = init_bg;                  // 0=black, 1=gray, 2=white
-    int lighting_mode = init_lighting;      // 0=dual, 1=single, 2=flat ambient
+    int bg_mode = args.bg;                  // 0=black, 1=gray, 2=white
+    int lighting_mode = args.lighting;      // 0=dual, 1=single, 2=flat ambient
     const float spin_speed = 0.8f;          // radians/sec
 
     using clock = std::chrono::steady_clock;
@@ -479,7 +219,7 @@ int main(int argc, char *argv[])
         }
 
         // ── HUD ───────────────────────────────────────────────────────────
-        if (init_hud)
+        if (args.hud)
         {
             const char *mode_str = nullptr;
             switch (renderer.mode)

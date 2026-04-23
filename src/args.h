@@ -1,0 +1,30 @@
+#pragma once
+
+#include <string>
+
+// Parsed command-line arguments.  All values are plain types — no renderer
+// dependencies — so this header can be included by the test binary cheaply.
+struct ParsedArgs
+{
+    std::string model_path; // required positional
+    int n_threads = -1;     // -1 = auto (min(hw_concurrency, 4))
+    int shading = 2;        // 0=wireframe  1=flat  2=gouraud  3=phong
+    int bg = 0;             // 0=black  1=gray  2=white
+    int lighting = 0;       // 0=dual  1=single  2=flat
+    bool spin = false;
+    bool shadow = true;
+    bool ao = true;
+    bool hud = true;
+};
+
+// Result of parse_args().
+// ok=false → caller should return exit_code immediately (error or --help).
+// ok=true  → args is fully populated and valid.
+struct ParseResult
+{
+    bool ok = true;
+    int exit_code = 0;
+    ParsedArgs args;
+};
+
+ParseResult parse_args(int argc, char *argv[]);
