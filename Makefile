@@ -37,7 +37,34 @@ $(TARGET): $(SRCS) $(HDRS)
 debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread
 debug: $(TARGET)
 
-clean:
-	rm -f $(TARGET)
+# ─── tests ────────────────────────────────────────────────────────────────────
+# Only links sources the tests actually exercise — no framebuffer/rasterizer/
+# renderer/main. Run from repo root so models/ paths in test_loaders resolve.
 
-.PHONY: debug clean
+TEST_TARGET = rasterminal_tests
+TEST_SRCS   = tests/test_main.cpp \
+              tests/test_dispatch.cpp \
+              tests/test_obj.cpp \
+              tests/test_ply.cpp \
+              tests/test_stl.cpp \
+              tests/test_linalg.cpp \
+              tests/test_light.cpp \
+              tests/test_clip.cpp \
+              tests/test_camera.cpp \
+              src/mesh.cpp \
+              src/mesh_obj.cpp \
+              src/mesh_ply.cpp \
+              src/mesh_stl.cpp \
+              src/texture.cpp \
+              src/camera.cpp
+
+$(TEST_TARGET): $(TEST_SRCS) $(HDRS) tests/test.h
+	$(CXX) $(CXXFLAGS) -o $@ $(TEST_SRCS)
+
+test: $(TEST_TARGET)
+	./$(TEST_TARGET)
+
+clean:
+	rm -f $(TARGET) $(TEST_TARGET)
+
+.PHONY: debug test clean

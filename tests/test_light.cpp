@@ -1,0 +1,233 @@
+#include "test.h"
+#include "../src/light.h"
+
+#include <cmath>
+
+// All tests use unit-length directions. compute_lighting normalizes its normal
+// argument internally but expects light directions to already be unit.
+
+static constexpr float EPS = 1e-5f;
+
+// ─── ambient-only behaviour ──────────────────────────────────────────────────
+
+TEST(light, no_lights_returns_ambient_times_diffuse)
+{
+    Material mat;
+    mat.diffuse = {0.5f, 0.5f, 0.5f};
+    vec3 ambient{0.2f, 0.2f, 0.2f};
+    vec3 v{0, 0, 1};
+
+    vec3 r = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 1.0f);
+    ASSERT_NEAR(r.x, 0.1f, EPS); // 0.2 * 0.5 * 1.0
+    ASSERT_NEAR(r.y, 0.1f, EPS);
+    ASSERT_NEAR(r.z, 0.1f, EPS);
+}
+
+TEST(light, ao_scales_ambient)
+{
+    Material mat;
+    vec3 ambient{0.4f, 0.4f, 0.4f};
+    vec3 v{0, 0, 1};
+
+    vec3 full = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 1.0f);
+    vec3 half = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 0.5f);
+
+    ASSERT_NEAR(half.x, full.x * 0.5f, EPS);
+    ASSERT_NEAR(half.y, full.y * 0.5f, EPS);
+    ASSERT_NEAR(half.z, full.z * 0.5f, EPS);
+}
+
+TEST(light, ao_does_not_affect_direct_diffuse)
+{
+    // A light aligned with the normal: diffuse contribution = 1.0.
+    // AO is ambient-only, so changing AO must leave the direct term unchanged.
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0}; // isolate diffuse
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0}; // kill ambient to expose direct only
+    vec3 v{0, 0, 1};
+    vec3 n{0, 1, 0};
+
+    vec3 full = compute_lighting(n, v, &l, 1, ambient, mat, 1.0f);
+    vec3 zero_ao = compute_lighting(n, v, &l, 1, ambient, mat, 0.0f);
+
+    // With ambient=0, full and zero_ao should be identical.
+    ASSERT_NEAR(full.x, zero_ao.x, EPS);
+    ASSERT_NEAR(full.y, zero_ao.y, EPS);
+    ASSERT_NEAR(full.z, zero_ao.z, EPS);
+}
+
+// ─── diffuse (Lambert) ──────────────────────────────────────────────────────
+
+TEST(light, perpendicular_light_gives_max_diffuse)
+{
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0};
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 1, 0}; // view along same direction → no specular peak issues
+    vec3 n{0, 1, 0}; // aligned with light → dot=1
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    // Diffuse = diffuse_color * light_color * dot = 1*1*1 = 1 per channel,
+    // plus specular_pow(1, 32) with specular=0 → 0. Result = (1,1,1).
+    ASSERT_NEAR(r.x, 1.0f, EPS);
+    ASSERT_NEAR(r.y, 1.0f, EPS);
+    ASSERT_NEAR(r.z, 1.0f, EPS);
+}
+
+TEST(light, back_facing_light_contributes_no_diffuse)
+{
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0};
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 0, 1};
+    vec3 n{0, -1, 0}; // faces away from light → dot = -1
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_NEAR(r.x, 0.0f, EPS);
+    ASSERT_NEAR(r.y, 0.0f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
+TEST(light, tangential_light_contributes_no_diffuse)
+{
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0};
+    Light l;
+    l.direction = {1, 0, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 0, 1};
+    vec3 n{0, 1, 0}; // perpendicular to light → dot = 0, no contribution
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_NEAR(r.x, 0.0f, EPS);
+}
+
+TEST(light, light_color_tints_diffuse)
+{
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0};
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 0, 0}; // pure red
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 1, 0};
+    vec3 n{0, 1, 0};
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_NEAR(r.x, 1.0f, EPS);
+    ASSERT_NEAR(r.y, 0.0f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
+// ─── specular (Blinn-Phong) ──────────────────────────────────────────────────
+
+TEST(light, specular_peaks_when_half_vector_equals_normal)
+{
+    // If view direction == light direction, then half-vector == light == normal,
+    // so dot(n, h) = 1 and specular term = mat.specular * 1 ^ shininess.
+    Material mat;
+    mat.diffuse = {0, 0, 0}; // isolate specular
+    mat.specular = {1, 1, 1};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 1, 0};
+    vec3 n{0, 1, 0};
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_NEAR(r.x, 1.0f, EPS);
+    ASSERT_NEAR(r.y, 1.0f, EPS);
+    ASSERT_NEAR(r.z, 1.0f, EPS);
+}
+
+TEST(light, specular_is_strictly_smaller_off_peak)
+{
+    Material mat;
+    mat.diffuse = {0, 0, 0};
+    mat.specular = {1, 1, 1};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 n{0, 1, 0};
+
+    vec3 peak = compute_lighting(n, vec3{0, 1, 0}, &l, 1, ambient, mat);
+    // View rotated 45° away from the light — half-vector no longer aligns
+    // with the normal, so specular contribution drops.
+    vec3 off = compute_lighting(n, normalize(vec3{1, 1, 0}), &l, 1, ambient, mat);
+    ASSERT_TRUE(off.x < peak.x);
+    ASSERT_TRUE(off.x >= 0.0f);
+}
+
+// ─── accumulation ────────────────────────────────────────────────────────────
+
+TEST(light, multiple_lights_sum_their_contributions)
+{
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {0, 0, 0};
+    Light ls[2];
+    ls[0].direction = {0, 1, 0};
+    ls[0].color = {0.3f, 0, 0};
+    ls[1].direction = {0, 1, 0};
+    ls[1].color = {0, 0.5f, 0};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 1, 0};
+    vec3 n{0, 1, 0};
+
+    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat);
+    ASSERT_NEAR(r.x, 0.3f, EPS);
+    ASSERT_NEAR(r.y, 0.5f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
+// ─── specular_pow fast paths ─────────────────────────────────────────────────
+// The fast paths for shininess ∈ {8, 16, 32} must match the general form.
+
+TEST(specular_pow, shininess_32_matches_power)
+{
+    float x = 0.8f;
+    float got = specular_pow(x, 32.0f);
+    float expected = std::pow(x, 32.0f);
+    ASSERT_NEAR(got, expected, 1e-5f);
+}
+
+TEST(specular_pow, shininess_16_matches_power)
+{
+    float x = 0.7f;
+    float got = specular_pow(x, 16.0f);
+    float expected = std::pow(x, 16.0f);
+    ASSERT_NEAR(got, expected, 1e-5f);
+}
+
+TEST(specular_pow, shininess_8_matches_power)
+{
+    float x = 0.6f;
+    float got = specular_pow(x, 8.0f);
+    float expected = std::pow(x, 8.0f);
+    ASSERT_NEAR(got, expected, 1e-5f);
+}
+
+TEST(specular_pow, shininess_1_returns_x)
+{
+    // x^1 = x; the exp2f/log2f general path should handle this.
+    ASSERT_NEAR(specular_pow(0.5f, 1.0f), 0.5f, 1e-5f);
+}
