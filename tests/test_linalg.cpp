@@ -143,3 +143,156 @@ TEST(util, to_radians)
     ASSERT_NEAR(to_radians(180.0f), 3.14159265f, 1e-5f);
     ASSERT_NEAR(to_radians(0.0f), 0.0f, 1e-6f);
 }
+
+// ─── vec3 additional ──────────────────────────────────────────────────────────
+
+TEST(vec3, normalize_zero_vector_returns_zero)
+{
+    // length_sq < 1e-16f → returns default-constructed vec3{0,0,0}
+    vec3 r = normalize(vec3{0, 0, 0});
+    ASSERT_NEAR(r.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-6f);
+}
+
+TEST(vec3, lerp_at_t0_returns_a)
+{
+    vec3 a{1, 2, 3}, b{4, 5, 6};
+    vec3 r = lerp(a, b, 0.0f);
+    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 3.0f, 1e-6f);
+}
+
+TEST(vec3, lerp_at_t1_returns_b)
+{
+    vec3 a{1, 2, 3}, b{4, 5, 6};
+    vec3 r = lerp(a, b, 1.0f);
+    ASSERT_NEAR(r.x, 4.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 5.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 6.0f, 1e-6f);
+}
+
+TEST(vec3, lerp_midpoint)
+{
+    vec3 a{0, 0, 0}, b{2, 4, 6};
+    vec3 r = lerp(a, b, 0.5f);
+    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 3.0f, 1e-6f);
+}
+
+TEST(vec3, reflect_normal_incidence_inverts)
+{
+    // reflect((0,0,-1), (0,0,1)) = (0,0,1): straight reflection off Z+ surface.
+    vec3 r = reflect(vec3{0, 0, -1}, vec3{0, 0, 1});
+    ASSERT_NEAR(r.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 1.0f, 1e-6f);
+}
+
+TEST(vec3, reflect_45_degree_flips_y)
+{
+    // reflect((1,-1,0)/√2, (0,1,0)) → (1,1,0)/√2: angle of incidence = angle of reflection.
+    vec3 incident = normalize(vec3{1, -1, 0});
+    vec3 r = reflect(incident, vec3{0, 1, 0});
+    ASSERT_NEAR(r.x, incident.x, 1e-5f);
+    ASSERT_NEAR(r.y, -incident.y, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+// ─── vec4 ─────────────────────────────────────────────────────────────────────
+
+TEST(vec4, perspective_divide_divides_by_w)
+{
+    vec4 v{2.0f, 4.0f, 6.0f, 2.0f};
+    vec3 r = v.perspective_divide();
+    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 3.0f, 1e-6f);
+}
+
+TEST(vec4, perspective_divide_w_one_is_identity)
+{
+    vec4 v{3.0f, 5.0f, 7.0f, 1.0f};
+    vec3 r = v.perspective_divide();
+    ASSERT_NEAR(r.x, 3.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 5.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 7.0f, 1e-6f);
+}
+
+// ─── rotation_x / rotation_z ─────────────────────────────────────────────────
+
+TEST(rotation_x, 90deg_maps_y_axis_to_z)
+{
+    mat4 R = rotation_x(to_radians(90.0f));
+    vec4 r = R * vec4{0, 1, 0, 1};
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 1.0f, 1e-5f);
+}
+
+TEST(rotation_x, 90deg_maps_z_axis_to_neg_y)
+{
+    mat4 R = rotation_x(to_radians(90.0f));
+    vec4 r = R * vec4{0, 0, 1, 1};
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, -1.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+TEST(rotation_z, 90deg_maps_x_axis_to_y)
+{
+    mat4 R = rotation_z(to_radians(90.0f));
+    vec4 r = R * vec4{1, 0, 0, 1};
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 1.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+TEST(rotation_z, 90deg_maps_y_axis_to_neg_x)
+{
+    mat4 R = rotation_z(to_radians(90.0f));
+    vec4 r = R * vec4{0, 1, 0, 1};
+    ASSERT_NEAR(r.x, -1.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+// ─── look_at ──────────────────────────────────────────────────────────────────
+
+TEST(look_at, eye_transforms_to_origin)
+{
+    vec3 eye{0, 0, 5}, target{0, 0, 0}, up{0, 1, 0};
+    mat4 V = look_at(eye, target, up);
+    vec4 e = V * vec4{eye, 1.0f};
+    ASSERT_NEAR(e.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(e.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(e.z, 0.0f, 1e-5f);
+}
+
+TEST(look_at, target_lands_on_negative_z_at_distance)
+{
+    vec3 eye{0, 0, 5}, target{0, 0, 0}, up{0, 1, 0};
+    mat4 V = look_at(eye, target, up);
+    vec4 t = V * vec4{target, 1.0f};
+    ASSERT_NEAR(t.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(t.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(t.z, -5.0f, 1e-5f);
+}
+
+TEST(look_at, upper_left_3x3_is_orthonormal)
+{
+    // Rows of the rotation part must be unit-length and mutually orthogonal.
+    vec3 eye{1, 2, 3}, target{-1, 0, 1}, up{0, 1, 0};
+    mat4 V = look_at(eye, target, up);
+    vec3 row0{V.m[0][0], V.m[1][0], V.m[2][0]};
+    vec3 row1{V.m[0][1], V.m[1][1], V.m[2][1]};
+    vec3 row2{V.m[0][2], V.m[1][2], V.m[2][2]};
+    ASSERT_NEAR(row0.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(row1.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(row2.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(dot(row0, row1), 0.0f, 1e-5f);
+    ASSERT_NEAR(dot(row0, row2), 0.0f, 1e-5f);
+    ASSERT_NEAR(dot(row1, row2), 0.0f, 1e-5f);
+}

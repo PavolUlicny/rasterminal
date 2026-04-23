@@ -51,12 +51,18 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_light.cpp \
               tests/test_clip.cpp \
               tests/test_camera.cpp \
+              tests/test_clip_near.cpp \
+              tests/test_texture.cpp \
+              tests/test_mesh_geometry.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
               src/mesh_ply.cpp \
               src/mesh_stl.cpp \
               src/texture.cpp \
-              src/camera.cpp
+              src/camera.cpp \
+              src/rasterize.cpp \
+              src/framebuffer.cpp \
+              src/shadow.cpp
 
 $(TEST_TARGET): $(TEST_SRCS) $(HDRS) tests/test.h
 	$(CXX) $(CXXFLAGS) -o $@ $(TEST_SRCS)
