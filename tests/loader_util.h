@@ -61,7 +61,7 @@ struct TmpFile
     return m;
 }
 
-static void assert_rejects(const std::string &path)
+[[maybe_unused]] static void assert_rejects(const std::string &path)
 {
     Mesh m;
     bool ok = m.load_model(path, /*ao=*/false);
