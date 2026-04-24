@@ -58,6 +58,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_mesh_geometry.cpp \
               tests/test_args.cpp \
               tests/test_shadow.cpp \
+              tests/test_rasterize.cpp \
               src/args.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
