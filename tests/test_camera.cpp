@@ -155,3 +155,119 @@ TEST(camera, projection_degenerate_size_does_not_divide_by_zero)
     ASSERT_TRUE(std::isfinite(P.m[0][0]));
     ASSERT_TRUE(std::isfinite(P.m[1][1]));
 }
+
+// ─── process_key() ───────────────────────────────────────────────────────────
+// orbit_speed = 2.5 rad/s, zoom_speed = distance * 1.5 (both hardcoded).
+
+TEST(camera, process_key_A_decreases_yaw)
+{
+    Camera c;
+    c.yaw = 0.0f;
+    c.process_key(platform::KEY_A, 1.0f);
+    ASSERT_NEAR(c.yaw, -2.5f, EPS);
+}
+
+TEST(camera, process_key_D_increases_yaw)
+{
+    Camera c;
+    c.yaw = 0.0f;
+    c.process_key(platform::KEY_D, 1.0f);
+    ASSERT_NEAR(c.yaw, 2.5f, EPS);
+}
+
+TEST(camera, process_key_W_increases_pitch)
+{
+    Camera c;
+    c.pitch = 0.0f;
+    c.process_key(platform::KEY_W, 1.0f);
+    ASSERT_NEAR(c.pitch, 2.5f, EPS);
+}
+
+TEST(camera, process_key_S_decreases_pitch)
+{
+    Camera c;
+    c.pitch = 0.0f;
+    c.process_key(platform::KEY_S, 1.0f);
+    ASSERT_NEAR(c.pitch, -2.5f, EPS);
+}
+
+TEST(camera, process_key_LEFT_same_as_A)
+{
+    Camera c;
+    c.yaw = 0.0f;
+    c.process_key(platform::KEY_LEFT, 1.0f);
+    ASSERT_NEAR(c.yaw, -2.5f, EPS);
+}
+
+TEST(camera, process_key_RIGHT_same_as_D)
+{
+    Camera c;
+    c.yaw = 0.0f;
+    c.process_key(platform::KEY_RIGHT, 1.0f);
+    ASSERT_NEAR(c.yaw, 2.5f, EPS);
+}
+
+TEST(camera, process_key_UP_same_as_W)
+{
+    Camera c;
+    c.pitch = 0.0f;
+    c.process_key(platform::KEY_UP, 1.0f);
+    ASSERT_NEAR(c.pitch, 2.5f, EPS);
+}
+
+TEST(camera, process_key_DOWN_same_as_S)
+{
+    Camera c;
+    c.pitch = 0.0f;
+    c.process_key(platform::KEY_DOWN, 1.0f);
+    ASSERT_NEAR(c.pitch, -2.5f, EPS);
+}
+
+TEST(camera, process_key_PLUS_decreases_distance)
+{
+    Camera c;
+    c.distance = 3.0f;
+    c.process_key(platform::KEY_PLUS, 0.1f);
+    // zoom_speed = 3.0 * 1.5 = 4.5; distance -= 4.5 * 0.1 = 0.45
+    ASSERT_NEAR(c.distance, 2.55f, 1e-4f);
+}
+
+TEST(camera, process_key_MINUS_increases_distance)
+{
+    Camera c;
+    c.distance = 3.0f;
+    c.process_key(platform::KEY_MINUS, 0.1f);
+    ASSERT_NEAR(c.distance, 3.45f, 1e-4f);
+}
+
+TEST(camera, process_key_distance_clamped_at_near)
+{
+    // Zooming in with large dt drives distance negative; clamp to near_plane*2.
+    Camera c;
+    c.distance = 3.0f;
+    c.near_plane = 0.01f;
+    c.far_plane = 100.0f;
+    c.process_key(platform::KEY_PLUS, 100.0f);
+    ASSERT_NEAR(c.distance, c.near_plane * 2.0f, EPS);
+}
+
+TEST(camera, process_key_distance_clamped_at_far)
+{
+    // Zooming out with large dt drives distance past far_plane*0.5; clamp.
+    Camera c;
+    c.distance = 3.0f;
+    c.near_plane = 0.01f;
+    c.far_plane = 100.0f;
+    c.process_key(platform::KEY_MINUS, 100.0f);
+    ASSERT_NEAR(c.distance, c.far_plane * 0.5f, EPS);
+}
+
+TEST(camera, process_key_unknown_does_not_change_state)
+{
+    Camera c;
+    float old_yaw = c.yaw, old_pitch = c.pitch, old_dist = c.distance;
+    c.process_key(platform::KEY_SPACE, 1.0f);
+    ASSERT_NEAR(c.yaw, old_yaw, EPS);
+    ASSERT_NEAR(c.pitch, old_pitch, EPS);
+    ASSERT_NEAR(c.distance, old_dist, EPS);
+}
