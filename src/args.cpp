@@ -38,14 +38,28 @@ ParseResult parse_args(int argc, char *argv[])
         char *end = nullptr;
         errno = 0;
         long v = std::strtol(val, &end, 10);
-        if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
+        if (end == val || *end != '\0' || v <= 0 || v > INT_MAX || errno == ERANGE)
         {
             std::fprintf(stderr,
-                         "Error: %s requires a non-negative integer, got '%s'\n",
+                         "Error: %s requires a positive integer, got '%s'\n",
                          flag, val);
             return false;
         }
         out = static_cast<int>(v);
+        return true;
+    };
+
+    // Returns true if s is a non-empty string of ASCII digits only.
+    auto is_all_digits = [](const char *s) -> bool
+    {
+        if (!s || !*s)
+            return false;
+        while (*s)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(*s)))
+                return false;
+            ++s;
+        }
         return true;
     };
 
@@ -147,9 +161,15 @@ ParseResult parse_args(int argc, char *argv[])
 
         if (arg == "-j" || arg == "--threads")
         {
-            const char *val = get_val(i);
-            if (!val || !parse_threads(flag, val, args.n_threads))
-                return fail(1);
+            // Bare form (no value, or next token is not a positive integer) = all threads.
+            if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+                args.n_threads = 0;
+            else
+            {
+                const char *val = get_val(i);
+                if (!val || !parse_threads(flag, val, args.n_threads))
+                    return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-j", 2) == 0 &&
                  argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
@@ -219,7 +239,7 @@ ParseResult parse_args(int argc, char *argv[])
                 "  -l, --lighting <mode>   Initial lighting mode (default: dual)\n"
                 "                           dual|single|flat  or  1-3\n"
                 "  -S, --spin              Start with auto-rotation enabled\n"
-                "  -j, --threads <n>       Worker thread count (0=all, default=min(hw,4))\n"
+                "  -j [N], --threads [N]   Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
                 "      --no-shadow         Disable shadow map\n"
                 "      --no-ao             Disable ambient occlusion\n"
                 "      --no-hud            Hide the HUD status line\n"
