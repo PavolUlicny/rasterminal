@@ -122,11 +122,12 @@ TEST(args, missing_value_for_shading_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-TEST(args, missing_value_for_threads_is_error)
+TEST(args, bare_threads_long_form_uses_all)
 {
-    ParseResult r = run({"--threads"});
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 1);
+    ParseResult r = run({"--threads", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.n_threads, 0);
+    ASSERT_TRUE(r.args.model_path == "m.obj");
 }
 
 // ─── error: boolean flags reject =value ──────────────────────────────────────
@@ -292,14 +293,34 @@ TEST(args, lighting_invalid_value_is_error)
 
 // ─── --threads ────────────────────────────────────────────────────────────────
 
-TEST(args, threads_zero_means_all)
+TEST(args, threads_bare_j_at_end)
 {
-    ASSERT_EQ(run({"--threads", "0", "m.obj"}).args.n_threads, 0);
+    ParseResult r = run({"m.obj", "-j"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.n_threads, 0);
+}
+
+TEST(args, threads_bare_j_before_model)
+{
+    ParseResult r = run({"-j", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.n_threads, 0);
+}
+
+TEST(args, threads_bare_j_with_flag_after)
+{
+    ParseResult r = run({"-j", "--spin", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.n_threads, 0);
+    ASSERT_TRUE(r.args.spin);
 }
 
 TEST(args, threads_positive_value)
 {
-    ASSERT_EQ(run({"-j", "4", "m.obj"}).args.n_threads, 4);
+    ParseResult r = run({"-j", "4", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.n_threads, 4);
+    ASSERT_TRUE(r.args.model_path == "m.obj");
 }
 
 TEST(args, threads_compact_short_form)
@@ -312,9 +333,16 @@ TEST(args, threads_equals_long_form)
     ASSERT_EQ(run({"--threads=2", "m.obj"}).args.n_threads, 2);
 }
 
+TEST(args, threads_zero_is_error)
+{
+    ParseResult r = run({"--threads", "0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 TEST(args, threads_negative_is_error)
 {
-    ParseResult r = run({"-j", "-1", "m.obj"});
+    ParseResult r = run({"--threads=-1", "m.obj"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
