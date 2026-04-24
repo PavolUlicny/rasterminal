@@ -40,8 +40,8 @@ debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread
 debug: $(TARGET)
 
 # ─── tests ────────────────────────────────────────────────────────────────────
-# Only links sources the tests actually exercise — no framebuffer/rasterizer/
-# renderer/main. Run from repo root so models/ paths in test_loaders resolve.
+# Only links sources the tests actually exercise — no renderer/main.
+# Run from repo root so models/ paths in test_loaders resolve.
 
 TEST_TARGET = rasterminal_tests
 TEST_SRCS   = tests/test_main.cpp \
@@ -57,6 +57,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_texture.cpp \
               tests/test_mesh_geometry.cpp \
               tests/test_args.cpp \
+              tests/test_shadow.cpp \
               src/args.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
