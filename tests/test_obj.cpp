@@ -196,3 +196,81 @@ TEST(reject, obj_all_face_indices_out_of_range)
               "f 10 11 12\n");
     assert_rejects(t.path);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MTL MATERIAL PARSING
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(obj_valid, mtl_default_material_is_white)
+{
+    // Without any usemtl the default material (index 0) must be white diffuse.
+    TmpFile t("/tmp/rast_mat_default.obj",
+              "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+              "f 1 2 3\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_NEAR(m.materials[0].diffuse.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[0].diffuse.y, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[0].diffuse.z, 1.0f, 1e-5f);
+}
+
+TEST(obj_valid, mtl_kd_parsed)
+{
+    TmpFile mtl("/tmp/rast_kd.mtl", "newmtl M\nKd 0.8 0.2 0.4\n");
+    TmpFile obj("/tmp/rast_kd.obj",
+                "mtllib rast_kd.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].diffuse.x, 0.8f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].diffuse.y, 0.2f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].diffuse.z, 0.4f, 1e-5f);
+}
+
+TEST(obj_valid, mtl_ks_parsed)
+{
+    TmpFile mtl("/tmp/rast_ks.mtl", "newmtl M\nKs 0.3 0.6 0.9\n");
+    TmpFile obj("/tmp/rast_ks.obj",
+                "mtllib rast_ks.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].specular.x, 0.3f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].specular.y, 0.6f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].specular.z, 0.9f, 1e-5f);
+}
+
+TEST(obj_valid, mtl_ns_parsed)
+{
+    TmpFile mtl("/tmp/rast_ns.mtl", "newmtl M\nNs 64.0\n");
+    TmpFile obj("/tmp/rast_ns.obj",
+                "mtllib rast_ns.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].shininess, 64.0f, 1e-5f);
+}
+
+TEST(obj_valid, usemtl_assigns_material_to_triangles)
+{
+    // Two materials applied to two separate faces — each triangle must carry
+    // the material_idx of the active usemtl at the time it was declared.
+    TmpFile mtl("/tmp/rast_usemtl.mtl",
+                "newmtl A\nKd 1 0 0\n"
+                "newmtl B\nKd 0 0 1\n");
+    TmpFile obj("/tmp/rast_usemtl.obj",
+                "mtllib rast_usemtl.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                "usemtl A\nf 1 2 3\n"
+                "usemtl B\nf 1 2 4\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.triangles.size(), size_t{2});
+    const Material &matA = m.mat_at(m.triangles[0].material_idx);
+    const Material &matB = m.mat_at(m.triangles[1].material_idx);
+    ASSERT_NEAR(matA.diffuse.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(matA.diffuse.z, 0.0f, 1e-5f);
+    ASSERT_NEAR(matB.diffuse.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(matB.diffuse.z, 1.0f, 1e-5f);
+}
