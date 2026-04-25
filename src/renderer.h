@@ -29,7 +29,7 @@ struct Renderer
     Color wireframe_color = {200, 200, 200};
 
     // Spawns worker threads that persist for the lifetime of the Renderer.
-    // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads, N = exactly N.
+    // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads (bare -j), N = exactly N.
     // Clamped to [1, hardware_concurrency].
     explicit Renderer(int n_threads = -1);
     ~Renderer();
