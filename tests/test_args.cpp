@@ -46,9 +46,10 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "model.obj");
     ASSERT_EQ(r.args.n_threads, -1);
-    ASSERT_EQ(r.args.shading, 2);  // gouraud
-    ASSERT_EQ(r.args.bg, 0);       // black
-    ASSERT_EQ(r.args.lighting, 0); // dual
+    ASSERT_EQ(r.args.shading, 2);         // gouraud
+    ASSERT_EQ(r.args.bg, 0);              // black
+    ASSERT_EQ(r.args.lighting, 0);        // dual
+    ASSERT_EQ(r.args.wireframe_color, 0); // white
     ASSERT_FALSE(r.args.spin);
     ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
@@ -120,6 +121,30 @@ TEST(args, missing_value_for_shading_is_error)
     ParseResult r = run({"--shading"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, missing_value_for_bg_is_error)
+{
+    ParseResult r = run({"--bg"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, missing_value_for_lighting_is_error)
+{
+    ParseResult r = run({"--lighting"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── error: short flags reject = form ────────────────────────────────────────
+
+TEST(args, short_flag_equals_form_is_unknown_flag)
+{
+    ASSERT_FALSE(run({"-s=phong", "m.obj"}).ok);
+    ASSERT_FALSE(run({"-b=white", "m.obj"}).ok);
+    ASSERT_FALSE(run({"-l=dual", "m.obj"}).ok);
+    ASSERT_FALSE(run({"-w=red", "m.obj"}).ok);
 }
 
 TEST(args, bare_threads_long_form_uses_all)
@@ -204,6 +229,12 @@ TEST(args, shading_equals_long_form)
     ASSERT_EQ(run({"--shading=flat", "m.obj"}).args.shading, 1);
 }
 
+TEST(args, shading_compact_case_insensitive)
+{
+    ASSERT_EQ(run({"-sPHONG", "m.obj"}).args.shading, 3);
+    ASSERT_EQ(run({"-sFLAT", "m.obj"}).args.shading, 1);
+}
+
 // ─── --bg ─────────────────────────────────────────────────────────────────────
 
 TEST(args, bg_black)
@@ -241,6 +272,12 @@ TEST(args, bg_compact_short_form)
 TEST(args, bg_equals_long_form)
 {
     ASSERT_EQ(run({"--bg=gray", "m.obj"}).args.bg, 1);
+}
+
+TEST(args, bg_compact_case_insensitive)
+{
+    ASSERT_EQ(run({"-bWHITE", "m.obj"}).args.bg, 2);
+    ASSERT_EQ(run({"-bGrAy", "m.obj"}).args.bg, 1);
 }
 
 TEST(args, bg_invalid_value_is_error)
@@ -282,6 +319,12 @@ TEST(args, lighting_compact_short_form)
 TEST(args, lighting_equals_long_form)
 {
     ASSERT_EQ(run({"--lighting=flat", "m.obj"}).args.lighting, 2);
+}
+
+TEST(args, lighting_compact_case_insensitive)
+{
+    ASSERT_EQ(run({"-lSINGLE", "m.obj"}).args.lighting, 1);
+    ASSERT_EQ(run({"-lFlAt", "m.obj"}).args.lighting, 2);
 }
 
 TEST(args, lighting_invalid_value_is_error)
@@ -382,6 +425,7 @@ TEST(args, no_hud_disables_hud)
 TEST(args, multiple_flags_all_applied)
 {
     ParseResult r = run({"--shading=phong", "--bg=white", "--lighting=single",
+                         "--wireframe-color=magenta",
                          "--spin", "--no-shadow", "--no-ao", "--no-hud",
                          "-j2", "scene.ply"});
     ASSERT_TRUE(r.ok);
@@ -389,6 +433,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_EQ(r.args.shading, 3);
     ASSERT_EQ(r.args.bg, 2);
     ASSERT_EQ(r.args.lighting, 1);
+    ASSERT_EQ(r.args.wireframe_color, 5);
     ASSERT_TRUE(r.args.spin);
     ASSERT_FALSE(r.args.shadow);
     ASSERT_FALSE(r.args.ao);
@@ -443,6 +488,12 @@ TEST(args, wireframe_color_short_form)
 TEST(args, wireframe_color_compact_short_form)
 {
     ASSERT_EQ(run({"-wmagenta", "m.obj"}).args.wireframe_color, 5);
+}
+
+TEST(args, wireframe_color_compact_case_insensitive)
+{
+    ASSERT_EQ(run({"-wYELLOW", "m.obj"}).args.wireframe_color, 3);
+    ASSERT_EQ(run({"-wCyAn", "m.obj"}).args.wireframe_color, 4);
 }
 
 TEST(args, wireframe_color_equals_form)
