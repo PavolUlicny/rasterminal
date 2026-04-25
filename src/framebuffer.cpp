@@ -73,10 +73,6 @@ void Framebuffer::present()
 {
     m_buf.clear();
 
-    // Move cursor to (1,1) before each frame — no erase needed because every
-    // cell is overwritten unconditionally, so old content never shows through.
-    m_buf += "\033[H";
-
     const int term_rows = m_height / 2;
 
     char tmp[32];
@@ -102,12 +98,15 @@ void Framebuffer::present()
         tmp[n++] = 'H';
         m_buf.append(tmp, static_cast<size_t>(n));
 
+        const int prow = row * 2;
+        const int top_base = prow * m_width;
+        // Guard against odd pixel height: reuse top pixel for bottom row.
+        const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
+
         for (int col = 0; col < m_width; col++)
         {
-            const Color &top = m_color[static_cast<size_t>((row * 2) * m_width + col)];
-            // Guard against odd pixel height: reuse top pixel for bottom row.
-            const int bot_row = (row * 2 + 1 < m_height) ? row * 2 + 1 : row * 2;
-            const Color &bot = m_color[static_cast<size_t>(bot_row * m_width + col)];
+            const Color &top = m_color[static_cast<size_t>(top_base + col)];
+            const Color &bot = m_color[static_cast<size_t>(bot_base + col)];
 
             // Foreground (top pixel): ESC[38;2;R;G;Bm — emit only on change.
             if (first_cell || top.r != prev_fg.r || top.g != prev_fg.g || top.b != prev_fg.b)
