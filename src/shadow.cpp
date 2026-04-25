@@ -122,21 +122,35 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
             continue;
         float inv_d = 1.0f / denom;
 
+        float ba_dx = (sb.y - sc.y) * inv_d;
+        float ba_dy = (sc.x - sb.x) * inv_d;
+        float bb_dx = (sc.y - sa.y) * inv_d;
+        float bb_dy = (sa.x - sc.x) * inv_d;
+
+        const float px0 = static_cast<float>(x0) + 0.5f;
+        const float py0 = static_cast<float>(y0) + 0.5f;
+        float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
+        float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+
         for (int y = y0; y <= y1; y++)
         {
+            float ba = ba_row, bb = bb_row;
+            const int row_base = y * S;
             for (int x = x0; x <= x1; x++)
             {
-                float px = static_cast<float>(x) + 0.5f, py = static_cast<float>(y) + 0.5f;
-                float ba = ((sb.y - sc.y) * (px - sc.x) + (sc.x - sb.x) * (py - sc.y)) * inv_d;
-                float bb = ((sc.y - sa.y) * (px - sc.x) + (sa.x - sc.x) * (py - sc.y)) * inv_d;
                 float bc = 1.0f - ba - bb;
-                if (ba < 0.0f || bb < 0.0f || bc < 0.0f)
-                    continue;
-                float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
-                float &stored = smap.depth[y * S + x];
-                if (d < stored)
-                    stored = d;
+                if (ba >= 0.0f && bb >= 0.0f && bc >= 0.0f)
+                {
+                    float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
+                    float &stored = smap.depth[row_base + x];
+                    if (d < stored)
+                        stored = d;
+                }
+                ba += ba_dx;
+                bb += bb_dx;
             }
+            ba_row += ba_dy;
+            bb_row += bb_dy;
         }
     }
 
