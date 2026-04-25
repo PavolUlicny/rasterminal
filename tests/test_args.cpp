@@ -50,6 +50,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_EQ(r.args.bg, 0);              // black
     ASSERT_EQ(r.args.lighting, 0);        // dual
     ASSERT_EQ(r.args.wireframe_color, 0); // white
+    ASSERT_EQ(r.args.fps, 60);
     ASSERT_FALSE(r.args.spin);
     ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
@@ -145,6 +146,7 @@ TEST(args, short_flag_equals_form_is_unknown_flag)
     ASSERT_FALSE(run({"-b=white", "m.obj"}).ok);
     ASSERT_FALSE(run({"-l=dual", "m.obj"}).ok);
     ASSERT_FALSE(run({"-w=red", "m.obj"}).ok);
+    ASSERT_FALSE(run({"-f=30", "m.obj"}).ok);
 }
 
 TEST(args, bare_threads_long_form_uses_all)
@@ -425,7 +427,7 @@ TEST(args, no_hud_disables_hud)
 TEST(args, multiple_flags_all_applied)
 {
     ParseResult r = run({"--shading=phong", "--bg=white", "--lighting=single",
-                         "--wireframe-color=magenta",
+                         "--wireframe-color=magenta", "--fps=120",
                          "--spin", "--no-shadow", "--no-ao", "--no-hud",
                          "-j2", "scene.ply"});
     ASSERT_TRUE(r.ok);
@@ -434,6 +436,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_EQ(r.args.bg, 2);
     ASSERT_EQ(r.args.lighting, 1);
     ASSERT_EQ(r.args.wireframe_color, 5);
+    ASSERT_EQ(r.args.fps, 120);
     ASSERT_TRUE(r.args.spin);
     ASSERT_FALSE(r.args.shadow);
     ASSERT_FALSE(r.args.ao);
@@ -511,6 +514,73 @@ TEST(args, wireframe_color_invalid_is_error)
 TEST(args, wireframe_color_missing_value_is_error)
 {
     ParseResult r = run({"--wireframe-color"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --fps ────────────────────────────────────────────────────────────────────
+
+TEST(args, fps_default)
+{
+    ASSERT_EQ(run({"m.obj"}).args.fps, 60);
+}
+
+TEST(args, fps_bare_long_at_end)
+{
+    ParseResult r = run({"m.obj", "--fps"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.fps, 0);
+}
+
+TEST(args, fps_bare_short_before_model)
+{
+    ParseResult r = run({"-f", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.fps, 0);
+}
+
+TEST(args, fps_bare_with_flag_after)
+{
+    ParseResult r = run({"-f", "--spin", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.fps, 0);
+    ASSERT_TRUE(r.args.spin);
+}
+
+TEST(args, fps_positive_value)
+{
+    ParseResult r = run({"-f", "30", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.fps, 30);
+}
+
+TEST(args, fps_compact_short_form)
+{
+    ASSERT_EQ(run({"-f120", "m.obj"}).args.fps, 120);
+}
+
+TEST(args, fps_equals_long_form)
+{
+    ASSERT_EQ(run({"--fps=144", "m.obj"}).args.fps, 144);
+}
+
+TEST(args, fps_zero_is_error)
+{
+    ParseResult r = run({"--fps", "0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_negative_is_error)
+{
+    ParseResult r = run({"--fps=-1", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_non_integer_is_error)
+{
+    ParseResult r = run({"--fps", "fast", "m.obj"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }

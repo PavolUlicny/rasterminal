@@ -331,15 +331,17 @@ int main(int argc, char *argv[])
                         shadow_map ? &*shadow_map : nullptr);
         fb.present();
 
-        // ── Frame cap (≈60 fps) ───────────────────────────────────────────
-        // Keeps dt consistent so camera speed feels uniform regardless of
-        // how fast the renderer is.
-        constexpr float target_dt = 1.0f / 60.0f;
-        auto frame_end = clock::now();
-        float elapsed = std::chrono::duration<float>(frame_end - now).count();
-        if (elapsed < target_dt)
-            std::this_thread::sleep_for(
-                std::chrono::duration<float>(target_dt - elapsed));
+        // ── Frame cap ────────────────────────────────────────────────────
+        // fps == 0 means uncapped (skip the sleep entirely).
+        if (args.fps > 0)
+        {
+            const float target_dt = 1.0f / static_cast<float>(args.fps);
+            auto frame_end = clock::now();
+            float elapsed = std::chrono::duration<float>(frame_end - now).count();
+            if (elapsed < target_dt)
+                std::this_thread::sleep_for(
+                    std::chrono::duration<float>(target_dt - elapsed));
+        }
     }
 
 quit:
