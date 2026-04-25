@@ -6,11 +6,12 @@
 // dependencies — so this header can be included by the test binary cheaply.
 struct ParsedArgs
 {
-    std::string model_path; // required positional
-    int n_threads = -1;     // -1 = auto (min(hw_concurrency, 4))
-    int shading = 2;        // 0=wireframe  1=flat  2=gouraud  3=phong
-    int bg = 0;             // 0=black  1=gray  2=white
-    int lighting = 0;       // 0=dual  1=single  2=flat
+    std::string model_path;  // required positional
+    int n_threads = -1;      // -1 = auto (min(hw_concurrency, 4))
+    int shading = 2;         // 0=wireframe  1=flat  2=gouraud  3=phong
+    int bg = 0;              // 0=black  1=gray  2=white
+    int lighting = 0;        // 0=dual  1=single  2=flat
+    int wireframe_color = 0; // 0=white, 1=red, 2=green, 3=yellow, 4=cyan, 5=magenta
     bool spin = false;
     bool shadow = true;
     bool ao = true;

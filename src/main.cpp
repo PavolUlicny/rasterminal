@@ -23,6 +23,17 @@ static constexpr Color BG_BLACK = {0, 0, 0};
 static constexpr Color BG_GRAY = {128, 128, 128};
 static constexpr Color BG_WHITE = {240, 240, 240};
 
+static constexpr Color WIREFRAME_PALETTE[6] = {
+    {200, 200, 200}, // white
+    {220, 80, 80},   // red
+    {80, 200, 120},  // green
+    {230, 200, 80},  // yellow
+    {100, 200, 220}, // cyan
+    {220, 120, 200}, // magenta
+};
+static const char *const WIREFRAME_NAMES[6] = {
+    "white", "red", "green", "yellow", "cyan", "magenta"};
+
 int main(int argc, char *argv[])
 {
     ParseResult parsed = parse_args(argc, argv);
@@ -111,6 +122,7 @@ int main(int argc, char *argv[])
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = args.bg;                  // 0=black, 1=gray, 2=white
     int lighting_mode = args.lighting;      // 0=dual, 1=single, 2=flat ambient
+    int wf_color = args.wireframe_color;    // 0=white..5=magenta
     const float spin_speed = 0.8f;          // radians/sec
 
     using clock = std::chrono::steady_clock;
@@ -164,12 +176,15 @@ int main(int argc, char *argv[])
                     bg_mode = (bg_mode + 1) % 3;
                 else if (k == platform::KEY_L)
                     lighting_mode = (lighting_mode + 1) % 3;
+                else if (k == platform::KEY_C)
+                    wf_color = (wf_color + 1) % 6;
                 else if (k == platform::KEY_R)
                 {
                     camera = initial_camera;
                     renderer.mode = ShadingMode::Gouraud;
                     lighting_mode = 0;
                     bg_mode = 0;
+                    wf_color = 0;
                     spinning = false;
                 }
                 else
@@ -265,11 +280,17 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            char hud[160];
-            std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
-                          mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
-                          spinning ? "spin ON" : "spin OFF",
-                          lighting_str, bg_str);
+            char hud[192];
+            if (renderer.mode == ShadingMode::Wireframe)
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ",
+                              mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
+                              spinning ? "spin ON" : "spin OFF",
+                              lighting_str, bg_str, WIREFRAME_NAMES[wf_color]);
+            else
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ",
+                              mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
+                              spinning ? "spin ON" : "spin OFF",
+                              lighting_str, bg_str);
             fb.set_hud(hud);
         }
 
@@ -305,6 +326,7 @@ int main(int argc, char *argv[])
             break;
         }
         const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
+        renderer.wireframe_color = WIREFRAME_PALETTE[wf_color];
         renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
                         shadow_map ? &*shadow_map : nullptr);
         fb.present();

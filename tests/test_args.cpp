@@ -405,3 +405,61 @@ TEST(args, flags_before_and_after_model_path)
     ASSERT_EQ(r.args.shading, 1);
     ASSERT_EQ(r.args.bg, 1);
 }
+
+// ─── --wireframe-color ────────────────────────────────────────────────────────
+
+TEST(args, wireframe_color_default)
+{
+    ASSERT_EQ(run({"m.obj"}).args.wireframe_color, 0);
+}
+
+TEST(args, wireframe_color_name)
+{
+    ASSERT_EQ(run({"--wireframe-color", "red", "m.obj"}).args.wireframe_color, 1);
+    ASSERT_EQ(run({"--wireframe-color", "green", "m.obj"}).args.wireframe_color, 2);
+    ASSERT_EQ(run({"--wireframe-color", "yellow", "m.obj"}).args.wireframe_color, 3);
+    ASSERT_EQ(run({"--wireframe-color", "cyan", "m.obj"}).args.wireframe_color, 4);
+    ASSERT_EQ(run({"--wireframe-color", "magenta", "m.obj"}).args.wireframe_color, 5);
+    ASSERT_EQ(run({"--wireframe-color", "white", "m.obj"}).args.wireframe_color, 0);
+}
+
+TEST(args, wireframe_color_numeric)
+{
+    ASSERT_EQ(run({"--wireframe-color", "1", "m.obj"}).args.wireframe_color, 0);
+    ASSERT_EQ(run({"--wireframe-color", "6", "m.obj"}).args.wireframe_color, 5);
+}
+
+TEST(args, wireframe_color_case_insensitive)
+{
+    ASSERT_EQ(run({"--wireframe-color", "YELLOW", "m.obj"}).args.wireframe_color, 3);
+    ASSERT_EQ(run({"--wireframe-color", "Cyan", "m.obj"}).args.wireframe_color, 4);
+}
+
+TEST(args, wireframe_color_short_form)
+{
+    ASSERT_EQ(run({"-w", "red", "m.obj"}).args.wireframe_color, 1);
+}
+
+TEST(args, wireframe_color_compact_short_form)
+{
+    ASSERT_EQ(run({"-wmagenta", "m.obj"}).args.wireframe_color, 5);
+}
+
+TEST(args, wireframe_color_equals_form)
+{
+    ASSERT_EQ(run({"--wireframe-color=cyan", "m.obj"}).args.wireframe_color, 4);
+}
+
+TEST(args, wireframe_color_invalid_is_error)
+{
+    ParseResult r = run({"--wireframe-color", "blue", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, wireframe_color_missing_value_is_error)
+{
+    ParseResult r = run({"--wireframe-color"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}

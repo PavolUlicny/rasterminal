@@ -133,6 +133,7 @@ namespace platform
         KEY_B,     // toggle background colour
         KEY_L,     // cycle lighting preset
         KEY_R,     // reset camera
+        KEY_C,     // cycle wireframe colour
     };
 
     struct InputEvent
@@ -201,6 +202,9 @@ namespace platform
             case 'r':
             case 'R':
                 return KEY_R;
+            case 'c':
+            case 'C':
+                return KEY_C;
             default:
                 return KEY_NONE;
             }

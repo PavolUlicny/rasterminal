@@ -382,7 +382,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
                 vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
 
-                const Color wf = {200, 200, 200};
+                const Color wf = wireframe_color;
                 draw_line(fb, sa, sb, wf);
                 draw_line(fb, sb, sc, wf);
                 draw_line(fb, sc, sa, wf);

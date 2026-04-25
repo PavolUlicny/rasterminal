@@ -26,6 +26,7 @@ enum class ShadingMode
 struct Renderer
 {
     ShadingMode mode = ShadingMode::Gouraud;
+    Color wireframe_color = {200, 200, 200};
 
     // Spawns worker threads that persist for the lifetime of the Renderer.
     // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads, N = exactly N.

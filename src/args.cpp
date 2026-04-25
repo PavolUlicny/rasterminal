@@ -134,6 +134,35 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto parse_wireframe_color = [](const char *flag, const char *val, int &out) -> bool
+    {
+        std::string v = val;
+        std::transform(v.begin(), v.end(), v.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        if (v == "white" || v == "1")
+            out = 0;
+        else if (v == "red" || v == "2")
+            out = 1;
+        else if (v == "green" || v == "3")
+            out = 2;
+        else if (v == "yellow" || v == "4")
+            out = 3;
+        else if (v == "cyan" || v == "5")
+            out = 4;
+        else if (v == "magenta" || v == "6")
+            out = 5;
+        else
+        {
+            std::fprintf(stderr,
+                         "Error: %s: invalid value '%s'"
+                         " (expected white|red|green|yellow|cyan|magenta or 1-6)\n",
+                         flag, val);
+            return false;
+        }
+        return true;
+    };
+
     for (int i = 1; i < argc; i++)
     {
         // Split --flag=value → flag name + value pointer.
@@ -232,25 +261,28 @@ ParseResult parse_args(int argc, char *argv[])
                 "  .stl   ASCII or binary\n"
                 "\n"
                 "Options:\n"
-                "  -s, --shading <mode>    Initial shading mode (default: gouraud)\n"
-                "                           wireframe|flat|gouraud|phong  or  1-4\n"
-                "  -b, --bg <color>        Initial background color (default: black)\n"
-                "                           black|gray|white  or  1-3\n"
-                "  -l, --lighting <mode>   Initial lighting mode (default: dual)\n"
-                "                           dual|single|flat  or  1-3\n"
-                "  -S, --spin              Start with auto-rotation enabled\n"
-                "  -j [N], --threads [N]   Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
-                "      --no-shadow         Disable shadow map\n"
-                "      --no-ao             Disable ambient occlusion\n"
-                "      --no-hud            Hide the HUD status line\n"
-                "  -h, --help              Show this message\n"
+                "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
+                "                                  wireframe|flat|gouraud|phong  or  1-4\n"
+                "  -b,     --bg <color>           Initial background color (default: black)\n"
+                "                                  black|gray|white  or  1-3\n"
+                "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
+                "                                  dual|single|flat  or  1-3\n"
+                "  -S,     --spin                 Start with auto-rotation enabled\n"
+                "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
+                "          --no-shadow            Disable shadow map\n"
+                "          --no-ao                Disable ambient occlusion\n"
+                "          --no-hud               Hide the HUD status line\n"
+                "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
+                "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
+                "  -h,     --help                 Show this message\n"
                 "\n"
                 "Controls:\n"
                 "  1-4          Shading mode           B       Cycle background\n"
                 "  Space        Toggle spin            L       Cycle lighting\n"
                 "  WASD/arrows  Orbit camera           R       Reset view\n"
-                "  +/-          Zoom                   Q       Quit\n"
-                "  Mouse drag   Orbit                  Scroll  Zoom\n");
+                "  +/-          Zoom                   C       Cycle wireframe color\n"
+                "  Mouse drag   Orbit                  Scroll  Zoom\n"
+                "  Q            Quit\n");
             return fail(0);
         }
         else if (arg == "-S" || arg == "--spin")
@@ -288,6 +320,18 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
             args.hud = false;
+        }
+        else if (arg == "-w" || arg == "--wireframe-color")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_wireframe_color(flag, val, args.wireframe_color))
+                return fail(1);
+        }
+        else if (std::strncmp(argv[i], "-w", 2) == 0 &&
+                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        {
+            if (!parse_wireframe_color("-w", argv[i] + 2, args.wireframe_color))
+                return fail(1);
         }
         else if (argv[i][0] == '-')
         {
