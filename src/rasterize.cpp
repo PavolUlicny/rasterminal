@@ -255,7 +255,7 @@ void rasterize(Framebuffer &fb,
             // perspective correction would distort it and break depth ordering.
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
-            if (!fb.test_and_set_depth(x, y, depth))
+            if (!fb.unchecked_test_and_set_depth(x, y, depth))
             {
                 ba += ba_dx;
                 bb += bb_dx;
@@ -285,7 +285,7 @@ void rasterize(Framebuffer &fb,
                 col = col * tex->sample_rgb(uv.x, uv.y);
             }
 
-            fb.set_pixel(x, y, vec3_to_color(col));
+            fb.unchecked_set_pixel(x, y, vec3_to_color(col));
 
             ba += ba_dx;
             bb += bb_dx;
@@ -353,7 +353,7 @@ void rasterize_phong(Framebuffer &fb,
             }
 
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
-            if (!fb.test_and_set_depth(x, y, depth))
+            if (!fb.unchecked_test_and_set_depth(x, y, depth))
             {
                 ba += ba_dx;
                 bb += bb_dx;
@@ -413,7 +413,7 @@ void rasterize_phong(Framebuffer &fb,
             vec3 color = shadowed
                              ? compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao)
                              : compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
-            fb.set_pixel(x, y, vec3_to_color(color));
+            fb.unchecked_set_pixel(x, y, vec3_to_color(color));
 
             ba += ba_dx;
             bb += bb_dx;

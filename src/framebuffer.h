@@ -50,6 +50,24 @@ public:
         m_color[static_cast<size_t>(y * m_width + x)] = color;
     }
 
+    // Unchecked variants — caller guarantees 0 <= x < width, 0 <= y < height.
+    // Used by the rasterizer inner loop where setup_tri already clamps bounds.
+    inline bool unchecked_test_and_set_depth(int x, int y, float depth)
+    {
+        float &d = m_depth[static_cast<size_t>(y * m_width + x)];
+        if (depth < d)
+        {
+            d = depth;
+            return true;
+        }
+        return false;
+    }
+
+    inline void unchecked_set_pixel(int x, int y, Color color)
+    {
+        m_color[static_cast<size_t>(y * m_width + x)] = color;
+    }
+
     // Set a one-line status string rendered below the pixel rows each frame.
     // Call before present(). Pass an empty string to clear.
     void set_hud(const std::string &text) { m_hud = text; }
