@@ -253,6 +253,45 @@ TEST(obj_valid, mtl_ns_parsed)
     ASSERT_NEAR(m.materials[1].shininess, 64.0f, 1e-5f);
 }
 
+TEST(obj_valid, mtl_ka_parsed)
+{
+    TmpFile mtl("/tmp/rast_ka.mtl", "newmtl M\nKa 0.3 0.4 0.5\n");
+    TmpFile obj("/tmp/rast_ka.obj",
+                "mtllib rast_ka.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].ambient.x, 0.3f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].ambient.y, 0.4f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].ambient.z, 0.5f, 1e-5f);
+}
+
+TEST(obj_valid, mtl_ka_defaults_to_kd_when_absent)
+{
+    TmpFile mtl("/tmp/rast_ka_absent.mtl", "newmtl M\nKd 0.7 0.6 0.5\n");
+    TmpFile obj("/tmp/rast_ka_absent.obj",
+                "mtllib rast_ka_absent.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].ambient.x, 0.7f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].ambient.y, 0.6f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].ambient.z, 0.5f, 1e-5f);
+}
+
+TEST(obj_valid, default_material_ambient_is_white)
+{
+    TmpFile t("/tmp/rast_default_ambient.obj",
+              "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+              "f 1 2 3\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_NEAR(m.materials[0].ambient.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[0].ambient.y, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[0].ambient.z, 1.0f, 1e-5f);
+}
+
 TEST(obj_valid, usemtl_assigns_material_to_triangles)
 {
     // Two materials applied to two separate faces — each triangle must carry
