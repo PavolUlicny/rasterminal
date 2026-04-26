@@ -134,6 +134,27 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto parse_bool = [](const char *flag, const char *val, bool &out) -> bool
+    {
+        std::string v = val;
+        std::transform(v.begin(), v.end(), v.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
+            out = true;
+        else if (v == "off" || v == "0" || v == "false" || v == "no" || v == "n")
+            out = false;
+        else
+        {
+            std::fprintf(stderr,
+                         "Error: %s: invalid value '%s'"
+                         " (expected on|off, 1|0, true|false, yes|no, y|n)\n",
+                         flag, val);
+            return false;
+        }
+        return true;
+    };
+
     auto parse_wireframe_color = [](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
@@ -288,6 +309,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "  -S,     --spin                 Start with auto-rotation enabled\n"
                 "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
                 "  -f [N], --fps [N]              Frame cap: bare -f/--fps uncapped, -f N caps at N fps (default: 60)\n"
+                "  -c,     --cull <on|off>        Backface culling (default: on)\n"
+                "                                  on|off, 1|0, true|false, yes|no, y|n\n"
                 "          --no-shadow            Disable shadow map\n"
                 "          --no-ao                Disable ambient occlusion\n"
                 "          --no-hud               Hide the HUD status line\n"
@@ -300,8 +323,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "  Space        Toggle spin            L       Cycle lighting\n"
                 "  WASD/arrows  Orbit camera           R       Reset view\n"
                 "  +/-          Zoom                   C       Cycle wireframe color\n"
-                "  Mouse drag   Orbit                  Scroll  Zoom\n"
-                "  Q            Quit\n");
+                "  Mouse drag   Orbit                  K       Toggle backface culling\n"
+                "  Scroll       Zoom                   Q       Quit\n");
             return fail(0);
         }
         else if (arg == "-S" || arg == "--spin")
@@ -339,6 +362,18 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
             args.hud = false;
+        }
+        else if (arg == "-c" || arg == "--cull")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_bool(flag, val, args.cull))
+                return fail(1);
+        }
+        else if (std::strncmp(argv[i], "-c", 2) == 0 &&
+                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        {
+            if (!parse_bool("-c", argv[i] + 2, args.cull))
+                return fail(1);
         }
         else if (arg == "-w" || arg == "--wireframe-color")
         {

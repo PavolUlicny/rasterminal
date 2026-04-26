@@ -105,6 +105,7 @@ void Renderer::worker_func(int t)
             int W = m_W;
             int H = m_H;
             ShadingMode smode = m_smode;
+            bool do_cull = m_cull_backfaces;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
@@ -139,9 +140,12 @@ void Renderer::worker_func(int t)
                     // against the eye before any matrix transforms. Rejects ~half the
                     // triangles of a closed mesh before clip-space work. Winding
                     // assumption matches the old screen-space cull (CCW front).
-                    const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
-                    if (dot(fn, eye - va.pos) <= 0.0f)
-                        continue;
+                    if (do_cull)
+                    {
+                        const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
+                        if (dot(fn, eye - va.pos) <= 0.0f)
+                            continue;
+                    }
 
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = mesh->tex_at(mat.diffuse_tex);
@@ -358,9 +362,12 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             const Vertex &vb = mesh.vertices[tri.v[1]];
             const Vertex &vc = mesh.vertices[tri.v[2]];
 
-            const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
-            if (dot(fn, eye - va.pos) <= 0.0f)
-                continue;
+            if (cull_backfaces)
+            {
+                const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
+                if (dot(fn, eye - va.pos) <= 0.0f)
+                    continue;
+            }
 
             ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
             ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
@@ -421,6 +428,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_W = W;
         m_H = H;
         m_smode = mode;
+        m_cull_backfaces = cull_backfaces;
         m_fb = &fb;
         m_phong = (mode == ShadingMode::Phong);
         m_n_active = n_active;

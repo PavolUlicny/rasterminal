@@ -27,6 +27,7 @@ struct Renderer
 {
     ShadingMode mode = ShadingMode::Gouraud;
     Color wireframe_color = {200, 200, 200};
+    bool cull_backfaces = true;
 
     // Spawns worker threads that persist for the lifetime of the Renderer.
     // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads (bare -j), N = exactly N.
@@ -69,6 +70,7 @@ private:
     float m_near_plane = 0.0f;
     int m_W = 0, m_H = 0;
     ShadingMode m_smode = ShadingMode::Gouraud;
+    bool m_cull_backfaces = true;
 
     // Per-band tris — Phase 1 workers bucket into these; Phase 2 workers each
     // consume only their own band. Persists across frames to avoid reallocation.

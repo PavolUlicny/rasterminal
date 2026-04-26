@@ -13,6 +13,7 @@ struct ParsedArgs
     int lighting = 0;        // 0=dual  1=single  2=flat
     int wireframe_color = 0; // 0=white, 1=red, 2=green, 3=yellow, 4=cyan, 5=magenta
     int fps = 60;            // 0 = uncapped (set by bare -f), >0 = cap at this value
+    bool cull = true;
     bool spin = false;
     bool shadow = true;
     bool ao = true;
