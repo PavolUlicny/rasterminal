@@ -146,6 +146,28 @@ TEST(ply_valid, binary_big_endian_triangle)
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
 
+TEST(ply_valid, ascii_vertex_colors_normalized)
+{
+    // uchar red=255, green=128, blue=0 → color {1.0, ~0.502, 0.0}
+    TmpFile t("/tmp/rast_vcol.ply",
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0 255 128 0\n"
+              "1 0 0 255 128 0\n"
+              "0 1 0 255 128 0\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{3});
+    ASSERT_NEAR(m.vertices[0].color.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].color.y, 128.0f / 255.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].color.z, 0.0f, 1e-4f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  REJECTIONS — malformed/corrupt PLY must not crash
 // ═══════════════════════════════════════════════════════════════════════════
