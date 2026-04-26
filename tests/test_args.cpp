@@ -51,6 +51,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_EQ(r.args.lighting, 0);        // dual
     ASSERT_EQ(r.args.wireframe_color, 0); // white
     ASSERT_EQ(r.args.fps, 60);
+    ASSERT_TRUE(r.args.cull);
     ASSERT_FALSE(r.args.spin);
     ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
@@ -147,6 +148,7 @@ TEST(args, short_flag_equals_form_is_unknown_flag)
     ASSERT_FALSE(run({"-l=dual", "m.obj"}).ok);
     ASSERT_FALSE(run({"-w=red", "m.obj"}).ok);
     ASSERT_FALSE(run({"-f=30", "m.obj"}).ok);
+    ASSERT_FALSE(run({"-c=on", "m.obj"}).ok);
 }
 
 TEST(args, bare_threads_long_form_uses_all)
@@ -427,7 +429,7 @@ TEST(args, no_hud_disables_hud)
 TEST(args, multiple_flags_all_applied)
 {
     ParseResult r = run({"--shading=phong", "--bg=white", "--lighting=single",
-                         "--wireframe-color=magenta", "--fps=120",
+                         "--wireframe-color=magenta", "--fps=120", "--cull=off",
                          "--spin", "--no-shadow", "--no-ao", "--no-hud",
                          "-j2", "scene.ply"});
     ASSERT_TRUE(r.ok);
@@ -437,6 +439,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_EQ(r.args.lighting, 1);
     ASSERT_EQ(r.args.wireframe_color, 5);
     ASSERT_EQ(r.args.fps, 120);
+    ASSERT_FALSE(r.args.cull);
     ASSERT_TRUE(r.args.spin);
     ASSERT_FALSE(r.args.shadow);
     ASSERT_FALSE(r.args.ao);
@@ -581,6 +584,77 @@ TEST(args, fps_negative_is_error)
 TEST(args, fps_non_integer_is_error)
 {
     ParseResult r = run({"--fps", "fast", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --cull ───────────────────────────────────────────────────────────────────
+
+TEST(args, cull_default_is_on)
+{
+    ASSERT_TRUE(run({"m.obj"}).args.cull);
+}
+
+TEST(args, cull_on_values)
+{
+    ASSERT_TRUE(run({"--cull", "on", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull", "1", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull", "true", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull", "yes", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull", "y", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_off_values)
+{
+    ASSERT_FALSE(run({"--cull", "off", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "0", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "false", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "no", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "n", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_case_insensitive)
+{
+    ASSERT_TRUE(run({"--cull", "ON", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "OFF", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull", "True", "m.obj"}).args.cull);
+    ASSERT_FALSE(run({"--cull", "FALSE", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_short_form)
+{
+    ASSERT_FALSE(run({"-c", "off", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"-c", "on", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_compact_short_form)
+{
+    ASSERT_FALSE(run({"-coff", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"-con", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_compact_case_insensitive)
+{
+    ASSERT_FALSE(run({"-cOFF", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"-cYES", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_equals_long_form)
+{
+    ASSERT_FALSE(run({"--cull=off", "m.obj"}).args.cull);
+    ASSERT_TRUE(run({"--cull=on", "m.obj"}).args.cull);
+}
+
+TEST(args, cull_missing_value_is_error)
+{
+    ParseResult r = run({"--cull"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cull_invalid_value_is_error)
+{
+    ParseResult r = run({"--cull", "maybe", "m.obj"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
