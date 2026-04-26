@@ -14,6 +14,7 @@ TEST(light, no_lights_returns_ambient_times_diffuse)
 {
     Material mat;
     mat.diffuse = {0.5f, 0.5f, 0.5f};
+    mat.ambient = {0.5f, 0.5f, 0.5f}; // Ka == Kd (the common case when Ka is absent in MTL)
     vec3 ambient{0.2f, 0.2f, 0.2f};
     vec3 v{0, 0, 1};
 

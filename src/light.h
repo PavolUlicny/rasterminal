@@ -32,10 +32,11 @@ inline float specular_pow(float ndh, float shininess)
     return std::exp2f(shininess * std::log2f(ndh));
 }
 
-// Per-surface material properties (from MTL Kd/Ks/Ns/map_Kd or defaults).
+// Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
     vec3 diffuse = {1.0f, 1.0f, 1.0f};
+    vec3 ambient = {1.0f, 1.0f, 1.0f}; // Ka; defaults to Kd when Ka absent in MTL
     vec3 specular = {0.4f, 0.4f, 0.4f};
     float shininess = 32.0f;
     int diffuse_tex = -1; // index into Mesh::textures, or -1 if none
@@ -61,7 +62,7 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
 {
     vec3 n = normalize(normal);
 
-    vec3 result = ambient * mat.diffuse * ao;
+    vec3 result = ambient * mat.ambient * ao;
 
     for (int i = 0; i < n_lights; i++)
     {

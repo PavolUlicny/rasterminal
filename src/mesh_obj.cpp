@@ -132,6 +132,9 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
     if (!f)
         return mat_map;
 
+    const size_t base = materials.size(); // index of first material added by this MTL
+    std::vector<bool> ka_explicit;        // parallel to materials[base..], true if Ka was set
+
     char line[512];
     int current = -1; // index of material being built (-1 = none yet)
 
@@ -151,11 +154,21 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
 
             current = static_cast<int>(materials.size());
             materials.push_back(Material{});
+            ka_explicit.push_back(false);
             mat_map[name] = static_cast<uint32_t>(current);
         }
         else if (current >= 0)
         {
-            if (std::strncmp(p, "Kd", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
+            if (std::strncmp(p, "Ka", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
+            {
+                float r, g, b;
+                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
+                {
+                    materials[static_cast<size_t>(current)].ambient = {r, g, b};
+                    ka_explicit[static_cast<size_t>(current) - base] = true;
+                }
+            }
+            else if (std::strncmp(p, "Kd", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
             {
                 float r, g, b;
                 if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
@@ -229,6 +242,12 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
     }
 
     std::fclose(f);
+
+    // Ka defaults to Kd for any material that didn't have an explicit Ka line.
+    for (size_t i = 0; i < ka_explicit.size(); i++)
+        if (!ka_explicit[i])
+            materials[base + i].ambient = materials[base + i].diffuse;
+
     return mat_map;
 }
 
