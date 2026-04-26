@@ -253,6 +253,26 @@ TEST(obj_valid, mtl_ns_parsed)
     ASSERT_NEAR(m.materials[1].shininess, 64.0f, 1e-5f);
 }
 
+TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
+{
+    TmpFile mtl("/tmp/rast_map_ks.mtl",
+                "newmtl M\n"
+                "Kd 0.5 0.5 0.5\n"
+                "map_Ks nonexistent_specular.png\n"
+                "Ks 0.7 0.7 0.7\n");
+    TmpFile obj("/tmp/rast_map_ks.obj",
+                "mtllib rast_map_ks.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    // Kd before and Ks after still parse correctly — map_Ks didn't swallow them.
+    ASSERT_NEAR(m.materials[1].diffuse.x, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].specular.x, 0.7f, 1e-5f);
+    // Texture file doesn't exist, so specular_tex stays -1.
+    ASSERT_EQ(m.materials[1].specular_tex, -1);
+}
+
 TEST(obj_valid, mtl_ka_parsed)
 {
     TmpFile mtl("/tmp/rast_ka.mtl", "newmtl M\nKa 0.3 0.4 0.5\n");

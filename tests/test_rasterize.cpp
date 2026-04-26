@@ -258,7 +258,7 @@ TEST(rasterize_phong, fills_interior)
                     &light, 1,
                     vec3{0.2f, 0.2f, 0.2f},
                     mat,
-                    nullptr, nullptr, nullptr,
+                    nullptr, nullptr, nullptr, nullptr,
                     0, fb.height() - 1);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // interior must be covered
@@ -288,7 +288,7 @@ TEST(rasterize_phong, respects_y_band)
                     &light, 1,
                     vec3{0.2f, 0.2f, 0.2f},
                     mat,
-                    nullptr, nullptr, nullptr,
+                    nullptr, nullptr, nullptr, nullptr,
                     6, 12);
 
     ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
