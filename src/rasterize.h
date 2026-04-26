@@ -14,12 +14,13 @@
 
 struct ClipVert
 {
-    vec4 c;       // clip-space position (w = -z_view; > 0 means in front of camera)
-    vec3 pos;     // world-space position
-    vec3 normal;  // world-space normal
-    vec3 tangent; // world-space tangent (for TBN normal mapping)
-    vec2 uv;      // texture coordinates
-    float ao;     // baked ambient occlusion factor
+    vec4 c;                          // clip-space position (w = -z_view; > 0 means in front of camera)
+    vec3 pos;                        // world-space position
+    vec3 normal;                     // world-space normal
+    vec3 tangent;                    // world-space tangent (for TBN normal mapping)
+    vec2 uv;                         // texture coordinates
+    float ao;                        // baked ambient occlusion factor
+    vec3 color = {1.0f, 1.0f, 1.0f}; // vertex color (white = no tint); at end so existing aggregate inits keep working
 };
 
 // ─── RasterTri ────────────────────────────────────────────────────────────────
@@ -28,11 +29,12 @@ struct ClipVert
 
 struct RasterTri
 {
-    vec3 sa, sb, sc;     // screen-space positions (x, y, ndc_z)
-    float wa, wb, wc;    // clip-space w (for perspective-correct interp)
-    vec3 pa, pb, pc;     // world-space positions
-    vec2 uva, uvb, uvc;  // texture coordinates
-    float aoa, aob, aoc; // baked ambient occlusion
+    vec3 sa, sb, sc;          // screen-space positions (x, y, ndc_z)
+    float wa, wb, wc;         // clip-space w (for perspective-correct interp)
+    vec3 pa, pb, pc;          // world-space positions
+    vec2 uva, uvb, uvc;       // texture coordinates
+    float aoa, aob, aoc;      // baked ambient occlusion
+    vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
 
     // Flat / Gouraud only — lighting evaluated once in Phase 1.
     vec3 col_a, col_b, col_c;    // fully lit (all lights)
@@ -86,6 +88,7 @@ void rasterize_phong(Framebuffer &fb,
                      vec3 tana, vec3 tanb, vec3 tanc,
                      vec2 uva, vec2 uvb, vec2 uvc,
                      float aoa, float aob, float aoc,
+                     vec3 vcola, vec3 vcolb, vec3 vcolc,
                      const vec3 &eye,
                      const Light *lights, int n_lights,
                      const vec3 &ambient,

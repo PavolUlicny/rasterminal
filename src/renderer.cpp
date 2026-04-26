@@ -152,9 +152,9 @@ void Renderer::worker_func(int t)
                     const Texture *stex = mesh->tex_at(mat.specular_tex);
                     const Texture *nmap = mesh->tex_at(mat.normal_tex);
 
-                    ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
-                    ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
-                    ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao};
+                    ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao, va.color};
+                    ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao, vb.color};
+                    ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao, vc.color};
 
                     ClipVert clipped[2][3];
                     int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
@@ -207,28 +207,51 @@ void Renderer::worker_func(int t)
                             rt.tanb = b.tangent;
                             rt.tanc = c.tangent;
                             rt.mat = &mat;
+                            rt.vcola = a.color;
+                            rt.vcolb = b.color;
+                            rt.vcolc = c.color;
                         }
                         else if (smode == ShadingMode::Flat)
                         {
                             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                            vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                            Material vcol_mat;
+                            const Material *flat_mat = &mat;
+                            if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
+                            {
+                                vcol_mat = mat;
+                                vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
+                                vcol_mat.ambient = vcol_mat.ambient * face_vcol;
+                                flat_mat = &vcol_mat;
+                            }
                             rt.col_a = rt.col_b = rt.col_c =
-                                compute_lighting(fc, face_n, eye, lights, n_lights, ambient, mat, face_ao);
+                                compute_lighting(fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
                             if (psmap)
                                 rt.shad_a = rt.shad_b = rt.shad_c =
-                                    compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, mat, face_ao);
+                                    compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
                         }
                         else // Gouraud
                         {
-                            rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
-                            rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
-                            rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                            Material gvcol_mat;
+                            auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
+                            {
+                                if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
+                                    return mat;
+                                gvcol_mat = mat;
+                                gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
+                                gvcol_mat.ambient = gvcol_mat.ambient * vcol;
+                                return gvcol_mat;
+                            };
+                            rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
+                            rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
+                            rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
                             if (psmap)
                             {
-                                rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                                rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                                rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
+                                rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
+                                rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
                             }
                         }
 
@@ -317,6 +340,7 @@ void Renderer::worker_func(int t)
                                     rt.tana, rt.tanb, rt.tanc,
                                     rt.uva, rt.uvb, rt.uvc,
                                     rt.aoa, rt.aob, rt.aoc,
+                                    rt.vcola, rt.vcolb, rt.vcolc,
                                     p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
                                     rt.tex, rt.nmap, rt.stex, rt.smap,
                                     y_min, y_max);

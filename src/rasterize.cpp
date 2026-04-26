@@ -106,7 +106,8 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
                 v0.normal + (v1.normal - v0.normal) * t,
                 v0.tangent + (v1.tangent - v0.tangent) * t,
                 v0.uv + (v1.uv - v0.uv) * t,
-                v0.ao + (v1.ao - v0.ao) * t};
+                v0.ao + (v1.ao - v0.ao) * t,
+                v0.color + (v1.color - v0.color) * t};
     };
 
     if (n == 1)
@@ -312,6 +313,7 @@ void rasterize_phong(Framebuffer &fb,
                      vec3 tana, vec3 tanb, vec3 tanc,
                      vec2 uva, vec2 uvb, vec2 uvc,
                      float aoa, float aob, float aoc,
+                     vec3 vcola, vec3 vcolb, vec3 vcolc,
                      const vec3 &eye,
                      const Light *lights, int n_lights,
                      const vec3 &ambient,
@@ -408,6 +410,20 @@ void rasterize_phong(Framebuffer &fb,
                 if (stex)
                     mat_tex.specular = mat_tex.specular * stex->sample_rgb(uv.x, uv.y);
                 use_mat = &mat_tex;
+            }
+
+            // Vertex color tint: interpolate and multiply into diffuse.
+            // vcol={1,1,1} when no vertex colors — safe to compare (convex combo of identical values).
+            vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
+            if (vcol.x != 1.0f || vcol.y != 1.0f || vcol.z != 1.0f)
+            {
+                if (use_mat == &mat)
+                {
+                    mat_tex = mat;
+                    use_mat = &mat_tex;
+                }
+                mat_tex.diffuse = mat_tex.diffuse * vcol;
+                mat_tex.ambient = mat_tex.ambient * vcol;
             }
 
             // Shadow test: if the key light (index 0) is blocked, skip it.

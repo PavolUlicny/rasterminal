@@ -41,6 +41,9 @@ struct PlyProp
         NZ,
         S,
         T,
+        R,
+        G,
+        B, // vertex color (alpha recognized as SKIP — no transparency support)
         SKIP
     } sem = SKIP;
     PlyPType type = PlyPType::F32;
@@ -128,7 +131,7 @@ static uint64_t ply_bs64(uint64_t v)
     return (static_cast<uint64_t>(lo) << 32) | static_cast<uint64_t>(hi);
 }
 
-static void ply_apply_prop(Vertex &v, PlyProp::Sem sem, float val)
+static void ply_apply_prop(Vertex &v, PlyProp::Sem sem, float val, PlyPType type)
 {
     switch (sem)
     {
@@ -155,6 +158,15 @@ static void ply_apply_prop(Vertex &v, PlyProp::Sem sem, float val)
         break;
     case PlyProp::T:
         v.uv.y = val;
+        break;
+    case PlyProp::R:
+        v.color.x = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
+        break;
+    case PlyProp::G:
+        v.color.y = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
+        break;
+    case PlyProp::B:
+        v.color.z = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
         break;
     default:
         break;
@@ -260,6 +272,12 @@ static bool ply_parse_header(FILE *f, PlyHeader &hdr)
                 else if (!std::strcmp(name, "t") || !std::strcmp(name, "v") ||
                          !std::strcmp(name, "texture_v") || !std::strcmp(name, "texture_t"))
                     prop.sem = PlyProp::T;
+                else if (!std::strcmp(name, "red") || !std::strcmp(name, "r"))
+                    prop.sem = PlyProp::R;
+                else if (!std::strcmp(name, "green") || !std::strcmp(name, "g"))
+                    prop.sem = PlyProp::G;
+                else if (!std::strcmp(name, "blue") || !std::strcmp(name, "b"))
+                    prop.sem = PlyProp::B;
             }
 
             // Reject unknown types immediately — size 0 would desync the binary reader.
@@ -337,7 +355,7 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     }
                     float val = 0.0f;
                     sf(val);
-                    ply_apply_prop(v, prop.sem, val);
+                    ply_apply_prop(v, prop.sem, val, prop.type);
                 }
                 mesh.vertices.push_back(v);
             }
@@ -629,7 +647,7 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                         continue;
                     }
                     float val = read_scalar(prop.type);
-                    ply_apply_prop(v, prop.sem, val);
+                    ply_apply_prop(v, prop.sem, val, prop.type);
                 }
                 mesh.vertices.push_back(v);
             }

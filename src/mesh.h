@@ -13,7 +13,8 @@ struct Vertex
     vec3 normal;
     vec3 tangent; // world-space tangent; bitangent = cross(normal, tangent)
     vec2 uv;
-    float ao = 1.0f; // baked ambient occlusion (1 = fully lit, 0 = fully occluded)
+    vec3 color = {1.0f, 1.0f, 1.0f}; // vertex color (white = no tint; from PLY red/green/blue)
+    float ao = 1.0f;                 // baked ambient occlusion (1 = fully lit, 0 = fully occluded)
 };
 
 struct Triangle
