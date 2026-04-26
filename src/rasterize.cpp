@@ -318,6 +318,7 @@ void rasterize_phong(Framebuffer &fb,
                      const Material &mat,
                      const Texture *tex,
                      const Texture *nmap,
+                     const Texture *stex,
                      const ShadowMap *smap,
                      int y_min, int y_max)
 {
@@ -369,7 +370,7 @@ void rasterize_phong(Framebuffer &fb,
 
             // Compute UV once — needed by both diffuse and normal map.
             vec2 uv{};
-            if (tex || nmap)
+            if (tex || nmap || stex)
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
@@ -396,13 +397,16 @@ void rasterize_phong(Framebuffer &fb,
             // Precompute view vector once — reused by both shadow branches.
             vec3 v = normalize(eye - pos);
 
-            // Only copy Material when a texture modifies diffuse; otherwise use mat directly.
+            // Only copy Material when a texture modifies it; otherwise use mat directly.
             Material mat_tex;
             const Material *use_mat = &mat;
-            if (tex)
+            if (tex || stex)
             {
                 mat_tex = mat;
-                mat_tex.diffuse = mat_tex.diffuse * tex->sample_rgb(uv.x, uv.y);
+                if (tex)
+                    mat_tex.diffuse = mat_tex.diffuse * tex->sample_rgb(uv.x, uv.y);
+                if (stex)
+                    mat_tex.specular = mat_tex.specular * stex->sample_rgb(uv.x, uv.y);
                 use_mat = &mat_tex;
             }
 

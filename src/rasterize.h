@@ -46,8 +46,9 @@ struct RasterTri
     const Material *mat;   // pointer into mesh.materials — valid for the frame lifetime
 
     // Shared by all shading modes
-    const Texture *tex;    // diffuse texture (nullptr if none)
-    const Texture *nmap;   // normal map     (nullptr if none; Phong only)
+    const Texture *tex;    // diffuse texture  (nullptr if none)
+    const Texture *stex;   // specular texture (nullptr if none; Phong only)
+    const Texture *nmap;   // normal map       (nullptr if none; Phong only)
     const ShadowMap *smap; // pre-built shadow map (nullptr if disabled)
 };
 
@@ -91,5 +92,6 @@ void rasterize_phong(Framebuffer &fb,
                      const Material &mat,
                      const Texture *tex,
                      const Texture *nmap,
+                     const Texture *stex,
                      const ShadowMap *smap,
                      int y_min, int y_max);

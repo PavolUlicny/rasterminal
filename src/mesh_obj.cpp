@@ -186,6 +186,23 @@ load_mtl(const std::string &path, std::vector<Material> &materials,
                 if (std::sscanf(p + 3, "%f", &ns) == 1)
                     materials[static_cast<size_t>(current)].shininess = ns;
             }
+            else if (std::strncmp(p, "map_Ks", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+            {
+                const char *q = p + 7;
+                while (*q == ' ' || *q == '\t')
+                    q++;
+                std::string tex_name(q);
+                rtrim(tex_name);
+                if (!tex_name.empty())
+                {
+                    Texture tex;
+                    if (tex.load(mtl_dir + tex_name))
+                    {
+                        materials[static_cast<size_t>(current)].specular_tex = static_cast<int>(textures.size());
+                        textures.push_back(std::move(tex));
+                    }
+                }
+            }
             else if (std::strncmp(p, "map_Kd", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
             {
                 // Diffuse texture map.  The filename follows the directive.

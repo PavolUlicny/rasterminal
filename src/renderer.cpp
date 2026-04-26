@@ -149,6 +149,7 @@ void Renderer::worker_func(int t)
 
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = mesh->tex_at(mat.diffuse_tex);
+                    const Texture *stex = mesh->tex_at(mat.specular_tex);
                     const Texture *nmap = mesh->tex_at(mat.normal_tex);
 
                     ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
@@ -193,6 +194,7 @@ void Renderer::worker_func(int t)
                         rt.aob = b.ao;
                         rt.aoc = c.ao;
                         rt.tex = tex;
+                        rt.stex = stex;
                         rt.nmap = nmap;
                         rt.smap = psmap;
 
@@ -316,7 +318,7 @@ void Renderer::worker_func(int t)
                                     rt.uva, rt.uvb, rt.uvc,
                                     rt.aoa, rt.aob, rt.aoc,
                                     p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
-                                    rt.tex, rt.nmap, rt.smap,
+                                    rt.tex, rt.nmap, rt.stex, rt.smap,
                                     y_min, y_max);
                 else
                     rasterize(*m_fb,
