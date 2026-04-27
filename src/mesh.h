@@ -29,6 +29,7 @@ struct Mesh
     std::vector<Triangle> triangles;
     std::vector<Material> materials; // index 0 is always the default white material
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
+    bool has_vertex_colors = false;  // true only for PLY files that declare red/green/blue properties
 
     const Material &mat_at(uint32_t idx) const
     {

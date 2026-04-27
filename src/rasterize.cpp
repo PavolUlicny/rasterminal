@@ -335,6 +335,10 @@ void rasterize_phong(Framebuffer &fb,
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
 
+    const bool has_vcol = !(vcola.x == 1.0f && vcola.y == 1.0f && vcola.z == 1.0f &&
+                            vcolb.x == 1.0f && vcolb.y == 1.0f && vcolb.z == 1.0f &&
+                            vcolc.x == 1.0f && vcolc.y == 1.0f && vcolc.z == 1.0f);
+
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
@@ -412,11 +416,10 @@ void rasterize_phong(Framebuffer &fb,
                 use_mat = &mat_tex;
             }
 
-            // Vertex color tint: interpolate and multiply into diffuse.
-            // vcol={1,1,1} when no vertex colors — safe to compare (convex combo of identical values).
-            vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
-            if (vcol.x != 1.0f || vcol.y != 1.0f || vcol.z != 1.0f)
+            // Vertex color tint: skip entirely when all vertices are white (common case).
+            if (has_vcol)
             {
+                vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
                 if (use_mat == &mat)
                 {
                     mat_tex = mat;

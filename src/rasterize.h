@@ -26,32 +26,45 @@ struct ClipVert
 // ─── RasterTri ────────────────────────────────────────────────────────────────
 // All data needed to rasterize one visible, clipped, backface-culled triangle.
 // Phase 1 workers fill these; Phase 2 workers consume them.
+//
+// Mode-exclusive fields share storage via a union. Only the active branch's
+// members are written and read — the other branch's storage is never accessed.
 
 struct RasterTri
 {
-    vec3 sa, sb, sc;          // screen-space positions (x, y, ndc_z)
-    float wa, wb, wc;         // clip-space w (for perspective-correct interp)
-    vec3 pa, pb, pc;          // world-space positions
-    vec2 uva, uvb, uvc;       // texture coordinates
-    float aoa, aob, aoc;      // baked ambient occlusion
-    vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
-
-    // Flat / Gouraud only — lighting evaluated once in Phase 1.
-    vec3 col_a, col_b, col_c;    // fully lit (all lights)
-    vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
-
-    // Phong only — lighting evaluated per pixel in Phase 2.
-    // eye / lights / n_lights / ambient are per-frame constants and supplied
-    // by the Phase 2 dispatcher rather than duplicated into every triangle.
-    vec3 na, nb, nc;       // world-space normals
-    vec3 tana, tanb, tanc; // world-space tangents
-    const Material *mat;   // pointer into mesh.materials — valid for the frame lifetime
-
-    // Shared by all shading modes
+    // Shared across all shading modes
+    vec3 sa, sb, sc;       // screen-space positions (x, y, ndc_z)
+    float wa, wb, wc;      // clip-space w (for perspective-correct interp)
+    vec3 pa, pb, pc;       // world-space positions
+    vec2 uva, uvb, uvc;    // texture coordinates
     const Texture *tex;    // diffuse texture  (nullptr if none)
-    const Texture *stex;   // specular texture (nullptr if none; Phong only)
-    const Texture *nmap;   // normal map       (nullptr if none; Phong only)
     const ShadowMap *smap; // pre-built shadow map (nullptr if disabled)
+
+    union
+    {
+        // Flat / Gouraud only — lighting evaluated once per vertex in Phase 1.
+        struct
+        {
+            vec3 col_a, col_b, col_c;    // fully lit (all lights)
+            vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
+        } fg;
+
+        // Phong only — lighting evaluated per pixel in Phase 2.
+        // eye / lights / n_lights / ambient are per-frame constants supplied
+        // by the Phase 2 dispatcher, not duplicated into every triangle.
+        struct
+        {
+            vec3 na, nb, nc;          // world-space normals
+            vec3 tana, tanb, tanc;    // world-space tangents
+            vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
+            float aoa, aob, aoc;      // baked ambient occlusion
+            const Material *mat;      // pointer into mesh.materials — valid for frame lifetime
+            const Texture *stex;      // specular texture (nullptr if none)
+            const Texture *nmap;      // normal map       (nullptr if none)
+        } ph;
+    };
+
+    RasterTri() {} // explicit ctor: vec3's non-trivial ctor deletes the union's implicit one
 };
 
 // ─── Rasterization primitives ─────────────────────────────────────────────────

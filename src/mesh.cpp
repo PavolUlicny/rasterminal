@@ -12,6 +12,7 @@ void Mesh::clear()
     triangles.clear();
     materials.clear();
     textures.clear();
+    has_vertex_colors = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao)

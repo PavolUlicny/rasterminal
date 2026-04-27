@@ -190,68 +190,93 @@ void Renderer::worker_func(int t)
                         rt.uva = a.uv;
                         rt.uvb = b.uv;
                         rt.uvc = c.uv;
-                        rt.aoa = a.ao;
-                        rt.aob = b.ao;
-                        rt.aoc = c.ao;
                         rt.tex = tex;
-                        rt.stex = stex;
-                        rt.nmap = nmap;
                         rt.smap = psmap;
 
                         if (smode == ShadingMode::Phong)
                         {
-                            rt.na = a.normal;
-                            rt.nb = b.normal;
-                            rt.nc = c.normal;
-                            rt.tana = a.tangent;
-                            rt.tanb = b.tangent;
-                            rt.tanc = c.tangent;
-                            rt.mat = &mat;
-                            rt.vcola = a.color;
-                            rt.vcolb = b.color;
-                            rt.vcolc = c.color;
+                            rt.ph.na = a.normal;
+                            rt.ph.nb = b.normal;
+                            rt.ph.nc = c.normal;
+                            rt.ph.tana = a.tangent;
+                            rt.ph.tanb = b.tangent;
+                            rt.ph.tanc = c.tangent;
+                            rt.ph.aoa = a.ao;
+                            rt.ph.aob = b.ao;
+                            rt.ph.aoc = c.ao;
+                            rt.ph.mat = &mat;
+                            rt.ph.stex = stex;
+                            rt.ph.nmap = nmap;
+                            if (mesh->has_vertex_colors)
+                            {
+                                rt.ph.vcola = a.color;
+                                rt.ph.vcolb = b.color;
+                                rt.ph.vcolc = c.color;
+                            }
+                            else
+                            {
+                                rt.ph.vcola = rt.ph.vcolb = rt.ph.vcolc = {1.0f, 1.0f, 1.0f};
+                            }
                         }
                         else if (smode == ShadingMode::Flat)
                         {
                             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
-                            vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
-                            Material vcol_mat;
                             const Material *flat_mat = &mat;
-                            if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
+                            Material vcol_mat;
+                            if (mesh->has_vertex_colors)
                             {
-                                vcol_mat = mat;
-                                vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
-                                vcol_mat.ambient = vcol_mat.ambient * face_vcol;
-                                flat_mat = &vcol_mat;
+                                vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                                if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
+                                {
+                                    vcol_mat = mat;
+                                    vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
+                                    vcol_mat.ambient = vcol_mat.ambient * face_vcol;
+                                    flat_mat = &vcol_mat;
+                                }
                             }
-                            rt.col_a = rt.col_b = rt.col_c =
+                            rt.fg.col_a = rt.fg.col_b = rt.fg.col_c =
                                 compute_lighting(fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
                             if (psmap)
-                                rt.shad_a = rt.shad_b = rt.shad_c =
+                                rt.fg.shad_a = rt.fg.shad_b = rt.fg.shad_c =
                                     compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
                         }
                         else // Gouraud
                         {
-                            Material gvcol_mat;
-                            auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
+                            if (mesh->has_vertex_colors)
                             {
-                                if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
-                                    return mat;
-                                gvcol_mat = mat;
-                                gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
-                                gvcol_mat.ambient = gvcol_mat.ambient * vcol;
-                                return gvcol_mat;
-                            };
-                            rt.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
-                            rt.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
-                            rt.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
-                            if (psmap)
+                                Material gvcol_mat;
+                                auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
+                                {
+                                    if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
+                                        return mat;
+                                    gvcol_mat = mat;
+                                    gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
+                                    gvcol_mat.ambient = gvcol_mat.ambient * vcol;
+                                    return gvcol_mat;
+                                };
+                                rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
+                                rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
+                                rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
+                                if (psmap)
+                                {
+                                    rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
+                                    rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
+                                    rt.fg.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                }
+                            }
+                            else
                             {
-                                rt.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
-                                rt.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
-                                rt.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
+                                rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
+                                rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                                if (psmap)
+                                {
+                                    rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                                    rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                                    rt.fg.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                }
                             }
                         }
 
@@ -336,19 +361,19 @@ void Renderer::worker_func(int t)
                     rasterize_phong(*m_fb,
                                     rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
                                     rt.pa, rt.pb, rt.pc,
-                                    rt.na, rt.nb, rt.nc,
-                                    rt.tana, rt.tanb, rt.tanc,
+                                    rt.ph.na, rt.ph.nb, rt.ph.nc,
+                                    rt.ph.tana, rt.ph.tanb, rt.ph.tanc,
                                     rt.uva, rt.uvb, rt.uvc,
-                                    rt.aoa, rt.aob, rt.aoc,
-                                    rt.vcola, rt.vcolb, rt.vcolc,
-                                    p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
-                                    rt.tex, rt.nmap, rt.stex, rt.smap,
+                                    rt.ph.aoa, rt.ph.aob, rt.ph.aoc,
+                                    rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
+                                    p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
+                                    rt.tex, rt.ph.nmap, rt.ph.stex, rt.smap,
                                     y_min, y_max);
                 else
                     rasterize(*m_fb,
                               rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                              rt.col_a, rt.col_b, rt.col_c,
-                              rt.shad_a, rt.shad_b, rt.shad_c,
+                              rt.fg.col_a, rt.fg.col_b, rt.fg.col_c,
+                              rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
                               rt.pa, rt.pb, rt.pc,
                               rt.uva, rt.uvb, rt.uvc,
                               rt.tex, rt.smap,

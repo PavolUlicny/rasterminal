@@ -66,6 +66,7 @@ struct PlyHeader
     int vert_idx = -1; // index into elements (-1 = not found)
     int face_idx = -1;
     bool has_normals = false;
+    bool has_colors = false; // true when vertex element declares red/green/blue props
 };
 
 // ─── pure helpers ─────────────────────────────────────────────────────────────
@@ -309,8 +310,12 @@ static bool ply_parse_header(FILE *f, PlyHeader &hdr)
         return false;
 
     for (const auto &prop : hdr.elements[static_cast<size_t>(hdr.vert_idx)].props)
+    {
         if (prop.sem == PlyProp::NX)
             hdr.has_normals = true;
+        if (prop.sem == PlyProp::R || prop.sem == PlyProp::G || prop.sem == PlyProp::B)
+            hdr.has_colors = true;
+    }
 
     return true;
 }
@@ -790,6 +795,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!hdr.has_normals)
         compute_normals();
 
+    has_vertex_colors = hdr.has_colors;
     snap.commit();
     return true;
 }
