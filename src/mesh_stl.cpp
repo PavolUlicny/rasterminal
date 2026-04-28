@@ -88,6 +88,9 @@ static bool load_stl_binary(FILE *f, uint32_t tri_count, Mesh &mesh)
 {
     mesh.vertices.reserve(static_cast<size_t>(tri_count) * 3);
     mesh.triangles.reserve(static_cast<size_t>(tri_count));
+    mesh.vertex_colors.reserve(static_cast<size_t>(tri_count) * 3);
+
+    bool any_color = false;
 
     for (uint32_t i = 0; i < tri_count; i++)
     {
@@ -101,15 +104,29 @@ static bool load_stl_binary(FILE *f, uint32_t tri_count, Mesh &mesh)
         if (std::fread(raw, 1, 36, f) != 36)
             return false;
 
-        // 2-byte attribute (ignored)
-        uint8_t attr[2];
-        if (std::fread(attr, 1, 2, f) != 2)
+        // 2-byte attribute: Magics color format — bit 15 = color valid,
+        // bits 14-10 = blue, bits 9-5 = green, bits 4-0 = red (5 bits each).
+        uint8_t ab[2];
+        if (std::fread(ab, 1, 2, f) != 2)
             return false;
+        uint16_t attr = static_cast<uint16_t>(ab[0]) | (static_cast<uint16_t>(ab[1]) << 8);
+
+        vec3 col{1.0f, 1.0f, 1.0f};
+        if (attr & 0x8000u)
+        {
+            col.x = static_cast<float>(attr & 0x1Fu) / 31.0f;         // red
+            col.y = static_cast<float>((attr >> 5) & 0x1Fu) / 31.0f;  // green
+            col.z = static_cast<float>((attr >> 10) & 0x1Fu) / 31.0f; // blue
+            any_color = true;
+        }
 
         uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
         mesh.vertices.push_back({{stl_le_f32(raw + 0), stl_le_f32(raw + 4), stl_le_f32(raw + 8)}, {}, {}, {}});
         mesh.vertices.push_back({{stl_le_f32(raw + 12), stl_le_f32(raw + 16), stl_le_f32(raw + 20)}, {}, {}, {}});
         mesh.vertices.push_back({{stl_le_f32(raw + 24), stl_le_f32(raw + 28), stl_le_f32(raw + 32)}, {}, {}, {}});
+        mesh.vertex_colors.push_back(col);
+        mesh.vertex_colors.push_back(col);
+        mesh.vertex_colors.push_back(col);
 
         Triangle t;
         t.v[0] = base;
@@ -118,6 +135,11 @@ static bool load_stl_binary(FILE *f, uint32_t tri_count, Mesh &mesh)
         t.material_idx = 0;
         mesh.triangles.push_back(t);
     }
+
+    if (!any_color)
+        mesh.vertex_colors.clear();
+    else
+        mesh.has_vertex_colors = true;
 
     return true;
 }

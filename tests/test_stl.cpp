@@ -84,6 +84,54 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
 
+TEST(stl_valid, binary_magics_vertex_colors_decoded)
+{
+    // Two triangles: first has Magics color (bit 15 set, red=31/green=0/blue=0),
+    // second is uncolored (attr=0 → white tint, treated as no tint).
+    std::string s(80, 'X');
+    emit_u32_le(s, 2);
+    // Triangle 1: normal + 3 verts (12 floats = 48 bytes), then colored attr.
+    for (int i = 0; i < 12; i++)
+        emit_f32_le(s, 0.0f);
+    s.push_back(0x1F);
+    s.push_back(0x80); // 0x801F: bit15=1, r=31, g=0, b=0
+    // Triangle 2: normal + 3 verts, then uncolored attr.
+    for (int i = 0; i < 12; i++)
+        emit_f32_le(s, 0.0f);
+    s.push_back(0x00);
+    s.push_back(0x00);
+
+    TmpFile t("/tmp/rast_stl_col.stl", s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{2});
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{6});
+    // Triangle 1 vertices: red
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
+    // Triangle 2 vertices: white (uncolored → no tint)
+    ASSERT_NEAR(m.vertex_colors[3].x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[3].y, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[3].z, 1.0f, 1e-4f);
+}
+
+TEST(stl_valid, binary_no_color_leaves_vertex_colors_empty)
+{
+    // No triangle has bit 15 set → vertex_colors stays empty, has_vertex_colors false.
+    std::string s(80, 'X');
+    emit_u32_le(s, 1);
+    for (int i = 0; i < 12; i++)
+        emit_f32_le(s, 0.0f);
+    s.push_back(0x00);
+    s.push_back(0x00);
+
+    TmpFile t("/tmp/rast_stl_nocol.stl", s);
+    Mesh m = load_ok(t.path);
+    ASSERT_FALSE(m.has_vertex_colors);
+    ASSERT_TRUE(m.vertex_colors.empty());
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  REJECTIONS — malformed/corrupt STL must not crash
 // ═══════════════════════════════════════════════════════════════════════════
