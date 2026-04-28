@@ -93,8 +93,8 @@ TEST(stl_valid, binary_magics_vertex_colors_decoded)
     // Triangle 1: normal + 3 verts (12 floats = 48 bytes), then colored attr.
     for (int i = 0; i < 12; i++)
         emit_f32_le(s, 0.0f);
-    s.push_back(0x1F);
-    s.push_back(0x80); // 0x801F: bit15=1, r=31, g=0, b=0
+    s.push_back(static_cast<char>(0x1F));
+    s.push_back(static_cast<char>(0x80)); // 0x801F: bit15=1, r=31, g=0, b=0
     // Triangle 2: normal + 3 verts, then uncolored attr.
     for (int i = 0; i < 12; i++)
         emit_f32_le(s, 0.0f);
