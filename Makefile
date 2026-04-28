@@ -9,7 +9,6 @@ CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -fun
                 -fno-plt -fno-semantic-interposition \
                 -fno-stack-protector -fno-stack-clash-protection -fno-asynchronous-unwind-tables \
                 -fmerge-all-constants -fvisibility=hidden \
-                -falign-functions=32 -falign-loops=32 \
                 -fgcse-sm -fgcse-las -fipa-pta \
                 -Wno-alloc-size-larger-than -pipe -pthread
 TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
