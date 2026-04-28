@@ -132,7 +132,7 @@ static uint64_t ply_bs64(uint64_t v)
     return (static_cast<uint64_t>(lo) << 32) | static_cast<uint64_t>(hi);
 }
 
-static void ply_apply_prop(Vertex &v, PlyProp::Sem sem, float val, PlyPType type)
+static void ply_apply_prop(Vertex &v, vec3 &vcol, PlyProp::Sem sem, float val, PlyPType type)
 {
     switch (sem)
     {
@@ -161,13 +161,13 @@ static void ply_apply_prop(Vertex &v, PlyProp::Sem sem, float val, PlyPType type
         v.uv.y = val;
         break;
     case PlyProp::R:
-        v.color.x = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
+        vcol.x = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
         break;
     case PlyProp::G:
-        v.color.y = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
+        vcol.y = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
         break;
     case PlyProp::B:
-        v.color.z = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
+        vcol.z = (type == PlyPType::F32 || type == PlyPType::F64) ? val : val / 255.0f;
         break;
     default:
         break;
@@ -345,6 +345,7 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
             if (&elem == &vert_elem)
             {
                 Vertex v{};
+                vec3 vcol{1.0f, 1.0f, 1.0f};
                 for (const auto &prop : elem.props)
                 {
                     if (prop.is_list)
@@ -360,9 +361,11 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     }
                     float val = 0.0f;
                     sf(val);
-                    ply_apply_prop(v, prop.sem, val, prop.type);
+                    ply_apply_prop(v, vcol, prop.sem, val, prop.type);
                 }
                 mesh.vertices.push_back(v);
+                if (hdr.has_colors)
+                    mesh.vertex_colors.push_back(vcol);
             }
             else if (&elem == &face_elem)
             {
@@ -635,6 +638,7 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
             if (&elem == &vert_elem)
             {
                 Vertex v{};
+                vec3 vcol{1.0f, 1.0f, 1.0f};
                 for (const auto &prop : elem.props)
                 {
                     if (prop.is_list)
@@ -652,9 +656,11 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                         continue;
                     }
                     float val = read_scalar(prop.type);
-                    ply_apply_prop(v, prop.sem, val, prop.type);
+                    ply_apply_prop(v, vcol, prop.sem, val, prop.type);
                 }
                 mesh.vertices.push_back(v);
+                if (hdr.has_colors)
+                    mesh.vertex_colors.push_back(vcol);
             }
             else if (&elem == &face_elem)
             {
@@ -780,6 +786,8 @@ bool Mesh::load_ply(const std::string &path)
     vertices.reserve(static_cast<size_t>(vert_elem.count));
     if (face_elem.count > 0)
         triangles.reserve(static_cast<size_t>(face_elem.count));
+    if (hdr.has_colors)
+        vertex_colors.reserve(static_cast<size_t>(vert_elem.count));
 
     materials.push_back(Material{});
 

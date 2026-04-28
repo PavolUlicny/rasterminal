@@ -12,6 +12,8 @@ void Mesh::clear()
     triangles.clear();
     materials.clear();
     textures.clear();
+    tangents.clear();
+    vertex_colors.clear();
     has_vertex_colors = false;
 }
 
@@ -83,8 +85,7 @@ void Mesh::compute_normals()
 
 void Mesh::compute_tangents()
 {
-    for (auto &v : vertices)
-        v.tangent = vec3{};
+    tangents.assign(vertices.size(), vec3{});
 
     // Accumulate tangent vectors from each triangle's UV layout.
     // For triangle (P0,P1,P2) with UVs (u0,v0),(u1,v1),(u2,v2):
@@ -108,17 +109,17 @@ void Mesh::compute_tangents()
 
         vec3 T = (dp1 * dv2 - dp2 * dv1) * (1.0f / det);
 
-        vertices[tri.v[0]].tangent += T;
-        vertices[tri.v[1]].tangent += T;
-        vertices[tri.v[2]].tangent += T;
+        tangents[tri.v[0]] += T;
+        tangents[tri.v[1]] += T;
+        tangents[tri.v[2]] += T;
     }
 
     // Gram-Schmidt orthonormalize each tangent against its vertex normal.
     // If no UV data produced a tangent, fall back to an arbitrary perpendicular.
-    for (auto &v : vertices)
+    for (size_t i = 0; i < vertices.size(); i++)
     {
-        const vec3 &n = v.normal;
-        vec3 &t = v.tangent;
+        const vec3 &n = vertices[i].normal;
+        vec3 &t = tangents[i];
 
         float len = t.length();
         if (len < 1e-6f)

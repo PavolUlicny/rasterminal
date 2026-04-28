@@ -11,10 +11,8 @@ struct Vertex
 {
     vec3 pos;
     vec3 normal;
-    vec3 tangent; // world-space tangent; bitangent = cross(normal, tangent)
     vec2 uv;
-    vec3 color = {1.0f, 1.0f, 1.0f}; // vertex color (white = no tint; from PLY red/green/blue)
-    float ao = 1.0f;                 // baked ambient occlusion (1 = fully lit, 0 = fully occluded)
+    float ao = 1.0f; // baked ambient occlusion (1 = fully lit, 0 = fully occluded)
 };
 
 struct Triangle
@@ -29,6 +27,8 @@ struct Mesh
     std::vector<Triangle> triangles;
     std::vector<Material> materials; // index 0 is always the default white material
     std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
+    std::vector<vec3> tangents;      // per-vertex tangents; always vertices.size() after load_model()
+    std::vector<vec3> vertex_colors; // per-vertex RGB; populated only when has_vertex_colors is true
     bool has_vertex_colors = false;  // true only for PLY files that declare red/green/blue properties
 
     const Material &mat_at(uint32_t idx) const

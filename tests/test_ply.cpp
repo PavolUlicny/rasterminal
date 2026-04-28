@@ -163,9 +163,10 @@ TEST(ply_valid, ascii_vertex_colors_normalized)
               "3 0 1 2\n");
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.vertices.size(), size_t{3});
-    ASSERT_NEAR(m.vertices[0].color.x, 1.0f, 1e-4f);
-    ASSERT_NEAR(m.vertices[0].color.y, 128.0f / 255.0f, 1e-4f);
-    ASSERT_NEAR(m.vertices[0].color.z, 0.0f, 1e-4f);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 128.0f / 255.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

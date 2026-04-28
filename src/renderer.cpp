@@ -110,6 +110,8 @@ void Renderer::worker_func(int t)
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
             int total = static_cast<int>(mesh->triangles.size());
+            const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
+            const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
 
             // Thread-local per-band staging: persists across frames so vector
             // capacity is retained; only cleared, never reallocated after warmup.
@@ -150,9 +152,15 @@ void Renderer::worker_func(int t)
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = mesh->tex_at(mat.diffuse_tex);
 
-                    ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao, va.color};
-                    ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao, vb.color};
-                    ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao, vc.color};
+                    const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{0.0f, 0.0f, 0.0f};
+                    const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{0.0f, 0.0f, 0.0f};
+                    const vec3 tc = p_tans ? p_tans[tri.v[2]] : vec3{0.0f, 0.0f, 0.0f};
+                    const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{1.0f, 1.0f, 1.0f};
+                    const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{1.0f, 1.0f, 1.0f};
+                    const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{1.0f, 1.0f, 1.0f};
+                    ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca};
+                    ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb};
+                    ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc};
 
                     ClipVert clipped[2][3];
                     int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
@@ -420,9 +428,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                     continue;
             }
 
-            ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao};
-            ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao};
-            ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, vc.tangent, vc.uv, vc.ao};
+            ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao};
+            ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao};
+            ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao};
 
             ClipVert clipped[2][3];
             int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);

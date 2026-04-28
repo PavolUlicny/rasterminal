@@ -65,8 +65,8 @@ TEST(tangents, all_tangents_have_unit_length)
         "f 1/1 2/2 3/3\n";
     TmpFile f("/tmp/rast_tan_unit.obj", obj);
     Mesh m = load_ok(f.path);
-    for (const auto &v : m.vertices)
-        ASSERT_NEAR(v.tangent.length(), 1.0f, 1e-5f);
+    for (const auto &t : m.tangents)
+        ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
 }
 
 TEST(tangents, tangents_are_orthogonal_to_normals)
@@ -78,8 +78,8 @@ TEST(tangents, tangents_are_orthogonal_to_normals)
         "f 1/1 2/2 3/3\n";
     TmpFile f("/tmp/rast_tan_orth.obj", obj);
     Mesh m = load_ok(f.path);
-    for (const auto &v : m.vertices)
-        ASSERT_NEAR(dot(v.tangent, v.normal), 0.0f, 1e-5f);
+    for (size_t i = 0; i < m.vertices.size(); i++)
+        ASSERT_NEAR(dot(m.tangents[i], m.vertices[i].normal), 0.0f, 1e-5f);
 }
 
 TEST(tangents, tangent_aligns_with_uv_u_gradient)
@@ -94,11 +94,11 @@ TEST(tangents, tangent_aligns_with_uv_u_gradient)
         "f 1/1 2/2 3/3\n";
     TmpFile f("/tmp/rast_tan_dir.obj", obj);
     Mesh m = load_ok(f.path);
-    for (const auto &v : m.vertices)
+    for (const auto &t : m.tangents)
     {
-        ASSERT_NEAR(v.tangent.x, 1.0f, 1e-5f);
-        ASSERT_NEAR(v.tangent.y, 0.0f, 1e-5f);
-        ASSERT_NEAR(v.tangent.z, 0.0f, 1e-5f);
+        ASSERT_NEAR(t.x, 1.0f, 1e-5f);
+        ASSERT_NEAR(t.y, 0.0f, 1e-5f);
+        ASSERT_NEAR(t.z, 0.0f, 1e-5f);
     }
 }
 
