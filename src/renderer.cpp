@@ -149,8 +149,6 @@ void Renderer::worker_func(int t)
 
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = mesh->tex_at(mat.diffuse_tex);
-                    const Texture *stex = mesh->tex_at(mat.specular_tex);
-                    const Texture *nmap = mesh->tex_at(mat.normal_tex);
 
                     ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, va.tangent, va.uv, va.ao, va.color};
                     ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, vb.tangent, vb.uv, vb.ao, vb.color};
@@ -195,6 +193,8 @@ void Renderer::worker_func(int t)
 
                         if (smode == ShadingMode::Phong)
                         {
+                            rt.ph.stex = mesh->tex_at(mat.specular_tex);
+                            rt.ph.nmap = mesh->tex_at(mat.normal_tex);
                             rt.ph.na = a.normal;
                             rt.ph.nb = b.normal;
                             rt.ph.nc = c.normal;
@@ -205,8 +205,6 @@ void Renderer::worker_func(int t)
                             rt.ph.aob = b.ao;
                             rt.ph.aoc = c.ao;
                             rt.ph.mat = &mat;
-                            rt.ph.stex = stex;
-                            rt.ph.nmap = nmap;
                             if (mesh->has_vertex_colors)
                             {
                                 rt.ph.vcola = a.color;
@@ -354,6 +352,7 @@ void Renderer::worker_func(int t)
             const Light *p2_lights = m_lights;
             const int p2_n_lights = m_n_lights;
             const vec3 &p2_ambient = m_ambient;
+            const bool p2_has_vcol = m_mesh->has_vertex_colors;
 
             for (const RasterTri &rt : m_band_tris[static_cast<size_t>(t)])
             {
@@ -366,6 +365,7 @@ void Renderer::worker_func(int t)
                                     rt.uva, rt.uvb, rt.uvc,
                                     rt.ph.aoa, rt.ph.aob, rt.ph.aoc,
                                     rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
+                                    p2_has_vcol,
                                     p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
                                     rt.tex, rt.ph.nmap, rt.ph.stex, rt.smap,
                                     y_min, y_max);

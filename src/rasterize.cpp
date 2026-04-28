@@ -314,6 +314,7 @@ void rasterize_phong(Framebuffer &fb,
                      vec2 uva, vec2 uvb, vec2 uvc,
                      float aoa, float aob, float aoc,
                      vec3 vcola, vec3 vcolb, vec3 vcolc,
+                     bool has_vcol,
                      const vec3 &eye,
                      const Light *lights, int n_lights,
                      const vec3 &ambient,
@@ -334,10 +335,6 @@ void rasterize_phong(Framebuffer &fb,
     const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
-
-    const bool has_vcol = !(vcola.x == 1.0f && vcola.y == 1.0f && vcola.z == 1.0f &&
-                            vcolb.x == 1.0f && vcolb.y == 1.0f && vcolb.z == 1.0f &&
-                            vcolc.x == 1.0f && vcolc.y == 1.0f && vcolc.z == 1.0f);
 
     for (int y = s.y0; y <= s.y1; y++)
     {
