@@ -4,7 +4,18 @@ WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
            -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
            -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation \
            -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
-CXXFLAGS = -std=c++17 $(WARNINGS) -O3 -march=native -pthread
+CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
+                -fno-exceptions -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
+                -fno-plt -fno-semantic-interposition \
+                -fno-stack-protector -fno-stack-clash-protection -fno-asynchronous-unwind-tables \
+                -fmerge-all-constants -fvisibility=hidden \
+                -falign-functions=32 -falign-loops=32 \
+                -fgcse-sm -fgcse-las -fipa-pta \
+                -Wno-alloc-size-larger-than -pipe -pthread
+TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
+                -fomit-frame-pointer -fstrict-aliasing \
+                -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
+                -pipe -pthread
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -71,7 +82,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/shadow.cpp
 
 $(TEST_TARGET): $(TEST_SRCS) $(HDRS) tests/test.h
-	$(CXX) $(CXXFLAGS) -o $@ $(TEST_SRCS)
+	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
 
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)
