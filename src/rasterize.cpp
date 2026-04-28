@@ -407,7 +407,11 @@ void rasterize_phong(Framebuffer &fb,
             {
                 mat_tex = mat;
                 if (tex)
-                    mat_tex.diffuse = mat_tex.diffuse * tex->sample_rgb(uv.x, uv.y);
+                {
+                    vec3 tc = tex->sample_rgb(uv.x, uv.y);
+                    mat_tex.diffuse = mat_tex.diffuse * tc;
+                    mat_tex.ambient = mat_tex.ambient * tc;
+                }
                 if (stex)
                     mat_tex.specular = mat_tex.specular * stex->sample_rgb(uv.x, uv.y);
                 use_mat = &mat_tex;
