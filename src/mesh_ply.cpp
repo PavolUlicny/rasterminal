@@ -66,7 +66,8 @@ struct PlyHeader
     int vert_idx = -1; // index into elements (-1 = not found)
     int face_idx = -1;
     bool has_normals = false;
-    bool has_colors = false; // true when vertex element declares red/green/blue props
+    bool has_colors = false;      // true when vertex element declares red/green/blue props
+    bool has_face_colors = false; // true when face element declares red/green/blue (and vertex doesn't)
 };
 
 // ─── pure helpers ─────────────────────────────────────────────────────────────
@@ -187,6 +188,30 @@ static void ply_push_face(Mesh &mesh, const uint32_t *fv, uint32_t count)
         t.v[2] = fv[j + 1];
         t.material_idx = 0;
         mesh.triangles.push_back(t);
+    }
+}
+
+static void ply_push_face_colored(Mesh &m, const uint32_t *fv, uint32_t count,
+                                  const std::vector<Vertex> &pool, const vec3 &col)
+{
+    uint32_t n = static_cast<uint32_t>(pool.size());
+    for (uint32_t j = 1; j + 1 < count; j++)
+    {
+        if (fv[0] >= n || fv[j] >= n || fv[j + 1] >= n)
+            continue;
+        uint32_t base = static_cast<uint32_t>(m.vertices.size());
+        m.vertices.push_back(pool[fv[0]]);
+        m.vertices.push_back(pool[fv[j]]);
+        m.vertices.push_back(pool[fv[j + 1]]);
+        m.vertex_colors.push_back(col);
+        m.vertex_colors.push_back(col);
+        m.vertex_colors.push_back(col);
+        Triangle t;
+        t.v[0] = base;
+        t.v[1] = base + 1;
+        t.v[2] = base + 2;
+        t.material_idx = 0;
+        m.triangles.push_back(t);
     }
 }
 
@@ -317,6 +342,18 @@ static bool ply_parse_header(FILE *f, PlyHeader &hdr)
             hdr.has_colors = true;
     }
 
+    if (!hdr.has_colors && hdr.face_idx >= 0)
+    {
+        for (const auto &prop : hdr.elements[static_cast<size_t>(hdr.face_idx)].props)
+        {
+            if (!prop.is_list && (prop.sem == PlyProp::R || prop.sem == PlyProp::G || prop.sem == PlyProp::B))
+            {
+                hdr.has_face_colors = true;
+                break;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -337,6 +374,10 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
 
     const PlyElem &vert_elem = hdr.elements[static_cast<size_t>(hdr.vert_idx)];
     const PlyElem &face_elem = hdr.elements[static_cast<size_t>(hdr.face_idx)];
+
+    std::vector<Vertex> vert_pool;
+    if (hdr.has_face_colors)
+        vert_pool.reserve(static_cast<size_t>(vert_elem.count));
 
     for (const auto &elem : hdr.elements)
     {
@@ -363,7 +404,10 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     sf(val);
                     ply_apply_prop(v, vcol, prop.sem, val, prop.type);
                 }
-                mesh.vertices.push_back(v);
+                if (hdr.has_face_colors)
+                    vert_pool.push_back(v);
+                else
+                    mesh.vertices.push_back(v);
                 if (hdr.has_colors)
                     mesh.vertex_colors.push_back(vcol);
             }
@@ -372,12 +416,23 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                 bool got_indices = false;
                 uint32_t fv[64];
                 uint32_t actual = 0;
+                vec3 fcol{1.0f, 1.0f, 1.0f};
                 for (const auto &prop : elem.props)
                 {
                     if (!prop.is_list)
                     {
-                        float tmp;
-                        sf(tmp);
+                        float val;
+                        sf(val);
+                        if (hdr.has_face_colors)
+                        {
+                            const bool is_float = (prop.type == PlyPType::F32 || prop.type == PlyPType::F64);
+                            if (prop.sem == PlyProp::R)
+                                fcol.x = is_float ? val : val / 255.0f;
+                            else if (prop.sem == PlyProp::G)
+                                fcol.y = is_float ? val : val / 255.0f;
+                            else if (prop.sem == PlyProp::B)
+                                fcol.z = is_float ? val : val / 255.0f;
+                        }
                         continue;
                     }
 
@@ -405,7 +460,12 @@ static bool load_ply_ascii(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     }
                 }
                 if (got_indices)
-                    ply_push_face(mesh, fv, actual);
+                {
+                    if (hdr.has_face_colors)
+                        ply_push_face_colored(mesh, fv, actual, vert_pool, fcol);
+                    else
+                        ply_push_face(mesh, fv, actual);
+                }
             }
             else
             {
@@ -625,6 +685,10 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
     const PlyElem &vert_elem = hdr.elements[static_cast<size_t>(hdr.vert_idx)];
     const PlyElem &face_elem = hdr.elements[static_cast<size_t>(hdr.face_idx)];
 
+    std::vector<Vertex> vert_pool;
+    if (hdr.has_face_colors)
+        vert_pool.reserve(static_cast<size_t>(vert_elem.count));
+
     for (const auto &elem : hdr.elements)
     {
         for (int i = 0; i < elem.count; i++)
@@ -658,7 +722,10 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     float val = read_scalar(prop.type);
                     ply_apply_prop(v, vcol, prop.sem, val, prop.type);
                 }
-                mesh.vertices.push_back(v);
+                if (hdr.has_face_colors)
+                    vert_pool.push_back(v);
+                else
+                    mesh.vertices.push_back(v);
                 if (hdr.has_colors)
                     mesh.vertex_colors.push_back(vcol);
             }
@@ -667,11 +734,22 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                 bool got_indices = false;
                 uint32_t fv[64];
                 uint32_t actual = 0;
+                vec3 fcol{1.0f, 1.0f, 1.0f};
                 for (const auto &prop : elem.props)
                 {
                     if (!prop.is_list)
                     {
-                        read_scalar(prop.type);
+                        float val = read_scalar(prop.type);
+                        if (hdr.has_face_colors)
+                        {
+                            const bool is_float = (prop.type == PlyPType::F32 || prop.type == PlyPType::F64);
+                            if (prop.sem == PlyProp::R)
+                                fcol.x = is_float ? val : val / 255.0f;
+                            else if (prop.sem == PlyProp::G)
+                                fcol.y = is_float ? val : val / 255.0f;
+                            else if (prop.sem == PlyProp::B)
+                                fcol.z = is_float ? val : val / 255.0f;
+                        }
                         continue;
                     }
 
@@ -700,7 +778,12 @@ static bool load_ply_binary(FILE *f, const PlyHeader &hdr, Mesh &mesh)
                     }
                 }
                 if (got_indices)
-                    ply_push_face(mesh, fv, actual);
+                {
+                    if (hdr.has_face_colors)
+                        ply_push_face_colored(mesh, fv, actual, vert_pool, fcol);
+                    else
+                        ply_push_face(mesh, fv, actual);
+                }
             }
             else
             {
@@ -783,10 +866,16 @@ bool Mesh::load_ply(const std::string &path)
         return false;
     }
 
-    vertices.reserve(static_cast<size_t>(vert_elem.count));
+    if (!hdr.has_face_colors)
+        vertices.reserve(static_cast<size_t>(vert_elem.count));
     if (face_elem.count > 0)
         triangles.reserve(static_cast<size_t>(face_elem.count));
-    if (hdr.has_colors)
+    if (hdr.has_face_colors)
+    {
+        if (face_elem.count > 0)
+            vertex_colors.reserve(static_cast<size_t>(face_elem.count) * 3);
+    }
+    else if (hdr.has_colors)
         vertex_colors.reserve(static_cast<size_t>(vert_elem.count));
 
     materials.push_back(Material{});
@@ -800,10 +889,10 @@ bool Mesh::load_ply(const std::string &path)
     if (!ok || vertices.empty() || triangles.empty())
         return false;
 
-    if (!hdr.has_normals)
+    if (!hdr.has_normals || hdr.has_face_colors)
         compute_normals();
 
-    has_vertex_colors = hdr.has_colors;
+    has_vertex_colors = hdr.has_colors || hdr.has_face_colors;
     snap.commit();
     return true;
 }

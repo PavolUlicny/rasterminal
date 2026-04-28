@@ -146,6 +146,67 @@ TEST(ply_valid, binary_big_endian_triangle)
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
 
+TEST(ply_valid, ascii_face_colors_expanded)
+{
+    // Face element with uchar red/green/blue: single red triangle.
+    // Vertices must be expanded (unshared), vertex_colors filled from face color.
+    TmpFile t("/tmp/rast_fcol_ascii.ply",
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 2 255 0 0\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[2].x, 1.0f, 1e-4f);
+}
+
+TEST(ply_valid, binary_le_face_colors)
+{
+    // Same as ascii_face_colors_expanded but binary_little_endian.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+        "end_header\n";
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    s.push_back(3); // list count
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    s.push_back(static_cast<char>(0));   // red   = 0
+    s.push_back(static_cast<char>(0));   // green = 0
+    s.push_back(static_cast<char>(255)); // blue  = 255
+
+    TmpFile t("/tmp/rast_fcol_bin.ply", s);
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 1.0f, 1e-4f);
+}
+
 TEST(ply_valid, ascii_vertex_colors_normalized)
 {
     // uchar red=255, green=128, blue=0 → color {1.0, ~0.502, 0.0}
