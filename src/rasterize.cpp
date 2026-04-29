@@ -268,15 +268,15 @@ void rasterize(Framebuffer &fb,
             float w_corr = 1.0f / (pwa + pwb + pwc);
 
             // Per-pixel shadow test using interpolated world position.
-            bool shadowed = false;
+            float sf = 0.0f;
             if (smap)
             {
                 vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
-                shadowed = smap->in_shadow(pos);
+                sf = smap->in_shadow(pos);
             }
-            const vec3 &ca = shadowed ? shad_a : col_a;
-            const vec3 &cb = shadowed ? shad_b : col_b;
-            const vec3 &cc = shadowed ? shad_c : col_c;
+            vec3 ca = col_a + (shad_a - col_a) * sf;
+            vec3 cb = col_b + (shad_b - col_b) * sf;
+            vec3 cc = col_c + (shad_c - col_c) * sf;
 
             vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
@@ -430,13 +430,21 @@ void rasterize_phong(Framebuffer &fb,
                 mat_tex.ambient = mat_tex.ambient * vcol;
             }
 
-            // Shadow test: if the key light (index 0) is blocked, skip it.
-            bool shadowed = smap && smap->in_shadow(pos);
+            // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.
+            float sf = smap ? smap->in_shadow(pos) : 0.0f;
             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
-            vec3 color = shadowed
-                             ? compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao)
-                             : compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
+            vec3 color;
+            if (sf <= 0.0f)
+                color = compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
+            else if (sf >= 1.0f)
+                color = compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao);
+            else
+            {
+                vec3 lit = compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
+                vec3 shd = compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao);
+                color = lit + (shd - lit) * sf;
+            }
             fb.unchecked_set_pixel(x, y, vec3_to_color(color));
 
             ba += ba_dx;

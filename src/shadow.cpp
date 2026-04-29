@@ -23,22 +23,34 @@ static mat4 ortho(float l, float r, float b, float t, float n, float f)
 
 // ─── ShadowMap ────────────────────────────────────────────────────────────────
 
-bool ShadowMap::in_shadow(vec3 world_pos) const
+float ShadowMap::in_shadow(vec3 world_pos) const
 {
     vec4 lc = light_vp * vec4(world_pos, 1.0f);
     if (lc.w <= 0.0f)
-        return false;
+        return 0.0f;
     vec3 ndc = lc.perspective_divide();
-    // Outside the light frustum → treat as lit (no shadow cast here).
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f ||
         ndc.z < -1.0f || ndc.z > 1.0f)
-        return false;
+        return 0.0f;
     float u = (ndc.x + 1.0f) * 0.5f;
     float v = (ndc.y + 1.0f) * 0.5f;
-    int px = std::clamp(static_cast<int>(u * static_cast<float>(SIZE)), 0, SIZE - 1);
-    int py = std::clamp(static_cast<int>(v * static_cast<float>(SIZE)), 0, SIZE - 1);
+    int cx = std::clamp(static_cast<int>(u * static_cast<float>(SIZE)), 0, SIZE - 1);
+    int cy = std::clamp(static_cast<int>(v * static_cast<float>(SIZE)), 0, SIZE - 1);
     constexpr float fp_eps = 0.001f;
-    return ndc.z > depth[py * SIZE + px] + fp_eps;
+    float ref = ndc.z - fp_eps;
+
+    int hits = 0;
+    for (int dy = -1; dy <= 1; dy++)
+    {
+        int py = std::clamp(cy + dy, 0, SIZE - 1);
+        for (int dx = -1; dx <= 1; dx++)
+        {
+            int px = std::clamp(cx + dx, 0, SIZE - 1);
+            if (ref > depth[static_cast<size_t>(py * SIZE + px)])
+                hits++;
+        }
+    }
+    return static_cast<float>(hits) * (1.0f / 9.0f);
 }
 
 ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
@@ -142,7 +154,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
                 if (ba >= 0.0f && bb >= 0.0f && bc >= 0.0f)
                 {
                     float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
-                    float &stored = smap.depth[row_base + x];
+                    float &stored = smap.depth[static_cast<size_t>(row_base + x)];
                     if (d < stored)
                         stored = d;
                 }
