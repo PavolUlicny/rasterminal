@@ -6,7 +6,6 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -72,10 +71,9 @@ private:
     ShadingMode m_smode = ShadingMode::Gouraud;
     bool m_cull_backfaces = true;
 
-    // Per-band tris — Phase 1 workers bucket into these; Phase 2 workers each
-    // consume only their own band. Persists across frames to avoid reallocation.
-    std::vector<std::vector<RasterTri>> m_band_tris;
-    std::unique_ptr<std::mutex[]> m_band_mutexes; // one per band for Phase 1 flush
+    // 2D staging: [worker][band]. Each worker writes its own row in Phase 1
+    // with no locks; Phase 2 worker t reads column t across all rows.
+    std::vector<std::vector<std::vector<RasterTri>>> m_band_tris;
 
     // Phase 2 (rasterize) inputs:
     Framebuffer *m_fb = nullptr;

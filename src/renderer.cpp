@@ -44,8 +44,6 @@ Renderer::Renderer(int n_threads)
                                                                    : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
     m_threads.reserve(static_cast<size_t>(m_n_workers));
-    m_band_tris.resize(static_cast<size_t>(m_n_workers));
-    m_band_mutexes = std::make_unique<std::mutex[]>(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
         m_threads.emplace_back(&Renderer::worker_func, this, t);
 }
@@ -112,14 +110,6 @@ void Renderer::worker_func(int t)
             int total = static_cast<int>(mesh->triangles.size());
             const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
             const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
-
-            // Thread-local per-band staging: persists across frames so vector
-            // capacity is retained; only cleared, never reallocated after warmup.
-            static thread_local std::vector<std::vector<RasterTri>> local_bands;
-            if (static_cast<int>(local_bands.size()) != n)
-                local_bands.resize(static_cast<size_t>(n));
-            for (auto &v : local_bands)
-                v.clear();
 
             // Dynamic work stealing: each worker atomically claims the next
             // chunk of triangles. This balances load automatically regardless
@@ -299,22 +289,10 @@ void Renderer::worker_func(int t)
                         while (b_hi > b_lo && H * b_hi / n > tri_y1)
                             --b_hi;
                         for (int band = b_lo; band <= b_hi; band++)
-                            local_bands[static_cast<size_t>(band)].push_back(rt);
+                            m_band_tris[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
                     }
                 }
             } // while (true) work-stealing loop
-
-            // Flush local staging into the shared per-band lists.
-            // Each band has its own mutex so workers rarely contend.
-            for (int band = 0; band < n; band++)
-            {
-                if (!local_bands[static_cast<size_t>(band)].empty())
-                {
-                    std::lock_guard<std::mutex> band_lk(m_band_mutexes[static_cast<size_t>(band)]);
-                    auto &dst = m_band_tris[static_cast<size_t>(band)];
-                    dst.insert(dst.end(), local_bands[static_cast<size_t>(band)].begin(), local_bands[static_cast<size_t>(band)].end());
-                }
-            }
         }
 
         // ── Internal barrier: hybrid spin-then-park for Phase transition ─────
@@ -362,31 +340,32 @@ void Renderer::worker_func(int t)
             const vec3 &p2_ambient = m_ambient;
             const bool p2_has_vcol = m_mesh->has_vertex_colors;
 
-            for (const RasterTri &rt : m_band_tris[static_cast<size_t>(t)])
-            {
-                if (m_phong)
-                    rasterize_phong(*m_fb,
-                                    rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                                    rt.pa, rt.pb, rt.pc,
-                                    rt.ph.na, rt.ph.nb, rt.ph.nc,
-                                    rt.ph.tana, rt.ph.tanb, rt.ph.tanc,
-                                    rt.uva, rt.uvb, rt.uvc,
-                                    rt.ph.aoa, rt.ph.aob, rt.ph.aoc,
-                                    rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
-                                    p2_has_vcol,
-                                    p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
-                                    rt.tex, rt.ph.nmap, rt.ph.stex, rt.smap,
-                                    y_min, y_max);
-                else
-                    rasterize(*m_fb,
-                              rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                              rt.fg.col_a, rt.fg.col_b, rt.fg.col_c,
-                              rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
-                              rt.pa, rt.pb, rt.pc,
-                              rt.uva, rt.uvb, rt.uvc,
-                              rt.tex, rt.smap,
-                              y_min, y_max);
-            }
+            for (int w = 0; w < n; w++)
+                for (const RasterTri &rt : m_band_tris[static_cast<size_t>(w)][static_cast<size_t>(t)])
+                {
+                    if (m_phong)
+                        rasterize_phong(*m_fb,
+                                        rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
+                                        rt.pa, rt.pb, rt.pc,
+                                        rt.ph.na, rt.ph.nb, rt.ph.nc,
+                                        rt.ph.tana, rt.ph.tanb, rt.ph.tanc,
+                                        rt.uva, rt.uvb, rt.uvc,
+                                        rt.ph.aoa, rt.ph.aob, rt.ph.aoc,
+                                        rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
+                                        p2_has_vcol,
+                                        p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
+                                        rt.tex, rt.ph.nmap, rt.ph.stex, rt.smap,
+                                        y_min, y_max);
+                    else
+                        rasterize(*m_fb,
+                                  rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
+                                  rt.fg.col_a, rt.fg.col_b, rt.fg.col_c,
+                                  rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
+                                  rt.pa, rt.pb, rt.pc,
+                                  rt.uva, rt.uvb, rt.uvc,
+                                  rt.tex, rt.smap,
+                                  y_min, y_max);
+                }
         }
 
         // Signal completion. If this is the last worker, wake render().
@@ -459,18 +438,18 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
 
     // ── Single dispatch: workers run Phase 1 + Phase 2 without returning ────
     // Cap active workers to framebuffer height / 2 so no band is empty.
-    // On resize the band vectors and mutexes are rebuilt to match.
     const int n_active = std::max(1, std::min(m_n_workers, H / 2));
-    if (n_active != static_cast<int>(m_band_tris.size()))
-    {
+    if (static_cast<int>(m_band_tris.size()) != n_active)
         m_band_tris.resize(static_cast<size_t>(n_active));
-        m_band_mutexes = std::make_unique<std::mutex[]>(static_cast<size_t>(n_active));
-    }
+    for (auto &row : m_band_tris)
+        if (static_cast<int>(row.size()) != n_active)
+            row.resize(static_cast<size_t>(n_active));
 
     // An internal hybrid barrier (brief spin, then CV park) separates the
     // two phases. Reset barrier state before waking workers.
-    for (auto &v : m_band_tris)
-        v.clear();
+    for (auto &row : m_band_tris)
+        for (auto &v : row)
+            v.clear();
     m_tri_cursor.store(0, std::memory_order_relaxed);
     m_phase1_done.store(0, std::memory_order_relaxed);
     m_phase2_ready.store(false, std::memory_order_relaxed);
