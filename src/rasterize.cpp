@@ -274,9 +274,9 @@ void rasterize(Framebuffer &fb,
                 vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 sf = smap->in_shadow(pos);
             }
-            vec3 ca = col_a + (shad_a - col_a) * sf;
-            vec3 cb = col_b + (shad_b - col_b) * sf;
-            vec3 cc = col_c + (shad_c - col_c) * sf;
+            vec3 ca = lerp(col_a, shad_a, sf);
+            vec3 cb = lerp(col_b, shad_b, sf);
+            vec3 cc = lerp(col_c, shad_c, sf);
 
             vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
@@ -443,7 +443,7 @@ void rasterize_phong(Framebuffer &fb,
             {
                 vec3 lit = compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
                 vec3 shd = compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao);
-                color = lit + (shd - lit) * sf;
+                color = lerp(lit, shd, sf);
             }
             fb.unchecked_set_pixel(x, y, vec3_to_color(color));
 

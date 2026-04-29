@@ -40,14 +40,24 @@ float ShadowMap::in_shadow(vec3 world_pos) const
     float ref = ndc.z - fp_eps;
 
     int hits = 0;
-    for (int dy = -1; dy <= 1; dy++)
+    if (cx > 0 && cx < SIZE - 1 && cy > 0 && cy < SIZE - 1)
     {
-        int py = std::clamp(cy + dy, 0, SIZE - 1);
-        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+                if (ref > depth[static_cast<size_t>((cy + dy) * SIZE + (cx + dx))])
+                    hits++;
+    }
+    else
+    {
+        for (int dy = -1; dy <= 1; dy++)
         {
-            int px = std::clamp(cx + dx, 0, SIZE - 1);
-            if (ref > depth[static_cast<size_t>(py * SIZE + px)])
-                hits++;
+            int py = std::clamp(cy + dy, 0, SIZE - 1);
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int px = std::clamp(cx + dx, 0, SIZE - 1);
+                if (ref > depth[static_cast<size_t>(py * SIZE + px)])
+                    hits++;
+            }
         }
     }
     return static_cast<float>(hits) * (1.0f / 9.0f);
