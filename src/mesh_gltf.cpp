@@ -129,6 +129,7 @@ bool Mesh::load_gltf(const std::string &path)
                 const cgltf_accessor *pos_acc = nullptr;
                 const cgltf_accessor *norm_acc = nullptr;
                 const cgltf_accessor *uv_acc = nullptr;
+                const cgltf_accessor *color_acc = nullptr;
 
                 for (size_t ai = 0; ai < prim.attributes_count; ai++)
                 {
@@ -139,6 +140,8 @@ bool Mesh::load_gltf(const std::string &path)
                         norm_acc = attr.data;
                     else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
                         uv_acc = attr.data;
+                    else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
+                        color_acc = attr.data;
                 }
 
                 if (!pos_acc)
@@ -183,6 +186,18 @@ bool Mesh::load_gltf(const std::string &path)
 
                 if (norm_acc)
                     has_normals = true;
+
+                if (color_acc)
+                {
+                    vertex_colors.resize(vert_base + n_verts, {1.0f, 1.0f, 1.0f});
+                    for (size_t i = 0; i < n_verts; i++)
+                    {
+                        float c[4];
+                        cgltf_accessor_read_float(color_acc, i, c, 4);
+                        vertex_colors[vert_base + i] = {c[0], c[1], c[2]};
+                    }
+                    has_vertex_colors = true;
+                }
 
                 // Push triangles.
                 if (prim.indices)
