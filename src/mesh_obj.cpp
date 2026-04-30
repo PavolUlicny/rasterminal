@@ -2,443 +2,207 @@
 #include "mesh_loader.h"
 #include "texture.h"
 
-#include <cerrno>
-#include <climits>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+#include <array>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
-// ─── vertex deduplication key ─────────────────────────────────────────────────
-// OBJ uses separate index streams for positions, normals, and UVs.
-// A unique Vertex in the final buffer is identified by the combination of all three.
-
-struct FaceVertex
-{
-    int pi, ni, ti; // position, normal, uv indices (0-based; -1 = absent)
-
-    bool operator==(const FaceVertex &o) const
-    {
-        return pi == o.pi && ni == o.ni && ti == o.ti;
-    }
-};
-
-struct FaceVertexHash
-{
-    size_t operator()(const FaceVertex &fv) const
-    {
-        size_t h = static_cast<size_t>(fv.pi + 1);
-        h ^= static_cast<size_t>(fv.ni + 1) * 2654435761u;
-        h ^= static_cast<size_t>(fv.ti + 1) * 40503u;
-        return h;
-    }
-};
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-// Strip trailing newline, carriage-return, and space characters in-place.
-static void rtrim(std::string &s)
-{
-    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == ' '))
-        s.pop_back();
-}
-
-// Resolve a 1-based OBJ index (possibly negative) to a 0-based index.
-static int resolve(int raw, int count)
-{
-    if (raw > 0)
-        return raw - 1;
-    if (raw < 0)
-        return count + raw; // negative = relative to end
-    return -1;              // 0 is invalid in OBJ
-}
-
-// Parse one face-vertex token ("pi", "pi/ti", "pi//ni", "pi/ti/ni").
-// Advances *pp past the token. Returns false if nothing could be parsed.
-static bool parse_face_vertex(const char **pp, FaceVertex &out,
-                              int npos, int nnorm, int nuv)
-{
-    const char *p = *pp;
-    while (*p == ' ' || *p == '\t')
-        p++;
-    if (!*p || *p == '\n' || *p == '\r')
-        return false;
-
-    // Parse a raw OBJ index, reject if strtol overflows long or the value
-    // doesn't fit in int (face indices > INT_MAX are not valid OBJ).
-    auto parse_idx = [](const char *s, char **e) -> std::pair<int, bool>
-    {
-        errno = 0;
-        long v = std::strtol(s, e, 10);
-        if (*e == s || errno == ERANGE || v > INT_MAX || v < INT_MIN)
-            return {0, false};
-        return {static_cast<int>(v), true};
-    };
-
-    char *end;
-    auto [raw_pi, pi_ok] = parse_idx(p, &end);
-    if (!pi_ok)
-        return false;
-    p = end;
-
-    out.pi = resolve(raw_pi, npos);
-    out.ni = -1;
-    out.ti = -1;
-
-    if (*p == '/')
-    {
-        p++;
-        if (*p != '/')
-        {
-            auto [raw_ti, ti_ok] = parse_idx(p, &end);
-            if (ti_ok)
-            {
-                out.ti = resolve(raw_ti, nuv);
-                p = end;
-            }
-        }
-        if (*p == '/')
-        {
-            p++;
-            auto [raw_ni, ni_ok] = parse_idx(p, &end);
-            if (ni_ok)
-            {
-                out.ni = resolve(raw_ni, nnorm);
-                p = end;
-            }
-        }
-    }
-
-    *pp = p;
-    return true;
-}
-
-// ─── load_mtl ─────────────────────────────────────────────────────────────────
-// Parse a .mtl file and append materials to mesh.materials.
-// Supported texture directives (e.g. map_Kd/map_Kn/map_bump) are loaded into
-// mesh.textures and referenced by material texture indices.
-// mtl_dir is the directory of the .mtl file (used to resolve relative paths).
-// Returns a map from material name → index in mesh.materials.
-
-static std::unordered_map<std::string, uint32_t>
-load_mtl(const std::string &path, std::vector<Material> &materials,
-         std::vector<Texture> &textures, const std::string &mtl_dir)
-{
-    std::unordered_map<std::string, uint32_t> mat_map;
-
-    FILE *f = std::fopen(path.c_str(), "r");
-    if (!f)
-        return mat_map;
-
-    const size_t base = materials.size(); // index of first material added by this MTL
-    std::vector<bool> ka_explicit;        // parallel to materials[base..], true if Ka was set
-
-    char line[512];
-    int current = -1; // index of material being built (-1 = none yet)
-
-    while (std::fgets(line, sizeof(line), f))
-    {
-        const char *p = line;
-        while (*p == ' ' || *p == '\t')
-            p++;
-
-        if (std::strncmp(p, "newmtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
-        {
-            p += 7;
-            while (*p == ' ' || *p == '\t')
-                p++;
-            std::string name(p);
-            rtrim(name);
-
-            current = static_cast<int>(materials.size());
-            materials.push_back(Material{});
-            ka_explicit.push_back(false);
-            mat_map[name] = static_cast<uint32_t>(current);
-        }
-        else if (current >= 0)
-        {
-            if (std::strncmp(p, "Ka", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
-            {
-                float r, g, b;
-                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                {
-                    materials[static_cast<size_t>(current)].ambient = {r, g, b};
-                    ka_explicit[static_cast<size_t>(current) - base] = true;
-                }
-            }
-            else if (std::strncmp(p, "Kd", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
-            {
-                float r, g, b;
-                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[static_cast<size_t>(current)].diffuse = {r, g, b};
-            }
-            else if (std::strncmp(p, "Ks", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
-            {
-                float r, g, b;
-                if (std::sscanf(p + 3, "%f %f %f", &r, &g, &b) == 3)
-                    materials[static_cast<size_t>(current)].specular = {r, g, b};
-            }
-            else if (std::strncmp(p, "Ns", 2) == 0 && (p[2] == ' ' || p[2] == '\t'))
-            {
-                float ns;
-                if (std::sscanf(p + 3, "%f", &ns) == 1)
-                    materials[static_cast<size_t>(current)].shininess = ns;
-            }
-            else if (std::strncmp(p, "map_Ks", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
-            {
-                const char *q = p + 7;
-                while (*q == ' ' || *q == '\t')
-                    q++;
-                std::string tex_name(q);
-                rtrim(tex_name);
-                if (!tex_name.empty())
-                {
-                    Texture tex;
-                    if (tex.load(mtl_dir + tex_name))
-                    {
-                        materials[static_cast<size_t>(current)].specular_tex = static_cast<int>(textures.size());
-                        textures.push_back(std::move(tex));
-                    }
-                }
-            }
-            else if (std::strncmp(p, "map_Kd", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
-            {
-                // Diffuse texture map.  The filename follows the directive.
-                const char *q = p + 7;
-                while (*q == ' ' || *q == '\t')
-                    q++;
-                std::string tex_name(q);
-                rtrim(tex_name);
-
-                if (!tex_name.empty())
-                {
-                    Texture tex;
-                    if (tex.load(mtl_dir + tex_name))
-                    {
-                        materials[static_cast<size_t>(current)].diffuse_tex = static_cast<int>(textures.size());
-                        textures.push_back(std::move(tex));
-                    }
-                }
-            }
-            else if ((std::strncmp(p, "map_Kn", 6) == 0 && (p[6] == ' ' || p[6] == '\t')) ||
-                     (std::strncmp(p, "map_bump", 8) == 0 && (p[8] == ' ' || p[8] == '\t')))
-            {
-                // Normal map (tangent-space).  Handles both map_Kn and map_bump.
-                int prefix_len = (p[4] == 'K') ? 7 : 9; // "map_Kn " or "map_bump "
-                const char *q = p + prefix_len;
-                // Skip any MTL option tokens of the form "-flag [value]" (e.g. -bm 0.5).
-                while (*q == '-')
-                {
-                    while (*q && *q != ' ' && *q != '\t')
-                        q++; // skip flag name
-                    while (*q == ' ' || *q == '\t')
-                        q++; // skip whitespace
-                    // If what follows looks like a number, skip it too (it's the value).
-                    if (*q == '-' || (*q >= '0' && *q <= '9') || *q == '.')
-                        while (*q && *q != ' ' && *q != '\t')
-                            q++;
-                    while (*q == ' ' || *q == '\t')
-                        q++;
-                }
-                std::string tex_name(q);
-                rtrim(tex_name);
-
-                if (!tex_name.empty())
-                {
-                    Texture tex;
-                    if (tex.load(mtl_dir + tex_name))
-                    {
-                        materials[static_cast<size_t>(current)].normal_tex = static_cast<int>(textures.size());
-                        textures.push_back(std::move(tex));
-                    }
-                }
-            }
-        }
-    }
-
-    std::fclose(f);
-
-    // Ka defaults to Kd for any material that didn't have an explicit Ka line.
-    for (size_t i = 0; i < ka_explicit.size(); i++)
-        if (!ka_explicit[i])
-            materials[base + i].ambient = materials[base + i].diffuse;
-
-    return mat_map;
-}
-
-// ─── Mesh::load_obj ───────────────────────────────────────────────────────────
+#define TINYOBJLOADER_IMPLEMENTATION
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#pragma GCC diagnostic ignored "-Wshadow"
+#pragma GCC diagnostic ignored "-Wdouble-promotion"
+#pragma GCC diagnostic ignored "-Wuseless-cast"
+#pragma GCC diagnostic ignored "-Wduplicated-branches"
+#pragma GCC diagnostic ignored "-Wformat-nonliteral"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#include "tiny_obj_loader.h"
+#pragma GCC diagnostic pop
 
 bool Mesh::load_obj(const std::string &path)
 {
     MeshSnapshot snap(*this);
 
-    FILE *f = std::fopen(path.c_str(), "r");
-    if (!f)
+    // Texture paths in MTL are resolved relative to the OBJ file's directory.
+    std::string obj_dir;
+    const size_t slash = path.find_last_of("/\\");
+    if (slash != std::string::npos)
+        obj_dir = path.substr(0, slash + 1);
+
+    tinyobj::ObjReaderConfig cfg;
+    cfg.mtl_search_path = obj_dir;
+    cfg.triangulate = true;
+
+    tinyobj::ObjReader reader;
+    if (!reader.ParseFromFile(path, cfg))
         return false;
 
-    // Directory of the OBJ file, used to resolve relative mtllib paths.
-    std::string obj_dir;
-    {
-        size_t slash = path.find_last_of("/\\");
-        obj_dir = (slash != std::string::npos) ? path.substr(0, slash + 1) : "";
-    }
+    const auto &attrib = reader.GetAttrib();
+    const auto &shapes = reader.GetShapes();
+    const auto &mats = reader.GetMaterials();
 
-    // Index 0 is always the default material (white, slight specular).
+    // Bounds-check all face indices. tinyobjloader is permissive (warns but succeeds)
+    // on OOB references; we reject to avoid degenerate geometry in the renderer.
+    const size_t n_pos = attrib.vertices.size() / 3;
+    const size_t n_nor = attrib.normals.size() / 3;
+    const size_t n_tex = attrib.texcoords.size() / 2;
+    for (const auto &shape : shapes)
+        for (const auto &idx : shape.mesh.indices)
+            if ((idx.vertex_index >= 0 && static_cast<size_t>(idx.vertex_index) >= n_pos) ||
+                (idx.normal_index >= 0 && static_cast<size_t>(idx.normal_index) >= n_nor) ||
+                (idx.texcoord_index >= 0 && static_cast<size_t>(idx.texcoord_index) >= n_tex))
+                return false;
+
+    // Default white material at index 0 — always present.
     materials.push_back(Material{});
-    std::unordered_map<std::string, uint32_t> mat_map;
-    uint32_t current_mat = 0;
 
-    std::vector<vec3> pos_pool;
-    std::vector<vec3> norm_pool;
-    std::vector<vec2> uv_pool;
-
-    std::unordered_map<FaceVertex, uint32_t, FaceVertexHash> vertex_map;
-
-    bool has_normals = false;
-    bool all_have_normals = true; // false if any face vertex has no normal reference
-    char line[512];
-
-    // Returns the index of an existing or newly created Vertex.
-    // Returns UINT32_MAX if the position index is out of range (invalid OBJ reference).
-    auto get_vertex = [&](FaceVertex fv) -> uint32_t
+    // Load a texture from a name relative to obj_dir. Returns -1 on missing/error.
+    auto load_tex = [&](const std::string &name) -> int
     {
-        auto it = vertex_map.find(fv);
-        if (it != vertex_map.end())
-            return it->second;
-
-        // Position is mandatory; reject the vertex if the index is invalid.
-        if (fv.pi < 0 || fv.pi >= static_cast<int>(pos_pool.size()))
-            return UINT32_MAX;
-
-        Vertex v;
-        v.pos = pos_pool[static_cast<size_t>(fv.pi)];
-        if (fv.ni >= 0 && fv.ni < static_cast<int>(norm_pool.size()))
-            v.normal = norm_pool[static_cast<size_t>(fv.ni)];
-        else
-        {
-            v.normal = vec3{};
-            all_have_normals = false; // this vertex has no file-provided normal
-        }
-        v.uv = (fv.ti >= 0 && fv.ti < static_cast<int>(uv_pool.size())) ? uv_pool[static_cast<size_t>(fv.ti)] : vec2{};
-
-        uint32_t idx = static_cast<uint32_t>(vertices.size());
-        vertices.push_back(v);
-        vertex_map[fv] = idx;
+        if (name.empty())
+            return -1;
+        Texture tex;
+        if (!tex.load(obj_dir + name))
+            return -1;
+        const int idx = static_cast<int>(textures.size());
+        textures.push_back(std::move(tex));
         return idx;
     };
 
-    bool malformed = false;
-    while (std::fgets(line, sizeof(line), f))
+    // Materials: tinyobjloader index i maps to our index i+1 (0 = default).
+    for (const auto &m : mats)
     {
-        const char *p = line;
-        while (*p == ' ' || *p == '\t')
-            p++; // OBJ allows leading whitespace
+        Material mat{};
+        mat.diffuse = {m.diffuse[0], m.diffuse[1], m.diffuse[2]};
+        mat.specular = {m.specular[0], m.specular[1], m.specular[2]};
+        mat.shininess = m.shininess;
+        // Ka → Kd fallback: if ambient is all-zero (absent or unset), use diffuse.
+        const bool ka_zero = (m.ambient[0] == 0.0f &&
+                              m.ambient[1] == 0.0f &&
+                              m.ambient[2] == 0.0f);
+        mat.ambient = ka_zero ? mat.diffuse
+                              : vec3{m.ambient[0], m.ambient[1], m.ambient[2]};
+        mat.diffuse_tex = load_tex(m.diffuse_texname);
+        mat.specular_tex = load_tex(m.specular_texname);
+        // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
+        mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname)
+                                                   : load_tex(m.bump_texname);
+        materials.push_back(std::move(mat));
+    }
 
-        if (p[0] == 'v' && p[1] == ' ')
+    // Vertex deduplication: identical (vertex_index, normal_index, texcoord_index)
+    // tuples share one Vertex — same semantics as the previous hand-rolled loader.
+    std::unordered_map<size_t, uint32_t> vert_cache;
+    vert_cache.reserve(attrib.vertices.size() / 3);
+
+    bool all_have_normals = !attrib.normals.empty();
+
+    auto get_vertex = [&](const tinyobj::index_t &idx) -> uint32_t
+    {
+        const size_t key =
+            (static_cast<size_t>(idx.vertex_index + 1) * size_t{2654435761}) ^
+            (static_cast<size_t>(idx.normal_index + 1) * size_t{2246822519}) ^
+            (static_cast<size_t>(idx.texcoord_index + 1) * size_t{3266489917});
+
+        const auto [it, inserted] = vert_cache.emplace(key, static_cast<uint32_t>(vertices.size()));
+        if (!inserted)
+            return it->second;
+
+        Vertex v{};
+        if (idx.vertex_index >= 0)
         {
-            vec3 v{};
-            if (std::sscanf(p + 2, "%f %f %f", &v.x, &v.y, &v.z) != 3)
-            {
-                malformed = true;
-                break;
-            }
-            pos_pool.push_back(v);
+            const size_t vi = static_cast<size_t>(idx.vertex_index) * 3;
+            v.pos = {attrib.vertices[vi], attrib.vertices[vi + 1], attrib.vertices[vi + 2]};
         }
-        else if (p[0] == 'v' && p[1] == 'n')
+        if (idx.normal_index >= 0)
         {
-            vec3 n{};
-            if (std::sscanf(p + 3, "%f %f %f", &n.x, &n.y, &n.z) != 3)
-            {
-                malformed = true;
-                break;
-            }
-            norm_pool.push_back(n);
-            has_normals = true;
+            const size_t ni = static_cast<size_t>(idx.normal_index) * 3;
+            v.normal = {attrib.normals[ni], attrib.normals[ni + 1], attrib.normals[ni + 2]};
         }
-        else if (p[0] == 'v' && p[1] == 't')
+        else
         {
-            vec2 uv{};
-            if (std::sscanf(p + 3, "%f %f", &uv.x, &uv.y) < 2)
-            {
-                malformed = true;
-                break;
-            }
-            uv_pool.push_back(uv);
+            all_have_normals = false;
         }
-        else if (std::strncmp(p, "mtllib", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+        if (idx.texcoord_index >= 0)
         {
-            // Load the material library.  The filename follows "mtllib ".
-            std::string mtl_name(p + 7);
-            rtrim(mtl_name);
-
-            // MTL materials are appended starting at index 1 (0 = default).
-            // Pass obj_dir so relative texture paths resolve correctly.
-            // Merge rather than replace so multiple mtllib blocks accumulate.
-            auto new_map = load_mtl(obj_dir + mtl_name, materials, textures, obj_dir);
-            for (auto &kv : new_map)
-                mat_map[kv.first] = kv.second;
+            const size_t ti = static_cast<size_t>(idx.texcoord_index) * 2;
+            v.uv = {attrib.texcoords[ti], attrib.texcoords[ti + 1]};
         }
-        else if (std::strncmp(p, "usemtl", 6) == 0 && (p[6] == ' ' || p[6] == '\t'))
+        v.ao = 1.0f;
+        vertices.push_back(v);
+        return it->second;
+    };
+
+    // Check for OBJ vertex colors ("v x y z r g b" extension).
+    const bool src_has_vcol = (!attrib.colors.empty() &&
+                               attrib.colors.size() == attrib.vertices.size());
+
+    // Walk all shapes and merge into one Mesh.
+    for (const auto &shape : shapes)
+    {
+        size_t idx_off = 0;
+        for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++)
         {
-            std::string mat_name(p + 7);
-            rtrim(mat_name);
+            const int fv = static_cast<int>(shape.mesh.num_face_vertices[f]);
+            const int mat_id = shape.mesh.material_ids[f];
+            const uint32_t mat_idx =
+                (mat_id >= 0 && mat_id < static_cast<int>(mats.size()))
+                    ? static_cast<uint32_t>(mat_id + 1)
+                    : 0u;
 
-            auto it = mat_map.find(mat_name);
-            current_mat = (it != mat_map.end()) ? it->second : 0;
-        }
-        else if (p[0] == 'f' && p[1] == ' ')
-        {
-            p += 2;
-
-            // Read face vertices up to a bounded local buffer; excess tokens on
-            // extremely large polygons are ignored by this loader.
-            FaceVertex fverts[32];
-            int count = 0;
-
-            while (count < static_cast<int>(sizeof(fverts) / sizeof(fverts[0])))
+            // triangulate=true guarantees fv==3; guard for safety.
+            if (fv >= 3)
             {
-                FaceVertex fv;
-                if (!parse_face_vertex(&p, fv,
-                                       static_cast<int>(pos_pool.size()),
-                                       static_cast<int>(norm_pool.size()),
-                                       static_cast<int>(uv_pool.size())))
-                    break;
-                fverts[count++] = fv;
-            }
+                std::array<uint32_t, 3> fv3{};
+                for (int v = 0; v < 3; v++)
+                    fv3[static_cast<size_t>(v)] =
+                        get_vertex(shape.mesh.indices[idx_off + static_cast<size_t>(v)]);
 
-            // Fan triangulation: (0,1,2), (0,2,3), (0,3,4), …
-            // Works correctly for convex polygons (the common case in OBJ).
-            if (count < 3)
-                continue;
-            uint32_t v0_idx = get_vertex(fverts[0]);
-            if (v0_idx == UINT32_MAX)
-                continue;
-            for (int i = 1; i + 1 < count; i++)
-            {
-                uint32_t v1 = get_vertex(fverts[i]);
-                uint32_t v2 = get_vertex(fverts[i + 1]);
-                if (v1 == UINT32_MAX || v2 == UINT32_MAX)
-                    continue;
                 Triangle t;
-                t.v[0] = v0_idx;
-                t.v[1] = v1;
-                t.v[2] = v2;
-                t.material_idx = current_mat;
+                t.v[0] = fv3[0];
+                t.v[1] = fv3[1];
+                t.v[2] = fv3[2];
+                t.material_idx = mat_idx;
                 triangles.push_back(t);
             }
+            idx_off += static_cast<size_t>(fv);
         }
     }
 
-    std::fclose(f);
-
-    if (malformed || triangles.empty())
+    if (triangles.empty())
         return false;
 
-    // Recompute if no normals were in the file, or if some face vertices
-    // had no normal reference (mixed file) — zero normals light incorrectly.
-    if (!has_normals || !all_have_normals)
+    // Populate vertex colors when "v x y z r g b" data is present.
+    if (src_has_vcol)
+    {
+        vertex_colors.assign(vertices.size(), {1.0f, 1.0f, 1.0f});
+        for (const auto &shape : shapes)
+            for (const auto &idx : shape.mesh.indices)
+                if (idx.vertex_index >= 0)
+                {
+                    const size_t ci = static_cast<size_t>(idx.vertex_index) * 3;
+                    const size_t key =
+                        (static_cast<size_t>(idx.vertex_index + 1) * size_t{2654435761}) ^
+                        (static_cast<size_t>(idx.normal_index + 1) * size_t{2246822519}) ^
+                        (static_cast<size_t>(idx.texcoord_index + 1) * size_t{3266489917});
+                    const auto it = vert_cache.find(key);
+                    if (it != vert_cache.end())
+                        vertex_colors[it->second] = {attrib.colors[ci],
+                                                     attrib.colors[ci + 1],
+                                                     attrib.colors[ci + 2]};
+                }
+        for (const auto &c : vertex_colors)
+            if (c.x < 0.999f || c.y < 0.999f || c.z < 0.999f)
+            {
+                has_vertex_colors = true;
+                break;
+            }
+        if (!has_vertex_colors)
+            vertex_colors.clear();
+    }
+
+    if (attrib.normals.empty() || !all_have_normals)
         compute_normals();
 
     snap.commit();

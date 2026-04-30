@@ -5,7 +5,7 @@ WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
            -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation \
            -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
 CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
-                -fno-exceptions -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
+                -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
                 -fno-plt -fno-semantic-interposition \
                 -fno-stack-protector -fno-stack-clash-protection -fno-asynchronous-unwind-tables \
                 -fmerge-all-constants -fvisibility=hidden \
@@ -43,7 +43,8 @@ HDRS = src/args.h \
        src/platform.h \
        src/texture.h \
        src/stb_image.h \
-       src/stl_reader.h
+       src/stl_reader.h \
+       src/tiny_obj_loader.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
