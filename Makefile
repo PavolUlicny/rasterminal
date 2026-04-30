@@ -44,7 +44,8 @@ HDRS = src/args.h \
        src/texture.h \
        src/stb_image.h \
        src/stl_reader.h \
-       src/tiny_obj_loader.h
+       src/tiny_obj_loader.h \
+       src/tinyply.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
