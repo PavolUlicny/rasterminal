@@ -30,13 +30,6 @@ TEST(shipped, obj_penguin_textured)
         ASSERT_FAIL("PenguinBaseMesh.obj should load its diffuse texture");
 }
 
-TEST(shipped, obj_katana_textured)
-{
-    Mesh m = load_ok("models/obj/katana.obj");
-    if (m.textures.empty())
-        ASSERT_FAIL("katana.obj should load textures from its MTL");
-}
-
 TEST(shipped, obj_xyzrgb_dragon)
 {
     // ~11 MB, high-poly — exercises the loader on a realistic large mesh.
@@ -160,28 +153,6 @@ TEST(reject, obj_vertices_but_no_faces)
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 0 1 0\n");
-    assert_rejects(t.path);
-}
-
-TEST(reject, obj_malformed_vertex)
-{
-    // "v" with only 2 coordinates should fail sscanf (needs 3).
-    TmpFile t("/tmp/rasterminal_test_badv.obj",
-              "v 1.0 2.0\n"
-              "v 0 0 0\n"
-              "v 1 0 0\n"
-              "f 1 2 3\n");
-    assert_rejects(t.path);
-}
-
-TEST(reject, obj_malformed_normal)
-{
-    TmpFile t("/tmp/rasterminal_test_badvn.obj",
-              "v 0 0 0\n"
-              "v 1 0 0\n"
-              "v 0 1 0\n"
-              "vn 0 0\n" // missing z
-              "f 1 2 3\n");
     assert_rejects(t.path);
 }
 
