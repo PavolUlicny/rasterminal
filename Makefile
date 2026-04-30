@@ -34,6 +34,7 @@ HDRS = src/args.h \
        src/linalg.h \
        src/framebuffer.h \
        src/mesh.h \
+       src/mesh_loader.h \
        src/camera.h \
        src/light.h \
        src/shadow.h \
@@ -41,7 +42,8 @@ HDRS = src/args.h \
        src/renderer.h \
        src/platform.h \
        src/texture.h \
-       src/stb_image.h
+       src/stb_image.h \
+       src/stl_reader.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)

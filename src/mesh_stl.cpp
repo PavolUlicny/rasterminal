@@ -1,162 +1,31 @@
 #include "mesh.h"
 #include "mesh_loader.h"
 
-#include <cstdio>
+#define STL_READER_NO_EXCEPTIONS
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsign-conversion"
+#pragma GCC diagnostic ignored "-Wconversion"
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#include "stl_reader.h"
+#pragma GCC diagnostic pop
+
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
-#include <string>
-
-// ─── internal helpers ─────────────────────────────────────────────────────────
-
-// Read a 4-byte little-endian uint32 from f. Returns false on short read.
-static bool stl_read_u32_le(FILE *f, uint32_t &out)
-{
-    uint8_t b[4];
-    if (std::fread(b, 1, 4, f) != 4)
-        return false;
-    out = static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
-          (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
-    return true;
-}
-
-// Decode a 4-byte little-endian float from a byte pointer.
-static float stl_le_f32(const uint8_t *b)
-{
-    uint32_t u = static_cast<uint32_t>(b[0]) | (static_cast<uint32_t>(b[1]) << 8) |
-                 (static_cast<uint32_t>(b[2]) << 16) | (static_cast<uint32_t>(b[3]) << 24);
-    float v;
-    std::memcpy(&v, &u, 4);
-    return v;
-}
-
-// ─── ASCII loader ─────────────────────────────────────────────────────────────
-// Seeks to byte 0 and parses "facet normal / outer loop / vertex×3 / endfacet".
-// Face normals from the file are discarded; compute_normals() produces smooth
-// per-vertex normals instead. Returns false on malformed input.
-
-static bool load_stl_ascii(FILE *f, Mesh &mesh)
-{
-    std::fseek(f, 0, SEEK_SET);
-
-    char line[256];
-    vec3 verts[3];
-    int vert_count = 0;
-
-    while (std::fgets(line, sizeof(line), f))
-    {
-        const char *p = line;
-        while (*p == ' ' || *p == '\t')
-            p++;
-
-        if (std::strncmp(p, "vertex", 6) == 0)
-        {
-            vec3 v{};
-            if (std::sscanf(p + 6, "%f %f %f", &v.x, &v.y, &v.z) != 3)
-                return false;
-            if (vert_count < 3)
-                verts[vert_count] = v;
-            vert_count++;
-        }
-        else if (std::strncmp(p, "endfacet", 8) == 0)
-        {
-            if (vert_count >= 3)
-            {
-                uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
-                mesh.vertices.push_back({verts[0], {}, {}, {}});
-                mesh.vertices.push_back({verts[1], {}, {}, {}});
-                mesh.vertices.push_back({verts[2], {}, {}, {}});
-                Triangle t;
-                t.v[0] = base;
-                t.v[1] = base + 1;
-                t.v[2] = base + 2;
-                t.material_idx = 0;
-                mesh.triangles.push_back(t);
-            }
-            vert_count = 0;
-        }
-    }
-
-    return true;
-}
-
-// ─── binary loader ────────────────────────────────────────────────────────────
-// File must be positioned at byte 84 (immediately after the tri_count field).
-// tri_count is passed by the caller who already read it during format detection.
-// Returns false on truncated input.
-
-static bool load_stl_binary(FILE *f, uint32_t tri_count, Mesh &mesh)
-{
-    mesh.vertices.reserve(static_cast<size_t>(tri_count) * 3);
-    mesh.triangles.reserve(static_cast<size_t>(tri_count));
-    mesh.vertex_colors.reserve(static_cast<size_t>(tri_count) * 3);
-
-    bool any_color = false;
-
-    for (uint32_t i = 0; i < tri_count; i++)
-    {
-        // 12 bytes: face normal (ignored — normals are recomputed)
-        uint8_t ignored[12];
-        if (std::fread(ignored, 1, 12, f) != 12)
-            return false;
-
-        // 36 bytes: 3 × (x, y, z) as little-endian floats
-        uint8_t raw[36];
-        if (std::fread(raw, 1, 36, f) != 36)
-            return false;
-
-        // 2-byte attribute: Magics color format — bit 15 = color valid,
-        // bits 14-10 = blue, bits 9-5 = green, bits 4-0 = red (5 bits each).
-        uint8_t ab[2];
-        if (std::fread(ab, 1, 2, f) != 2)
-            return false;
-        uint16_t attr = static_cast<uint16_t>(ab[0]) | (static_cast<uint16_t>(ab[1]) << 8);
-
-        vec3 col{1.0f, 1.0f, 1.0f};
-        if (attr & 0x8000u)
-        {
-            col.x = static_cast<float>(attr & 0x1Fu) / 31.0f;         // red
-            col.y = static_cast<float>((attr >> 5) & 0x1Fu) / 31.0f;  // green
-            col.z = static_cast<float>((attr >> 10) & 0x1Fu) / 31.0f; // blue
-            any_color = true;
-        }
-
-        uint32_t base = static_cast<uint32_t>(mesh.vertices.size());
-        mesh.vertices.push_back({{stl_le_f32(raw + 0), stl_le_f32(raw + 4), stl_le_f32(raw + 8)}, {}, {}, {}});
-        mesh.vertices.push_back({{stl_le_f32(raw + 12), stl_le_f32(raw + 16), stl_le_f32(raw + 20)}, {}, {}, {}});
-        mesh.vertices.push_back({{stl_le_f32(raw + 24), stl_le_f32(raw + 28), stl_le_f32(raw + 32)}, {}, {}, {}});
-        mesh.vertex_colors.push_back(col);
-        mesh.vertex_colors.push_back(col);
-        mesh.vertex_colors.push_back(col);
-
-        Triangle t;
-        t.v[0] = base;
-        t.v[1] = base + 1;
-        t.v[2] = base + 2;
-        t.material_idx = 0;
-        mesh.triangles.push_back(t);
-    }
-
-    if (!any_color)
-        mesh.vertex_colors.clear();
-    else
-        mesh.has_vertex_colors = true;
-
-    return true;
-}
-
-// ─── Mesh::load_stl ───────────────────────────────────────────────────────────
-// Supports both ASCII and binary STL.
-// STL has no UVs, materials, or vertex sharing. Each facet is independent.
+#include <vector>
 
 bool Mesh::load_stl(const std::string &path)
 {
     MeshSnapshot snap(*this);
 
+    // Pre-validate: read 80-byte header + 4-byte tri_count, then verify the file
+    // is large enough to hold the declared triangles. Without this, a crafted
+    // binary STL with tri_count=0xFFFFFFFF would let stl_reader attempt a ~200 GB
+    // allocation even with STL_READER_NO_EXCEPTIONS.
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f)
         return false;
 
-    // Read 80-byte header.
     char header[80];
     if (std::fread(header, 1, 80, f) < 5)
     {
@@ -164,74 +33,84 @@ bool Mesh::load_stl(const std::string &path)
         return false;
     }
 
-    // ASCII STL starts with "solid" (possibly with leading whitespace).
-    // Binary STL has an 80-byte header that may also start with "solid", so
-    // the size check below is used to disambiguate when that happens.
+    // ASCII detection: header starts with "solid" (ignoring leading whitespace).
     const char *h = header;
-    const char *h_end = header + 80;
-    while (h < h_end && (*h == ' ' || *h == '\t'))
+    while (h < header + 80 && (*h == ' ' || *h == '\t'))
         h++;
-    bool is_ascii = (h + 5 <= h_end && std::strncmp(h, "solid", 5) == 0);
+    bool is_ascii = (h + 5 <= header + 80 && std::strncmp(h, "solid", 5) == 0);
 
-    // Always read tri_count (bytes 80-83) here: it is needed for size-based
-    // detection and passed directly to load_stl_binary, avoiding a second read
-    // that would land at the wrong file position.
-    uint32_t tri_count = 0;
-    const bool have_tri_count = stl_read_u32_le(f, tri_count); // file position → 84
+    // Read tri_count (bytes 80–83).
+    uint8_t tcb[4];
+    const bool have_tri_count = (std::fread(tcb, 1, 4, f) == 4);
+    const uint32_t tri_count = have_tri_count
+                                   ? (static_cast<uint32_t>(tcb[0]) |
+                                      (static_cast<uint32_t>(tcb[1]) << 8) |
+                                      (static_cast<uint32_t>(tcb[2]) << 16) |
+                                      (static_cast<uint32_t>(tcb[3]) << 24))
+                                   : 0u;
 
-    // Capture file size once — used for both ASCII/binary disambiguation and
-    // for validating tri_count against the actual file before reserve().
     long file_size = -1;
-    if (have_tri_count)
+    if (std::fseek(f, 0, SEEK_END) == 0)
+        file_size = std::ftell(f);
+    std::fclose(f);
+
+    const uint64_t expected_binary = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
+
+    // A binary STL whose header happens to start with "solid" must be
+    // disambiguated by exact file size.
+    if (is_ascii && have_tri_count && file_size >= 0 &&
+        static_cast<uint64_t>(file_size) == expected_binary)
+        is_ascii = false;
+
+    // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes.
+    if (!is_ascii)
     {
-        long pos = std::ftell(f);
-        if (pos >= 0 && std::fseek(f, 0, SEEK_END) == 0)
-            file_size = std::ftell(f);
-        if (pos < 0 || std::fseek(f, pos, SEEK_SET) != 0)
-        {
-            std::fclose(f);
+        if (!have_tri_count || file_size < 0 ||
+            static_cast<uint64_t>(file_size) < expected_binary)
             return false;
-        }
     }
 
-    // Expected size of a binary STL with this tri_count: 84-byte header plus
-    // exactly 50 bytes per triangle. Computed in uint64_t to avoid overflow.
-    const uint64_t expected_binary_size = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
+    // Delegate parsing to stl_reader. STL_READER_NO_EXCEPTIONS converts internal
+    // parse errors to return false instead of throwing.
+    std::vector<float> coords;        // 3 floats per deduplicated vertex
+    std::vector<float> face_norms;    // 3 floats per triangle face normal (ignored)
+    std::vector<unsigned int> tris;   // 3 vertex indices per triangle
+    std::vector<unsigned int> solids; // solid ranges (unused)
 
-    // If the header started with "solid", verify via exact file size match —
-    // this disambiguates the rare case of a binary STL whose 80-byte header
-    // happens to begin with "solid".
-    if (is_ascii && have_tri_count && file_size >= 0 &&
-        static_cast<uint64_t>(file_size) == expected_binary_size)
-        is_ascii = false;
+    if (!stl_reader::ReadStlFile(path.c_str(), coords, face_norms, tris, solids))
+        return false;
+
+    const size_t n_verts = coords.size() / 3;
+    const size_t n_tris = tris.size() / 3;
+    if (n_verts == 0 || n_tris == 0)
+        return false;
 
     materials.push_back(Material{});
 
-    bool ok = false;
-    if (is_ascii)
+    vertices.reserve(n_verts);
+    for (size_t i = 0; i < n_verts; i++)
     {
-        ok = load_stl_ascii(f, *this); // seeks to byte 0 itself
-    }
-    else if (have_tri_count)
-    {
-        // Defence against malicious/corrupt tri_count: a valid binary STL
-        // must be at least 84 + 50 × tri_count bytes long. Without this
-        // check, a crafted tri_count (e.g. 0xFFFFFFFF) would reach the
-        // reserve() inside load_stl_binary and trigger std::bad_alloc.
-        if (file_size < 0 || static_cast<uint64_t>(file_size) < expected_binary_size)
-        {
-            std::fclose(f);
-            return false;
-        }
-        ok = load_stl_binary(f, tri_count, *this); // file already at byte 84
+        Vertex v{};
+        v.pos = {coords[3 * i], coords[3 * i + 1], coords[3 * i + 2]};
+        v.ao = 1.0f;
+        vertices.push_back(v);
     }
 
-    std::fclose(f);
+    triangles.reserve(n_tris);
+    for (size_t i = 0; i < n_tris; i++)
+    {
+        Triangle t;
+        t.v[0] = tris[3 * i];
+        t.v[1] = tris[3 * i + 1];
+        t.v[2] = tris[3 * i + 2];
+        t.material_idx = 0;
+        triangles.push_back(t);
+    }
 
-    if (!ok || vertices.empty() || triangles.empty())
-        return false;
-
-    // STL has no vertex sharing so normals must always be computed.
+    // stl_reader deduplicates vertices by position, so compute_normals()
+    // averages adjacent face normals per shared vertex → smooth shading.
+    // compute_ao() is skipped for STL in load_model(): scan meshes have
+    // irregular topology that produces noisy AO values.
     compute_normals();
 
     snap.commit();

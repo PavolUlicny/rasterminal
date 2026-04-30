@@ -45,7 +45,7 @@ bool Mesh::load_model(const std::string &path, bool ao)
     }
 
     compute_tangents();
-    if (ao)
+    if (ao && ext != "stl")
         compute_ao();
 
     return true;
