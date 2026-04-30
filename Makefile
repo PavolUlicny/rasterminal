@@ -24,6 +24,7 @@ SRCS = src/main.cpp \
        src/mesh_obj.cpp \
        src/mesh_ply.cpp \
        src/mesh_stl.cpp \
+       src/mesh_gltf.cpp \
        src/camera.cpp \
        src/shadow.cpp \
        src/rasterize.cpp \
@@ -45,7 +46,8 @@ HDRS = src/args.h \
        src/stb_image.h \
        src/stl_reader.h \
        src/tiny_obj_loader.h \
-       src/tinyply.h
+       src/tinyply.h \
+       src/cgltf.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
@@ -73,11 +75,13 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_args.cpp \
               tests/test_shadow.cpp \
               tests/test_rasterize.cpp \
+              tests/test_gltf.cpp \
               src/args.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
               src/mesh_ply.cpp \
               src/mesh_stl.cpp \
+              src/mesh_gltf.cpp \
               src/texture.cpp \
               src/camera.cpp \
               src/rasterize.cpp \

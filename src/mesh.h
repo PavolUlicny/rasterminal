@@ -64,6 +64,11 @@ struct Mesh
     // for smooth per-vertex shading. Returns false on failure.
     bool load_stl(const std::string &path);
 
+    // Load geometry from a glTF or GLB file.
+    // Supports positions, normals, UVs, PBR materials, diffuse/normal textures,
+    // and node transforms. Returns false on failure.
+    bool load_gltf(const std::string &path);
+
 private:
     // Average adjacent face normals to produce smooth per-vertex normals.
     // Called by each loader when the file provides no normal data.

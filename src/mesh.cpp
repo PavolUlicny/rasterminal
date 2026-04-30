@@ -37,6 +37,8 @@ bool Mesh::load_model(const std::string &path, bool ao)
         ok = load_ply(path);
     else if (ext == "stl")
         ok = load_stl(path);
+    else if (ext == "gltf" || ext == "glb")
+        ok = load_gltf(path);
 
     if (!ok)
     {

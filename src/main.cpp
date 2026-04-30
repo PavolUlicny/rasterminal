@@ -45,7 +45,7 @@ int main(int argc, char *argv[])
     if (!mesh.load_model(args.model_path, args.ao))
     {
         std::fprintf(stderr, "Error: failed to load '%s'\n"
-                             "       Supported formats: .obj, .ply, .stl\n",
+                             "       Supported formats: .obj, .ply, .stl, .gltf, .glb\n",
                      args.model_path.c_str());
         return 1;
     }

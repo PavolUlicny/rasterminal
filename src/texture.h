@@ -17,6 +17,10 @@ struct Texture
     // Load a texture from disk.  Returns false and leaves the object unchanged on error.
     bool load(const std::string &path);
 
+    // Load a texture from a memory buffer (e.g. embedded GLB image data).
+    // Returns false and leaves the object unchanged on error.
+    bool load_from_memory(const uint8_t *data, size_t size);
+
     bool valid() const { return width > 0 && height > 0; }
 
     // Sample the texture at normalised (u, v) with bilinear interpolation.
