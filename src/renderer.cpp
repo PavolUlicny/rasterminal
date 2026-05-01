@@ -135,8 +135,8 @@ void Renderer::worker_func(int t)
                     bool flip_normals = false;
                     if (do_cull)
                     {
-                        const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
-                        if (dot(fn, eye - va.pos) <= 0.0f)
+                        const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
+                        if (dot(face_normal, eye - va.pos) <= 0.0f)
                         {
                             if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
                                 continue;
@@ -415,8 +415,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
 
             if (cull_backfaces)
             {
-                const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
-                if (dot(fn, eye - va.pos) <= 0.0f &&
+                const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
+                if (dot(face_normal, eye - va.pos) <= 0.0f &&
                     (!mesh.has_double_sided || !mesh.mat_at(tri.material_idx).double_sided))
                     continue;
             }
