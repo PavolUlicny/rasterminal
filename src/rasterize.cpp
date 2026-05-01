@@ -207,7 +207,7 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // pa/pb/pc are world-space positions used for the per-pixel shadow test.
 // uva/uvb/uvc are per-vertex texture coordinates.
 // tex may be nullptr if no diffuse texture is active.
-// smap may be nullptr if shadows are disabled.
+// shadow_map may be nullptr if shadows are disabled.
 
 void rasterize(Framebuffer &fb,
                vec3 sa, vec3 sb, vec3 sc,
@@ -217,7 +217,7 @@ void rasterize(Framebuffer &fb,
                vec3 pa, vec3 pb, vec3 pc,
                vec2 uva, vec2 uvb, vec2 uvc,
                const Texture *tex,
-               const ShadowMap *smap,
+               const ShadowMap *shadow_map,
                int y_min, int y_max)
 {
     const int width = fb.width();
@@ -269,10 +269,10 @@ void rasterize(Framebuffer &fb,
 
             // Per-pixel shadow test using interpolated world position.
             float sf = 0.0f;
-            if (smap)
+            if (shadow_map)
             {
                 vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
-                sf = smap->in_shadow(pos);
+                sf = shadow_map->in_shadow(pos);
             }
             vec3 ca = lerp(col_a, shad_a, sf);
             vec3 cb = lerp(col_b, shad_b, sf);
@@ -322,7 +322,7 @@ void rasterize_phong(Framebuffer &fb,
                      const Texture *tex,
                      const Texture *nmap,
                      const Texture *stex,
-                     const ShadowMap *smap,
+                     const ShadowMap *shadow_map,
                      int y_min, int y_max)
 {
     const int width = fb.width();
@@ -431,7 +431,7 @@ void rasterize_phong(Framebuffer &fb,
             }
 
             // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.
-            float sf = smap ? smap->in_shadow(pos) : 0.0f;
+            float sf = shadow_map ? shadow_map->in_shadow(pos) : 0.0f;
             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color;

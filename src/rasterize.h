@@ -33,12 +33,12 @@ struct ClipVert
 struct RasterTri
 {
     // Shared across all shading modes
-    vec3 sa, sb, sc;       // screen-space positions (x, y, ndc_z)
-    float wa, wb, wc;      // clip-space w (for perspective-correct interp)
-    vec3 pa, pb, pc;       // world-space positions
-    vec2 uva, uvb, uvc;    // texture coordinates
-    const Texture *tex;    // diffuse texture  (nullptr if none)
-    const ShadowMap *smap; // pre-built shadow map (nullptr if disabled)
+    vec3 sa, sb, sc;             // screen-space positions (x, y, ndc_z)
+    float wa, wb, wc;            // clip-space w (for perspective-correct interp)
+    vec3 pa, pb, pc;             // world-space positions
+    vec2 uva, uvb, uvc;          // texture coordinates
+    const Texture *tex;          // diffuse texture  (nullptr if none)
+    const ShadowMap *shadow_map; // pre-built shadow map (nullptr if disabled)
 
     union
     {
@@ -88,7 +88,7 @@ void rasterize(Framebuffer &fb,
                vec3 pa, vec3 pb, vec3 pc,
                vec2 uva, vec2 uvb, vec2 uvc,
                const Texture *tex,
-               const ShadowMap *smap,
+               const ShadowMap *shadow_map,
                int y_min, int y_max);
 
 // Rasterize one triangle with per-pixel Blinn-Phong lighting (Phong shading).
@@ -110,5 +110,5 @@ void rasterize_phong(Framebuffer &fb,
                      const Texture *tex,
                      const Texture *nmap,
                      const Texture *stex,
-                     const ShadowMap *smap,
+                     const ShadowMap *shadow_map,
                      int y_min, int y_max);
