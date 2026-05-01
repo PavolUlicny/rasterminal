@@ -154,3 +154,13 @@ TEST(mesh_clear, empties_all_containers)
     ASSERT_TRUE(m.materials.empty());
     ASSERT_TRUE(m.textures.empty());
 }
+
+TEST(mesh_clear, resets_flags)
+{
+    Mesh m;
+    m.has_double_sided = true;
+    m.has_vertex_colors = true;
+    m.clear();
+    ASSERT_FALSE(m.has_double_sided);
+    ASSERT_FALSE(m.has_vertex_colors);
+}
