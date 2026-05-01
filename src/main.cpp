@@ -292,20 +292,18 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            const int n_tris = static_cast<int>(mesh.triangles.size());
-            const int n_verts = static_cast<int>(mesh.vertices.size());
             const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
             char hud[256];
             if (renderer.mode == ShadingMode::Wireframe)
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
-                              n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
+                              spinning ? "spin ON" : "spin OFF",
                               lighting_str, bg_str, WIREFRAME_NAMES[wf_color],
                               culling ? "ON" : "OFF", tex_suffix);
             else
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
-                              n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
+                              spinning ? "spin ON" : "spin OFF",
                               lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix);
             fb.set_hud(hud);
         }
