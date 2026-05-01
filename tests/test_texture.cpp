@@ -59,6 +59,16 @@ TEST(texture, solid_1x1_is_invariant_to_uv_coords)
 
 // ─── UV wrap ──────────────────────────────────────────────────────────────────
 
+TEST(texture, uv_wraps_very_large_positive)
+{
+    // u=1000.5 should wrap identically to u=0.5 via floor().
+    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    vec3 a = t.sample_rgb(0.25f, 0.5f);
+    vec3 b = t.sample_rgb(1000.25f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-4f);
+    ASSERT_NEAR(a.z, b.z, 1e-4f);
+}
+
 TEST(texture, uv_wraps_at_integer_boundary)
 {
     // 2×1: left pixel = red, right pixel = blue.
@@ -183,4 +193,15 @@ TEST(texture_load, load_from_memory_valid_png)
     ASSERT_TRUE(t.valid());
     ASSERT_TRUE(t.width > 0);
     ASSERT_TRUE(t.height > 0);
+}
+
+TEST(texture_load, reload_overwrites_previous_data)
+{
+    // Manually seed a 1×1 texture, then load a real file over it.
+    Texture t = solid(255, 0, 0);
+    ASSERT_EQ(t.width, 1);
+    ASSERT_TRUE(t.load("models/gltf/DuckCM.png"));
+    ASSERT_TRUE(t.valid());
+    // DuckCM.png is not 1×1, so dimensions must have changed.
+    ASSERT_TRUE(t.width > 1 || t.height > 1);
 }
