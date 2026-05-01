@@ -69,15 +69,15 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
     for (int i = 0; i < n_lights; i++)
     {
         const vec3 &l = lights[i].direction;
-        const vec3 &lc = lights[i].color;
+        const vec3 &light_color = lights[i].color;
 
         float diff = dot(n, l);
         if (diff > 0.0f)
-            result += lc * mat.diffuse * diff;
+            result += light_color * mat.diffuse * diff;
 
         float ndh = dot(n, normalize(l + v));
         if (ndh > 0.0f)
-            result += lc * mat.specular * specular_pow(ndh, mat.shininess);
+            result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
     }
 
     return result;
