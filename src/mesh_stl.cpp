@@ -2,12 +2,7 @@
 #include "mesh_loader.h"
 
 #define STL_READER_NO_EXCEPTIONS
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-conversion"
-#pragma GCC diagnostic ignored "-Wconversion"
-#pragma GCC diagnostic ignored "-Wold-style-cast"
-#include "../vendor/stl_reader/stl_reader.h"
-#pragma GCC diagnostic pop
+#include "stl_reader.h"
 
 #include <cstdint>
 #include <cstdio>
