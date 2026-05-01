@@ -232,3 +232,17 @@ TEST(specular_pow, shininess_1_returns_x)
     // x^1 = x; the exp2f/log2f general path should handle this.
     ASSERT_NEAR(specular_pow(0.5f, 1.0f), 0.5f, 1e-5f);
 }
+
+TEST(specular_pow, shininess_zero_returns_one)
+{
+    // x^0 = 1 for any x; exp2f(0 * log2f(x)) = exp2f(0) = 1.
+    ASSERT_NEAR(specular_pow(0.5f, 0.0f), 1.0f, 1e-5f);
+    ASSERT_NEAR(specular_pow(0.9f, 0.0f), 1.0f, 1e-5f);
+}
+
+TEST(specular_pow, zero_base_returns_zero)
+{
+    // 0^n = 0 for n > 0; log2f(0) = -inf, exp2f(-inf) = 0.
+    ASSERT_NEAR(specular_pow(0.0f, 32.0f), 0.0f, 1e-5f);
+    ASSERT_NEAR(specular_pow(0.0f, 1.0f), 0.0f, 1e-5f);
+}
