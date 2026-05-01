@@ -150,6 +150,30 @@ TEST(draw_line, out_of_bounds_no_crash)
     ASSERT_FALSE(was_drawn(fb, 8, 8)); // beyond endpoint
 }
 
+TEST(draw_line, reversed_endpoints_same_pixels)
+{
+    FdRedirect r;
+    Framebuffer fb1(20, 10), fb2(20, 10);
+    draw_line(fb1, {2.0f, 5.0f, 0.5f}, {8.0f, 5.0f, 0.5f}, Color{255, 255, 255});
+    draw_line(fb2, {8.0f, 5.0f, 0.5f}, {2.0f, 5.0f, 0.5f}, Color{255, 255, 255});
+    for (int x = 2; x <= 8; x++)
+    {
+        ASSERT_TRUE(was_drawn(fb1, x, 5));
+        ASSERT_TRUE(was_drawn(fb2, x, 5));
+    }
+}
+
+TEST(draw_line, fully_offscreen_draws_nothing)
+{
+    FdRedirect r;
+    Framebuffer fb(20, 10);
+    draw_line(fb, {-10.0f, -10.0f, 0.5f}, {-5.0f, -5.0f, 0.5f}, Color{255, 255, 255});
+    // No pixel inside the framebuffer should have been touched.
+    for (int y = 0; y < fb.height(); y++)
+        for (int x = 0; x < fb.width(); x++)
+            ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
 // ─── rasterize ────────────────────────────────────────────────────────────────
 // Triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40x20 framebuffer.
 // Verified: pixel center (20.5,10.5) is inside; (0.5,10.5) and (39.5,10.5) outside.
