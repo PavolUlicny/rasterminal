@@ -98,7 +98,7 @@ void Renderer::worker_func(int t)
             const Light *lights = m_lights;
             int n_lights = m_n_lights;
             const vec3 &ambient = m_ambient;
-            const ShadowMap *psmap = m_psmap;
+            const ShadowMap *shadow_map = m_shadow_map;
             float near_plane = m_near_plane;
             int width = m_width;
             int height = m_height;
@@ -198,7 +198,7 @@ void Renderer::worker_func(int t)
                         rt.uvb = b.uv;
                         rt.uvc = c.uv;
                         rt.tex = tex;
-                        rt.smap = psmap;
+                        rt.shadow_map = shadow_map;
 
                         if (smode == ShadingMode::Phong)
                         {
@@ -247,7 +247,7 @@ void Renderer::worker_func(int t)
                             }
                             rt.fg.col_a = rt.fg.col_b = rt.fg.col_c =
                                 compute_lighting(fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
-                            if (psmap)
+                            if (shadow_map)
                                 rt.fg.shad_a = rt.fg.shad_b = rt.fg.shad_c =
                                     compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
                         }
@@ -268,7 +268,7 @@ void Renderer::worker_func(int t)
                                 rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
                                 rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
                                 rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
-                                if (psmap)
+                                if (shadow_map)
                                 {
                                     rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
                                     rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
@@ -280,7 +280,7 @@ void Renderer::worker_func(int t)
                                 rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
                                 rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
                                 rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
-                                if (psmap)
+                                if (shadow_map)
                                 {
                                     rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
                                     rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
@@ -367,7 +367,7 @@ void Renderer::worker_func(int t)
                                         rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
                                         p2_has_vcol,
                                         p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
-                                        rt.tex, rt.ph.nmap, rt.ph.stex, rt.smap,
+                                        rt.tex, rt.ph.nmap, rt.ph.stex, rt.shadow_map,
                                         y_min, y_max);
                     else
                         rasterize(*m_fb,
@@ -376,7 +376,7 @@ void Renderer::worker_func(int t)
                                   rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
                                   rt.pa, rt.pb, rt.pc,
                                   rt.uva, rt.uvb, rt.uvc,
-                                  rt.tex, rt.smap,
+                                  rt.tex, rt.shadow_map,
                                   y_min, y_max);
                 }
         }
@@ -394,7 +394,7 @@ void Renderer::worker_func(int t)
 
 void Renderer::render(const Mesh &mesh, const Camera &camera,
                       const Light *lights, int n_lights, const vec3 &ambient,
-                      Framebuffer &fb, const ShadowMap *smap)
+                      Framebuffer &fb, const ShadowMap *shadow_map)
 {
     const mat4 view = camera.view();
     const mat4 proj = camera.projection(fb.width(), fb.height());
@@ -402,7 +402,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     const vec3 eye = camera.eye();
     const int width = fb.width();
     const int height = fb.height();
-    const ShadowMap *psmap = (n_lights > 0) ? smap : nullptr;
+    const ShadowMap *active_shadow_map = (n_lights > 0) ? shadow_map : nullptr;
 
     // ── Wireframe: single-threaded (draw_line writes to framebuffer directly) ─
     if (mode == ShadingMode::Wireframe)
@@ -475,7 +475,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_lights = lights;
         m_n_lights = n_lights;
         m_ambient = ambient;
-        m_psmap = psmap;
+        m_shadow_map = active_shadow_map;
         m_near_plane = camera.near_plane;
         m_width = width;
         m_height = height;

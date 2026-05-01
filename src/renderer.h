@@ -37,11 +37,11 @@ struct Renderer
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    // smap: pre-built shadow map from build_shadow_map(). Pass nullptr to
+    // shadow_map: pre-built shadow map from build_shadow_map(). Pass nullptr to
     // disable shadows, or a valid pointer to reuse a cached map every frame.
     void render(const Mesh &, const Camera &,
                 const Light *lights, int n_lights, const vec3 &ambient,
-                Framebuffer &, const ShadowMap *smap = nullptr);
+                Framebuffer &, const ShadowMap *shadow_map = nullptr);
 
     // Cycle: Wireframe → Flat → Gouraud → Phong → Wireframe
     void cycle_shading();
@@ -65,7 +65,7 @@ private:
     const Light *m_lights = nullptr;
     int m_n_lights = 0;
     vec3 m_ambient;
-    const ShadowMap *m_psmap = nullptr;
+    const ShadowMap *m_shadow_map = nullptr;
     float m_near_plane = 0.0f;
     int m_width = 0, m_height = 0;
     ShadingMode m_smode = ShadingMode::Gouraud;
