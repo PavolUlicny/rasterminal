@@ -3,7 +3,6 @@
 #include <cmath>
 #include <algorithm>
 
-// The implementation is compiled here and nowhere else.
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 

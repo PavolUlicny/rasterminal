@@ -6,6 +6,8 @@ WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
            -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
 VENDOR_INC    = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
                 -isystem vendor/tinyobjloader -isystem vendor/tinyply
+VENDOR_HDRS   = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
+                vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h
 CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
                 -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
                 -fno-plt -fno-semantic-interposition \
@@ -46,7 +48,7 @@ HDRS = src/args.h \
        src/platform.h \
        src/texture.h
 
-$(TARGET): $(SRCS) $(HDRS)
+$(TARGET): $(SRCS) $(HDRS) $(VENDOR_HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
 debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread $(VENDOR_INC)
@@ -85,7 +87,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/framebuffer.cpp \
               src/shadow.cpp
 
-$(TEST_TARGET): $(TEST_SRCS) $(HDRS) tests/test.h
+$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h
 	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
 
 test: $(TEST_TARGET)
