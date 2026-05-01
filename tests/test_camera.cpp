@@ -1,6 +1,8 @@
 #include "test.h"
 #include "../src/camera.h"
 
+#include <cmath>
+
 // Camera is an orbit camera: eye sits on a sphere around `target`, parameter-
 // ised by (yaw, pitch, distance). yaw rotates horizontally around +Y, pitch
 // elevates above/below the XZ plane. At yaw=0, pitch=0 the eye is at
@@ -270,4 +272,25 @@ TEST(camera, process_key_unknown_does_not_change_state)
     ASSERT_NEAR(c.yaw, old_yaw, EPS);
     ASSERT_NEAR(c.pitch, old_pitch, EPS);
     ASSERT_NEAR(c.distance, old_dist, EPS);
+}
+
+TEST(camera, view_matrix_valid_past_vertical)
+{
+    // At pitch > π/2, cos(pitch) < 0 and the camera flips its up vector to
+    // {0,-1,0}. The resulting view matrix must still be finite and orthonormal.
+    Camera c;
+    c.target = {0.0f, 0.0f, 0.0f};
+    c.distance = 5.0f;
+    c.pitch = 2.0f; // ~115°, past vertical
+    mat4 v = c.view();
+    // All elements must be finite.
+    for (int row = 0; row < 4; row++)
+        for (int col = 0; col < 4; col++)
+            ASSERT_TRUE(std::isfinite(v.m[row][col]));
+    // The upper-left 3×3 rotation rows must be unit-length.
+    for (int row = 0; row < 3; row++)
+    {
+        float len = v.m[row][0] * v.m[row][0] + v.m[row][1] * v.m[row][1] + v.m[row][2] * v.m[row][2];
+        ASSERT_NEAR(len, 1.0f, 1e-4f);
+    }
 }
