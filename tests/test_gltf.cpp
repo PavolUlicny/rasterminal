@@ -24,6 +24,62 @@ TEST(shipped, glb_duck)
 //  DOUBLE-SIDED MATERIALS
 // ═══════════════════════════════════════════════════════════════════════════
 
+TEST(gltf_valid, pbr_material_mapping)
+{
+    // Known PBR values → verify Blinn-Phong mapping:
+    //   diffuse  = baseColorFactor.rgb = {0.5, 0.2, 0.8}
+    //   ambient  = diffuse
+    //   specular = {metallicFactor, …} = {0.3, 0.3, 0.3}
+    //   shininess = (1 - roughnessFactor) * 126 + 2 = 0.6*126+2 = 77.6
+    std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"pbrMetallicRoughness\":"
+        "{\"baseColorFactor\":[0.5,0.2,0.8,1.0],\"metallicFactor\":0.3,"
+        "\"roughnessFactor\":0.4}}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+        "\"buffers\":[{\"byteLength\":36}]}";
+    while (json.size() % 4 != 0)
+        json += ' ';
+    const uint32_t jlen = static_cast<uint32_t>(json.size());
+
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    const uint32_t blen = static_cast<uint32_t>(bin.size());
+
+    std::string glb;
+    emit_u32_le(glb, 0x46546C67u);
+    emit_u32_le(glb, 2u);
+    emit_u32_le(glb, 12u + 8u + jlen + 8u + blen);
+    emit_u32_le(glb, jlen);
+    emit_u32_le(glb, 0x4E4F534Au);
+    glb += json;
+    emit_u32_le(glb, blen);
+    emit_u32_le(glb, 0x004E4942u);
+    glb += bin;
+
+    TmpFile f("/tmp/rast_pbr.glb", glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_NEAR(mat.diffuse.x, 0.5f, 1e-4f);
+    ASSERT_NEAR(mat.diffuse.y, 0.2f, 1e-4f);
+    ASSERT_NEAR(mat.diffuse.z, 0.8f, 1e-4f);
+    ASSERT_NEAR(mat.ambient.x, 0.5f, 1e-4f);
+    ASSERT_NEAR(mat.specular.x, 0.3f, 1e-4f);
+    ASSERT_NEAR(mat.shininess, 77.6f, 1e-2f);
+}
+
 TEST(gltf_valid, double_sided_flag_set)
 {
     // Minimal GLB: one triangle, material with doubleSided:true.
