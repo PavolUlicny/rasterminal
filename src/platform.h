@@ -135,6 +135,7 @@ namespace platform
         KEY_R,     // reset camera
         KEY_C,     // cycle wireframe colour
         KEY_K,     // toggle backface culling
+        KEY_T,     // toggle texture rendering
     };
 
     struct InputEvent
@@ -209,6 +210,9 @@ namespace platform
             case 'k':
             case 'K':
                 return KEY_K;
+            case 't':
+            case 'T':
+                return KEY_T;
             default:
                 return KEY_NONE;
             }

@@ -52,6 +52,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_EQ(r.args.wireframe_color, 0); // white
     ASSERT_EQ(r.args.fps, 60);
     ASSERT_TRUE(r.args.cull);
+    ASSERT_TRUE(r.args.texture);
     ASSERT_FALSE(r.args.spin);
     ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
@@ -430,7 +431,7 @@ TEST(args, multiple_flags_all_applied)
 {
     ParseResult r = run({"--shading=phong", "--bg=white", "--lighting=single",
                          "--wireframe-color=magenta", "--fps=120", "--cull=off",
-                         "--spin", "--no-shadow", "--no-ao", "--no-hud",
+                         "--texture=off", "--spin", "--no-shadow", "--no-ao", "--no-hud",
                          "-j2", "scene.ply"});
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
@@ -440,6 +441,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_EQ(r.args.wireframe_color, 5);
     ASSERT_EQ(r.args.fps, 120);
     ASSERT_FALSE(r.args.cull);
+    ASSERT_FALSE(r.args.texture);
     ASSERT_TRUE(r.args.spin);
     ASSERT_FALSE(r.args.shadow);
     ASSERT_FALSE(r.args.ao);
@@ -655,6 +657,77 @@ TEST(args, cull_missing_value_is_error)
 TEST(args, cull_invalid_value_is_error)
 {
     ParseResult r = run({"--cull", "maybe", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --texture ────────────────────────────────────────────────────────────────
+
+TEST(args, texture_default_is_on)
+{
+    ASSERT_TRUE(run({"m.obj"}).args.texture);
+}
+
+TEST(args, texture_on_values)
+{
+    ASSERT_TRUE(run({"--texture", "on", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture", "1", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture", "true", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture", "yes", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture", "y", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_off_values)
+{
+    ASSERT_FALSE(run({"--texture", "off", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "0", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "false", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "no", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "n", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_case_insensitive)
+{
+    ASSERT_TRUE(run({"--texture", "ON", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "OFF", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture", "True", "m.obj"}).args.texture);
+    ASSERT_FALSE(run({"--texture", "FALSE", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_short_form)
+{
+    ASSERT_FALSE(run({"-t", "off", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"-t", "on", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_compact_short_form)
+{
+    ASSERT_FALSE(run({"-toff", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"-ton", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_compact_case_insensitive)
+{
+    ASSERT_FALSE(run({"-tOFF", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"-tYES", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_equals_long_form)
+{
+    ASSERT_FALSE(run({"--texture=off", "m.obj"}).args.texture);
+    ASSERT_TRUE(run({"--texture=on", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_missing_value_is_error)
+{
+    ParseResult r = run({"--texture"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, texture_invalid_value_is_error)
+{
+    ParseResult r = run({"--texture", "maybe", "m.obj"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }

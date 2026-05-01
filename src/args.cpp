@@ -311,6 +311,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
                 "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
                 "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+                "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
+                "                                  on|off, 1|0, true|false, yes|no, y|n\n"
                 "  -S,     --spin                 Start with auto-rotation enabled\n"
                 "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
                 "  -f [N], --fps [N]              Frame cap: bare -f/--fps uncapped, -f N caps at N fps (default: 60)\n"
@@ -325,7 +327,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "  WASD/arrows  Orbit camera           R       Reset view\n"
                 "  +/-          Zoom                   C       Cycle wireframe color\n"
                 "  Mouse drag   Orbit                  K       Toggle backface culling\n"
-                "  Scroll       Zoom                   Q       Quit\n");
+                "  Scroll       Zoom                   T       Toggle textures\n"
+                "  Q/Escape     Quit\n");
             return fail(0);
         }
         else if (arg == "-S" || arg == "--spin")
@@ -374,6 +377,18 @@ ParseResult parse_args(int argc, char *argv[])
                  argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bool("-c", argv[i] + 2, args.cull))
+                return fail(1);
+        }
+        else if (arg == "-t" || arg == "--texture")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_bool(flag, val, args.texture))
+                return fail(1);
+        }
+        else if (std::strncmp(argv[i], "-t", 2) == 0 &&
+                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        {
+            if (!parse_bool("-t", argv[i] + 2, args.texture))
                 return fail(1);
         }
         else if (arg == "-w" || arg == "--wireframe-color")

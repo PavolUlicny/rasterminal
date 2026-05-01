@@ -104,6 +104,7 @@ void Renderer::worker_func(int t)
             int height = m_height;
             ShadingMode smode = m_smode;
             bool do_cull = m_cull_backfaces;
+            bool show_tex = m_show_texture;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
@@ -145,7 +146,7 @@ void Renderer::worker_func(int t)
                     }
 
                     const Material &mat = mesh->mat_at(tri.material_idx);
-                    const Texture *tex = mesh->tex_at(mat.diffuse_tex);
+                    const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_tex) : nullptr;
 
                     const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{0.0f, 0.0f, 0.0f};
                     const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{0.0f, 0.0f, 0.0f};
@@ -202,8 +203,8 @@ void Renderer::worker_func(int t)
 
                         if (smode == ShadingMode::Phong)
                         {
-                            rt.ph.stex = mesh->tex_at(mat.specular_tex);
-                            rt.ph.nmap = mesh->tex_at(mat.normal_tex);
+                            rt.ph.stex = show_tex ? mesh->tex_at(mat.specular_tex) : nullptr;
+                            rt.ph.nmap = show_tex ? mesh->tex_at(mat.normal_tex) : nullptr;
                             rt.ph.na = a.normal;
                             rt.ph.nb = b.normal;
                             rt.ph.nc = c.normal;
@@ -481,6 +482,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_height = height;
         m_smode = mode;
         m_cull_backfaces = cull_backfaces;
+        m_show_texture = show_texture;
         m_fb = &fb;
         m_phong = (mode == ShadingMode::Phong);
         m_n_active = n_active;

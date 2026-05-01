@@ -27,6 +27,7 @@ struct Renderer
     ShadingMode mode = ShadingMode::Gouraud;
     Color wireframe_color = {200, 200, 200};
     bool cull_backfaces = true;
+    bool show_texture = true;
 
     // Spawns worker threads that persist for the lifetime of the Renderer.
     // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads (bare -j), N = exactly N.
@@ -70,6 +71,7 @@ private:
     int m_width = 0, m_height = 0;
     ShadingMode m_smode = ShadingMode::Gouraud;
     bool m_cull_backfaces = true;
+    bool m_show_texture = true;
 
     // 2D staging: [worker][band]. Each worker writes its own row in Phase 1
     // with no locks; Phase 2 worker t reads column t across all rows.

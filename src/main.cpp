@@ -117,9 +117,11 @@ int main(int argc, char *argv[])
     Renderer renderer(args.n_threads);
     renderer.mode = static_cast<ShadingMode>(args.shading);
 
+    const bool has_textures = !mesh.textures.empty();
     float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
     bool spinning = args.spin;
     bool culling = args.cull;
+    bool texturing = args.texture;
     int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
     int bg_mode = args.bg;                  // 0=black, 1=gray, 2=white
     int lighting_mode = args.lighting;      // 0=dual, 1=single, 2=flat ambient
@@ -181,6 +183,11 @@ int main(int argc, char *argv[])
                     wf_color = (wf_color + 1) % 6;
                 else if (k == platform::KEY_K)
                     culling = !culling;
+                else if (k == platform::KEY_T)
+                {
+                    if (has_textures)
+                        texturing = !texturing;
+                }
                 else if (k == platform::KEY_R)
                 {
                     camera = initial_camera;
@@ -190,6 +197,7 @@ int main(int argc, char *argv[])
                     wf_color = 0;
                     spinning = false;
                     culling = true;
+                    texturing = true;
                 }
                 else
                     camera.process_key(k, dt);
@@ -286,18 +294,19 @@ int main(int argc, char *argv[])
 
             const int n_tris = static_cast<int>(mesh.triangles.size());
             const int n_verts = static_cast<int>(mesh.vertices.size());
+            const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
             char hud[256];
             if (renderer.mode == ShadingMode::Wireframe)
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s  ",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
                               n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
                               lighting_str, bg_str, WIREFRAME_NAMES[wf_color],
-                              culling ? "ON" : "OFF");
+                              culling ? "ON" : "OFF", tex_suffix);
             else
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s  ",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
                               n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
-                              lighting_str, bg_str, culling ? "ON" : "OFF");
+                              lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix);
             fb.set_hud(hud);
         }
 
@@ -335,6 +344,7 @@ int main(int argc, char *argv[])
         const vec3 &cur_ambient = lighting_mode == 2 ? flat_ambient : ambient;
         renderer.wireframe_color = WIREFRAME_PALETTE[wf_color];
         renderer.cull_backfaces = culling;
+        renderer.show_texture = texturing;
         renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
                         shadow_map ? &*shadow_map : nullptr);
         fb.present();
