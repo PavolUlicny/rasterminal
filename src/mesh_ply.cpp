@@ -17,7 +17,7 @@
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #pragma GCC diagnostic ignored "-Wduplicated-branches"
 #pragma GCC diagnostic ignored "-Wunused-function"
-#include "tinyply.h"
+#include "../vendor/tinyply/tinyply.h"
 #pragma GCC diagnostic pop
 
 // ─── typed-buffer helpers ────────────────────────────────────────────────────

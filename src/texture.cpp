@@ -21,7 +21,7 @@
 #pragma GCC diagnostic ignored "-Wduplicated-cond"
 #pragma GCC diagnostic ignored "-Wnull-dereference"
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "../vendor/stb/stb_image.h"
 #pragma GCC diagnostic pop
 
 // ─── Texture::load ───────────────────────────────────────────────────────────

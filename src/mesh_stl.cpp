@@ -6,7 +6,7 @@
 #pragma GCC diagnostic ignored "-Wsign-conversion"
 #pragma GCC diagnostic ignored "-Wconversion"
 #pragma GCC diagnostic ignored "-Wold-style-cast"
-#include "stl_reader.h"
+#include "../vendor/stl_reader/stl_reader.h"
 #pragma GCC diagnostic pop
 
 #include <cstdint>

@@ -17,7 +17,7 @@
 #pragma GCC diagnostic ignored "-Wduplicated-branches"
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #pragma GCC diagnostic ignored "-Wunused-function"
-#include "tiny_obj_loader.h"
+#include "../vendor/tinyobjloader/tiny_obj_loader.h"
 #pragma GCC diagnostic pop
 
 bool Mesh::load_obj(const std::string &path)

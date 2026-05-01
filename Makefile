@@ -4,17 +4,19 @@ WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
            -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
            -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation \
            -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
+VENDOR_INC    = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
+                -isystem vendor/tinyobjloader -isystem vendor/tinyply
 CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
                 -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
                 -fno-plt -fno-semantic-interposition \
                 -fno-stack-protector -fno-stack-clash-protection -fno-asynchronous-unwind-tables \
                 -fmerge-all-constants -fvisibility=hidden \
                 -fgcse-sm -fgcse-las -fipa-pta \
-                -Wno-alloc-size-larger-than -pipe -pthread
+                -Wno-alloc-size-larger-than -pipe -pthread $(VENDOR_INC)
 TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread
+                -pipe -pthread $(VENDOR_INC)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -42,17 +44,12 @@ HDRS = src/args.h \
        src/rasterize.h \
        src/renderer.h \
        src/platform.h \
-       src/texture.h \
-       src/stb_image.h \
-       src/stl_reader.h \
-       src/tiny_obj_loader.h \
-       src/tinyply.h \
-       src/cgltf.h
+       src/texture.h
 
 $(TARGET): $(SRCS) $(HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
-debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread
+debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread $(VENDOR_INC)
 debug: $(TARGET)
 
 # ─── tests ────────────────────────────────────────────────────────────────────

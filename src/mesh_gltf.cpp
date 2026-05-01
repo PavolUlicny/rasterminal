@@ -18,7 +18,7 @@
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 #pragma GCC diagnostic ignored "-Wpedantic"
-#include "cgltf.h"
+#include "../vendor/cgltf/cgltf.h"
 #pragma GCC diagnostic pop
 
 bool Mesh::load_gltf(const std::string &path)
