@@ -37,3 +37,12 @@ TEST(reject, empty_file_stl)
     TmpFile t("/tmp/rasterminal_test_empty.stl", "");
     assert_rejects(t.path);
 }
+
+TEST(dispatch, multiple_dots_uses_last_extension)
+{
+    // find_last_of('.') must pick the last dot, not the first.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    TmpFile t("/tmp/rast_my.model.obj", obj);
+    Mesh m = load_ok(t.path);
+    ASSERT_FALSE(m.triangles.empty());
+}
