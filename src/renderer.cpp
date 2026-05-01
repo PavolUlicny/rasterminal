@@ -132,11 +132,16 @@ void Renderer::worker_func(int t)
                     // against the eye before any matrix transforms. Rejects ~half the
                     // triangles of a closed mesh before clip-space work. Winding
                     // assumption matches the old screen-space cull (CCW front).
+                    bool flip_normals = false;
                     if (do_cull)
                     {
                         const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
                         if (dot(fn, eye - va.pos) <= 0.0f)
-                            continue;
+                        {
+                            if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
+                                continue;
+                            flip_normals = true;
+                        }
                     }
 
                     const Material &mat = mesh->mat_at(tri.material_idx);
@@ -151,6 +156,12 @@ void Renderer::worker_func(int t)
                     ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca};
                     ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb};
                     ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc};
+                    if (flip_normals)
+                    {
+                        cva.normal = cva.normal * -1.0f;
+                        cvb.normal = cvb.normal * -1.0f;
+                        cvc.normal = cvc.normal * -1.0f;
+                    }
 
                     ClipVert clipped[2][3];
                     int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
@@ -217,6 +228,8 @@ void Renderer::worker_func(int t)
                         else if (smode == ShadingMode::Flat)
                         {
                             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                            if (flip_normals)
+                                face_n = face_n * -1.0f;
                             vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                             float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                             const Material *flat_mat = &mat;
@@ -403,7 +416,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             if (cull_backfaces)
             {
                 const vec3 fn = cross(vb.pos - va.pos, vc.pos - va.pos);
-                if (dot(fn, eye - va.pos) <= 0.0f)
+                if (dot(fn, eye - va.pos) <= 0.0f &&
+                    (!mesh.has_double_sided || !mesh.mat_at(tri.material_idx).double_sided))
                     continue;
             }
 

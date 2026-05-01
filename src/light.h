@@ -42,6 +42,7 @@ struct Material
     int diffuse_tex = -1;  // index into Mesh::textures, or -1 if none
     int specular_tex = -1; // index into Mesh::textures, or -1 if none
     int normal_tex = -1;   // index into Mesh::textures, or -1 if none
+    bool double_sided = false;
 };
 
 struct Light

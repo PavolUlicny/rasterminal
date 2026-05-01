@@ -94,6 +94,7 @@ bool Mesh::load_gltf(const std::string &path)
             mat.diffuse_tex = load_tex(pbr.base_color_texture.texture->image);
         if (m->normal_texture.texture)
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
+        mat.double_sided = m->double_sided;
         return mat;
     };
 

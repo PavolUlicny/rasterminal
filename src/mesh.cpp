@@ -15,6 +15,7 @@ void Mesh::clear()
     tangents.clear();
     vertex_colors.clear();
     has_vertex_colors = false;
+    has_double_sided = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao)
@@ -45,6 +46,13 @@ bool Mesh::load_model(const std::string &path, bool ao)
         clear();
         return false;
     }
+
+    for (const Material &m : materials)
+        if (m.double_sided)
+        {
+            has_double_sided = true;
+            break;
+        }
 
     compute_tangents();
     if (ao && ext != "stl")
