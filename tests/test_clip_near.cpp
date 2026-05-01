@@ -32,6 +32,14 @@ TEST(clip_near, all_outside_returns_zero)
     ASSERT_EQ(clip_near(a, b, c, out, NEAR), 0);
 }
 
+TEST(clip_near, all_exactly_on_near_plane_returns_zero)
+{
+    // Condition is strict w > near_w, so w == near_w is outside.
+    ClipVert a = make_cv(NEAR), b = make_cv(NEAR), c = make_cv(NEAR);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 0);
+}
+
 TEST(clip_near, one_inside_returns_one_triangle)
 {
     ClipVert a = make_cv(1.0f), b = make_cv(0.05f), c = make_cv(0.05f);
