@@ -304,3 +304,24 @@ TEST(obj_valid, usemtl_assigns_material_to_triangles)
     ASSERT_NEAR(matB.diffuse.x, 0.0f, 1e-5f);
     ASSERT_NEAR(matB.diffuse.z, 1.0f, 1e-5f);
 }
+
+TEST(obj_valid, usemtl_does_not_apply_retroactively)
+{
+    // Face declared BEFORE usemtl must keep the default material, not the
+    // subsequently declared one.
+    TmpFile mtl("/tmp/rast_retro.mtl", "newmtl red\nKd 1 0 0\n");
+    TmpFile obj("/tmp/rast_retro.obj",
+                "mtllib rast_retro.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 0 1 1\n"
+                "f 1 2 3\n"
+                "usemtl red\n"
+                "f 4 5 6\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.triangles.size(), size_t{2});
+    // The two triangles must reference different materials.
+    ASSERT_TRUE(m.triangles[0].material_idx != m.triangles[1].material_idx);
+    // The second face uses red (Kd 1 0 0).
+    const Material &red = m.mat_at(m.triangles[1].material_idx);
+    ASSERT_NEAR(red.diffuse.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(red.diffuse.z, 0.0f, 1e-5f);
+}
