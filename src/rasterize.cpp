@@ -369,7 +369,7 @@ void rasterize_phong(Framebuffer &fb,
             float w_corr = 1.0f / (pwa + pwb + pwc);
 
             vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
-            vec3 nrm = (na * pwa + nb * pwb + nc * pwc) * w_corr;
+            vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
             // Compute UV once — needed by both diffuse and normal map.
             vec2 uv{};
@@ -386,13 +386,13 @@ void rasterize_phong(Framebuffer &fb,
 
                 // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
                 // then derive B so TBN is a proper orthonormal basis.
-                vec3 N = normalize(nrm);
+                vec3 N = normalize(normal);
                 vec3 T = normalize(tan - N * dot(N, tan));
                 vec3 B = cross(N, T);
 
                 // Transform tangent-space normal to world space.
-                nrm = T * nm.x + B * nm.y + N * nm.z;
-                // nrm will be normalized inside compute_lighting.
+                normal = T * nm.x + B * nm.y + N * nm.z;
+                // normal will be normalized inside compute_lighting.
             }
 
             float ao = (aoa * pwa + aob * pwb + aoc * pwc) * w_corr;
@@ -436,13 +436,13 @@ void rasterize_phong(Framebuffer &fb,
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color;
             if (sf <= 0.0f)
-                color = compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
+                color = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
             else if (sf >= 1.0f)
-                color = compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao);
+                color = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
             else
             {
-                vec3 lit = compute_lighting(nrm, v, lights, n_lights, ambient, *use_mat, ao);
-                vec3 shd = compute_lighting(nrm, v, sl, n_shadow, ambient, *use_mat, ao);
+                vec3 lit = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
+                vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
                 color = lerp(lit, shd, sf);
             }
             fb.unchecked_set_pixel(x, y, vec3_to_color(color));

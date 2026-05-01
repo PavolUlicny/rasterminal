@@ -242,7 +242,7 @@ TEST(rasterize_phong, fills_interior)
 
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{0.0f, 0.0f, 0.0f};
-    vec3 nrm{0.0f, 0.0f, -1.0f};
+    vec3 normal{0.0f, 0.0f, -1.0f};
     vec3 tan{1.0f, 0.0f, 0.0f};
     Light light{};
     Material mat{};
@@ -250,7 +250,7 @@ TEST(rasterize_phong, fills_interior)
     rasterize_phong(fb, sa, sb, sc,
                     1.0f, 1.0f, 1.0f,
                     zero, zero, zero,
-                    nrm, nrm, nrm,
+                    normal, normal, normal,
                     tan, tan, tan,
                     vec2{0.0f, 0.0f}, vec2{1.0f, 0.0f}, vec2{0.0f, 1.0f},
                     1.0f, 1.0f, 1.0f,
@@ -274,7 +274,7 @@ TEST(rasterize_phong, respects_y_band)
 
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{0.0f, 0.0f, 0.0f};
-    vec3 nrm{0.0f, 0.0f, -1.0f};
+    vec3 normal{0.0f, 0.0f, -1.0f};
     vec3 tan{1.0f, 0.0f, 0.0f};
     Light light{};
     Material mat{};
@@ -282,7 +282,7 @@ TEST(rasterize_phong, respects_y_band)
     rasterize_phong(fb, sa, sb, sc,
                     1.0f, 1.0f, 1.0f,
                     zero, zero, zero,
-                    nrm, nrm, nrm,
+                    normal, normal, normal,
                     tan, tan, tan,
                     vec2{0.0f, 0.0f}, vec2{1.0f, 0.0f}, vec2{0.0f, 1.0f},
                     1.0f, 1.0f, 1.0f,
