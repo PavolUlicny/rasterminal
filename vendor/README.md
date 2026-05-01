@@ -17,7 +17,7 @@ All libraries are single-header (or minimal) and vendored directly. Do not edit 
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/cgltf.h -o vendor/cgltf/cgltf.h
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/LICENSE  -o vendor/cgltf/LICENSE
 git ls-remote https://github.com/jkuhlmann/cgltf refs/tags/v1.16
-# Update the commit and version in this table, then test: make clean && make && make test
+# Update the commit and version in this table, update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
 ```
 
 For stb (no per-file tags), use `master` and record the resolved HEAD SHA:
