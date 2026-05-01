@@ -1,6 +1,7 @@
 #include "test.h"
 #include "../src/texture.h"
 
+#include <cstdio>
 #include <cstdint>
 #include <vector>
 
@@ -122,4 +123,64 @@ TEST(texture, v_near_one_maps_toward_top_image_row)
     vec3 c = t.sample_rgb(0.0f, 0.999f);
     ASSERT_TRUE(c.x > 0.9f); // mostly red
     ASSERT_TRUE(c.z < 0.1f); // little blue
+}
+
+// ─── Texture::load / load_from_memory ────────────────────────────────────────
+
+TEST(texture_load, load_valid_file)
+{
+    Texture t;
+    ASSERT_TRUE(t.load("models/gltf/DuckCM.png"));
+    ASSERT_TRUE(t.valid());
+    ASSERT_TRUE(t.width > 0);
+    ASSERT_TRUE(t.height > 0);
+}
+
+TEST(texture_load, load_nonexistent_returns_false)
+{
+    Texture t;
+    ASSERT_FALSE(t.load("/tmp/rasterminal_nonexistent_XXXXX.png"));
+    ASSERT_FALSE(t.valid());
+}
+
+TEST(texture_load, load_from_memory_null_returns_false)
+{
+    Texture t;
+    ASSERT_FALSE(t.load_from_memory(nullptr, 8));
+    ASSERT_FALSE(t.valid());
+}
+
+TEST(texture_load, load_from_memory_zero_size_returns_false)
+{
+    Texture t;
+    const uint8_t data[] = {1, 2, 3};
+    ASSERT_FALSE(t.load_from_memory(data, 0));
+    ASSERT_FALSE(t.valid());
+}
+
+TEST(texture_load, load_from_memory_garbage_returns_false)
+{
+    Texture t;
+    const uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF};
+    ASSERT_FALSE(t.load_from_memory(garbage, sizeof(garbage)));
+    ASSERT_FALSE(t.valid());
+}
+
+TEST(texture_load, load_from_memory_valid_png)
+{
+    std::FILE *f = std::fopen("models/gltf/DuckCM.png", "rb");
+    ASSERT_TRUE(f != nullptr);
+    std::fseek(f, 0, SEEK_END);
+    const size_t sz = static_cast<size_t>(std::ftell(f));
+    std::fseek(f, 0, SEEK_SET);
+    std::vector<uint8_t> buf(sz);
+    const size_t nread = std::fread(buf.data(), 1, sz, f);
+    ASSERT_EQ(nread, sz);
+    std::fclose(f);
+
+    Texture t;
+    ASSERT_TRUE(t.load_from_memory(buf.data(), sz));
+    ASSERT_TRUE(t.valid());
+    ASSERT_TRUE(t.width > 0);
+    ASSERT_TRUE(t.height > 0);
 }
