@@ -25,10 +25,10 @@ static mat4 ortho(float l, float r, float b, float t, float n, float f)
 
 float ShadowMap::in_shadow(vec3 world_pos) const
 {
-    vec4 lc = light_vp * vec4(world_pos, 1.0f);
-    if (lc.w <= 0.0f)
+    vec4 light_clip = light_vp * vec4(world_pos, 1.0f);
+    if (light_clip.w <= 0.0f)
         return 0.0f;
-    vec3 ndc = lc.perspective_divide();
+    vec3 ndc = light_clip.perspective_divide();
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f ||
         ndc.z < -1.0f || ndc.z > 1.0f)
         return 0.0f;
