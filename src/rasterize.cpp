@@ -26,15 +26,15 @@ struct TriSetup
 };
 
 // Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
-// W is the framebuffer width; y_min/y_max are the thread's row band.
+// width is the framebuffer width; y_min/y_max are the thread's row band.
 // Returns false if the triangle is degenerate or misses the band entirely.
 static bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
                       float wa, float wb, float wc,
-                      int W, int y_min, int y_max,
+                      int width, int y_min, int y_max,
                       TriSetup &s)
 {
     s.x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-    s.x1 = std::min(W - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+    s.x1 = std::min(width - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
     s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
     s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
     if (s.y0 > s.y1 || s.x0 > s.x1)
@@ -220,9 +220,9 @@ void rasterize(Framebuffer &fb,
                const ShadowMap *smap,
                int y_min, int y_max)
 {
-    const int W = fb.width();
+    const int width = fb.width();
     TriSetup s;
-    if (!setup_tri(sa, sb, sc, wa, wb, wc, W, y_min, y_max, s))
+    if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
     const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
@@ -325,9 +325,9 @@ void rasterize_phong(Framebuffer &fb,
                      const ShadowMap *smap,
                      int y_min, int y_max)
 {
-    const int W = fb.width();
+    const int width = fb.width();
     TriSetup s;
-    if (!setup_tri(sa, sb, sc, wa, wb, wc, W, y_min, y_max, s))
+    if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
     const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
