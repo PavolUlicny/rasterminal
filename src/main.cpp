@@ -284,17 +284,19 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            char hud[224];
+            const int n_tris = static_cast<int>(mesh.triangles.size());
+            const int n_verts = static_cast<int>(mesh.vertices.size());
+            char hud[256];
             if (renderer.mode == ShadingMode::Wireframe)
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s  ",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s  ",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
-                              spinning ? "spin ON" : "spin OFF",
+                              n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
                               lighting_str, bg_str, WIREFRAME_NAMES[wf_color],
                               culling ? "ON" : "OFF");
             else
-                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s  ",
+                std::snprintf(hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %d tris, %d verts  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s  ",
                               mode_str, (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth), model_name.c_str(),
-                              spinning ? "spin ON" : "spin OFF",
+                              n_tris, n_verts, spinning ? "spin ON" : "spin OFF",
                               lighting_str, bg_str, culling ? "ON" : "OFF");
             fb.set_hud(hud);
         }
