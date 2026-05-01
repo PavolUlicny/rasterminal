@@ -164,3 +164,46 @@ TEST(mesh_clear, resets_flags)
     ASSERT_FALSE(m.has_double_sided);
     ASSERT_FALSE(m.has_vertex_colors);
 }
+
+TEST(mesh_clear, idempotent)
+{
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    TmpFile f("/tmp/rast_idem.obj", obj);
+    Mesh m = load_ok(f.path);
+    m.clear();
+    m.clear(); // second clear must not crash or corrupt state
+    ASSERT_TRUE(m.vertices.empty());
+    ASSERT_TRUE(m.triangles.empty());
+}
+
+// ─── compute_normals edge cases ───────────────────────────────────────────────
+
+TEST(normals, degenerate_zero_area_triangle_no_nan)
+{
+    // All three vertices coincident — cross product is (0,0,0).
+    // Normals should stay at (0,0,0) after normalization, never NaN.
+    const std::string obj = "v 1 2 3\nv 1 2 3\nv 1 2 3\nf 1 2 3\n";
+    TmpFile f("/tmp/rast_degen.obj", obj);
+    Mesh m = load_ok(f.path);
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_TRUE(std::isfinite(v.normal.x));
+        ASSERT_TRUE(std::isfinite(v.normal.y));
+        ASSERT_TRUE(std::isfinite(v.normal.z));
+    }
+}
+
+TEST(normals, winding_order_determines_sign)
+{
+    // CCW winding (f 1 2 3) vs CW winding (f 1 3 2) on the same vertices
+    // should produce normals pointing in opposite Z directions.
+    const std::string ccw = "v -1 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    const std::string cw = "v -1 0 0\nv 1 0 0\nv 0 1 0\nf 1 3 2\n";
+    TmpFile f1("/tmp/rast_ccw.obj", ccw);
+    TmpFile f2("/tmp/rast_cw.obj", cw);
+    Mesh m1 = load_ok(f1.path);
+    Mesh m2 = load_ok(f2.path);
+    // Both normals should be unit length pointing in opposite Z directions.
+    ASSERT_TRUE(m1.vertices[0].normal.z > 0.9f);
+    ASSERT_TRUE(m2.vertices[0].normal.z < -0.9f);
+}
