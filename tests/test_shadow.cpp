@@ -75,3 +75,33 @@ TEST(shadow, point_outside_frustum_is_lit)
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
     ASSERT_NEAR(shadow_map.in_shadow({1000.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
 }
+
+TEST(shadow, coincident_vertices_radius_clamped)
+{
+    // All vertices at the same point → radius = 0, clamped to 1.0 in shadow.cpp.
+    // Shadow map must still build without crash and return a finite value.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {1.0f, 1.0f, 1.0f};
+    m.vertices.push_back(v);
+    m.vertices.push_back(v);
+    m.vertices.push_back(v);
+    m.triangles.push_back({0, 1, 2});
+    m.materials.push_back({});
+    ShadowMap shadow_map = build_shadow_map(m, make_light_z());
+    float sf = shadow_map.in_shadow({1.0f, 1.0f, 0.0f});
+    ASSERT_TRUE(sf >= 0.0f && sf <= 1.0f);
+}
+
+TEST(shadow, light_pointing_up_uses_x_axis_fallback)
+{
+    // |dir.y| = 1.0 >= 0.9 → world_up falls back to {1,0,0}.
+    // look_at must remain valid (forward not parallel to up in this fallback).
+    Light light{};
+    light.direction = {0.0f, 1.0f, 0.0f};
+    light.color = {1.0f, 1.0f, 1.0f};
+    ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), light);
+    float sf = shadow_map.in_shadow({0.0f, 0.0f, 0.0f});
+    ASSERT_TRUE(sf >= 0.0f && sf <= 1.0f);
+}
