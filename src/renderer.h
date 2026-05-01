@@ -50,7 +50,7 @@ private:
     void worker_func(int t);
 
     int m_n_workers = 0; // total thread pool size, fixed at construction
-    int m_n_active = 0;  // workers used this frame: min(m_n_workers, H/2)
+    int m_n_active = 0;  // workers used this frame: min(m_n_workers, height/2)
     std::vector<std::thread> m_threads;
     std::mutex m_mutex;
     std::condition_variable m_cv_work; // workers block here between frames
@@ -67,7 +67,7 @@ private:
     vec3 m_ambient;
     const ShadowMap *m_psmap = nullptr;
     float m_near_plane = 0.0f;
-    int m_W = 0, m_H = 0;
+    int m_width = 0, m_height = 0;
     ShadingMode m_smode = ShadingMode::Gouraud;
     bool m_cull_backfaces = true;
 

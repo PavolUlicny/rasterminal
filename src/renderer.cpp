@@ -8,11 +8,11 @@
 // NDC → screen-space pixel coordinates.
 // NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
 // z is kept as NDC depth for the z-buffer.
-static vec3 ndc_to_screen(vec3 ndc, int W, int H)
+static vec3 ndc_to_screen(vec3 ndc, int width, int height)
 {
     return {
-        (ndc.x + 1.0f) * 0.5f * static_cast<float>(W),
-        (1.0f - ndc.y) * 0.5f * static_cast<float>(H),
+        (ndc.x + 1.0f) * 0.5f * static_cast<float>(width),
+        (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
         ndc.z};
 }
 
@@ -100,8 +100,8 @@ void Renderer::worker_func(int t)
             const vec3 &ambient = m_ambient;
             const ShadowMap *psmap = m_psmap;
             float near_plane = m_near_plane;
-            int W = m_W;
-            int H = m_H;
+            int width = m_width;
+            int height = m_height;
             ShadingMode smode = m_smode;
             bool do_cull = m_cull_backfaces;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
@@ -175,9 +175,9 @@ void Renderer::worker_func(int t)
                         if (clip_reject(a.c, b.c, c.c))
                             continue;
 
-                        vec3 sa = ndc_to_screen(a.c.perspective_divide(), W, H);
-                        vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
-                        vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
+                        vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                        vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                        vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
                         // No zero-init: every field used downstream is explicitly
                         // written below (mode-dependent). Fields unused by the
@@ -294,12 +294,12 @@ void Renderer::worker_func(int t)
                         // tri_y0 down to the last band whose top edge is still
                         // above tri_y1.  n is small (≤16) so the scan is cheap.
                         int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-                        int tri_y1 = std::min(H - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+                        int tri_y1 = std::min(height - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
                         int b_lo = 0;
-                        while (b_lo < n - 1 && H * (b_lo + 1) / n - 1 < tri_y0)
+                        while (b_lo < n - 1 && height * (b_lo + 1) / n - 1 < tri_y0)
                             ++b_lo;
                         int b_hi = n - 1;
-                        while (b_hi > b_lo && H * b_hi / n > tri_y1)
+                        while (b_hi > b_lo && height * b_hi / n > tri_y1)
                             --b_hi;
                         for (int band = b_lo; band <= b_hi; band++)
                             m_band_tris[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
@@ -340,8 +340,8 @@ void Renderer::worker_func(int t)
         // Each worker owns band t — only triangles pre-bucketed into that band,
         // so no wasted iterations over triangles from other parts of the screen.
         {
-            int y_min = m_H * t / n;
-            int y_max = m_H * (t + 1) / n - 1;
+            int y_min = m_height * t / n;
+            int y_max = m_height * (t + 1) / n - 1;
 
             // Per-frame Phong lighting constants — read from renderer state
             // instead of duplicating into every RasterTri. Safe to read without
@@ -400,8 +400,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     const mat4 proj = camera.projection(fb.width(), fb.height());
     const mat4 vp = proj * view;
     const vec3 eye = camera.eye();
-    const int W = fb.width();
-    const int H = fb.height();
+    const int width = fb.width();
+    const int height = fb.height();
     const ShadowMap *psmap = (n_lights > 0) ? smap : nullptr;
 
     // ── Wireframe: single-threaded (draw_line writes to framebuffer directly) ─
@@ -437,9 +437,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 if (clip_reject(a.c, b.c, c.c))
                     continue;
 
-                vec3 sa = ndc_to_screen(a.c.perspective_divide(), W, H);
-                vec3 sb = ndc_to_screen(b.c.perspective_divide(), W, H);
-                vec3 sc = ndc_to_screen(c.c.perspective_divide(), W, H);
+                vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
                 const Color wf = wireframe_color;
                 draw_line(fb, sa, sb, wf);
@@ -452,7 +452,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
 
     // ── Single dispatch: workers run Phase 1 + Phase 2 without returning ────
     // Cap active workers to framebuffer height / 2 so no band is empty.
-    const int n_active = std::max(1, std::min(m_n_workers, H / 2));
+    const int n_active = std::max(1, std::min(m_n_workers, height / 2));
     if (static_cast<int>(m_band_tris.size()) != n_active)
         m_band_tris.resize(static_cast<size_t>(n_active));
     for (auto &row : m_band_tris)
@@ -477,8 +477,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_ambient = ambient;
         m_psmap = psmap;
         m_near_plane = camera.near_plane;
-        m_W = W;
-        m_H = H;
+        m_width = width;
+        m_height = height;
         m_smode = mode;
         m_cull_backfaces = cull_backfaces;
         m_fb = &fb;
