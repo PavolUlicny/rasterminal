@@ -76,11 +76,11 @@ void Mesh::compute_normals()
         vec3 &p1 = vertices[tri.v[1]].pos;
         vec3 &p2 = vertices[tri.v[2]].pos;
 
-        vec3 fn = cross(p1 - p0, p2 - p0);
+        vec3 face_normal = cross(p1 - p0, p2 - p0);
 
-        vertices[tri.v[0]].normal += fn;
-        vertices[tri.v[1]].normal += fn;
-        vertices[tri.v[2]].normal += fn;
+        vertices[tri.v[0]].normal += face_normal;
+        vertices[tri.v[1]].normal += face_normal;
+        vertices[tri.v[2]].normal += face_normal;
     }
 
     for (auto &v : vertices)
