@@ -65,11 +65,11 @@ float ShadowMap::in_shadow(vec3 world_pos) const
 
 ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
 {
-    ShadowMap smap;
-    smap.clear();
+    ShadowMap shadow_map;
+    shadow_map.clear();
 
     if (mesh.vertices.empty())
-        return smap;
+        return shadow_map;
 
     // Bounding sphere: centroid + max radius.
     vec3 center{};
@@ -91,7 +91,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
 
     float ext = radius * 1.2f;
     mat4 light_proj = ortho(-ext, ext, -ext, ext, radius * 0.5f, radius * 6.0f);
-    smap.light_vp = light_proj * light_view;
+    shadow_map.light_vp = light_proj * light_view;
 
     const int S = ShadowMap::SIZE;
 
@@ -110,9 +110,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         float n_dot_l = dot(face_n, dir);
         float slope_bias = (n_dot_l > 0.01f) ? 0.007f / n_dot_l : 0.5f;
 
-        vec4 ca = smap.light_vp * vec4(pa, 1.0f);
-        vec4 cb = smap.light_vp * vec4(pb, 1.0f);
-        vec4 cc = smap.light_vp * vec4(pc, 1.0f);
+        vec4 ca = shadow_map.light_vp * vec4(pa, 1.0f);
+        vec4 cb = shadow_map.light_vp * vec4(pb, 1.0f);
+        vec4 cc = shadow_map.light_vp * vec4(pc, 1.0f);
 
         if (clip_reject(ca, cb, cc))
             continue;
@@ -164,7 +164,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
                 if (ba >= 0.0f && bb >= 0.0f && bc >= 0.0f)
                 {
                     float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
-                    float &stored = smap.depth[static_cast<size_t>(row_base + x)];
+                    float &stored = shadow_map.depth[static_cast<size_t>(row_base + x)];
                     if (d < stored)
                         stored = d;
                 }
@@ -176,5 +176,5 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         }
     }
 
-    return smap;
+    return shadow_map;
 }
