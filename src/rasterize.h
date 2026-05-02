@@ -40,28 +40,31 @@ struct RasterTri
     const Texture *tex;          // diffuse texture  (nullptr if none)
     const ShadowMap *shadow_map; // pre-built shadow map (nullptr if disabled)
 
+    // Flat / Gouraud data (lighting evaluated once per vertex in Phase 1).
+    struct FgData
+    {
+        vec3 col_a, col_b, col_c;    // fully lit (all lights)
+        vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
+    };
+
+    // Phong data (lighting evaluated per pixel in Phase 2).
+    // eye / lights / n_lights / ambient are per-frame constants supplied
+    // by the Phase 2 dispatcher, not duplicated into every triangle.
+    struct PhData
+    {
+        vec3 na, nb, nc;          // world-space normals
+        vec3 tana, tanb, tanc;    // world-space tangents
+        vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
+        float aoa, aob, aoc;      // baked ambient occlusion
+        const Material *mat;      // pointer into mesh.materials — valid for frame lifetime
+        const Texture *stex;      // specular texture (nullptr if none)
+        const Texture *nmap;      // normal map       (nullptr if none)
+    };
+
     union
     {
-        // Flat / Gouraud only — lighting evaluated once per vertex in Phase 1.
-        struct
-        {
-            vec3 col_a, col_b, col_c;    // fully lit (all lights)
-            vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
-        } fg;
-
-        // Phong only — lighting evaluated per pixel in Phase 2.
-        // eye / lights / n_lights / ambient are per-frame constants supplied
-        // by the Phase 2 dispatcher, not duplicated into every triangle.
-        struct
-        {
-            vec3 na, nb, nc;          // world-space normals
-            vec3 tana, tanb, tanc;    // world-space tangents
-            vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
-            float aoa, aob, aoc;      // baked ambient occlusion
-            const Material *mat;      // pointer into mesh.materials — valid for frame lifetime
-            const Texture *stex;      // specular texture (nullptr if none)
-            const Texture *nmap;      // normal map       (nullptr if none)
-        } ph;
+        FgData fg;
+        PhData ph;
     };
 
     RasterTri() {} // explicit ctor: vec3's non-trivial ctor deletes the union's implicit one

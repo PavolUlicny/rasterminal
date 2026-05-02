@@ -17,7 +17,7 @@ static Mesh make_flat_triangle()
     m.vertices.push_back(v);
     v.pos = {0.0f, 10.0f, 0.0f};
     m.vertices.push_back(v);
-    m.triangles.push_back({0, 1, 2});
+    m.triangles.push_back({{0, 1, 2}});
     m.materials.push_back({});
     return m;
 }
@@ -87,7 +87,7 @@ TEST(shadow, coincident_vertices_radius_clamped)
     m.vertices.push_back(v);
     m.vertices.push_back(v);
     m.vertices.push_back(v);
-    m.triangles.push_back({0, 1, 2});
+    m.triangles.push_back({{0, 1, 2}});
     m.materials.push_back({});
     ShadowMap shadow_map = build_shadow_map(m, make_light_z());
     float sf = shadow_map.in_shadow({1.0f, 1.0f, 0.0f});
