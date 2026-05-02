@@ -45,5 +45,8 @@
 rasterminal
 rasterminal_tests
 
+# CMake out-of-tree build directories
+build*/
+
 # editor
 .vscode/
