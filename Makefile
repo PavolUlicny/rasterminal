@@ -1,22 +1,42 @@
-CXX      = g++
-WARNINGS = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
-           -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
-           -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
-           -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation \
-           -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
-VENDOR_INC    = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
-                -isystem vendor/tinyobjloader -isystem vendor/tinyply
-VENDOR_HDRS   = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
-                vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h
-CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
-                -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
-                -fno-plt -fno-semantic-interposition \
-                -fno-stack-protector -fno-stack-clash-protection -fno-asynchronous-unwind-tables \
-                -fmerge-all-constants -fvisibility=hidden \
-                -fgcse-sm -fgcse-las -fipa-pta \
-                -Wno-alloc-size-larger-than -pipe -pthread $(VENDOR_INC)
-TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 -march=native -flto=auto -funroll-loops -ffast-math -fno-finite-math-only \
-                -fomit-frame-pointer -fstrict-aliasing \
+CXX ?= g++
+
+# ─── Compiler detection (POSIX: GCC or Clang) ─────────────────────────────────
+IS_CLANG := $(findstring clang,$(shell $(CXX) --version 2>&1))
+
+WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
+              -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
+              -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
+              -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation
+
+ifeq ($(IS_CLANG),clang)
+WARNINGS = $(WARN_COMMON)
+LTO      = -flto=thin
+GCC_OPTS =
+else
+WARNINGS = $(WARN_COMMON) -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
+LTO      = -flto=auto
+GCC_OPTS = -fno-plt -fno-semantic-interposition -fno-stack-clash-protection \
+           -fgcse-sm -fgcse-las -fipa-pta -Wno-alloc-size-larger-than
+endif
+
+VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
+              -isystem vendor/tinyobjloader -isystem vendor/tinyply
+VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
+              vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h
+
+# Tier 1: fast flags safe for any CPU (both release and portable).
+OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only \
+             -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
+             -fmerge-all-constants -fvisibility=hidden \
+             -fno-stack-protector -fno-asynchronous-unwind-tables \
+             -pipe -pthread $(GCC_OPTS)
+
+# Tier 2: machine-specific (release only).
+ARCH_NATIVE = -march=native
+
+CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ARCH_NATIVE) $(VENDOR_INC)
+TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funroll-loops \
+                -ffast-math -fno-finite-math-only -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
                 -pipe -pthread $(VENDOR_INC)
 TARGET   = rasterminal
@@ -50,6 +70,11 @@ HDRS = src/args.h \
 
 $(TARGET): $(SRCS) $(HDRS) $(VENDOR_HDRS)
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
+
+release: $(TARGET)
+
+portable: CXXFLAGS = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
+portable: $(TARGET)
 
 debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread $(VENDOR_INC)
 debug: $(TARGET)
@@ -96,4 +121,4 @@ test: $(TEST_TARGET)
 clean:
 	rm -f $(TARGET) $(TEST_TARGET)
 
-.PHONY: debug test clean
+.PHONY: release portable debug test clean
