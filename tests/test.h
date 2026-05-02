@@ -17,6 +17,27 @@
 #include <string>
 #include <vector>
 
+// ─── Portable fd helpers (used by test_args.cpp, test_rasterize.cpp) ─────────
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+static inline int test_dup(int fd) { return _dup(fd); }
+static inline int test_dup2(int fd, int dst) { return _dup2(fd, dst); }
+static inline void test_close(int fd) { _close(fd); }
+static inline int test_devnull() { return _open("nul", _O_WRONLY); }
+static const int TEST_STDOUT = 1;
+static const int TEST_STDERR = 2;
+#else
+#include <fcntl.h>
+#include <unistd.h>
+static inline int test_dup(int fd) { return dup(fd); }
+static inline int test_dup2(int fd, int dst) { return dup2(fd, dst); }
+static inline void test_close(int fd) { close(fd); }
+static inline int test_devnull() { return open("/dev/null", O_WRONLY); }
+static const int TEST_STDOUT = STDOUT_FILENO;
+static const int TEST_STDERR = STDERR_FILENO;
+#endif
+
 namespace testing
 {
     struct TestCase

@@ -2,9 +2,7 @@
 #include "../src/rasterize.h"
 
 #include <cstdio>
-#include <fcntl.h>
 #include <limits>
-#include <unistd.h>
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -16,16 +14,16 @@ struct FdRedirect
     FdRedirect()
     {
         std::fflush(stdout);
-        saved_out = dup(STDOUT_FILENO);
-        int dn = open("/dev/null", O_WRONLY);
-        dup2(dn, STDOUT_FILENO);
-        close(dn);
+        saved_out = test_dup(TEST_STDOUT);
+        int dn = test_devnull();
+        test_dup2(dn, TEST_STDOUT);
+        test_close(dn);
     }
     ~FdRedirect()
     {
         std::fflush(stdout);
-        dup2(saved_out, STDOUT_FILENO);
-        close(saved_out);
+        test_dup2(saved_out, TEST_STDOUT);
+        test_close(saved_out);
     }
 };
 

@@ -2,8 +2,6 @@
 #include "../src/args.h"
 
 #include <cstdio>
-#include <fcntl.h>
-#include <unistd.h>
 #include <vector>
 
 // Build a fake argv and call parse_args with stdout/stderr redirected to
@@ -17,12 +15,12 @@ static ParseResult run(std::initializer_list<const char *> tokens)
     // Flush any pending buffered output before touching the fds.
     std::fflush(stdout);
     std::fflush(stderr);
-    int saved_out = dup(STDOUT_FILENO);
-    int saved_err = dup(STDERR_FILENO);
-    int devnull = open("/dev/null", O_WRONLY);
-    dup2(devnull, STDOUT_FILENO);
-    dup2(devnull, STDERR_FILENO);
-    close(devnull);
+    int saved_out = test_dup(TEST_STDOUT);
+    int saved_err = test_dup(TEST_STDERR);
+    int devnull = test_devnull();
+    test_dup2(devnull, TEST_STDOUT);
+    test_dup2(devnull, TEST_STDERR);
+    test_close(devnull);
 
     ParseResult result = parse_args(static_cast<int>(argv.size()),
                                     const_cast<char **>(argv.data()));
@@ -30,10 +28,10 @@ static ParseResult run(std::initializer_list<const char *> tokens)
     // Drain any buffered output while fds still point to /dev/null, then restore.
     std::fflush(stdout);
     std::fflush(stderr);
-    dup2(saved_out, STDOUT_FILENO);
-    dup2(saved_err, STDERR_FILENO);
-    close(saved_out);
-    close(saved_err);
+    test_dup2(saved_out, TEST_STDOUT);
+    test_dup2(saved_err, TEST_STDERR);
+    test_close(saved_out);
+    test_close(saved_err);
 
     return result;
 }

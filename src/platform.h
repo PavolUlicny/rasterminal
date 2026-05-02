@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #ifdef _WIN32
+#define NOMINMAX
 #include <conio.h>
 #include <windows.h>
 #else
