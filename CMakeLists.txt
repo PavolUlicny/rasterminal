@@ -34,7 +34,7 @@ target_compile_options(rasterminal_warnings INTERFACE
     -Wformat=2;-Wimplicit-fallthrough;-Wmisleading-indentation;-Werror>
   $<$<CXX_COMPILER_ID:GNU>:
     -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches;-Wuseless-cast>
-  $<$<CXX_COMPILER_ID:MSVC>:/W4;/WX;/permissive->)
+  $<$<CXX_COMPILER_ID:MSVC>:/W4;/WX;/permissive-;/D_CRT_SECURE_NO_WARNINGS>)
 
 # ─── Release optimisation flags ───────────────────────────────────────────────
 # Tier 1: CPU-agnostic speed flags — applied in both release and portable builds.
@@ -48,7 +48,7 @@ target_compile_options(rasterminal_release_opts INTERFACE
   $<$<CXX_COMPILER_ID:GNU>:
     -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
-  $<$<CXX_COMPILER_ID:MSVC>:/O2;/Ob3;/Oi;/Ot;/fp:fast;/GR->
+  $<$<CXX_COMPILER_ID:MSVC>:/O2;/Oi;/Ot;/fp:fast;/GR->
   # Tier 2: machine-specific — omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
