@@ -5,36 +5,36 @@
 
 TEST(reject, missing_file)
 {
-    assert_rejects("/tmp/rasterminal_does_not_exist_12345.obj");
+    assert_rejects(tmp_path("rasterminal_does_not_exist_12345.obj"));
 }
 
 TEST(reject, no_extension)
 {
-    TmpFile t("/tmp/rasterminal_test_noext", "v 0 0 0\n");
+    TmpFile t(tmp_path("rasterminal_test_noext"), "v 0 0 0\n");
     assert_rejects(t.path);
 }
 
 TEST(reject, unknown_extension)
 {
-    TmpFile t("/tmp/rasterminal_test.xyz", "irrelevant");
+    TmpFile t(tmp_path("rasterminal_test.xyz"), "irrelevant");
     assert_rejects(t.path);
 }
 
 TEST(reject, empty_file_obj)
 {
-    TmpFile t("/tmp/rasterminal_test_empty.obj", "");
+    TmpFile t(tmp_path("rasterminal_test_empty.obj"), "");
     assert_rejects(t.path);
 }
 
 TEST(reject, empty_file_ply)
 {
-    TmpFile t("/tmp/rasterminal_test_empty.ply", "");
+    TmpFile t(tmp_path("rasterminal_test_empty.ply"), "");
     assert_rejects(t.path);
 }
 
 TEST(reject, empty_file_stl)
 {
-    TmpFile t("/tmp/rasterminal_test_empty.stl", "");
+    TmpFile t(tmp_path("rasterminal_test_empty.stl"), "");
     assert_rejects(t.path);
 }
 
@@ -42,7 +42,7 @@ TEST(dispatch, multiple_dots_uses_last_extension)
 {
     // find_last_of('.') must pick the last dot, not the first.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
-    TmpFile t("/tmp/rast_my.model.obj", obj);
+    TmpFile t(tmp_path("rast_my.model.obj"), obj);
     Mesh m = load_ok(t.path);
     ASSERT_FALSE(m.triangles.empty());
 }

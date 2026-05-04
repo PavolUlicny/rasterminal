@@ -68,7 +68,7 @@ TEST(gltf_valid, pbr_material_mapping)
     emit_u32_le(glb, 0x004E4942u);
     glb += bin;
 
-    TmpFile f("/tmp/rast_pbr.glb", glb.data(), glb.size());
+    TmpFile f(tmp_path("rast_pbr.glb"), glb.data(), glb.size());
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.materials.size() >= 2);
     const Material &mat = m.materials[1];
@@ -118,7 +118,7 @@ TEST(gltf_valid, double_sided_flag_set)
     emit_u32_le(glb, 0x004E4942u);
     glb += bin; // BIN chunk
 
-    TmpFile f("/tmp/rast_ds.glb", glb.data(), glb.size());
+    TmpFile f(tmp_path("rast_ds.glb"), glb.data(), glb.size());
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.has_double_sided);
     ASSERT_TRUE(m.materials.size() >= 2);
@@ -140,12 +140,12 @@ TEST(gltf_valid, single_sided_flag_clear)
 
 TEST(reject, empty_file_gltf)
 {
-    TmpFile t("/tmp/rast_empty.gltf", "");
+    TmpFile t(tmp_path("rast_empty.gltf"), "");
     assert_rejects(t.path);
 }
 
 TEST(reject, empty_file_glb)
 {
-    TmpFile t("/tmp/rast_empty.glb", "");
+    TmpFile t(tmp_path("rast_empty.glb"), "");
     assert_rejects(t.path);
 }

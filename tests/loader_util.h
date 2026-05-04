@@ -11,7 +11,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <string>
+
+static std::string tmp_path(const char *name)
+{
+    return (std::filesystem::temp_directory_path() / name).string();
+}
 
 static void write_bytes(const std::string &path, const void *data, size_t n)
 {

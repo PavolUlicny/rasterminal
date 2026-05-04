@@ -42,7 +42,7 @@ TEST(shipped, obj_xyzrgb_dragon)
 
 TEST(obj_valid, single_triangle)
 {
-    TmpFile t("/tmp/rasterminal_test_tri.obj",
+    TmpFile t(tmp_path("rasterminal_test_tri.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 0 1 0\n"
@@ -53,7 +53,7 @@ TEST(obj_valid, single_triangle)
 
 TEST(obj_valid, quad_fan_triangulates_to_two)
 {
-    TmpFile t("/tmp/rasterminal_test_quad.obj",
+    TmpFile t(tmp_path("rasterminal_test_quad.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 1 1 0\n"
@@ -66,7 +66,7 @@ TEST(obj_valid, quad_fan_triangulates_to_two)
 TEST(obj_valid, ngon_fan_triangulates_to_n_minus_two)
 {
     // 5-gon → 3 triangles (fan: 1-2-3, 1-3-4, 1-4-5)
-    TmpFile t("/tmp/rasterminal_test_ngon.obj",
+    TmpFile t(tmp_path("rasterminal_test_ngon.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 2 1 0\n"
@@ -80,7 +80,7 @@ TEST(obj_valid, ngon_fan_triangulates_to_n_minus_two)
 TEST(obj_valid, negative_indices_reference_end)
 {
     // OBJ spec: negative indices count back from the current end of the list.
-    TmpFile t("/tmp/rasterminal_test_neg.obj",
+    TmpFile t(tmp_path("rasterminal_test_neg.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 0 1 0\n"
@@ -91,7 +91,7 @@ TEST(obj_valid, negative_indices_reference_end)
 
 TEST(obj_valid, uv_and_normal_references)
 {
-    TmpFile t("/tmp/rasterminal_test_uvn.obj",
+    TmpFile t(tmp_path("rasterminal_test_uvn.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 0 1 0\n"
@@ -108,7 +108,7 @@ TEST(obj_valid, multiple_faces_deduplicate_shared_vertices)
 {
     // Two triangles sharing an edge — the four unique FaceVertex keys
     // should produce exactly four vertices in the final buffer.
-    TmpFile t("/tmp/rasterminal_test_shared.obj",
+    TmpFile t(tmp_path("rasterminal_test_shared.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 1 1 0\n"
@@ -122,7 +122,7 @@ TEST(obj_valid, multiple_faces_deduplicate_shared_vertices)
 
 TEST(obj_valid, comments_and_blank_lines_ignored)
 {
-    TmpFile t("/tmp/rasterminal_test_comments.obj",
+    TmpFile t(tmp_path("rasterminal_test_comments.obj"),
               "# this is a comment\n"
               "\n"
               "v 0 0 0\n"
@@ -141,7 +141,7 @@ TEST(obj_valid, comments_and_blank_lines_ignored)
 
 TEST(reject, obj_only_comments)
 {
-    TmpFile t("/tmp/rasterminal_test_cmts.obj",
+    TmpFile t(tmp_path("rasterminal_test_cmts.obj"),
               "# just a comment\n"
               "# another one\n");
     assert_rejects(t.path);
@@ -149,7 +149,7 @@ TEST(reject, obj_only_comments)
 
 TEST(reject, obj_vertices_but_no_faces)
 {
-    TmpFile t("/tmp/rasterminal_test_nofaces.obj",
+    TmpFile t(tmp_path("rasterminal_test_nofaces.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "v 0 1 0\n");
@@ -160,7 +160,7 @@ TEST(reject, obj_all_face_indices_out_of_range)
 {
     // Faces reference non-existent vertices → every face is skipped → no
     // triangles → load fails with "triangles.empty()".
-    TmpFile t("/tmp/rasterminal_test_oob.obj",
+    TmpFile t(tmp_path("rasterminal_test_oob.obj"),
               "v 0 0 0\n"
               "v 1 0 0\n"
               "f 5 6 7\n"
@@ -175,7 +175,7 @@ TEST(reject, obj_all_face_indices_out_of_range)
 TEST(obj_valid, mtl_default_material_is_white)
 {
     // Without any usemtl the default material (index 0) must be white diffuse.
-    TmpFile t("/tmp/rast_mat_default.obj",
+    TmpFile t(tmp_path("rast_mat_default.obj"),
               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
               "f 1 2 3\n");
     Mesh m = load_ok(t.path);
@@ -186,8 +186,8 @@ TEST(obj_valid, mtl_default_material_is_white)
 
 TEST(obj_valid, mtl_kd_parsed)
 {
-    TmpFile mtl("/tmp/rast_kd.mtl", "newmtl M\nKd 0.8 0.2 0.4\n");
-    TmpFile obj("/tmp/rast_kd.obj",
+    TmpFile mtl(tmp_path("rast_kd.mtl"), "newmtl M\nKd 0.8 0.2 0.4\n");
+    TmpFile obj(tmp_path("rast_kd.obj"),
                 "mtllib rast_kd.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -200,8 +200,8 @@ TEST(obj_valid, mtl_kd_parsed)
 
 TEST(obj_valid, mtl_ks_parsed)
 {
-    TmpFile mtl("/tmp/rast_ks.mtl", "newmtl M\nKs 0.3 0.6 0.9\n");
-    TmpFile obj("/tmp/rast_ks.obj",
+    TmpFile mtl(tmp_path("rast_ks.mtl"), "newmtl M\nKs 0.3 0.6 0.9\n");
+    TmpFile obj(tmp_path("rast_ks.obj"),
                 "mtllib rast_ks.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -214,8 +214,8 @@ TEST(obj_valid, mtl_ks_parsed)
 
 TEST(obj_valid, mtl_ns_parsed)
 {
-    TmpFile mtl("/tmp/rast_ns.mtl", "newmtl M\nNs 64.0\n");
-    TmpFile obj("/tmp/rast_ns.obj",
+    TmpFile mtl(tmp_path("rast_ns.mtl"), "newmtl M\nNs 64.0\n");
+    TmpFile obj(tmp_path("rast_ns.obj"),
                 "mtllib rast_ns.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -226,12 +226,12 @@ TEST(obj_valid, mtl_ns_parsed)
 
 TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
 {
-    TmpFile mtl("/tmp/rast_map_ks.mtl",
+    TmpFile mtl(tmp_path("rast_map_ks.mtl"),
                 "newmtl M\n"
                 "Kd 0.5 0.5 0.5\n"
                 "map_Ks nonexistent_specular.png\n"
                 "Ks 0.7 0.7 0.7\n");
-    TmpFile obj("/tmp/rast_map_ks.obj",
+    TmpFile obj(tmp_path("rast_map_ks.obj"),
                 "mtllib rast_map_ks.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -246,8 +246,8 @@ TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
 
 TEST(obj_valid, mtl_ka_parsed)
 {
-    TmpFile mtl("/tmp/rast_ka.mtl", "newmtl M\nKa 0.3 0.4 0.5\n");
-    TmpFile obj("/tmp/rast_ka.obj",
+    TmpFile mtl(tmp_path("rast_ka.mtl"), "newmtl M\nKa 0.3 0.4 0.5\n");
+    TmpFile obj(tmp_path("rast_ka.obj"),
                 "mtllib rast_ka.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -260,8 +260,8 @@ TEST(obj_valid, mtl_ka_parsed)
 
 TEST(obj_valid, mtl_ka_defaults_to_kd_when_absent)
 {
-    TmpFile mtl("/tmp/rast_ka_absent.mtl", "newmtl M\nKd 0.7 0.6 0.5\n");
-    TmpFile obj("/tmp/rast_ka_absent.obj",
+    TmpFile mtl(tmp_path("rast_ka_absent.mtl"), "newmtl M\nKd 0.7 0.6 0.5\n");
+    TmpFile obj(tmp_path("rast_ka_absent.obj"),
                 "mtllib rast_ka_absent.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
                 "usemtl M\nf 1 2 3\n");
@@ -274,7 +274,7 @@ TEST(obj_valid, mtl_ka_defaults_to_kd_when_absent)
 
 TEST(obj_valid, default_material_ambient_is_white)
 {
-    TmpFile t("/tmp/rast_default_ambient.obj",
+    TmpFile t(tmp_path("rast_default_ambient.obj"),
               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
               "f 1 2 3\n");
     Mesh m = load_ok(t.path);
@@ -287,10 +287,10 @@ TEST(obj_valid, usemtl_assigns_material_to_triangles)
 {
     // Two materials applied to two separate faces — each triangle must carry
     // the material_idx of the active usemtl at the time it was declared.
-    TmpFile mtl("/tmp/rast_usemtl.mtl",
+    TmpFile mtl(tmp_path("rast_usemtl.mtl"),
                 "newmtl A\nKd 1 0 0\n"
                 "newmtl B\nKd 0 0 1\n");
-    TmpFile obj("/tmp/rast_usemtl.obj",
+    TmpFile obj(tmp_path("rast_usemtl.obj"),
                 "mtllib rast_usemtl.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
                 "usemtl A\nf 1 2 3\n"
@@ -309,8 +309,8 @@ TEST(obj_valid, usemtl_does_not_apply_retroactively)
 {
     // Face declared BEFORE usemtl must keep the default material, not the
     // subsequently declared one.
-    TmpFile mtl("/tmp/rast_retro.mtl", "newmtl red\nKd 1 0 0\n");
-    TmpFile obj("/tmp/rast_retro.obj",
+    TmpFile mtl(tmp_path("rast_retro.mtl"), "newmtl red\nKd 1 0 0\n");
+    TmpFile obj(tmp_path("rast_retro.obj"),
                 "mtllib rast_retro.mtl\n"
                 "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nv 1 0 1\nv 0 1 1\n"
                 "f 1 2 3\n"

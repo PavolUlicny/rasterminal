@@ -20,7 +20,7 @@ TEST(shipped, stl_binary_bunny)
 
 TEST(stl_valid, ascii_single_facet)
 {
-    TmpFile t("/tmp/rasterminal_test_min.stl",
+    TmpFile t(tmp_path("rasterminal_test_min.stl"),
               "solid test\n"
               "facet normal 0 0 1\n"
               "  outer loop\n"
@@ -52,7 +52,7 @@ TEST(stl_valid, binary_single_triangle)
     s.push_back(0);
     s.push_back(0); // attribute bytes
 
-    TmpFile t("/tmp/rasterminal_test_bin.stl", s);
+    TmpFile t(tmp_path("rasterminal_test_bin.stl"), s);
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
@@ -79,7 +79,7 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
     s.push_back(0);
     s.push_back(0);
 
-    TmpFile t("/tmp/rasterminal_test_solidbin.stl", s);
+    TmpFile t(tmp_path("rasterminal_test_solidbin.stl"), s);
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
@@ -91,7 +91,7 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
 TEST(reject, stl_too_small_for_header)
 {
     // Less than 80 bytes — can't even read the header.
-    TmpFile t("/tmp/rasterminal_test_tiny.stl", "solid\n"); // 6 bytes
+    TmpFile t(tmp_path("rasterminal_test_tiny.stl"), "solid\n"); // 6 bytes
     assert_rejects(t.path);
 }
 
@@ -99,7 +99,7 @@ TEST(reject, stl_header_only_no_tri_count)
 {
     // Exactly 80 bytes: header read succeeds, but there's no tri_count.
     std::string s(80, 'X');
-    TmpFile t("/tmp/rasterminal_test_80.stl", s);
+    TmpFile t(tmp_path("rasterminal_test_80.stl"), s);
     assert_rejects(t.path);
 }
 
@@ -113,7 +113,7 @@ TEST(reject, stl_binary_inflated_tri_count)
     buf[81] = 0xFF;
     buf[82] = 0xFF;
     buf[83] = 0xFF;
-    TmpFile t("/tmp/rasterminal_test_inflated.stl", buf, sizeof(buf));
+    TmpFile t(tmp_path("rasterminal_test_inflated.stl"), buf, sizeof(buf));
     assert_rejects(t.path);
 }
 
@@ -126,7 +126,7 @@ TEST(reject, stl_binary_short_file_nonzero_count)
     buf[81] = 0;
     buf[82] = 0;
     buf[83] = 0;
-    TmpFile t("/tmp/rasterminal_test_short.stl", buf, sizeof(buf));
+    TmpFile t(tmp_path("rasterminal_test_short.stl"), buf, sizeof(buf));
     assert_rejects(t.path);
 }
 
@@ -147,7 +147,7 @@ TEST(reject, stl_binary_truncated_mid_triangle)
     // Second triangle (truncated — only first 20 bytes).
     for (int i = 0; i < 5; i++)
         emit_f32_le(s, 0);
-    TmpFile t("/tmp/rasterminal_test_truncfacet.stl", s);
+    TmpFile t(tmp_path("rasterminal_test_truncfacet.stl"), s);
     assert_rejects(t.path);
 }
 
@@ -157,13 +157,13 @@ TEST(reject, stl_binary_zero_triangles)
     // produces an empty mesh, which load_stl rejects.
     std::string s(80, 'X');
     emit_u32_le(s, 0);
-    TmpFile t("/tmp/rasterminal_test_zero.stl", s);
+    TmpFile t(tmp_path("rasterminal_test_zero.stl"), s);
     assert_rejects(t.path);
 }
 
 TEST(reject, stl_ascii_no_facets)
 {
-    TmpFile t("/tmp/rasterminal_test_nofacet.stl",
+    TmpFile t(tmp_path("rasterminal_test_nofacet.stl"),
               "solid empty\n"
               "endsolid empty\n");
     assert_rejects(t.path);

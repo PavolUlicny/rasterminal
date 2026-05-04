@@ -1,4 +1,5 @@
 #include "test.h"
+#include "loader_util.h"
 #include "../src/texture.h"
 
 #include <cstdio>
@@ -149,7 +150,7 @@ TEST(texture_load, load_valid_file)
 TEST(texture_load, load_nonexistent_returns_false)
 {
     Texture t;
-    ASSERT_FALSE(t.load("/tmp/rasterminal_nonexistent_XXXXX.png"));
+    ASSERT_FALSE(t.load(tmp_path("rasterminal_nonexistent_XXXXX.png")));
     ASSERT_FALSE(t.valid());
 }
 
