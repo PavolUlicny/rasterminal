@@ -235,6 +235,15 @@ namespace platform
         // VT escape sequences readable via _getch() byte-by-byte.
         auto rb = []() -> char
         { return static_cast<char>(_getch()); };
+        // Wait up to `ms` ms for the next byte of an escape sequence.
+        // Returns 0 on timeout so callers can treat it as bare ESC.
+        auto rb_timeout = [](int ms) -> char
+        {
+            HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+            if (WaitForSingleObject(hin, static_cast<DWORD>(ms)) != WAIT_OBJECT_0)
+                return 0;
+            return _kbhit() ? static_cast<char>(_getch()) : 0;
+        };
         char c = rb();
 #else
         {
@@ -278,11 +287,7 @@ namespace platform
         // ── Escape sequence ──────────────────────────────────────────────────────
         // Use a 50 ms timeout: imperceptible to the user but long enough to cover
         // fragmented delivery over SSH.  If nothing arrives, treat \033 as bare ESC.
-#ifdef _WIN32
-        char b1 = rb();
-#else
         char b1 = rb_timeout(50);
-#endif
         if (b1 != '[')
         {
             ev.type = InputEvent::Type::Key;
@@ -290,9 +295,6 @@ namespace platform
             return ev;
         }
 
-#ifdef _WIN32
-        char b2 = rb();
-#else
         char b2 = rb_timeout(50);
         if (b2 == 0)
         {
@@ -300,7 +302,6 @@ namespace platform
             ev.key = KEY_ESCAPE;
             return ev;
         }
-#endif
 
         // ── SGR mouse: \033[<btn;x;yM (press/scroll) or \033[<btn;x;ym (release) ──
         if (b2 == '<')
@@ -310,13 +311,9 @@ namespace platform
             char fin = 0;
             for (;;)
             {
-#ifdef _WIN32
-                char d = rb();
-#else
                 char d = rb_timeout(50);
                 if (d == 0)
                     break; // incomplete sequence — discard
-#endif
                 if (d == ';')
                 {
                     if (ni < 2)
