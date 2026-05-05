@@ -50,6 +50,13 @@ public:
         m_color[static_cast<size_t>(y * m_width + x)] = color;
     }
 
+    inline Color get_pixel(int x, int y) const
+    {
+        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+            return {};
+        return m_color[static_cast<size_t>(y * m_width + x)];
+    }
+
     // Unchecked variants — caller guarantees 0 <= x < width, 0 <= y < height.
     // Used by the rasterizer inner loop where setup_tri already clamps bounds.
     inline bool unchecked_test_and_set_depth(int x, int y, float depth)

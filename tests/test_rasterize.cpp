@@ -376,3 +376,298 @@ TEST(framebuffer, set_pixel_out_of_bounds_no_crash)
     fb.set_pixel(0, 10, Color{255, 0, 0});
     fb.set_pixel(-100, -100, Color{0, 0, 0});
 }
+
+// ─── perspective-correct interpolation ───────────────────────────────────────
+//
+// Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40×20 framebuffer.
+// Key pixel centres and their pre-computed screen-space barycentric weights:
+//
+//   Pixel (12,10) — centre (12.5,10.5): ba=0.46875, bb=0,       bc=0.53125
+//   Pixel (27,10) — centre (27.5,10.5): ba=0,       bb=0.46875, bc=0.53125
+//   Pixel (20,10) — centre (20.5,10.5): ba=0.21875, bb=0.25,    bc=0.53125
+//
+// All values derived analytically from setup_tri's formulas and verified below.
+
+// Call rasterize() with per-vertex colours (no texture, no shadow).
+static void rast_colored(Framebuffer &fb,
+                         vec3 sa, vec3 sb, vec3 sc,
+                         float wa, float wb, float wc,
+                         vec3 ca, vec3 cb, vec3 cc,
+                         int y_min, int y_max)
+{
+    vec3 zero{};
+    rasterize(fb, sa, sb, sc,
+              wa, wb, wc,
+              ca, cb, cc,
+              ca, cb, cc,
+              zero, zero, zero,
+              vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
+              nullptr, nullptr,
+              y_min, y_max);
+}
+
+// Assert pixel (x,y) is channel-wise within ±tol of expected.
+static void assert_pixel_near(Framebuffer &fb, int x, int y, Color expected, int tol)
+{
+    Color got = fb.get_pixel(x, y);
+    int dr = std::abs(static_cast<int>(got.r) - static_cast<int>(expected.r));
+    int dg = std::abs(static_cast<int>(got.g) - static_cast<int>(expected.g));
+    int db = std::abs(static_cast<int>(got.b) - static_cast<int>(expected.b));
+    if (dr > tol || dg > tol || db > tol)
+        ASSERT_FAIL("pixel(" + std::to_string(x) + "," + std::to_string(y) + ")"
+                                                                             " expected~(" +
+                    std::to_string(static_cast<int>(expected.r)) + "," + std::to_string(static_cast<int>(expected.g)) + "," + std::to_string(static_cast<int>(expected.b)) + ")"
+                                                                                                                                                                             " got(" +
+                    std::to_string(static_cast<int>(got.r)) + "," + std::to_string(static_cast<int>(got.g)) + "," + std::to_string(static_cast<int>(got.b)) + ")"
+                                                                                                                                                              " tol=" +
+                    std::to_string(tol));
+}
+
+// ── Group A: equal-w invariance ───────────────────────────────────────────────
+
+// With wa=wb=wc (uniform), perspective-correct reduces to plain barycentric.
+// Scaling all three w's by the same factor must not change pixel colours.
+TEST(rasterize, equal_w_nontrivial_matches_w1)
+{
+    // Colours: a=red, b=green, c=blue.  At pixel (20,10): ba=0.21875, bb=0.25, bc=0.53125.
+    // Expected: R≈55, G≈63, B≈135 for any uniform w.
+    FdRedirect r;
+    vec3 red{1.0f, 0.0f, 0.0f}, green{0.0f, 1.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+
+    Framebuffer fb1(40, 20), fb2(40, 20);
+    rast_colored(fb1, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, green, blue, 0, 19);
+    rast_colored(fb2, sa, sb, sc, 5.0f, 5.0f, 5.0f, red, green, blue, 0, 19);
+
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    ASSERT_TRUE(was_drawn(fb2, 20, 10));
+    // Both runs must agree channel-wise
+    assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 2);
+    // And the colour must match the analytic expectation
+    assert_pixel_near(fb1, 20, 10, Color{55, 63, 135}, 4);
+}
+
+// Same invariance check for the Phong path using AO as the varying attribute.
+// aoc=1, others=0; ambient=(1,0,0).  At pixel (20,10): ao=bc=0.53125 → R≈135.
+TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
+{
+    FdRedirect r;
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    vec3 ambient{1.0f, 0.0f, 0.0f};
+    Material mat{};
+
+    auto rph = [&](Framebuffer &fb, float wa, float wb, float wc)
+    {
+        rasterize_phong(fb, sa, sb, sc, wa, wb, wc,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
+                        0.0f, 0.0f, 1.0f,
+                        white, white, white, false,
+                        eye, nullptr, 0, ambient, mat,
+                        nullptr, nullptr, nullptr, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb1(40, 20), fb2(40, 20);
+    rph(fb1, 1.0f, 1.0f, 1.0f);
+    rph(fb2, 5.0f, 5.0f, 5.0f);
+
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    ASSERT_TRUE(was_drawn(fb2, 20, 10));
+    assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 2);
+    // ao≈0.531 → R≈135
+    assert_pixel_near(fb1, 20, 10, Color{135, 0, 0}, 5);
+}
+
+// Depth must not be affected by w values (depth is linearly interpolated).
+// Using uniform wa=wb=wc=10 with constant depth 0.5 — depth must still be 0.5.
+TEST(rasterize, equal_w_does_not_change_depth)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 white{1.0f, 1.0f, 1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 10.0f, 10.0f, 10.0f, white, white, white, 0, 19);
+
+    assert_depth_near(fb, 20, 10, 0.5f, 0.01f);
+}
+
+// ── Group B: unequal w biases attributes toward the smaller-w (nearer) vertex ─
+
+// a=(red), b=(red), c=(blue); wa=wb=10 (far), wc=1 (near).
+// Pixel (12,10) is at the screen midpoint of edge a→c.
+// Perspective-correct: R≈20, B≈234 (biased toward near blue vertex c).
+TEST(rasterize, unequal_w_color_biased_to_near_vertex)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 10.0f, 10.0f, 1.0f,
+                 red, red, blue,
+                 0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 12, 10));
+    Color c = fb.get_pixel(12, 10);
+    if (c.r > 50)
+        ASSERT_FAIL("R too high (" + std::to_string(static_cast<int>(c.r)) +
+                    "): expected bias toward blue near vertex");
+    if (c.b < 200)
+        ASSERT_FAIL("B too low (" + std::to_string(static_cast<int>(c.b)) +
+                    "): expected bias toward blue near vertex");
+}
+
+// a=white(far), b=red(near), c=green(far); wb=1, wa=wc=10.
+// Pixel (27,10) is at the screen midpoint of edge b→c.
+// Perspective-correct: R≈229, G≈26 (biased toward near red vertex b).
+// Linear interpolation would give R≈120, G≈135.
+TEST(rasterize, unequal_w_screen_midpoint_not_attribute_midpoint)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 white{1.0f, 1.0f, 1.0f}, red{1.0f, 0.0f, 0.0f}, green{0.0f, 1.0f, 0.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 10.0f, 1.0f, 10.0f,
+                 white, red, green,
+                 0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 27, 10));
+    Color c = fb.get_pixel(27, 10);
+    if (c.r < 200)
+        ASSERT_FAIL("R too low (" + std::to_string(static_cast<int>(c.r)) +
+                    "): expected bias toward near red vertex b");
+    if (c.g > 50)
+        ASSERT_FAIL("G too high (" + std::to_string(static_cast<int>(c.g)) +
+                    "): green (far) vertex should contribute little");
+}
+
+// Phong path: aoc=1 (only c has AO); wa=wb=10 (far), wc=1 (near).
+// Pixel (12,10): perspective-correct ao≈0.919 → R≈234.
+// Baseline with equal w: linear ao=bc≈0.531 → R≈135.
+// The unequal-w run must be significantly brighter than the equal-w baseline.
+TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
+{
+    FdRedirect r;
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    vec3 ambient{1.0f, 0.0f, 0.0f};
+    Material mat{};
+
+    auto rph = [&](Framebuffer &fb, float wa, float wb, float wc)
+    {
+        rasterize_phong(fb, sa, sb, sc, wa, wb, wc,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
+                        0.0f, 0.0f, 1.0f,
+                        white, white, white, false,
+                        eye, nullptr, 0, ambient, mat,
+                        nullptr, nullptr, nullptr, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb_persp(40, 20), fb_linear(40, 20);
+    rph(fb_persp, 10.0f, 10.0f, 1.0f);
+    rph(fb_linear, 1.0f, 1.0f, 1.0f);
+
+    ASSERT_TRUE(was_drawn(fb_persp, 12, 10));
+    ASSERT_TRUE(was_drawn(fb_linear, 12, 10));
+
+    // Perspective-correct: ao≈0.919 → R≥200
+    if (fb_persp.get_pixel(12, 10).r < 200)
+        ASSERT_FAIL("R too low for perspective-correct run: expected ao≈0.919 at (12,10)");
+    // Linear baseline: ao≈0.531 → R≤160
+    if (fb_linear.get_pixel(12, 10).r > 160)
+        ASSERT_FAIL("R too high for linear baseline: expected ao≈0.531 at (12,10)");
+}
+
+// Extreme w ratio (wc=1000): the contribution of c must be negligible.
+// a=red, b=red, c=blue; wa=wb=1, wc=1000. At centroid (20,10): R≈255, B≈0.
+// Also verifies no NaN/inf crashes from near-zero gamma/wc contribution.
+TEST(rasterize, extreme_w_ratio_numerical_stability)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 1.0f, 1.0f, 1000.0f,
+                 red, red, blue,
+                 0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 250)
+        ASSERT_FAIL("R too low (" + std::to_string(static_cast<int>(c.r)) +
+                    "): far blue vertex (wc=1000) should contribute nearly zero");
+    if (c.b > 5)
+        ASSERT_FAIL("B too high (" + std::to_string(static_cast<int>(c.b)) +
+                    "): far blue vertex (wc=1000) should contribute nearly zero");
+}
+
+// ── Group C: depth interpolation is linear (not perspective-corrected) ────────
+
+// z_ndc varies: sa.z=0.2, sc.z=0.8; wa=wb=10, wc=1.
+// At pixel (12,10): linear depth = 0.46875*0.2 + 0*0.2 + 0.53125*0.8 = 0.51875.
+// Perspective-correct depth would be ≈0.751 — far outside the tolerance window.
+TEST(rasterize, unequal_w_depth_still_linear)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 white{1.0f, 1.0f, 1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.2f}, {36.0f, 2.0f, 0.2f}, {20.0f, 18.0f, 0.8f},
+                 10.0f, 10.0f, 1.0f,
+                 white, white, white,
+                 0, 19);
+
+    assert_depth_near(fb, 12, 10, 0.519f, 0.015f);
+}
+
+// Same depth-linearity invariant in the Phong rasterizer path.
+TEST(rasterize_phong, unequal_w_depth_still_linear)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    Material mat{};
+    vec3 ambient{0.5f, 0.5f, 0.5f};
+
+    rasterize_phong(fb,
+                    {4.0f, 2.0f, 0.2f}, {36.0f, 2.0f, 0.2f}, {20.0f, 18.0f, 0.8f},
+                    10.0f, 10.0f, 1.0f,
+                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                    vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
+                    1.0f, 1.0f, 1.0f,
+                    white, white, white, false,
+                    eye, nullptr, 0, ambient, mat,
+                    nullptr, nullptr, nullptr, nullptr,
+                    0, 19);
+
+    assert_depth_near(fb, 12, 10, 0.519f, 0.015f);
+}
+
+// ── Group D: y_band clipping is unaffected by w values ───────────────────────
+
+// Repeats the band-clipping test with wa=wb=10, wc=1 to confirm perspective
+// correction does not bleed into the row-exclusion decision.
+TEST(rasterize, unequal_w_y_band_unaffected)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 white{1.0f, 1.0f, 1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 10.0f, 10.0f, 1.0f,
+                 white, white, white,
+                 6, 12);
+
+    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
+    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
+}
