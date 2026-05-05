@@ -40,18 +40,18 @@ target_compile_options(rasterminal_warnings INTERFACE
 # Tier 1: CPU-agnostic speed flags — applied in both release and portable builds.
 add_library(rasterminal_release_opts INTERFACE)
 target_compile_options(rasterminal_release_opts INTERFACE
-  $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
     -fno-rtti;-fomit-frame-pointer;-fstrict-aliasing;
     -fmerge-all-constants;-fvisibility=hidden;
     -fno-stack-protector;-fno-asynchronous-unwind-tables;-pipe>
-  $<$<CXX_COMPILER_ID:GNU>:
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:
     -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
-  $<$<CXX_COMPILER_ID:MSVC>:/O2;/Oi;/Ot;/fp:fast;/GR->
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/Oi;/Ot;/fp:fast;/GR->
   # Tier 2: machine-specific — omitted when RASTERMINAL_PORTABLE=ON.
-  $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
-  $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
 # LTO — CMake picks the right form per compiler (-flto=auto / -flto=thin / /GL+/LTCG).
 include(CheckIPOSupported)
@@ -81,7 +81,9 @@ target_link_libraries(rasterminal PRIVATE
   rasterminal_release_opts
   Threads::Threads)
 if(ipo_ok)
-  set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+  set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+  set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+  set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
 endif()
 
 # ─── Test binary ──────────────────────────────────────────────────────────────
@@ -90,13 +92,13 @@ if(RASTERMINAL_BUILD_TESTS)
   # GCC-only opts, but keep safety flags (-fstack-protector-strong).
   add_library(rasterminal_test_opts INTERFACE)
   target_compile_options(rasterminal_test_opts INTERFACE
-    $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
       -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
       -fomit-frame-pointer;-fstrict-aliasing;
       -fstack-protector-strong;-D_FORTIFY_SOURCE=2;-pipe>
-    $<$<CXX_COMPILER_ID:MSVC>:/O2;/Oi;/Ot;/fp:fast;/GS>
-    $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
-    $<$<AND:$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/Oi;/Ot;/fp:fast;/GS>
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
   add_executable(rasterminal_tests
     tests/test_main.cpp
@@ -132,7 +134,9 @@ if(RASTERMINAL_BUILD_TESTS)
     rasterminal_test_opts
     Threads::Threads)
   if(ipo_ok)
-    set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
+    set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+    set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
+    set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL TRUE)
   endif()
 
   enable_testing()
