@@ -56,6 +56,7 @@ SRCS = src/main.cpp \
        src/texture.cpp
 
 HDRS = src/args.h \
+       src/clip.h \
        src/linalg.h \
        src/framebuffer.h \
        src/mesh.h \
@@ -76,7 +77,7 @@ release: $(TARGET)
 portable: CXXFLAGS = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
 portable: $(TARGET)
 
-debug: CXXFLAGS = -std=c++17 $(WARNINGS) -O0 -g -pthread $(VENDOR_INC)
+debug: CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
 debug: $(TARGET)
 
 # ─── tests ────────────────────────────────────────────────────────────────────
@@ -112,7 +113,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/framebuffer.cpp \
               src/shadow.cpp
 
-$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h
+$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h
 	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
 
 test: $(TEST_TARGET)

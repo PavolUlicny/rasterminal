@@ -48,7 +48,7 @@ target_compile_options(rasterminal_release_opts INTERFACE
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:
     -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
-  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/Oi;/Ot;/fp:fast;/GR->
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR->
   # Tier 2: machine-specific — omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
@@ -88,7 +88,7 @@ endif()
 
 # ─── Test binary ──────────────────────────────────────────────────────────────
 if(RASTERMINAL_BUILD_TESTS)
-  # Tests drop -fno-rtti (test framework uses try/catch) and the aggressive
+  # Tests drop -fno-rtti (test framework needs RTTI) and the aggressive
   # GCC-only opts, but keep safety flags (-fstack-protector-strong).
   add_library(rasterminal_test_opts INTERFACE)
   target_compile_options(rasterminal_test_opts INTERFACE
@@ -96,7 +96,7 @@ if(RASTERMINAL_BUILD_TESTS)
       -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
       -fomit-frame-pointer;-fstrict-aliasing;
       -fstack-protector-strong;-D_FORTIFY_SOURCE=2;-pipe>
-    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/Oi;/Ot;/fp:fast;/GS>
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
