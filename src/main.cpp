@@ -222,8 +222,8 @@ int main(int argc, char *argv[])
             {
                 int dx = ev.x - mouse_last_x;
                 int dy = ev.y - mouse_last_y;
-                camera.yaw -= static_cast<float>(dx) * 0.02f;
-                camera.pitch += static_cast<float>(dy) * 0.04f;
+                camera.yaw -= static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
+                camera.pitch += static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
             }
