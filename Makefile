@@ -101,6 +101,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_shadow.cpp \
               tests/test_rasterize.cpp \
               tests/test_rasterize_texture.cpp \
+              tests/test_rasterize_vcol.cpp \
               tests/test_gltf.cpp \
               src/args.cpp \
               src/mesh.cpp \
