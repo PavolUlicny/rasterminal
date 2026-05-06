@@ -105,3 +105,13 @@ TEST(shadow, light_pointing_up_uses_x_axis_fallback)
     float sf = shadow_map.in_shadow({0.0f, 0.0f, 0.0f});
     ASSERT_TRUE(sf >= 0.0f && sf <= 1.0f);
 }
+
+TEST(shadow, surface_point_not_self_shadowed_by_slope_bias)
+{
+    // A point ON the triangle surface (z=0) must not be in shadow under its own
+    // depth write. The slope-scale bias adds a positive offset to stored depth
+    // so the surface cannot occlude itself.
+    // Catches: slope bias removed or too small → acne on every surface.
+    ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
+    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+}
