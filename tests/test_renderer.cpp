@@ -736,3 +736,163 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
     if (count_drawn_pixels(fb) != 0)
         ASSERT_FAIL("near_plane=10 must reject all vertices (clip w=5 < near_plane)");
 }
+
+// ─── grid mesh helper ─────────────────────────────────────────────────────────
+
+// Build a grid_w×grid_h cell mesh over x,y ∈ [-half, +half] at z=0.
+// Each cell splits into 2 CCW front-facing triangles → 2*grid_w*grid_h tris.
+// With grid_w=grid_h=16 and half=4, the test camera (fov=π/2, aspect 2,
+// eye=(0,0,5)) projects the grid to screen rect (12..28)×(2..18) ≈ 256 px.
+// 512 triangles with 4 workers → choose_phase1_chunk=64 → ~2 chunks/worker.
+static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
+{
+    Mesh m;
+    const float dx = 2.0f * half / static_cast<float>(grid_w);
+    const float dy = 2.0f * half / static_cast<float>(grid_h);
+
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+    for (int j = 0; j <= grid_h; j++)
+        for (int i = 0; i <= grid_w; i++)
+        {
+            v.pos = {-half + static_cast<float>(i) * dx,
+                     -half + static_cast<float>(j) * dy,
+                     0.0f};
+            m.vertices.push_back(v);
+        }
+
+    m.tangents.resize(m.vertices.size(), {1.0f, 0.0f, 0.0f});
+
+    for (int j = 0; j < grid_h; j++)
+        for (int i = 0; i < grid_w; i++)
+        {
+            const auto v00 = static_cast<uint32_t>(j * (grid_w + 1) + i);
+            const auto v10 = static_cast<uint32_t>(j * (grid_w + 1) + i + 1);
+            const auto v01 = static_cast<uint32_t>((j + 1) * (grid_w + 1) + i);
+            const auto v11 = static_cast<uint32_t>((j + 1) * (grid_w + 1) + i + 1);
+            Triangle tri{};
+            tri.material_idx = 0;
+            tri.v[0] = v00;
+            tri.v[1] = v10;
+            tri.v[2] = v11;
+            m.triangles.push_back(tri);
+            tri.v[0] = v00;
+            tri.v[1] = v11;
+            tri.v[2] = v01;
+            m.triangles.push_back(tri);
+        }
+
+    m.materials.push_back(Material{});
+    return m;
+}
+
+// ─── Group H — multiple triangles / work-stealing at scale ───────────────────
+//
+// 16×16 grid = 512 triangles. With 4 workers, choose_phase1_chunk=64
+// → 8 chunks → ~2 iterations per worker in the Phase 1 steal loop.
+// Projected coverage: screen rect (12..28)×(2..18) ≈ 256 pixels.
+
+// H1: 512-triangle grid renders with expected pixel coverage (single worker).
+// Catches: chunk-loop early exit → only ~12% of grid processed.
+TEST(renderer, many_triangles_grid_renders_expected_coverage)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_grid_mesh(16, 16);
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+    int drawn = count_drawn_pixels(fb);
+    if (drawn < 200)
+        ASSERT_FAIL("grid: only " + std::to_string(drawn) + " pixels drawn, expected ≥200");
+}
+
+// H2: same grid with 1 vs 4 workers → identical pixel counts.
+// Catches: worker data race, cursor double-claim, band ordering bug.
+TEST(renderer, many_triangles_consistent_across_thread_counts)
+{
+    FdRedirect rd;
+    Mesh mesh = make_grid_mesh(16, 16);
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+
+    Framebuffer fb1(40, 20), fb4(40, 20);
+    fb1.clear();
+    fb4.clear();
+    {
+        Renderer r1(1);
+        r1.mode = ShadingMode::Gouraud;
+        r1.render(mesh, cam, &light, 1, ambient, fb1);
+    }
+    {
+        Renderer r4(4);
+        r4.mode = ShadingMode::Gouraud;
+        r4.render(mesh, cam, &light, 1, ambient, fb4);
+    }
+
+    int n1 = count_drawn_pixels(fb1);
+    int n4 = count_drawn_pixels(fb4);
+    if (n1 != n4)
+        ASSERT_FAIL("1-worker drew " + std::to_string(n1) + " px, 4-worker drew " +
+                    std::to_string(n4) + " px: must match");
+}
+
+// H3: rendering same mesh twice reuses same Renderer → second frame must match.
+// Catches: m_tri_cursor not reset → second render claims 0 work → empty fb2.
+TEST(renderer, many_triangles_repeated_render_resets_cursor)
+{
+    FdRedirect rd;
+    Renderer r(2);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_grid_mesh(16, 16);
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+
+    Framebuffer fb1(40, 20), fb2(40, 20);
+    fb1.clear();
+    fb2.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb1);
+    r.render(mesh, cam, &light, 1, ambient, fb2);
+
+    int n1 = count_drawn_pixels(fb1);
+    int n2 = count_drawn_pixels(fb2);
+    if (n1 != n2)
+        ASSERT_FAIL("second render drew " + std::to_string(n2) + " px vs first " +
+                    std::to_string(n1) + ": m_tri_cursor may not have been reset");
+    assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
+}
+
+// H4: after rendering a full grid, rendering an empty mesh must produce nothing.
+// Catches: m_band_tris not cleared → Phase 2 iterates stale RasterTris from
+// the previous frame and draws the grid again.
+TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
+{
+    FdRedirect rd;
+    Renderer r(2);
+    r.mode = ShadingMode::Gouraud;
+    Mesh grid = make_grid_mesh(16, 16);
+    Mesh empty;
+    empty.materials.push_back(Material{});
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+
+    Framebuffer fb1(40, 20), fb2(40, 20);
+    fb1.clear();
+    fb2.clear();
+    r.render(grid, cam, &light, 1, ambient, fb1);
+    r.render(empty, cam, &light, 1, ambient, fb2);
+
+    int n = count_drawn_pixels(fb2);
+    if (n != 0)
+        ASSERT_FAIL("empty mesh after grid: " + std::to_string(n) +
+                    " stale pixels remain — m_band_tris may not be cleared between frames");
+}
