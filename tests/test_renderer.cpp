@@ -448,6 +448,103 @@ TEST(renderer, large_triangle_spans_all_bands)
         ASSERT_FAIL("no pixel drawn at y=17 (band 3): band bucketing gap");
 }
 
+// ─── near-clip mesh helpers ───────────────────────────────────────────────────
+//
+// Camera eye=(0,0,5), near_plane=0.1.  Clip w = 5 − world_z.
+// World z=0   → w=5   (comfortably in front).
+// World z=4.95 → w=0.05 (behind near plane → clipped).
+
+// Two vertices in front (z=0), one behind (z=4.95).
+// clip_near: 2 inside, 1 outside → 2 output triangles.
+// Face normal·(eye−v0) = 0.4 > 0 → front-facing.
+static Mesh make_straddling_triangle_one_behind()
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.pos = {-2.0f, -2.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {2.0f, -2.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 0.0f, 4.95f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+    m.materials.push_back(Material{});
+    return m;
+}
+
+// One vertex in front (z=0), two behind (z=4.95).
+// clip_near: 1 inside, 2 outside → 1 output triangle.
+// Winding chosen so face normal·(eye−v0) > 0 (front-facing).
+// After clip, screen vertices ≈ (20,14)-(29,12)-(11,12) → ~18 px area.
+static Mesh make_straddling_triangle_two_behind()
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.pos = {0.0f, -2.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.09f, 0.0f, 4.95f};
+    m.vertices.push_back(v);
+    v.pos = {-0.09f, 0.0f, 4.95f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+    m.materials.push_back(Material{});
+    return m;
+}
+
+// All three vertices behind the near plane (z=4.95, w=0.05 < near=0.1).
+// clip_near returns 0 → nothing rasterized.
+// Face normal = (0,0,4): front-facing so backface cull passes first.
+static Mesh make_fully_behind_triangle()
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.pos = {-1.0f, -1.0f, 4.95f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, 4.95f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, 4.95f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+    m.materials.push_back(Material{});
+    return m;
+}
+
 // ─── Group F — lights, shadow, texture toggle ─────────────────────────────────
 
 // F1: n_lights=0 → ambient-only output; passing a non-null shadow_map must not crash.
@@ -529,4 +626,113 @@ TEST(renderer, show_texture_toggle_changes_pixel)
         ASSERT_FAIL("show_texture=false: R too low (" + std::to_string(static_cast<int>(cn.r)) + ")");
     if (cn.g < 200)
         ASSERT_FAIL("show_texture=false: G too low (" + std::to_string(static_cast<int>(cn.g)) + ")");
+}
+
+// ─── Group G — near-plane clip integration ────────────────────────────────────
+//
+// Camera: eye=(0,0,5), near_plane=0.1. Clip w = 5 − world_z.
+// Vertices at z=4.95 have w=0.05 → behind near plane (w < 0.1).
+// All tests verify that Renderer::render() forwards clip_near results correctly
+// for both the MT (Gouraud/Phong) and wireframe code paths.
+
+// G1: one vertex behind near plane, two in front.
+// clip_near produces 2 output tris → pixels must be drawn (MT path).
+TEST(renderer, near_clip_one_vertex_behind_renders)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_straddling_triangle_one_behind();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+    if (count_drawn_pixels(fb) == 0)
+        ASSERT_FAIL("one-vertex-behind triangle: clip_near must produce visible output");
+}
+
+// G2: two vertices behind near plane, one in front.
+// clip_near produces 1 output tri → pixels must be drawn (MT path).
+TEST(renderer, near_clip_two_vertices_behind_renders)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_straddling_triangle_two_behind();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+    if (count_drawn_pixels(fb) == 0)
+        ASSERT_FAIL("two-vertices-behind triangle: clip_near must produce visible output");
+}
+
+// G3: all three vertices behind near plane → clip_near returns 0 → no pixels (MT path).
+TEST(renderer, near_clip_fully_behind_draws_nothing)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_fully_behind_triangle();
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, {0.1f, 0.1f, 0.1f}, fb);
+    if (count_drawn_pixels(fb) != 0)
+        ASSERT_FAIL("fully-behind triangle must not produce any pixels");
+}
+
+// G4: wireframe path with a straddling triangle → clip_near fires → pixels drawn.
+// Covers the separate clip_near call in the wireframe branch (renderer.cpp:430).
+TEST(renderer, near_clip_wireframe_straddling_renders)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Wireframe;
+    Mesh mesh = make_straddling_triangle_one_behind();
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    if (count_drawn_pixels(fb) == 0)
+        ASSERT_FAIL("wireframe: straddling triangle must draw clipped edges");
+}
+
+// G5: wireframe path with all vertices behind → no pixels.
+TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Wireframe;
+    Mesh mesh = make_fully_behind_triangle();
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    if (count_drawn_pixels(fb) != 0)
+        ASSERT_FAIL("wireframe: fully-behind triangle must produce no pixels");
+}
+
+// G6: raising camera.near_plane above all clip-w values rejects a front-facing
+// triangle that would otherwise render. Verifies m_near_plane is forwarded from
+// camera.near_plane in the MT dispatch path (renderer.cpp:480).
+TEST(renderer, near_clip_uses_camera_near_plane_value)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_unit_triangle(); // all vertices at z=0, clip w=5
+    Camera cam = make_test_camera();
+    cam.near_plane = 10.0f; // all w=5 < 10 → clip_near returns 0 for every tri
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+    if (count_drawn_pixels(fb) != 0)
+        ASSERT_FAIL("near_plane=10 must reject all vertices (clip w=5 < near_plane)");
 }
