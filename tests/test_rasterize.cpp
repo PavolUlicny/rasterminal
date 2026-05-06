@@ -1,52 +1,6 @@
 #include "test.h"
+#include "rasterize_test_util.h"
 #include "../src/rasterize.h"
-
-#include <cstdio>
-#include <limits>
-
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-// Redirects stdout to /dev/null. Must outlive any Framebuffer in the same scope
-// so that the Framebuffer ctor/dtor ANSI escape codes are silenced.
-struct FdRedirect
-{
-    int saved_out;
-    FdRedirect()
-    {
-        std::fflush(stdout);
-        saved_out = test_dup(TEST_STDOUT);
-        int dn = test_devnull();
-        test_dup2(dn, TEST_STDOUT);
-        test_close(dn);
-    }
-    ~FdRedirect()
-    {
-        std::fflush(stdout);
-        test_dup2(saved_out, TEST_STDOUT);
-        test_close(saved_out);
-    }
-};
-
-// Returns true iff pixel (x,y) was drawn (stored depth < +inf).
-// One-shot: mutates the depth of undrawn pixels. Do not probe the same pixel twice.
-static bool was_drawn(Framebuffer &fb, int x, int y)
-{
-    return !fb.test_and_set_depth(x, y, std::numeric_limits<float>::max());
-}
-
-// Assert stored depth at (x,y) is within eps of D.
-// Two one-shot probes — call only after all drawing is done.
-static void assert_depth_near(Framebuffer &fb, int x, int y, float D, float eps)
-{
-    // D+eps probe does not mutate (returns false → no write).
-    if (fb.test_and_set_depth(x, y, D + eps))
-        ASSERT_FAIL("depth > " + std::to_string(D + eps) + " at (" +
-                    std::to_string(x) + "," + std::to_string(y) + ")");
-    // D-eps probe mutates stored to D-eps if it passes (returns true).
-    if (!fb.test_and_set_depth(x, y, D - eps))
-        ASSERT_FAIL("depth <= " + std::to_string(D - eps) + " at (" +
-                    std::to_string(x) + "," + std::to_string(y) + ")");
-}
 
 // Call rasterize() with white flat colour, no texture/shadow, on the given band.
 static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_max)
@@ -404,23 +358,6 @@ static void rast_colored(Framebuffer &fb,
               vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
               nullptr, nullptr,
               y_min, y_max);
-}
-
-// Assert pixel (x,y) is channel-wise within ±tol of expected.
-static void assert_pixel_near(Framebuffer &fb, int x, int y, Color expected, int tol)
-{
-    Color got = fb.get_pixel(x, y);
-    int dr = std::abs(static_cast<int>(got.r) - static_cast<int>(expected.r));
-    int dg = std::abs(static_cast<int>(got.g) - static_cast<int>(expected.g));
-    int db = std::abs(static_cast<int>(got.b) - static_cast<int>(expected.b));
-    if (dr > tol || dg > tol || db > tol)
-        ASSERT_FAIL("pixel(" + std::to_string(x) + "," + std::to_string(y) + ")"
-                                                                             " expected~(" +
-                    std::to_string(static_cast<int>(expected.r)) + "," + std::to_string(static_cast<int>(expected.g)) + "," + std::to_string(static_cast<int>(expected.b)) + ")"
-                                                                                                                                                                             " got(" +
-                    std::to_string(static_cast<int>(got.r)) + "," + std::to_string(static_cast<int>(got.g)) + "," + std::to_string(static_cast<int>(got.b)) + ")"
-                                                                                                                                                              " tol=" +
-                    std::to_string(tol));
 }
 
 // ── Group A: equal-w invariance ───────────────────────────────────────────────

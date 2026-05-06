@@ -1,0 +1,71 @@
+#pragma once
+
+#include "test.h"
+#include "../src/framebuffer.h"
+
+#include <cstdio>
+#include <limits>
+#include <string>
+
+// Redirects stdout to /dev/null for the duration of its lifetime.
+// Must outlive any Framebuffer in the same scope so that the Framebuffer
+// ctor/dtor ANSI escape codes are silenced.
+struct FdRedirect
+{
+    int saved_out;
+    FdRedirect()
+    {
+        std::fflush(stdout);
+        saved_out = test_dup(TEST_STDOUT);
+        int dn = test_devnull();
+        test_dup2(dn, TEST_STDOUT);
+        test_close(dn);
+    }
+    ~FdRedirect()
+    {
+        std::fflush(stdout);
+        test_dup2(saved_out, TEST_STDOUT);
+        test_close(saved_out);
+    }
+};
+
+// Returns true iff pixel (x,y) was drawn (stored depth < +inf).
+// One-shot on undrawn pixels: mutates their depth. Do not probe the same
+// undrawn pixel twice.
+static inline bool was_drawn(Framebuffer &fb, int x, int y)
+{
+    return !fb.test_and_set_depth(x, y, std::numeric_limits<float>::max());
+}
+
+// Assert stored depth at (x,y) is within eps of D.
+// Call only after all drawing is done.
+static inline void assert_depth_near(Framebuffer &fb, int x, int y, float D, float eps)
+{
+    if (fb.test_and_set_depth(x, y, D + eps))
+        ASSERT_FAIL("depth > " + std::to_string(D + eps) + " at (" +
+                    std::to_string(x) + "," + std::to_string(y) + ")");
+    if (!fb.test_and_set_depth(x, y, D - eps))
+        ASSERT_FAIL("depth <= " + std::to_string(D - eps) + " at (" +
+                    std::to_string(x) + "," + std::to_string(y) + ")");
+}
+
+// Assert pixel (x,y) is channel-wise within ±tol of expected.
+static inline void assert_pixel_near(Framebuffer &fb, int x, int y, Color expected, int tol)
+{
+    Color got = fb.get_pixel(x, y);
+    int dr = std::abs(static_cast<int>(got.r) - static_cast<int>(expected.r));
+    int dg = std::abs(static_cast<int>(got.g) - static_cast<int>(expected.g));
+    int db = std::abs(static_cast<int>(got.b) - static_cast<int>(expected.b));
+    if (dr > tol || dg > tol || db > tol)
+        ASSERT_FAIL("pixel(" + std::to_string(x) + "," + std::to_string(y) + ")"
+                                                                             " expected~(" +
+                    std::to_string(static_cast<int>(expected.r)) + "," +
+                    std::to_string(static_cast<int>(expected.g)) + "," +
+                    std::to_string(static_cast<int>(expected.b)) + ")"
+                                                                   " got(" +
+                    std::to_string(static_cast<int>(got.r)) + "," +
+                    std::to_string(static_cast<int>(got.g)) + "," +
+                    std::to_string(static_cast<int>(got.b)) + ")"
+                                                              " tol=" +
+                    std::to_string(tol));
+}

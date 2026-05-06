@@ -100,6 +100,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_args.cpp \
               tests/test_shadow.cpp \
               tests/test_rasterize.cpp \
+              tests/test_rasterize_texture.cpp \
               tests/test_gltf.cpp \
               src/args.cpp \
               src/mesh.cpp \
@@ -113,7 +114,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/framebuffer.cpp \
               src/shadow.cpp
 
-$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h
+$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h
 	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
 
 test: $(TEST_TARGET)

@@ -116,6 +116,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_args.cpp
     tests/test_shadow.cpp
     tests/test_rasterize.cpp
+    tests/test_rasterize_texture.cpp
     tests/test_gltf.cpp
     src/args.cpp
     src/mesh.cpp
