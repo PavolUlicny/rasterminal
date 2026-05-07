@@ -896,3 +896,255 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
         ASSERT_FAIL("empty mesh after grid: " + std::to_string(n) +
                     " stale pixels remain — m_band_tris may not be cleared between frames");
 }
+
+// ─── AO mesh helpers ──────────────────────────────────────────────────────────
+
+// Same geometry as make_unit_triangle (front-facing, centre pixel (20,10))
+// but with caller-specified per-vertex AO values.
+static Mesh make_unit_triangle_ao(float ao_a, float ao_b, float ao_c)
+{
+    Mesh m;
+    Vertex v{};
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.ao = ao_a;
+    v.pos = {-1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.ao = ao_b;
+    v.pos = {1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.ao = ao_c;
+    v.pos = {0.0f, 1.0f, 0.0f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+    m.materials.push_back(Material{});
+    return m;
+}
+
+// Same geometry as make_screen_triangle (sa≈(12,18), sb≈(28,18), sc≈(20,2))
+// but with caller-specified per-vertex AO values.
+// Samples near a: pixel (13,17); near c: pixel (20,3).
+static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
+{
+    Mesh m;
+    Vertex v{};
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.ao = ao_a;
+    v.pos = {-4.0f, -4.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.ao = ao_b;
+    v.pos = {4.0f, -4.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.ao = ao_c;
+    v.pos = {0.0f, 4.0f, 0.0f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+    m.materials.push_back(Material{});
+    return m;
+}
+
+// ─── Group I — AO end-to-end ──────────────────────────────────────────────────
+//
+// Strategy: n_lights=0 so compute_lighting output = ambient * mat.ambient * ao.
+// With ambient=(0.8,0,0) and default mat.ambient=(1,1,1):
+//   ao=1.0  → R ≈ 204
+//   ao=0.0  → R = 0
+//   ao=1/3  → R ≈ 68  (Flat average of 1+0+0)
+
+// I1: Flat — all ao=0 → ambient term zero → pixel is essentially black.
+// Catches: ao dropped from ClipVert construction or Flat face_ao path.
+TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+    Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 5)
+        ASSERT_FAIL("flat ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+}
+
+// I8: Flat — all ao=1 → full ambient → bright baseline.
+// Counterpart to I1: ensures the n_lights=0 + ambient setup actually produces
+// a bright pixel when ao=1, making the uniform-zero tests falsifiable.
+TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+    Mesh mesh = make_unit_triangle_ao(1.0f, 1.0f, 1.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 180)
+        ASSERT_FAIL("flat ao=1: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≥180");
+}
+
+// I2: Flat — ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
+// Catches: Flat picking a single vertex's ao instead of averaging.
+TEST(renderer, flat_ao_averaged_across_vertices)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+    Mesh mesh = make_unit_triangle_ao(1.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    // face_ao = (1+0+0)/3 ≈ 0.333 → R = 0.8*0.333*255 ≈ 68; allow [50,90].
+    if (c.r < 50 || c.r > 90)
+        ASSERT_FAIL("flat ao avg: R=" + std::to_string(static_cast<int>(c.r)) +
+                    " expected 50-90 (face_ao≈1/3)");
+}
+
+// I3: Gouraud — all ao=0 → all compute_lighting calls yield 0 ambient → black.
+// Catches: ao dropped from any of the three Gouraud compute_lighting calls.
+TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 5)
+        ASSERT_FAIL("gouraud ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+}
+
+// I4: Gouraud — ao=(1,0,0) → colour gradient across triangle.
+// Pixel near v0 (sa≈(12,18)) should be bright; pixel near v2 (sc≈(20,2)) dark.
+// Catches: Gouraud hardcoding ao=1 or using the wrong vertex's ao.
+TEST(renderer, gouraud_ao_interpolates_across_triangle)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 13, 17));
+    ASSERT_TRUE(was_drawn(fb, 20, 3));
+    int r_near_a = static_cast<int>(fb.get_pixel(13, 17).r);
+    int r_near_c = static_cast<int>(fb.get_pixel(20, 3).r);
+    if (r_near_a < 120)
+        ASSERT_FAIL("gouraud ao interp: near-a R=" + std::to_string(r_near_a) + " expected ≥120");
+    if (r_near_c > 30)
+        ASSERT_FAIL("gouraud ao interp: near-c R=" + std::to_string(r_near_c) + " expected ≤30");
+    if (r_near_a - r_near_c < 80)
+        ASSERT_FAIL("gouraud ao interp: gradient=" + std::to_string(r_near_a - r_near_c) + " expected ≥80");
+}
+
+// I5: Phong — all ao=0 → rasterize_phong produces 0 ambient → black.
+// Catches: ao not copied into rt.ph.aoa/b/c or not forwarded to rasterize_phong.
+TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 5)
+        ASSERT_FAIL("phong ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+}
+
+// I6: Phong — ao=(1,0,0) → per-pixel AO gradient across triangle.
+// Catches: Phong using a uniform ao or hardcoding ao=1 per pixel.
+TEST(renderer, phong_ao_interpolates_per_pixel)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
+    Camera cam = make_test_camera();
+    vec3 ambient{0.8f, 0.0f, 0.0f};
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 13, 17));
+    ASSERT_TRUE(was_drawn(fb, 20, 3));
+    int r_near_a = static_cast<int>(fb.get_pixel(13, 17).r);
+    int r_near_c = static_cast<int>(fb.get_pixel(20, 3).r);
+    if (r_near_a < 120)
+        ASSERT_FAIL("phong ao interp: near-a R=" + std::to_string(r_near_a) + " expected ≥120");
+    if (r_near_c > 30)
+        ASSERT_FAIL("phong ao interp: near-c R=" + std::to_string(r_near_c) + " expected ≤30");
+    if (r_near_a - r_near_c < 80)
+        ASSERT_FAIL("phong ao interp: gradient=" + std::to_string(r_near_a - r_near_c) + " expected ≥80");
+}
+
+// I7: AO must not affect direct diffuse (only ambient).
+// Render once with ao=0 and once with ao=1; ambient=0 so the ao×ambient
+// term is zero in both cases.  Both centre pixels must match within ±1.
+// Catches: a regression multiplying AO into the diffuse term.
+TEST(renderer, ao_does_not_affect_direct_diffuse)
+{
+    FdRedirect rd;
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({0.5f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Framebuffer fb0(40, 20), fb1(40, 20);
+    fb0.clear();
+    fb1.clear();
+
+    Mesh mesh_ao0 = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
+    Mesh mesh_ao1 = make_unit_triangle_ao(1.0f, 1.0f, 1.0f);
+    r.render(mesh_ao0, cam, &light, 1, ambient, fb0);
+    r.render(mesh_ao1, cam, &light, 1, ambient, fb1);
+
+    ASSERT_TRUE(was_drawn(fb0, 20, 10));
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    // Diffuse is the same regardless of AO when ambient=0.
+    assert_pixel_near(fb0, 20, 10, fb1.get_pixel(20, 10), 1);
+}
