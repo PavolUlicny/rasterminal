@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── CMake: all platforms, compilers, build types, portable toggle ────────────
+  cmake:
+    name: cmake / ${{ matrix.os }} ${{ matrix.label }} ${{ matrix.build_type }}
+      portable=${{ matrix.portable }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux — GCC
+          - {
+              os: ubuntu-latest,
+              label: gcc,
+              cc: gcc,
+              cxx: g++,
+              build_type: Release,
+              portable: OFF,
+            }
+          - {
+              os: ubuntu-latest,
+              label: gcc,
+              cc: gcc,
+              cxx: g++,
+              build_type: Release,
+              portable: ON,
+            }
+          - {
+              os: ubuntu-latest,
+              label: gcc,
+              cc: gcc,
+              cxx: g++,
+              build_type: Debug,
+              portable: OFF,
+            }
+          # Linux — Clang
+          - {
+              os: ubuntu-latest,
+              label: clang,
+              cc: clang,
+              cxx: clang++,
+              build_type: Release,
+              portable: OFF,
+            }
+          - {
+              os: ubuntu-latest,
+              label: clang,
+              cc: clang,
+              cxx: clang++,
+              build_type: Release,
+              portable: ON,
+            }
+          - {
+              os: ubuntu-latest,
+              label: clang,
+              cc: clang,
+              cxx: clang++,
+              build_type: Debug,
+              portable: OFF,
+            }
+          # macOS — AppleClang (platform default; Debug×Portable=ON omitted — same flags as OFF)
+          - { os: macos-latest, label: appleclang, build_type: Release, portable: OFF }
+          - { os: macos-latest, label: appleclang, build_type: Release, portable: ON }
+          - { os: macos-latest, label: appleclang, build_type: Debug, portable: OFF }
+          # Windows — MSVC (multi-config VS generator; CMAKE_BUILD_TYPE ignored at configure time)
+          - { os: windows-latest, label: msvc, build_type: Release, portable: OFF }
+          - { os: windows-latest, label: msvc, build_type: Release, portable: ON }
+          - { os: windows-latest, label: msvc, build_type: Debug, portable: OFF }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DRASTERMINAL_PORTABLE=${{ matrix.portable }} ${{ matrix.cc  &&
+          format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
+          && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} -j
+
+      - name: Test
+        run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+
+  # ── Make: Linux + macOS, GCC + Clang, all four targets ──────────────────────
+  make:
+    name: make / ${{ matrix.os }} ${{ matrix.cxx }} ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux — GCC
+          - { os: ubuntu-latest, cxx: g++, target: release }
+          - { os: ubuntu-latest, cxx: g++, target: portable }
+          - { os: ubuntu-latest, cxx: g++, target: debug }
+          - { os: ubuntu-latest, cxx: g++, target: test }
+          # Linux — Clang
+          - { os: ubuntu-latest, cxx: clang++, target: release }
+          - { os: ubuntu-latest, cxx: clang++, target: portable }
+          - { os: ubuntu-latest, cxx: clang++, target: debug }
+          - { os: ubuntu-latest, cxx: clang++, target: test }
+          # macOS — AppleClang (explicit clang++ avoids g++→clang symlink ambiguity)
+          - { os: macos-latest, cxx: clang++, target: release }
+          - { os: macos-latest, cxx: clang++, target: portable }
+          - { os: macos-latest, cxx: clang++, target: debug }
+          - { os: macos-latest, cxx: clang++, target: test }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
+        run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}

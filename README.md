@@ -1,5 +1,7 @@
 # rasterminal
 
+[![CI](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml)
+
 A software 3D rasterizer that renders entirely in the terminal. No GPU, no windowing system — just Unicode half-block characters (▀) and 24-bit ANSI colour, one cell per two vertical pixels.
 
 ## Features
