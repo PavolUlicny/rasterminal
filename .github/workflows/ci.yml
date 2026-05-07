@@ -122,3 +122,41 @@ jobs:
 
       - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
         run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}
+
+  # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────
+  sanitizers:
+    name: sanitizer / ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: asan-ubsan
+            san_flags: -fsanitize=address,undefined -fno-sanitize-recover=undefined
+              -fno-omit-frame-pointer
+            asan_options: detect_leaks=1:halt_on_error=1:abort_on_error=1
+            ubsan_options: halt_on_error=1:print_stacktrace=1
+          - label: tsan
+            san_flags: -fsanitize=thread -fno-omit-frame-pointer
+            tsan_options: halt_on_error=1:second_deadlock_stack=1
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure
+        env:
+          CC: clang
+          CXX: clang++
+          CXXFLAGS: ${{ matrix.san_flags }}
+          LDFLAGS: ${{ matrix.san_flags }}
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --config Debug -j
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: ${{ matrix.asan_options }}
+          UBSAN_OPTIONS: ${{ matrix.ubsan_options }}
+          TSAN_OPTIONS: ${{ matrix.tsan_options }}
+        run: ctest --test-dir build -C Debug --output-on-failure
