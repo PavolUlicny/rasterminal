@@ -1,5 +1,6 @@
 #include "test.h"
 #include "../src/linalg.h"
+#include <cmath>
 
 // ─── vec3 ─────────────────────────────────────────────────────────────────────
 
@@ -111,6 +112,49 @@ TEST(mat4, compose_translation_then_scale)
     ASSERT_NEAR(p.x, 2.0f, 1e-6f); // (0,0,0) → translate → (1,0,0) → scale×2 → (2,0,0)
 }
 
+TEST(mat4, default_constructor_is_zero)
+{
+    mat4 m;
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            ASSERT_NEAR(m.m[c][r], 0.0f, 0.0f);
+}
+
+TEST(mat4, transposed_is_involution)
+{
+    mat4 M = translation(1.0f, 2.0f, 3.0f);
+    mat4 TT = M.transposed().transposed();
+    for (int c = 0; c < 4; c++)
+        for (int r = 0; r < 4; r++)
+            ASSERT_NEAR(TT.m[c][r], M.m[c][r], 1e-6f);
+}
+
+TEST(mat4, multiplication_is_associative)
+{
+    mat4 A = translation(1.0f, 0.0f, 0.0f);
+    mat4 B = rotation_y(to_radians(45.0f));
+    mat4 C = scale(2.0f);
+    vec4 p{1.0f, 1.0f, 1.0f, 1.0f};
+    vec4 lhs = (A * B) * C * p;
+    vec4 rhs = A * (B * C) * p;
+    ASSERT_NEAR(lhs.x, rhs.x, 1e-4f);
+    ASSERT_NEAR(lhs.y, rhs.y, 1e-4f);
+    ASSERT_NEAR(lhs.z, rhs.z, 1e-4f);
+    ASSERT_NEAR(lhs.w, rhs.w, 1e-4f);
+}
+
+TEST(mat4, multiplication_is_noncommutative)
+{
+    // T*R * origin ≠ R*T * origin for non-trivial T and R.
+    mat4 T = translation(1.0f, 0.0f, 0.0f);
+    mat4 R = rotation_y(to_radians(90.0f));
+    vec4 origin{0.0f, 0.0f, 0.0f, 1.0f};
+    vec4 tr = T * R * origin; // rotate first (no-op on origin), then translate: (1,0,0)
+    vec4 rt = R * T * origin; // translate first → (1,0,0), then rotate 90° around Y → (0,0,-1)
+    float diff = (tr - rt).xyz().length();
+    ASSERT_TRUE(diff > 0.5f);
+}
+
 // ─── projection ───────────────────────────────────────────────────────────────
 
 TEST(perspective, point_on_near_plane_has_z_ndc_minus_one)
@@ -127,6 +171,25 @@ TEST(perspective, point_on_far_plane_has_z_ndc_plus_one)
     vec4 clip = P * vec4{0, 0, -100, 1};
     vec3 ndc = clip.perspective_divide();
     ASSERT_NEAR(ndc.z, 1.0f, 1e-5f);
+}
+
+TEST(perspective, off_axis_point_within_frustum_projects_inside_ndc)
+{
+    mat4 P = perspective(to_radians(60.0f), 1.0f, 1.0f, 100.0f);
+    vec4 clip = P * vec4{0.5f, 0.3f, -10.0f, 1.0f};
+    vec3 ndc = clip.perspective_divide();
+    ASSERT_TRUE(ndc.x > -1.0f && ndc.x < 1.0f);
+    ASSERT_TRUE(ndc.y > -1.0f && ndc.y < 1.0f);
+    ASSERT_TRUE(ndc.z > -1.0f && ndc.z < 1.0f);
+}
+
+TEST(perspective, wide_aspect_squashes_x_relative_to_y)
+{
+    // aspect=2: the x extent is twice the y extent, so equal scene coords produce smaller ndc.x.
+    mat4 P = perspective(to_radians(60.0f), 2.0f, 1.0f, 100.0f);
+    vec4 clip = P * vec4{1.0f, 1.0f, -5.0f, 1.0f};
+    vec3 ndc = clip.perspective_divide();
+    ASSERT_TRUE(std::abs(ndc.x) < std::abs(ndc.y));
 }
 
 // ─── utilities ────────────────────────────────────────────────────────────────
@@ -201,6 +264,132 @@ TEST(vec3, reflect_45_degree_flips_y)
     ASSERT_NEAR(r.z, 0.0f, 1e-5f);
 }
 
+TEST(vec3, normalize_unit_vector_is_idempotent)
+{
+    vec3 n = normalize(vec3{1.0f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(n.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.z, 0.0f, 1e-6f);
+}
+
+TEST(vec3, normalize_just_above_threshold)
+{
+    // length_sq = 1e-6, well above the 1e-16 guard; must normalize to unit.
+    vec3 n = normalize(vec3{1e-3f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.length(), 1.0f, 1e-5f);
+}
+
+TEST(vec3, normalize_below_threshold_returns_zero)
+{
+    // length_sq ≈ 1e-20, below the 1e-16 guard → returns {0,0,0}.
+    vec3 n = normalize(vec3{1e-10f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.z, 0.0f, 1e-6f);
+}
+
+TEST(vec3, cross_parallel_returns_zero)
+{
+    // {1,2,3} and {2,4,6} are parallel (scalar multiple); cross product is zero.
+    vec3 r = cross(vec3{1, 2, 3}, vec3{2, 4, 6});
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+TEST(vec3, cross_self_is_zero)
+{
+    vec3 a{1.0f, 2.0f, 3.0f};
+    vec3 r = cross(a, a);
+    ASSERT_NEAR(r.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-6f);
+}
+
+TEST(vec3, dot_orthogonal_is_zero)
+{
+    ASSERT_NEAR(dot(vec3{1, 0, 0}, vec3{0, 1, 0}), 0.0f, 1e-6f);
+    ASSERT_NEAR(dot(vec3{0, 1, 0}, vec3{0, 0, 1}), 0.0f, 1e-6f);
+    ASSERT_NEAR(dot(vec3{1, 0, 0}, vec3{0, 0, 1}), 0.0f, 1e-6f);
+}
+
+TEST(vec3, dot_self_is_length_sq)
+{
+    vec3 v{3.0f, 4.0f, 5.0f};
+    ASSERT_NEAR(dot(v, v), v.length_sq(), 1e-5f);
+}
+
+TEST(vec3, reflect_preserves_magnitude)
+{
+    vec3 incident{1.0f, -2.0f, 0.5f};
+    vec3 r = reflect(incident, vec3{0.0f, 1.0f, 0.0f});
+    ASSERT_NEAR(r.length(), incident.length(), 1e-5f);
+}
+
+TEST(vec3, reflect_grazing_returns_incident)
+{
+    // incident purely tangent to surface → dot(incident, normal) = 0 → reflected == incident.
+    vec3 r = reflect(vec3{1.0f, 0.0f, 0.0f}, vec3{0.0f, 1.0f, 0.0f});
+    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-6f);
+}
+
+TEST(vec3, lerp_extrapolates_past_one)
+{
+    vec3 a{0, 0, 0}, b{1, 1, 1};
+    vec3 r = lerp(a, b, 2.0f);
+    ASSERT_NEAR(r.x, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 2.0f, 1e-6f);
+}
+
+TEST(vec3, lerp_negative_t)
+{
+    vec3 a{1, 1, 1}, b{3, 3, 3};
+    vec3 r = lerp(a, b, -1.0f);
+    ASSERT_NEAR(r.x, -1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, -1.0f, 1e-6f);
+    ASSERT_NEAR(r.z, -1.0f, 1e-6f);
+}
+
+TEST(vec3, arithmetic_operators_componentwise)
+{
+    vec3 a{1.0f, 2.0f, 3.0f};
+    a += vec3{4.0f, 5.0f, 6.0f};
+    ASSERT_NEAR(a.x, 5.0f, 1e-6f);
+    ASSERT_NEAR(a.y, 7.0f, 1e-6f);
+    ASSERT_NEAR(a.z, 9.0f, 1e-6f);
+
+    vec3 b{2.0f, 3.0f, 4.0f};
+    b *= 2.0f;
+    ASSERT_NEAR(b.x, 4.0f, 1e-6f);
+    ASSERT_NEAR(b.y, 6.0f, 1e-6f);
+    ASSERT_NEAR(b.z, 8.0f, 1e-6f);
+
+    vec3 neg = -vec3{1.0f, -2.0f, 3.0f};
+    ASSERT_NEAR(neg.x, -1.0f, 1e-6f);
+    ASSERT_NEAR(neg.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(neg.z, -3.0f, 1e-6f);
+
+    vec3 cw = vec3{1.0f, 2.0f, 3.0f} * vec3{4.0f, 5.0f, 6.0f};
+    ASSERT_NEAR(cw.x, 4.0f, 1e-6f);
+    ASSERT_NEAR(cw.y, 10.0f, 1e-6f);
+    ASSERT_NEAR(cw.z, 18.0f, 1e-6f);
+
+    vec3 dv = vec3{4.0f, 6.0f, 8.0f} / 2.0f;
+    ASSERT_NEAR(dv.x, 2.0f, 1e-6f);
+    ASSERT_NEAR(dv.y, 3.0f, 1e-6f);
+    ASSERT_NEAR(dv.z, 4.0f, 1e-6f);
+}
+
+TEST(vec3, length_sq_matches_length_squared)
+{
+    vec3 v{3.0f, 4.0f, 5.0f};
+    float l = v.length();
+    ASSERT_NEAR(v.length_sq(), l * l, 1e-4f);
+}
+
 // ─── vec4 ─────────────────────────────────────────────────────────────────────
 
 TEST(vec4, perspective_divide_divides_by_w)
@@ -219,6 +408,48 @@ TEST(vec4, perspective_divide_w_one_is_identity)
     ASSERT_NEAR(r.x, 3.0f, 1e-6f);
     ASSERT_NEAR(r.y, 5.0f, 1e-6f);
     ASSERT_NEAR(r.z, 7.0f, 1e-6f);
+}
+
+TEST(vec4, perspective_divide_negative_w)
+{
+    // Negative w is well-defined: divides all components by w.
+    vec3 r = vec4{2.0f, 4.0f, 6.0f, -2.0f}.perspective_divide();
+    ASSERT_NEAR(r.x, -1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, -2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, -3.0f, 1e-6f);
+}
+
+TEST(vec4, arithmetic_operators)
+{
+    vec4 a{1.0f, 2.0f, 3.0f, 4.0f};
+    vec4 b{5.0f, 6.0f, 7.0f, 8.0f};
+    vec4 s = a + b;
+    ASSERT_NEAR(s.x, 6.0f, 1e-6f);
+    ASSERT_NEAR(s.y, 8.0f, 1e-6f);
+    ASSERT_NEAR(s.z, 10.0f, 1e-6f);
+    ASSERT_NEAR(s.w, 12.0f, 1e-6f);
+
+    vec4 d = b - a;
+    ASSERT_NEAR(d.x, 4.0f, 1e-6f);
+    ASSERT_NEAR(d.y, 4.0f, 1e-6f);
+    ASSERT_NEAR(d.z, 4.0f, 1e-6f);
+    ASSERT_NEAR(d.w, 4.0f, 1e-6f);
+
+    vec4 m = a * 3.0f;
+    ASSERT_NEAR(m.x, 3.0f, 1e-6f);
+    ASSERT_NEAR(m.y, 6.0f, 1e-6f);
+    ASSERT_NEAR(m.z, 9.0f, 1e-6f);
+    ASSERT_NEAR(m.w, 12.0f, 1e-6f);
+}
+
+TEST(vec4, vec3_constructor_copies_xyz)
+{
+    vec3 v{1.0f, 2.0f, 3.0f};
+    vec4 r{v, 5.0f};
+    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-6f);
+    ASSERT_NEAR(r.z, 3.0f, 1e-6f);
+    ASSERT_NEAR(r.w, 5.0f, 1e-6f);
 }
 
 // ─── rotation_x / rotation_z ─────────────────────────────────────────────────
@@ -259,6 +490,55 @@ TEST(rotation_z, 90deg_maps_y_axis_to_neg_x)
     ASSERT_NEAR(r.z, 0.0f, 1e-5f);
 }
 
+TEST(rotation_x, full_turn_is_identity)
+{
+    mat4 R = rotation_x(to_radians(360.0f));
+    vec4 p = R * vec4{1.0f, 2.0f, 3.0f, 1.0f};
+    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
+    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
+}
+
+TEST(rotation_y, full_turn_is_identity)
+{
+    mat4 R = rotation_y(to_radians(360.0f));
+    vec4 p = R * vec4{1.0f, 2.0f, 3.0f, 1.0f};
+    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
+    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
+}
+
+TEST(rotation_z, full_turn_is_identity)
+{
+    mat4 R = rotation_z(to_radians(360.0f));
+    vec4 p = R * vec4{1.0f, 2.0f, 3.0f, 1.0f};
+    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
+    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
+}
+
+TEST(rotation_y, negative_is_inverse)
+{
+    float angle = to_radians(73.0f);
+    mat4 R = rotation_y(angle);
+    mat4 Rinv = rotation_y(-angle);
+    vec4 p{1.0f, 2.0f, 3.0f, 1.0f};
+    vec4 r = Rinv * (R * p);
+    ASSERT_NEAR(r.x, p.x, 1e-4f);
+    ASSERT_NEAR(r.y, p.y, 1e-4f);
+    ASSERT_NEAR(r.z, p.z, 1e-4f);
+}
+
+TEST(rotation_y, zero_is_identity)
+{
+    mat4 R = rotation_y(0.0f);
+    vec4 p{1.0f, 2.0f, 3.0f, 1.0f};
+    vec4 r = R * p;
+    ASSERT_NEAR(r.x, p.x, 1e-6f);
+    ASSERT_NEAR(r.y, p.y, 1e-6f);
+    ASSERT_NEAR(r.z, p.z, 1e-6f);
+}
+
 // ─── look_at ──────────────────────────────────────────────────────────────────
 
 TEST(look_at, eye_transforms_to_origin)
@@ -295,6 +575,51 @@ TEST(look_at, upper_left_3x3_is_orthonormal)
     ASSERT_NEAR(dot(row0, row1), 0.0f, 1e-5f);
     ASSERT_NEAR(dot(row0, row2), 0.0f, 1e-5f);
     ASSERT_NEAR(dot(row1, row2), 0.0f, 1e-5f);
+}
+
+TEST(look_at, non_unit_up_is_reorthogonalised)
+{
+    // up is neither unit-length nor perpendicular to forward; cross+normalize fixes it.
+    vec3 eye{0, 0, 5}, target{0, 0, 0}, up{0.5f, 1.0f, 0.0f};
+    mat4 V = look_at(eye, target, up);
+    vec3 row0{V.m[0][0], V.m[1][0], V.m[2][0]};
+    vec3 row1{V.m[0][1], V.m[1][1], V.m[2][1]};
+    vec3 row2{V.m[0][2], V.m[1][2], V.m[2][2]};
+    ASSERT_NEAR(row0.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(row1.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(row2.length(), 1.0f, 1e-5f);
+    ASSERT_NEAR(dot(row0, row1), 0.0f, 1e-5f);
+}
+
+TEST(look_at, up_parallel_to_forward_degenerates_right_row)
+{
+    // forward = (0,0,-1), up = (0,0,1) → cross = 0 → normalize returns 0 → r row is zero.
+    vec3 eye{0, 0, 5}, target{0, 0, 0}, up{0, 0, 1};
+    mat4 V = look_at(eye, target, up);
+    ASSERT_NEAR(V.m[0][0], 0.0f, 1e-6f);
+    ASSERT_NEAR(V.m[1][0], 0.0f, 1e-6f);
+    ASSERT_NEAR(V.m[2][0], 0.0f, 1e-6f);
+}
+
+TEST(look_at, eye_equals_target_degenerates_rotation)
+{
+    // forward = normalize(0) = 0 → all rotation rows are zero.
+    vec3 pos{1, 2, 3};
+    mat4 V = look_at(pos, pos, vec3{0, 1, 0});
+    vec3 row0{V.m[0][0], V.m[1][0], V.m[2][0]};
+    vec3 row1{V.m[0][1], V.m[1][1], V.m[2][1]};
+    ASSERT_NEAR(row0.length(), 0.0f, 1e-6f);
+    ASSERT_NEAR(row1.length(), 0.0f, 1e-6f);
+}
+
+TEST(look_at, non_axis_aligned_eye_maps_to_origin)
+{
+    vec3 eye{3, 4, 5}, target{1, 1, 1}, up{0, 1, 0};
+    mat4 V = look_at(eye, target, up);
+    vec4 e = V * vec4{eye, 1.0f};
+    ASSERT_NEAR(e.x, 0.0f, 1e-4f);
+    ASSERT_NEAR(e.y, 0.0f, 1e-4f);
+    ASSERT_NEAR(e.z, 0.0f, 1e-4f);
 }
 
 // ─── quat ─────────────────────────────────────────────────────────────────────
@@ -388,4 +713,95 @@ TEST(quat, composition_is_noncommutative)
     vec3 ryx = (ry * rx).rotate({0, 1, 0});
     float diff = (rxy - ryx).length();
     ASSERT_TRUE(diff > 0.1f);
+}
+
+TEST(quat, normalize_unit_is_idempotent)
+{
+    quat q = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(45.0f));
+    quat n = normalize(q);
+    float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
+    // Normalizing again should leave it unchanged.
+    quat nn = normalize(n);
+    ASSERT_NEAR(nn.x, n.x, 1e-6f);
+    ASSERT_NEAR(nn.y, n.y, 1e-6f);
+    ASSERT_NEAR(nn.z, n.z, 1e-6f);
+    ASSERT_NEAR(nn.w, n.w, 1e-6f);
+}
+
+TEST(quat, normalize_below_threshold_returns_identity)
+{
+    // length_sq = 1e-10 < 1e-8 threshold → returns identity.
+    quat n = normalize(quat{1e-5f, 0.0f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.z, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.w, 1.0f, 1e-6f);
+}
+
+TEST(quat, from_axis_angle_full_turn_is_no_op)
+{
+    vec3 v{1.0f, 2.0f, 3.0f};
+    quat q = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(360.0f));
+    vec3 r = q.rotate(v);
+    ASSERT_NEAR(r.x, v.x, 1e-4f);
+    ASSERT_NEAR(r.y, v.y, 1e-4f);
+    ASSERT_NEAR(r.z, v.z, 1e-4f);
+}
+
+TEST(quat, from_axis_angle_zero_angle_is_identity)
+{
+    vec3 v{1.0f, 2.0f, 3.0f};
+    quat q = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, 0.0f);
+    vec3 r = q.rotate(v);
+    ASSERT_NEAR(r.x, v.x, 1e-6f);
+    ASSERT_NEAR(r.y, v.y, 1e-6f);
+    ASSERT_NEAR(r.z, v.z, 1e-6f);
+}
+
+TEST(quat, from_axis_angle_negative_is_inverse)
+{
+    vec3 v{1.0f, 0.0f, 0.0f};
+    vec3 axis{0.0f, 1.0f, 0.0f};
+    float angle = to_radians(73.0f);
+    quat q_fwd = quat::from_axis_angle(axis, angle);
+    quat q_bwd = quat::from_axis_angle(axis, -angle);
+    vec3 r = q_bwd.rotate(q_fwd.rotate(v));
+    ASSERT_NEAR(r.x, v.x, 1e-4f);
+    ASSERT_NEAR(r.y, v.y, 1e-4f);
+    ASSERT_NEAR(r.z, v.z, 1e-4f);
+}
+
+TEST(quat, from_axis_angle_non_unit_axis_scales_imaginary)
+{
+    // Precondition: axis must be unit. With axis=(2,0,0), imaginary part = axis*sin(half).
+    // At 90°, sin(45°) ≈ 0.7071, so q.x ≈ 2*0.7071 ≈ 1.414 > 1.
+    quat q = quat::from_axis_angle({2.0f, 0.0f, 0.0f}, to_radians(90.0f));
+    ASSERT_TRUE(q.x > 1.0f);
+}
+
+// ─── util edge cases ─────────────────────────────────────────────────────────
+
+TEST(util, clamp_lo_equals_hi)
+{
+    ASSERT_NEAR(clamp(0.0f, 5.0f, 5.0f), 5.0f, 0.0f);
+    ASSERT_NEAR(clamp(5.0f, 5.0f, 5.0f), 5.0f, 0.0f);
+    ASSERT_NEAR(clamp(10.0f, 5.0f, 5.0f), 5.0f, 0.0f);
+}
+
+TEST(util, clamp_negative_range)
+{
+    ASSERT_NEAR(clamp(-15.0f, -10.0f, -1.0f), -10.0f, 0.0f);
+    ASSERT_NEAR(clamp(-5.0f, -10.0f, -1.0f), -5.0f, 0.0f);
+    ASSERT_NEAR(clamp(5.0f, -10.0f, -1.0f), -1.0f, 0.0f);
+}
+
+TEST(util, to_radians_negative)
+{
+    ASSERT_NEAR(to_radians(-180.0f), -3.14159265f, 1e-5f);
+}
+
+TEST(util, to_radians_360)
+{
+    ASSERT_NEAR(to_radians(360.0f), 2.0f * 3.14159265f, 1e-5f);
 }
