@@ -75,7 +75,7 @@ void Framebuffer::present()
 
     const int term_rows = m_height / 2;
 
-    char tmp[32];
+    char tmp[48]; // 36 bytes worst case for combined fg+bg SGR sequence
     int n;
 
     // Track last-emitted fg/bg across all cells (including between rows) —
@@ -108,46 +108,48 @@ void Framebuffer::present()
             const Color &top = m_color[static_cast<size_t>(top_base + col)];
             const Color &bot = m_color[static_cast<size_t>(bot_base + col)];
 
-            // Foreground (top pixel): ESC[38;2;R;G;Bm — emit only on change.
-            if (first_cell || top.r != prev_fg.r || top.g != prev_fg.g || top.b != prev_fg.b)
-            {
-                tmp[0] = '\033';
-                tmp[1] = '[';
-                tmp[2] = '3';
-                tmp[3] = '8';
-                tmp[4] = ';';
-                tmp[5] = '2';
-                tmp[6] = ';';
-                n = 7;
-                n += write_int(tmp + n, top.r);
-                tmp[n++] = ';';
-                n += write_int(tmp + n, top.g);
-                tmp[n++] = ';';
-                n += write_int(tmp + n, top.b);
-                tmp[n++] = 'm';
-                m_buf.append(tmp, static_cast<size_t>(n));
-                prev_fg = top;
-            }
+            const bool fg_change = first_cell || top.r != prev_fg.r || top.g != prev_fg.g || top.b != prev_fg.b;
+            const bool bg_change = first_cell || bot.r != prev_bg.r || bot.g != prev_bg.g || bot.b != prev_bg.b;
 
-            // Background (bottom pixel): ESC[48;2;R;G;Bm — emit only on change.
-            if (first_cell || bot.r != prev_bg.r || bot.g != prev_bg.g || bot.b != prev_bg.b)
+            // One SGR sequence covering whichever of fg/bg changed; combining when
+            // both change avoids a redundant ESC[ header and closing m.
+            if (fg_change || bg_change)
             {
                 tmp[0] = '\033';
                 tmp[1] = '[';
-                tmp[2] = '4';
-                tmp[3] = '8';
-                tmp[4] = ';';
-                tmp[5] = '2';
-                tmp[6] = ';';
-                n = 7;
-                n += write_int(tmp + n, bot.r);
-                tmp[n++] = ';';
-                n += write_int(tmp + n, bot.g);
-                tmp[n++] = ';';
-                n += write_int(tmp + n, bot.b);
+                n = 2;
+                if (fg_change)
+                {
+                    tmp[n++] = '3';
+                    tmp[n++] = '8';
+                    tmp[n++] = ';';
+                    tmp[n++] = '2';
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, top.r);
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, top.g);
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, top.b);
+                    prev_fg = top;
+                    if (bg_change)
+                        tmp[n++] = ';';
+                }
+                if (bg_change)
+                {
+                    tmp[n++] = '4';
+                    tmp[n++] = '8';
+                    tmp[n++] = ';';
+                    tmp[n++] = '2';
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, bot.r);
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, bot.g);
+                    tmp[n++] = ';';
+                    n += write_int(tmp + n, bot.b);
+                    prev_bg = bot;
+                }
                 tmp[n++] = 'm';
                 m_buf.append(tmp, static_cast<size_t>(n));
-                prev_bg = bot;
             }
 
             first_cell = false;
