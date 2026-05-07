@@ -729,3 +729,109 @@ TEST(args, texture_invalid_value_is_error)
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
+
+// ─── error: integer overflow / compact-form numeric errors ───────────────────
+
+TEST(args, threads_long_overflow_is_error)
+{
+    // 20-digit value exceeds LONG_MAX on any platform → errno == ERANGE.
+    ParseResult r = run({"--threads", "99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, threads_compact_overflow_is_error)
+{
+    ParseResult r = run({"-j99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_long_overflow_is_error)
+{
+    ParseResult r = run({"--fps", "99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_compact_overflow_is_error)
+{
+    ParseResult r = run({"-f99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, threads_compact_zero_is_error)
+{
+    ParseResult r = run({"-j0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_compact_zero_is_error)
+{
+    ParseResult r = run({"-f0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, threads_compact_non_digit_is_error)
+{
+    ParseResult r = run({"-jabc", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_compact_non_digit_is_error)
+{
+    ParseResult r = run({"-fabc", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, threads_short_explicit_zero_is_error)
+{
+    // -j 0 (space-separated explicit zero) is an error, same as --threads 0.
+    ParseResult r = run({"-j", "0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, fps_short_explicit_zero_is_error)
+{
+    ParseResult r = run({"-f", "0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── error: boolean flags reject =value (all branches) ───────────────────────
+
+TEST(args, help_with_equals_value_is_error)
+{
+    ParseResult r = run({"--help=foo", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_ao_with_equals_value_is_error)
+{
+    ParseResult r = run({"--no-ao=on", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_hud_with_equals_value_is_error)
+{
+    ParseResult r = run({"--no-hud=on", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── error: empty value after = ──────────────────────────────────────────────
+
+TEST(args, empty_value_after_equals_is_error)
+{
+    ASSERT_FALSE(run({"--shading=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--bg=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--threads=", "m.obj"}).ok);
+}
