@@ -105,6 +105,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_rasterize_shadow.cpp \
               tests/test_gltf.cpp \
               tests/test_renderer.cpp \
+              tests/test_renderer_ao_clip.cpp \
               src/args.cpp \
               src/renderer.cpp \
               src/mesh.cpp \
