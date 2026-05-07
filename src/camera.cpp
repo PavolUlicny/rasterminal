@@ -7,10 +7,12 @@ vec3 Camera::eye() const
     return target + orientation.rotate({0.0f, 0.0f, 1.0f}) * distance;
 }
 
-mat4 Camera::view() const
+mat4 Camera::view(const vec3 &eye_pos) const
 {
-    return look_at(eye(), target, orientation.rotate({0.0f, 1.0f, 0.0f}));
+    return look_at(eye_pos, target, orientation.rotate({0.0f, 1.0f, 0.0f}));
 }
+
+mat4 Camera::view() const { return view(eye()); }
 
 mat4 Camera::projection(int pixel_width, int pixel_height) const
 {

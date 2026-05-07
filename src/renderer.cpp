@@ -397,10 +397,10 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                       const Light *lights, int n_lights, const vec3 &ambient,
                       Framebuffer &fb, const ShadowMap *shadow_map)
 {
-    const mat4 view = camera.view();
+    const vec3 eye = camera.eye();
+    const mat4 view = camera.view(eye);
     const mat4 proj = camera.projection(fb.width(), fb.height());
     const mat4 vp = proj * view;
-    const vec3 eye = camera.eye();
     const int width = fb.width();
     const int height = fb.height();
     const ShadowMap *active_shadow_map = (n_lights > 0) ? shadow_map : nullptr;

@@ -16,6 +16,7 @@ struct Camera
     vec3 eye() const;
 
     mat4 view() const;
+    mat4 view(const vec3 &eye_pos) const;
     mat4 projection(int pixel_width, int pixel_height) const;
 
     // Update camera state from a single key event.
