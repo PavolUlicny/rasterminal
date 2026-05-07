@@ -946,3 +946,218 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
     if (c.g < 150)
         ASSERT_FAIL("Gouraud multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g)));
 }
+
+// ─── Group L: depth-buffer ordering ──────────────────────────────────────────
+// Two overlapping unit triangles at different z depths. The closer one
+// (z=+1, camera at +5) must win every contested pixel regardless of which
+// triangle appears first in the mesh.
+//
+// Analytical NDC z values with the test camera (near=0.1, far=100, fov=π/2):
+//   Closer  (world z=+1 → view_z=-4): ndc_z ≈ 0.952
+//   Farther (world z=-1 → view_z=-6): ndc_z ≈ 0.969
+// The smaller value wins the depth test.
+//
+// Material colours: closer → red (diffuse+ambient=(1,0,0))
+//                   farther → blue (diffuse+ambient=(0,0,1))
+// A lit closer pixel has R≥200, B≤30. A lit farther pixel has the opposite.
+
+static Mesh make_two_z_triangles(bool closer_first)
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.uv = {0.5f, 0.5f};
+
+    // Closer (z=+1): vertices share z=+1, normal +z.
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.pos = {-1.0f, -1.0f, 1.0f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, 1.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, 1.0f};
+    m.vertices.push_back(v);
+
+    // Farther (z=-1): same XY, shifted back.
+    v.pos = {-1.0f, -1.0f, -1.0f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, -1.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, -1.0f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(6, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri_close{}, tri_far{};
+    tri_close.v[0] = 0;
+    tri_close.v[1] = 1;
+    tri_close.v[2] = 2;
+    tri_close.material_idx = 0;
+    tri_far.v[0] = 3;
+    tri_far.v[1] = 4;
+    tri_far.v[2] = 5;
+    tri_far.material_idx = 1;
+
+    if (closer_first)
+    {
+        m.triangles.push_back(tri_close);
+        m.triangles.push_back(tri_far);
+    }
+    else
+    {
+        m.triangles.push_back(tri_far);
+        m.triangles.push_back(tri_close);
+    }
+
+    Material mat_close;
+    mat_close.diffuse = {1.0f, 0.0f, 0.0f};
+    mat_close.ambient = {1.0f, 0.0f, 0.0f};
+    mat_close.specular = {0.0f, 0.0f, 0.0f};
+
+    Material mat_far;
+    mat_far.diffuse = {0.0f, 0.0f, 1.0f};
+    mat_far.ambient = {0.0f, 0.0f, 1.0f};
+    mat_far.specular = {0.0f, 0.0f, 0.0f};
+
+    m.materials.push_back(mat_close);
+    m.materials.push_back(mat_far);
+    return m;
+}
+
+// L1: Phong — closer triangle wins regardless of submission order.
+TEST(renderer, phong_depth_order_independent)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.05f, 0.05f, 0.05f};
+
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+
+    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    fb_cf.clear();
+    fb_ff.clear();
+
+    Mesh m_cf = make_two_z_triangles(true);
+    Mesh m_ff = make_two_z_triangles(false);
+
+    r.render(m_cf, cam, &light, 1, ambient, fb_cf);
+    r.render(m_ff, cam, &light, 1, ambient, fb_ff);
+
+    ASSERT_TRUE(was_drawn(fb_cf, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_ff, 20, 10));
+
+    Color c_cf = fb_cf.get_pixel(20, 10);
+    Color c_ff = fb_ff.get_pixel(20, 10);
+
+    if (c_cf.r < 200)
+        ASSERT_FAIL("Phong closer-first: red (closer) not dominant, R=" + std::to_string(static_cast<int>(c_cf.r)));
+    if (c_cf.b > 30)
+        ASSERT_FAIL("Phong closer-first: blue (farther) leaked through, B=" + std::to_string(static_cast<int>(c_cf.b)));
+    if (c_ff.r < 200)
+        ASSERT_FAIL("Phong farther-first: red (closer) not dominant, R=" + std::to_string(static_cast<int>(c_ff.r)));
+    if (c_ff.b > 30)
+        ASSERT_FAIL("Phong farther-first: blue (farther) leaked through, B=" + std::to_string(static_cast<int>(c_ff.b)));
+    if (c_cf.r != c_ff.r || c_cf.g != c_ff.g || c_cf.b != c_ff.b)
+        ASSERT_FAIL("Phong depth result differs between submission orders");
+}
+
+// L2: Gouraud — same assertions.
+TEST(renderer, gouraud_depth_order_independent)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.05f, 0.05f, 0.05f};
+
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+
+    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    fb_cf.clear();
+    fb_ff.clear();
+
+    Mesh m_cf = make_two_z_triangles(true);
+    Mesh m_ff = make_two_z_triangles(false);
+
+    r.render(m_cf, cam, &light, 1, ambient, fb_cf);
+    r.render(m_ff, cam, &light, 1, ambient, fb_ff);
+
+    ASSERT_TRUE(was_drawn(fb_cf, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_ff, 20, 10));
+
+    Color c_cf = fb_cf.get_pixel(20, 10);
+    Color c_ff = fb_ff.get_pixel(20, 10);
+
+    if (c_cf.r < 200)
+        ASSERT_FAIL("Gouraud closer-first: red not dominant, R=" + std::to_string(static_cast<int>(c_cf.r)));
+    if (c_cf.b > 30)
+        ASSERT_FAIL("Gouraud closer-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_cf.b)));
+    if (c_ff.r < 200)
+        ASSERT_FAIL("Gouraud farther-first: red not dominant, R=" + std::to_string(static_cast<int>(c_ff.r)));
+    if (c_ff.b > 30)
+        ASSERT_FAIL("Gouraud farther-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_ff.b)));
+    if (c_cf.r != c_ff.r || c_cf.g != c_ff.g || c_cf.b != c_ff.b)
+        ASSERT_FAIL("Gouraud depth result differs between submission orders");
+}
+
+// L3: Flat — same assertions.
+TEST(renderer, flat_depth_order_independent)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.05f, 0.05f, 0.05f};
+
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+
+    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    fb_cf.clear();
+    fb_ff.clear();
+
+    Mesh m_cf = make_two_z_triangles(true);
+    Mesh m_ff = make_two_z_triangles(false);
+
+    r.render(m_cf, cam, &light, 1, ambient, fb_cf);
+    r.render(m_ff, cam, &light, 1, ambient, fb_ff);
+
+    ASSERT_TRUE(was_drawn(fb_cf, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_ff, 20, 10));
+
+    Color c_cf = fb_cf.get_pixel(20, 10);
+    Color c_ff = fb_ff.get_pixel(20, 10);
+
+    if (c_cf.r < 200)
+        ASSERT_FAIL("Flat closer-first: red not dominant, R=" + std::to_string(static_cast<int>(c_cf.r)));
+    if (c_cf.b > 30)
+        ASSERT_FAIL("Flat closer-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_cf.b)));
+    if (c_ff.r < 200)
+        ASSERT_FAIL("Flat farther-first: red not dominant, R=" + std::to_string(static_cast<int>(c_ff.r)));
+    if (c_ff.b > 30)
+        ASSERT_FAIL("Flat farther-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_ff.b)));
+    if (c_cf.r != c_ff.r || c_cf.g != c_ff.g || c_cf.b != c_ff.b)
+        ASSERT_FAIL("Flat depth result differs between submission orders");
+}
+
+// L4: Stored depth at overlap matches the closer triangle's NDC z.
+// Render farther-first so the depth value is overwritten when the closer
+// triangle wins, verifying both the write and the comparison direction.
+// Expected ndc_z for world z=+1 with the test camera:
+//   view_z=-4, clip_z≈3.808, clip_w=4  →  ndc_z≈0.952
+TEST(renderer, depth_value_matches_closer_triangle)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.05f, 0.05f, 0.05f};
+
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+
+    Framebuffer fb(40, 20);
+    fb.clear();
+    Mesh m = make_two_z_triangles(false); // farther first
+    r.render(m, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    // ndc_z for world z=+1: (-(far+near)/(far-near))*(-4) + (-(2*far*near)/(far-near)) / 4
+    //   = 3.808 / 4 ≈ 0.952; tolerance 0.005 comfortably separates from farther's 0.969.
+    assert_depth_near(fb, 20, 10, 0.952f, 0.005f);
+}
