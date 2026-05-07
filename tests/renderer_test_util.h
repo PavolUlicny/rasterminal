@@ -6,16 +6,15 @@
 #include "../src/shadow.h"
 #include "../src/texture.h"
 
-// Camera at (0,0,5) looking at origin.  pitch=0 so the projection is symmetric
-// and pixel (20,10) on a 40×20 framebuffer maps exactly to world (0,0,0).
+// Camera at (0,0,5) looking at origin.  Identity orientation so the projection
+// is symmetric and pixel (20,10) on a 40×20 framebuffer maps exactly to world (0,0,0).
 // fov = π/2, aspect 2:1 → x_ndc = x_world/(2*(5-z)), y_ndc = y_world/(5-z).
 inline Camera make_test_camera()
 {
     Camera c;
     c.target = {0.0f, 0.0f, 0.0f};
     c.distance = 5.0f;
-    c.yaw = 0.0f;
-    c.pitch = 0.0f;
+    c.orientation = quat::identity();
     c.fov = 3.14159265f / 2.0f;
     c.near_plane = 0.1f;
     c.far_plane = 100.0f;

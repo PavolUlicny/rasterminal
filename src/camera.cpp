@@ -4,25 +4,12 @@
 
 vec3 Camera::eye() const
 {
-    // Spherical → Cartesian, relative to target.
-    //   x = cos(pitch) * sin(yaw)
-    //   y = sin(pitch)
-    //   z = cos(pitch) * cos(yaw)
-    // At yaw=0, pitch=0 the eye sits at target + (0, 0, distance).
-    float cp = std::cos(pitch);
-    return target + vec3{cp * std::sin(yaw),
-                         std::sin(pitch),
-                         cp * std::cos(yaw)} *
-                        distance;
+    return target + orientation.rotate({0.0f, 0.0f, 1.0f}) * distance;
 }
 
 mat4 Camera::view() const
 {
-    // Flip the up vector when the camera passes over the top or bottom pole
-    // so full vertical rotation works without gimbal lock.
-    vec3 up = (std::cos(pitch) >= 0.0f) ? vec3{0.0f, 1.0f, 0.0f}
-                                        : vec3{0.0f, -1.0f, 0.0f};
-    return look_at(eye(), target, up);
+    return look_at(eye(), target, orientation.rotate({0.0f, 1.0f, 0.0f}));
 }
 
 mat4 Camera::projection(int pixel_width, int pixel_height) const
@@ -31,28 +18,43 @@ mat4 Camera::projection(int pixel_width, int pixel_height) const
     return perspective(fov, aspect, near_plane, far_plane);
 }
 
+void Camera::orbit(float dx, float dy)
+{
+    vec3 local_up = orientation.rotate({0.0f, 1.0f, 0.0f});
+    vec3 local_right = orientation.rotate({1.0f, 0.0f, 0.0f});
+    quat yaw = quat::from_axis_angle(local_up, -dx);
+    quat pitch = quat::from_axis_angle(local_right, dy);
+    orientation = normalize(yaw * pitch * orientation);
+}
+
+void Camera::spin_world_y(float radians)
+{
+    quat r = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, radians);
+    orientation = normalize(r * orientation);
+}
+
 void Camera::process_key(platform::Key key, float dt)
 {
-    const float orbit_speed = 2.5f;           // radians/sec
+    const float orbit_speed = 2.5f;
     const float zoom_speed = distance * 1.5f; // scales with distance so zoom feels consistent
 
     switch (key)
     {
     case platform::KEY_A:
     case platform::KEY_LEFT:
-        yaw -= orbit_speed * dt;
+        orbit(-orbit_speed * dt, 0.0f);
         break;
     case platform::KEY_D:
     case platform::KEY_RIGHT:
-        yaw += orbit_speed * dt;
+        orbit(orbit_speed * dt, 0.0f);
         break;
     case platform::KEY_W:
     case platform::KEY_UP:
-        pitch += orbit_speed * dt;
+        orbit(0.0f, orbit_speed * dt);
         break;
     case platform::KEY_S:
     case platform::KEY_DOWN:
-        pitch -= orbit_speed * dt;
+        orbit(0.0f, -orbit_speed * dt);
         break;
     case platform::KEY_PLUS:
         distance -= zoom_speed * dt;

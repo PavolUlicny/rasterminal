@@ -296,3 +296,96 @@ TEST(look_at, upper_left_3x3_is_orthonormal)
     ASSERT_NEAR(dot(row0, row2), 0.0f, 1e-5f);
     ASSERT_NEAR(dot(row1, row2), 0.0f, 1e-5f);
 }
+
+// ─── quat ─────────────────────────────────────────────────────────────────────
+
+TEST(quat, identity_rotate_is_no_op)
+{
+    vec3 v{1.0f, 2.0f, 3.0f};
+    vec3 r = quat::identity().rotate(v);
+    ASSERT_NEAR(r.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 2.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 3.0f, 1e-5f);
+}
+
+TEST(quat, rotate_90_around_y_maps_x_to_neg_z)
+{
+    // Matches rotation_y(90°) from mat4 tests: +X → -Z.
+    vec3 r = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(90.0f)).rotate({1, 0, 0});
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, -1.0f, 1e-5f);
+}
+
+TEST(quat, rotate_90_around_y_maps_z_to_pos_x)
+{
+    vec3 r = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(90.0f)).rotate({0, 0, 1});
+    ASSERT_NEAR(r.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+TEST(quat, rotate_90_around_x_maps_y_to_pos_z)
+{
+    // Matches rotation_x(90°): +Y → +Z.
+    vec3 r = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(90.0f)).rotate({0, 1, 0});
+    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 1.0f, 1e-5f);
+}
+
+TEST(quat, rotate_preserves_vector_length)
+{
+    vec3 v{3.0f, 4.0f, 0.0f};
+    quat q = quat::from_axis_angle(normalize(vec3{1.0f, 1.0f, 0.0f}), to_radians(73.0f));
+    vec3 r = q.rotate(v);
+    ASSERT_NEAR(r.length(), v.length(), 1e-5f);
+}
+
+TEST(quat, normalize_produces_unit_length)
+{
+    quat q{1.0f, 2.0f, 3.0f, 4.0f};
+    quat n = normalize(q);
+    float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
+}
+
+TEST(quat, normalize_zero_returns_identity)
+{
+    quat n = normalize(quat{0.0f, 0.0f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.z, 0.0f, 1e-6f);
+    ASSERT_NEAR(n.w, 1.0f, 1e-6f);
+}
+
+TEST(quat, composition_identity_is_neutral)
+{
+    quat q = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(45.0f));
+    vec3 via_q = q.rotate({1, 0, 0});
+    vec3 via_qi = (q * quat::identity()).rotate({1, 0, 0});
+    ASSERT_NEAR(via_qi.x, via_q.x, 1e-5f);
+    ASSERT_NEAR(via_qi.y, via_q.y, 1e-5f);
+    ASSERT_NEAR(via_qi.z, via_q.z, 1e-5f);
+}
+
+TEST(quat, two_90deg_rotations_equal_180deg)
+{
+    // Two 90° rotations around Y should map +X to -X (same as a 180° rotation).
+    quat q90 = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(90.0f));
+    vec3 r = (q90 * q90).rotate({1, 0, 0});
+    ASSERT_NEAR(r.x, -1.0f, 1e-5f);
+    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
+    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
+}
+
+TEST(quat, composition_is_noncommutative)
+{
+    // Rotating around X then Y produces a different result than Y then X.
+    quat rx = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(90.0f));
+    quat ry = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(90.0f));
+    vec3 rxy = (rx * ry).rotate({0, 1, 0});
+    vec3 ryx = (ry * rx).rotate({0, 1, 0});
+    float diff = (rxy - ryx).length();
+    ASSERT_TRUE(diff > 0.1f);
+}

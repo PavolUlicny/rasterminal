@@ -7,9 +7,8 @@ struct Camera
 {
     vec3 target = {0.0f, 0.0f, 0.0f};
     float distance = 3.0f;
-    float yaw = 0.0f;    // radians, horizontal rotation around Y
-    float pitch = 0.3f;  // radians, elevation above XZ plane
-    float fov = 1.0472f; // radians, 60 degrees
+    quat orientation = quat::identity(); // camera's current rotation
+    float fov = 1.0472f;                 // radians, 60 degrees
     float near_plane = 0.01f;
     float far_plane = 100.0f;
 
@@ -22,4 +21,7 @@ struct Camera
     // Update camera state from a single key event.
     // dt: seconds elapsed since last frame, for speed-independent movement.
     void process_key(platform::Key key, float dt);
+
+    void orbit(float dx, float dy); // dx: around local up, dy: around local right
+    void spin_world_y(float radians);
 };

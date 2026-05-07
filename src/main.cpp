@@ -73,6 +73,7 @@ int main(int argc, char *argv[])
         // Scale near/far to the model so arbitrarily-sized models aren't clipped.
         camera.near_plane = radius * 0.01f;
         camera.far_plane = radius * 20.0f;
+        camera.orientation = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, -0.3f);
     }
     const Camera initial_camera = camera;
 
@@ -222,8 +223,9 @@ int main(int argc, char *argv[])
             {
                 int dx = ev.x - mouse_last_x;
                 int dy = ev.y - mouse_last_y;
-                camera.yaw -= static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
-                camera.pitch += static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
+                float dx_rad = static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
+                float dy_rad = static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
+                camera.orbit(dx_rad, -dy_rad);
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
             }
@@ -231,7 +233,7 @@ int main(int argc, char *argv[])
 
         // ── Auto-rotation ────────────────────────────────────────────────
         if (spinning)
-            camera.yaw += spin_speed * dt;
+            camera.spin_world_y(spin_speed * dt);
 
         // ── Resize detection ─────────────────────────────────────────────
         {

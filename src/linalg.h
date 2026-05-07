@@ -258,6 +258,50 @@ inline mat4 perspective(float fov_y, float aspect, float near, float far)
     return m;
 }
 
+// ─── quat ────────────────────────────────────────────────────────────────────
+
+struct quat
+{
+    float x, y, z, w;
+
+    quat() : x(0), y(0), z(0), w(1) {}
+    quat(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
+
+    static quat identity() { return {0, 0, 0, 1}; }
+
+    static quat from_axis_angle(const vec3 &axis, float radians)
+    {
+        float half = radians * 0.5f;
+        float s = std::sin(half);
+        return {axis.x * s, axis.y * s, axis.z * s, std::cos(half)};
+    }
+
+    quat operator*(const quat &o) const
+    {
+        return {
+            w * o.x + x * o.w + y * o.z - z * o.y,
+            w * o.y - x * o.z + y * o.w + z * o.x,
+            w * o.z + x * o.y - y * o.x + z * o.w,
+            w * o.w - x * o.x - y * o.y - z * o.z};
+    }
+
+    vec3 rotate(const vec3 &v) const
+    {
+        vec3 qv{x, y, z};
+        vec3 t = cross(qv, v) * 2.0f;
+        return v + t * w + cross(qv, t);
+    }
+};
+
+inline quat normalize(const quat &q)
+{
+    float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (len_sq < 1e-8f)
+        return quat::identity();
+    float inv = 1.0f / std::sqrt(len_sq);
+    return {q.x * inv, q.y * inv, q.z * inv, q.w * inv};
+}
+
 // ─── scalar utilities ────────────────────────────────────────────────────────
 
 inline float clamp(float v, float lo, float hi)
