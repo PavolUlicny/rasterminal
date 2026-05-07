@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
   pull_request:
 
 concurrency:
@@ -79,7 +78,7 @@ jobs:
           - { os: windows-latest, label: msvc, build_type: Debug, portable: OFF }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure
         run: >
@@ -119,7 +118,7 @@ jobs:
           - { os: macos-latest, cxx: clang++, target: test }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
         run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}
