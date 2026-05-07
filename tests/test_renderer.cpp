@@ -390,3 +390,279 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     if (cn.g < 200)
         ASSERT_FAIL("show_texture=false: G too low (" + std::to_string(static_cast<int>(cn.g)) + ")");
 }
+
+// ─── Group J: double-sided lighting correctness ───────────────────────────────
+// Existing D2 only checks pixels-drawn (ambient-only). These tests exercise the
+// three normal-flip code paths under a directional light so that a dropped or
+// misplaced flip_normals branch causes an actual failure.
+
+// CW-from-+z winding → back-face from camera at +z.
+// Vertex normals (0,0,-1) match the back winding:
+//   without flip: dot(n=(0,0,-1), light=(0,0,1)) = -1 → no diffuse
+//   with    flip: dot(n=(0,0, 1), light=(0,0,1)) = +1 → full diffuse
+static Mesh make_back_facing_double_sided_triangle()
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, -1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.pos = {-1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1; // CW from +z → back-face; cross(vb-va,vc-va)=(0,0,-4)
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+
+    Material mat;
+    mat.double_sided = true;
+    m.materials.push_back(mat);
+    m.has_double_sided = true;
+    return m;
+}
+
+// Same geometry, single-sided (for cull-off negative tests).
+static Mesh make_back_facing_single_sided_triangle()
+{
+    Mesh m = make_back_facing_double_sided_triangle();
+    m.materials[0].double_sided = false;
+    m.has_double_sided = false;
+    return m;
+}
+
+// Two non-overlapping back-facing triangles with different materials:
+//   tri 0 (double-sided)  at world x∈[-3,-1] → centroid screen (16,10)
+//   tri 1 (single-sided)  at world x∈[1, 3]  → centroid screen (24,10)
+// Both CW from +z with vertex normals (0,0,-1).
+static Mesh make_two_back_face_mixed_mesh()
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, -1.0f};
+    v.uv = {0.5f, 0.5f};
+
+    v.pos = {-3.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-2.0f, 1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+
+    v.pos = {1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {2.0f, 1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {3.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+
+    m.tangents.resize(6, {1.0f, 0.0f, 0.0f});
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    m.triangles.push_back(tri);
+
+    tri.v[0] = 3;
+    tri.v[1] = 4;
+    tri.v[2] = 5;
+    tri.material_idx = 1;
+    m.triangles.push_back(tri);
+
+    Material mat0;
+    mat0.double_sided = true;
+    m.materials.push_back(mat0);
+    m.materials.push_back(Material{}); // single-sided default
+
+    m.has_double_sided = true;
+    return m;
+}
+
+// J1: Phong — back-face double-sided triangle lit by a +z light.
+// Vertex normals are (0,0,-1); the flip must turn them to (0,0,1) so diffuse fires.
+TEST(renderer, phong_double_sided_back_face_lit_correctly)
+{
+    Mesh mesh = make_back_facing_double_sided_triangle();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Phong;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 150)
+        ASSERT_FAIL("Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — normal flip not applied");
+}
+
+// J2: Gouraud — same scene.
+TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
+{
+    Mesh mesh = make_back_facing_double_sided_triangle();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Gouraud;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 150)
+        ASSERT_FAIL("Gouraud double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — normal flip not applied");
+}
+
+// J3: Flat — same scene; covers the separate face-normal negation branch.
+TEST(renderer, flat_double_sided_back_face_lit_correctly)
+{
+    Mesh mesh = make_back_facing_double_sided_triangle();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Flat;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 150)
+        ASSERT_FAIL("Flat double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — face normal flip not applied");
+}
+
+// J4: cull off, single-sided back-face → drawn but dark.
+// cull_backfaces=false → do_cull=false → if(do_cull) block skipped → flip_normals stays false.
+// Normal remains (0,0,-1); dot(n, light=(0,0,1))=-1 → no diffuse → R=0.
+TEST(renderer, single_sided_cull_off_back_face_dark)
+{
+    Mesh mesh = make_back_facing_single_sided_triangle();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Phong;
+    r.cull_backfaces = false;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 5)
+        ASSERT_FAIL("cull-off single-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) + ") — flip applied when it should not be");
+}
+
+// J5: cull off, double-sided back-face → also drawn but dark.
+// do_cull=false → flip_normals never set regardless of material.double_sided.
+TEST(renderer, double_sided_cull_off_back_face_dark)
+{
+    Mesh mesh = make_back_facing_double_sided_triangle();
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Phong;
+    r.cull_backfaces = false;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 5)
+        ASSERT_FAIL("cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) + ") — flip applied when cull is off");
+}
+
+// J6: front-facing double-sided triangle — flip must NOT fire.
+// make_unit_triangle(false, true): normals (0,0,1), CCW → front-face cull passes,
+// flip_normals stays false, dot(n=(0,0,1), light=(0,0,1))=1 → full diffuse.
+TEST(renderer, double_sided_front_face_lit_normally)
+{
+    Mesh mesh = make_unit_triangle(false, true);
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Phong;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 150)
+        ASSERT_FAIL("front-facing double-sided R too low (" + std::to_string(static_cast<int>(c.r)) + ") — flip incorrectly applied to front face");
+}
+
+// J7: mixed mesh — only the double-sided back-face triangle is drawn.
+// Tri 0 (double-sided) centre → screen (16,10); tri 1 (single-sided) centre → screen (24,10).
+// Uses ambient (0.5,0,0) and no light so drawn = ambient red; not-drawn = depth=inf.
+TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
+{
+    Mesh mesh = make_two_back_face_mixed_mesh();
+    Camera cam = make_test_camera();
+    vec3 ambient{0.5f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Phong;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+
+    // Double-sided triangle should be drawn with ambient red.
+    ASSERT_TRUE(was_drawn(fb, 16, 10));
+    Color c_ds = fb.get_pixel(16, 10);
+    if (c_ds.r < 80)
+        ASSERT_FAIL("double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + ") — may have been culled");
+
+    // Single-sided triangle must be culled — pixel stays undrawn.
+    if (was_drawn(fb, 24, 10))
+        ASSERT_FAIL("single-sided back-face was drawn — per-material check bypassed");
+}
+
+// J8: wireframe double-sided back-face — covers the wireframe path's separate cull bypass.
+TEST(renderer, wireframe_double_sided_back_face_drawn)
+{
+    Mesh mesh = make_back_facing_double_sided_triangle();
+    Camera cam = make_test_camera();
+    vec3 ambient{0.5f, 0.5f, 0.5f};
+
+    Renderer r;
+    r.mode = ShadingMode::Wireframe;
+    r.cull_backfaces = true;
+    Framebuffer fb(40, 20);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+
+    if (count_drawn_pixels(fb) == 0)
+        ASSERT_FAIL("wireframe double-sided back-face drew no pixels — cull bypass missing");
+}
