@@ -206,3 +206,43 @@ TEST(texture_load, reload_overwrites_previous_data)
     // DuckCM.png is not 1×1, so dimensions must have changed.
     ASSERT_TRUE(t.width > 1 || t.height > 1);
 }
+
+// ─── bilinear 2×2 full interpolation ─────────────────────────────────────────
+
+TEST(texture, bilinear_2x2_center_averages_all_four_corners)
+{
+    // 2×2 texture (row-major, top-left first):
+    //   [0,0] = red    (255,  0,  0)
+    //   [1,0] = green  (  0,255,  0)
+    //   [0,1] = blue   (  0,  0,255)
+    //   [1,1] = white  (255,255,255)
+    // sample_rgb(u=0.5, v=0.5):
+    //   wrap: u=0.5, v=0.5  →  v_flipped = 0.5
+    //   fx = 0.5*(2-1) = 0.5  →  x0=0, x1=1, tx=0.5
+    //   fy = 0.5*(2-1) = 0.5  →  y0=0, y1=1, ty=0.5
+    //   top    = lerp(red, green, 0.5) = (0.5, 0.5, 0)
+    //   bottom = lerp(blue, white,0.5) = (0.5, 0.5, 1)
+    //   result = lerp(top, bottom, 0.5) = (0.5, 0.5, 0.5)
+    Texture t = make_tex(2, 2, {
+                                   255,
+                                   0,
+                                   0,
+                                   255, // [0,0] red
+                                   0,
+                                   255,
+                                   0,
+                                   255, // [1,0] green
+                                   0,
+                                   0,
+                                   255,
+                                   255, // [0,1] blue
+                                   255,
+                                   255,
+                                   255,
+                                   255, // [1,1] white
+                               });
+    vec3 c = t.sample_rgb(0.5f, 0.5f);
+    ASSERT_NEAR(c.x, 0.5f, 1e-4f);
+    ASSERT_NEAR(c.y, 0.5f, 1e-4f);
+    ASSERT_NEAR(c.z, 0.5f, 1e-4f);
+}

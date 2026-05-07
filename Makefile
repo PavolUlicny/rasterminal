@@ -96,6 +96,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_camera.cpp \
               tests/test_clip_near.cpp \
               tests/test_texture.cpp \
+              tests/test_framebuffer.cpp \
               tests/test_mesh_geometry.cpp \
               tests/test_args.cpp \
               tests/test_shadow.cpp \
