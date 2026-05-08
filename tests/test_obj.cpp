@@ -168,6 +168,30 @@ TEST(reject, obj_all_face_indices_out_of_range)
     assert_rejects(t.path);
 }
 
+TEST(reject, obj_oob_normal_index)
+{
+    // One vn declared; face references normal index 2 → bounds check rejects.
+    TmpFile t(tmp_path("rasterminal_test_oob_vn.obj"),
+              "v 0 0 0\n"
+              "v 1 0 0\n"
+              "v 0 1 0\n"
+              "vn 0 0 1\n"
+              "f 1//2 2//2 3//2\n");
+    assert_rejects(t.path);
+}
+
+TEST(reject, obj_oob_texcoord_index)
+{
+    // One vt declared; face references texcoord index 2 → bounds check rejects.
+    TmpFile t(tmp_path("rasterminal_test_oob_vt.obj"),
+              "v 0 0 0\n"
+              "v 1 0 0\n"
+              "v 0 1 0\n"
+              "vt 0 0\n"
+              "f 1/2 2/2 3/2\n");
+    assert_rejects(t.path);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  MTL MATERIAL PARSING
 // ═══════════════════════════════════════════════════════════════════════════

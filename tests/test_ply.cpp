@@ -376,3 +376,42 @@ TEST(reject, ply_truncated_binary_data)
     TmpFile t(tmp_path("rasterminal_test_trunc.ply"), s);
     assert_rejects(t.path);
 }
+
+TEST(reject, ply_zero_face_count_with_vertices)
+{
+    // element face 0 — n_faces==0 → rejected by the n_faces==0 guard.
+    // Different from ply_no_face_element which omits the element entirely.
+    TmpFile t(tmp_path("rasterminal_test_zeroface.ply"),
+              "ply\n"
+              "format ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\n"
+              "property float y\n"
+              "property float z\n"
+              "element face 0\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0\n"
+              "1 0 0\n"
+              "0 1 0\n");
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_missing_xyz_properties)
+{
+    // Vertex element present but no x/y/z — tinyply throws on
+    // request_properties_from_element, which load_ply catches and returns false.
+    TmpFile t(tmp_path("rasterminal_test_noxyz.ply"),
+              "ply\n"
+              "format ascii 1.0\n"
+              "element vertex 3\n"
+              "property float dummy\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0\n"
+              "0\n"
+              "0\n"
+              "3 0 1 2\n");
+    assert_rejects(t.path);
+}

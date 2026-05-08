@@ -168,3 +168,18 @@ TEST(reject, stl_ascii_no_facets)
               "endsolid empty\n");
     assert_rejects(t.path);
 }
+
+TEST(reject, stl_ascii_missing_third_vertex)
+{
+    // outer loop with only two vertex lines — stl_reader fails to parse the facet.
+    TmpFile t(tmp_path("rasterminal_test_2v.stl"),
+              "solid test\n"
+              "facet normal 0 0 1\n"
+              "  outer loop\n"
+              "    vertex 0 0 0\n"
+              "    vertex 1 0 0\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    assert_rejects(t.path);
+}
