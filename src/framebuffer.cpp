@@ -88,13 +88,25 @@ void Framebuffer::present()
     bool fg_known = false;
     bool bg_known = false;
 
-    // Emit a single terminal cell.  When top == bot, a space with bg-only
-    // SGR is visually identical to ▀ with fg==bg, and saves 2+ bytes.
+    // \033[row;colH — 1-based coordinates, no reliance on newlines or auto-wrap.
+    auto append_cursor_pos = [&](int row, int col)
+    {
+        tmp[0] = '\033';
+        tmp[1] = '[';
+        n = 2;
+        n += write_int(tmp + n, row);
+        tmp[n++] = ';';
+        n += write_int(tmp + n, col);
+        tmp[n++] = 'H';
+        m_buf.append(tmp, static_cast<size_t>(n));
+    };
+
+    // When top == bot, a space with bg-only SGR is visually identical to ▀
+    // with fg==bg, saving 2+ bytes and skipping the fg SGR entirely.
     auto emit_cell = [&](const Color &top, const Color &bot)
     {
         if (top == bot)
         {
-            // Space-instead-of-▀: only background colour needed.
             const bool bg_change = !bg_known || bot != prev_bg;
             if (bg_change)
             {
@@ -172,19 +184,9 @@ void Framebuffer::present()
 
     if (m_force_redraw)
     {
-        // Full redraw: emit every cell, one cursor-home per row.
         for (int row = 0; row < term_rows; row++)
         {
-            // Explicit cursor positioning: no reliance on newlines or auto-wrap.
-            // \033[row;colH uses 1-based indices.
-            tmp[0] = '\033';
-            tmp[1] = '[';
-            n = 2;
-            n += write_int(tmp + n, row + 1);
-            tmp[n++] = ';';
-            tmp[n++] = '1';
-            tmp[n++] = 'H';
-            m_buf.append(tmp, static_cast<size_t>(n));
+            append_cursor_pos(row + 1, 1);
 
             const int prow = row * 2;
             const int top_base = prow * m_width;
@@ -199,60 +201,41 @@ void Framebuffer::present()
     }
     else
     {
-        // Dirty-tracking: skip rows with no changes; within dirty rows,
-        // advance the cursor over clean runs with \033[nC.
         for (int row = 0; row < term_rows; row++)
         {
             const int prow = row * 2;
             const int top_base = prow * m_width;
             const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
 
-            // Find first dirty cell in this row.
-            int first_dirty = -1;
-            for (int col = 0; col < m_width; col++)
-            {
-                if (m_color[static_cast<size_t>(top_base + col)] != m_prev_color[static_cast<size_t>(top_base + col)] ||
-                    m_color[static_cast<size_t>(bot_base + col)] != m_prev_color[static_cast<size_t>(bot_base + col)])
-                {
-                    first_dirty = col;
-                    break;
-                }
-            }
-            if (first_dirty == -1)
-                continue; // row is entirely clean — emit nothing
-
-            // Position cursor at first dirty cell (1-based row;col).
-            tmp[0] = '\033';
-            tmp[1] = '[';
-            n = 2;
-            n += write_int(tmp + n, row + 1);
-            tmp[n++] = ';';
-            n += write_int(tmp + n, first_dirty + 1);
-            tmp[n++] = 'H';
-            m_buf.append(tmp, static_cast<size_t>(n));
-
-            int col = first_dirty;
+            bool row_started = false;
+            int col = 0;
             while (col < m_width)
             {
                 if (m_color[static_cast<size_t>(top_base + col)] != m_prev_color[static_cast<size_t>(top_base + col)] ||
                     m_color[static_cast<size_t>(bot_base + col)] != m_prev_color[static_cast<size_t>(bot_base + col)])
                 {
+                    if (!row_started)
+                    {
+                        append_cursor_pos(row + 1, col + 1);
+                        row_started = true;
+                    }
                     emit_cell(m_color[static_cast<size_t>(top_base + col)],
                               m_color[static_cast<size_t>(bot_base + col)]);
                     col++;
                 }
+                else if (!row_started)
+                {
+                    col++;
+                }
                 else
                 {
-                    // Count consecutive clean cells and skip with cursor-forward.
                     int skip = 0;
                     while (col + skip < m_width &&
                            m_color[static_cast<size_t>(top_base + col + skip)] == m_prev_color[static_cast<size_t>(top_base + col + skip)] &&
                            m_color[static_cast<size_t>(bot_base + col + skip)] == m_prev_color[static_cast<size_t>(bot_base + col + skip)])
                         skip++;
                     if (skip == 1)
-                    {
                         m_buf.append("\033[C", 3);
-                    }
                     else
                     {
                         tmp[0] = '\033';
@@ -272,20 +255,10 @@ void Framebuffer::present()
     // when the HUD is empty and prevents bleed into HUD's own colour escapes.
     m_buf += "\033[0m";
 
-    // HUD: one status line immediately below the pixel rows.
     if (!m_hud.empty())
     {
-        // Position cursor at the row after the last pixel row (1-based).
-        tmp[0] = '\033';
-        tmp[1] = '[';
-        n = 2;
-        n += write_int(tmp + n, term_rows + 1);
-        tmp[n++] = ';';
-        tmp[n++] = '1';
-        tmp[n++] = 'H';
-        m_buf.append(tmp, static_cast<size_t>(n));
+        append_cursor_pos(term_rows + 1, 1);
 
-        // Dark background, muted text.
         // Disable auto-wrap so a long HUD string clips at the terminal edge
         // instead of wrapping onto the next line and corrupting the display.
         m_buf += "\033[?7l";
