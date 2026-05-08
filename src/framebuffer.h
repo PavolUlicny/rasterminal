@@ -12,6 +12,9 @@ struct Color
     constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
 };
 
+inline bool operator==(Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
+inline bool operator!=(Color a, Color b) { return !(a == b); }
+
 class Framebuffer
 {
 public:
@@ -85,7 +88,9 @@ public:
 private:
     int m_width, m_height;
     std::vector<Color> m_color;
+    std::vector<Color> m_prev_color;
     std::vector<float> m_depth;
     std::string m_buf; // reused output buffer, avoids per-frame allocation
     std::string m_hud; // status line written below pixel rows
+    bool m_force_redraw = true;
 };

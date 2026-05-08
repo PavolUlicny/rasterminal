@@ -31,6 +31,7 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height)
     : m_width(pixel_width),
       m_height(pixel_height),
       m_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
+      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
       m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity())
 {
     // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
@@ -54,9 +55,11 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_width = pixel_width;
     m_height = pixel_height;
     m_color.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), Color{});
+    m_prev_color.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), Color{});
     m_depth.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity());
     m_buf.clear();
     m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
+    m_force_redraw = true;
 
     // Wipe any leftover content from the previous (possibly larger) terminal.
     std::fputs("\033[2J", stdout);
@@ -78,41 +81,51 @@ void Framebuffer::present()
     char tmp[48]; // 36 bytes worst case for combined fg+bg SGR sequence
     int n;
 
-    // Track last-emitted fg/bg across all cells (including between rows) —
-    // cursor repositioning preserves SGR state, so a color set on one row
-    // carries over until the next explicit change. Saves 26–38 bytes per
-    // unchanged-color cell (e.g. background fill).
+    // fg_known / bg_known track whether the terminal's current fg/bg are
+    // reflected by prev_fg / prev_bg.  Both start false because \033[0m at
+    // the end of the previous frame reset SGR to an unknown terminal default.
     Color prev_fg{}, prev_bg{};
-    bool first_cell = true;
+    bool fg_known = false;
+    bool bg_known = false;
 
-    for (int row = 0; row < term_rows; row++)
+    // Emit a single terminal cell.  When top == bot, a space with bg-only
+    // SGR is visually identical to ▀ with fg==bg, and saves 2+ bytes.
+    auto emit_cell = [&](const Color &top, const Color &bot)
     {
-        // Explicit cursor positioning: no reliance on newlines or auto-wrap.
-        // \033[row;colH uses 1-based indices.
-        tmp[0] = '\033';
-        tmp[1] = '[';
-        n = 2;
-        n += write_int(tmp + n, row + 1);
-        tmp[n++] = ';';
-        tmp[n++] = '1';
-        tmp[n++] = 'H';
-        m_buf.append(tmp, static_cast<size_t>(n));
-
-        const int prow = row * 2;
-        const int top_base = prow * m_width;
-        // Guard against odd pixel height: reuse top pixel for bottom row.
-        const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
-
-        for (int col = 0; col < m_width; col++)
+        if (top == bot)
         {
-            const Color &top = m_color[static_cast<size_t>(top_base + col)];
-            const Color &bot = m_color[static_cast<size_t>(bot_base + col)];
+            // Space-instead-of-▀: only background colour needed.
+            const bool bg_change = !bg_known || bot != prev_bg;
+            if (bg_change)
+            {
+                tmp[0] = '\033';
+                tmp[1] = '[';
+                n = 2;
+                tmp[n++] = '4';
+                tmp[n++] = '8';
+                tmp[n++] = ';';
+                tmp[n++] = '2';
+                tmp[n++] = ';';
+                n += write_int(tmp + n, bot.r);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, bot.g);
+                tmp[n++] = ';';
+                n += write_int(tmp + n, bot.b);
+                tmp[n++] = 'm';
+                m_buf.append(tmp, static_cast<size_t>(n));
+                prev_bg = bot;
+                bg_known = true;
+                // fg_known intentionally unchanged: terminal fg is unaffected.
+            }
+            m_buf += ' ';
+        }
+        else
+        {
+            const bool fg_change = !fg_known || top != prev_fg;
+            const bool bg_change = !bg_known || bot != prev_bg;
 
-            const bool fg_change = first_cell || top.r != prev_fg.r || top.g != prev_fg.g || top.b != prev_fg.b;
-            const bool bg_change = first_cell || bot.r != prev_bg.r || bot.g != prev_bg.g || bot.b != prev_bg.b;
-
-            // One SGR sequence covering whichever of fg/bg changed; combining when
-            // both change avoids a redundant ESC[ header and closing m.
+            // One SGR sequence covering whichever of fg/bg changed; combining
+            // when both change avoids a redundant ESC[ header and closing m.
             if (fg_change || bg_change)
             {
                 tmp[0] = '\033';
@@ -131,6 +144,7 @@ void Framebuffer::present()
                     tmp[n++] = ';';
                     n += write_int(tmp + n, top.b);
                     prev_fg = top;
+                    fg_known = true;
                     if (bg_change)
                         tmp[n++] = ';';
                 }
@@ -147,13 +161,110 @@ void Framebuffer::present()
                     tmp[n++] = ';';
                     n += write_int(tmp + n, bot.b);
                     prev_bg = bot;
+                    bg_known = true;
                 }
                 tmp[n++] = 'm';
                 m_buf.append(tmp, static_cast<size_t>(n));
             }
-
-            first_cell = false;
             m_buf.append(UPPER_HALF, 3);
+        }
+    };
+
+    if (m_force_redraw)
+    {
+        // Full redraw: emit every cell, one cursor-home per row.
+        for (int row = 0; row < term_rows; row++)
+        {
+            // Explicit cursor positioning: no reliance on newlines or auto-wrap.
+            // \033[row;colH uses 1-based indices.
+            tmp[0] = '\033';
+            tmp[1] = '[';
+            n = 2;
+            n += write_int(tmp + n, row + 1);
+            tmp[n++] = ';';
+            tmp[n++] = '1';
+            tmp[n++] = 'H';
+            m_buf.append(tmp, static_cast<size_t>(n));
+
+            const int prow = row * 2;
+            const int top_base = prow * m_width;
+            // Guard against odd pixel height: reuse top pixel for bottom row.
+            const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
+
+            for (int col = 0; col < m_width; col++)
+                emit_cell(m_color[static_cast<size_t>(top_base + col)],
+                          m_color[static_cast<size_t>(bot_base + col)]);
+        }
+        m_force_redraw = false;
+    }
+    else
+    {
+        // Dirty-tracking: skip rows with no changes; within dirty rows,
+        // advance the cursor over clean runs with \033[nC.
+        for (int row = 0; row < term_rows; row++)
+        {
+            const int prow = row * 2;
+            const int top_base = prow * m_width;
+            const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
+
+            // Find first dirty cell in this row.
+            int first_dirty = -1;
+            for (int col = 0; col < m_width; col++)
+            {
+                if (m_color[static_cast<size_t>(top_base + col)] != m_prev_color[static_cast<size_t>(top_base + col)] ||
+                    m_color[static_cast<size_t>(bot_base + col)] != m_prev_color[static_cast<size_t>(bot_base + col)])
+                {
+                    first_dirty = col;
+                    break;
+                }
+            }
+            if (first_dirty == -1)
+                continue; // row is entirely clean — emit nothing
+
+            // Position cursor at first dirty cell (1-based row;col).
+            tmp[0] = '\033';
+            tmp[1] = '[';
+            n = 2;
+            n += write_int(tmp + n, row + 1);
+            tmp[n++] = ';';
+            n += write_int(tmp + n, first_dirty + 1);
+            tmp[n++] = 'H';
+            m_buf.append(tmp, static_cast<size_t>(n));
+
+            int col = first_dirty;
+            while (col < m_width)
+            {
+                if (m_color[static_cast<size_t>(top_base + col)] != m_prev_color[static_cast<size_t>(top_base + col)] ||
+                    m_color[static_cast<size_t>(bot_base + col)] != m_prev_color[static_cast<size_t>(bot_base + col)])
+                {
+                    emit_cell(m_color[static_cast<size_t>(top_base + col)],
+                              m_color[static_cast<size_t>(bot_base + col)]);
+                    col++;
+                }
+                else
+                {
+                    // Count consecutive clean cells and skip with cursor-forward.
+                    int skip = 0;
+                    while (col + skip < m_width &&
+                           m_color[static_cast<size_t>(top_base + col + skip)] == m_prev_color[static_cast<size_t>(top_base + col + skip)] &&
+                           m_color[static_cast<size_t>(bot_base + col + skip)] == m_prev_color[static_cast<size_t>(bot_base + col + skip)])
+                        skip++;
+                    if (skip == 1)
+                    {
+                        m_buf.append("\033[C", 3);
+                    }
+                    else
+                    {
+                        tmp[0] = '\033';
+                        tmp[1] = '[';
+                        n = 2;
+                        n += write_int(tmp + n, skip);
+                        tmp[n++] = 'C';
+                        m_buf.append(tmp, static_cast<size_t>(n));
+                    }
+                    col += skip;
+                }
+            }
         }
     }
 
@@ -189,4 +300,8 @@ void Framebuffer::present()
     // the session is already broken; there is no meaningful recovery path here.
     (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
     (void)std::fflush(stdout);
+
+    // Swap instead of copy: O(1) and leaves m_prev_color holding the frame
+    // we just rendered — the correct reference for the next dirty comparison.
+    std::swap(m_color, m_prev_color);
 }

@@ -166,3 +166,26 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     fb.set_pixel(0, 2, {100, 150, 200}); // row 2 — the lone odd row
     fb.present();                        // must not crash
 }
+
+// ─── dirty-tracking path ──────────────────────────────────────────────────────
+
+TEST(framebuffer, present_dirty_then_present_again_no_crash)
+{
+    // First present() takes the full-redraw path; second takes the dirty path
+    // with most cells clean.  Verifies the dirty path doesn't crash or corrupt.
+    FdRedirect rd;
+    Framebuffer fb(4, 4);
+    fb.set_pixel(0, 0, {255, 0, 0});
+    fb.present(); // full-redraw path; swaps m_color ↔ m_prev_color
+
+    fb.clear();
+    fb.set_pixel(2, 2, {0, 255, 0}); // only one cell dirty vs previous frame
+
+    // Pixel is readable before present().
+    Color c = fb.get_pixel(2, 2);
+    ASSERT_EQ(static_cast<int>(c.r), 0);
+    ASSERT_EQ(static_cast<int>(c.g), 255);
+    ASSERT_EQ(static_cast<int>(c.b), 0);
+
+    fb.present(); // dirty-tracking path — must not crash
+}
