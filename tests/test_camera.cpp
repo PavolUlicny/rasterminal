@@ -292,24 +292,24 @@ TEST(camera, orbit_keeps_eye_on_sphere)
     ASSERT_NEAR(r, 6.0f, 1e-4f);
 }
 
-TEST(camera, orbit_relative_to_current_orientation)
+TEST(camera, orbit_pure_yaw_and_pitch_are_commutative)
 {
-    // In a trackball camera orbit(yaw then pitch) ≠ orbit(pitch then yaw) —
-    // because each rotation acts around the axis updated by the previous one.
+    // With world-Y yaw, a pure-yaw step followed by a pure-pitch step is
+    // mathematically equivalent to pitch-then-yaw (the conjugation identity
+    // cancels the intermediate axis rotation). This pins the turntable
+    // behaviour that distinguishes world-Y yaw from the old local-up yaw.
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
 
-    // c1: yaw 90° then pitch up 90°
-    c1.orbit(to_radians(90.0f), 0.0f);
-    c1.orbit(0.0f, to_radians(-90.0f));
+    c1.orbit(to_radians(45.0f), 0.0f);
+    c1.orbit(0.0f, to_radians(30.0f));
 
-    // c2: pitch up 90° then yaw 90°
-    c2.orbit(0.0f, to_radians(-90.0f));
-    c2.orbit(to_radians(90.0f), 0.0f);
+    c2.orbit(0.0f, to_radians(30.0f));
+    c2.orbit(to_radians(45.0f), 0.0f);
 
     float diff = (c1.eye() - c2.eye()).length();
-    ASSERT_TRUE(diff > 0.1f);
+    ASSERT_TRUE(diff < 1e-4f);
 }
 
 TEST(camera, orbit_does_not_gimbal_lock)

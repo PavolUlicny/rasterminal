@@ -22,9 +22,8 @@ mat4 Camera::projection(int pixel_width, int pixel_height) const
 
 void Camera::orbit(float dx, float dy)
 {
-    vec3 local_up = orientation.rotate({0.0f, 1.0f, 0.0f});
     vec3 local_right = orientation.rotate({1.0f, 0.0f, 0.0f});
-    quat yaw = quat::from_axis_angle(local_up, -dx);
+    quat yaw = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, -dx);
     quat pitch = quat::from_axis_angle(local_right, dy);
     orientation = normalize(yaw * pitch * orientation);
 }
