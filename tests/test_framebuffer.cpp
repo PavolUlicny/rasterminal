@@ -167,6 +167,53 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     fb.present();                        // must not crash
 }
 
+// ─── headless mode ───────────────────────────────────────────────────────────
+
+TEST(framebuffer, headless_dimensions_correct)
+{
+    // No FdRedirect needed — headless suppresses all terminal I/O.
+    Framebuffer fb(10, 8, /*headless=*/true);
+    ASSERT_EQ(fb.width(), 10);
+    ASSERT_EQ(fb.height(), 8);
+}
+
+TEST(framebuffer, headless_pixel_ops_work)
+{
+    Framebuffer fb(6, 6, /*headless=*/true);
+    fb.set_pixel(2, 3, {11, 22, 33});
+    Color c = fb.get_pixel(2, 3);
+    ASSERT_EQ(static_cast<int>(c.r), 11);
+    ASSERT_EQ(static_cast<int>(c.g), 22);
+    ASSERT_EQ(static_cast<int>(c.b), 33);
+}
+
+TEST(framebuffer, headless_clear_fills_pixels)
+{
+    Framebuffer fb(4, 4, /*headless=*/true);
+    fb.set_pixel(1, 1, {99, 99, 99});
+    fb.clear({7, 8, 9});
+    Color c = fb.get_pixel(1, 1);
+    ASSERT_EQ(static_cast<int>(c.r), 7);
+    ASSERT_EQ(static_cast<int>(c.g), 8);
+    ASSERT_EQ(static_cast<int>(c.b), 9);
+}
+
+TEST(framebuffer, headless_depth_ops_work)
+{
+    Framebuffer fb(4, 4, /*headless=*/true);
+    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.5f));
+    ASSERT_FALSE(fb.test_and_set_depth(1, 1, 0.9f));
+    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.1f));
+}
+
+TEST(framebuffer, headless_clear_resets_depth)
+{
+    Framebuffer fb(4, 4, /*headless=*/true);
+    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.5f));
+    fb.clear();
+    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.9f)); // depth reset to +inf
+}
+
 // ─── dirty-tracking path ──────────────────────────────────────────────────────
 
 TEST(framebuffer, present_dirty_then_present_again_no_crash)

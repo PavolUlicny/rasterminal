@@ -588,6 +588,73 @@ TEST(args, fps_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── --bench ──────────────────────────────────────────────────────────────────
+
+TEST(args, bench_default_is_off)
+{
+    ASSERT_EQ(run({"m.obj"}).args.bench, -1);
+}
+
+TEST(args, bench_bare_long_at_end)
+{
+    ParseResult r = run({"m.obj", "--bench"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench, 200);
+}
+
+TEST(args, bench_bare_short_before_model)
+{
+    ParseResult r = run({"-B", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench, 200);
+}
+
+TEST(args, bench_bare_with_flag_after)
+{
+    ParseResult r = run({"-B", "--spin", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench, 200);
+    ASSERT_TRUE(r.args.spin);
+}
+
+TEST(args, bench_positive_value)
+{
+    ParseResult r = run({"-B", "50", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench, 50);
+}
+
+TEST(args, bench_compact_short_form)
+{
+    ASSERT_EQ(run({"-B100", "m.obj"}).args.bench, 100);
+}
+
+TEST(args, bench_equals_long_form)
+{
+    ASSERT_EQ(run({"--bench=500", "m.obj"}).args.bench, 500);
+}
+
+TEST(args, bench_zero_is_error)
+{
+    ParseResult r = run({"--bench", "0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_negative_is_error)
+{
+    ParseResult r = run({"--bench=-1", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_non_integer_is_error)
+{
+    ParseResult r = run({"--bench", "fast", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // ─── --cull ───────────────────────────────────────────────────────────────────
 
 TEST(args, cull_default_is_on)
@@ -757,6 +824,41 @@ TEST(args, fps_long_overflow_is_error)
 TEST(args, fps_compact_overflow_is_error)
 {
     ParseResult r = run({"-f99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_long_overflow_is_error)
+{
+    ParseResult r = run({"--bench", "99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_compact_overflow_is_error)
+{
+    ParseResult r = run({"-B99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_compact_zero_is_error)
+{
+    ParseResult r = run({"-B0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_compact_non_digit_is_error)
+{
+    ParseResult r = run({"-Babc", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_short_explicit_zero_is_error)
+{
+    ParseResult r = run({"-B", "0", "m.obj"});
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }

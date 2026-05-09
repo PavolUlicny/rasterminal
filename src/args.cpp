@@ -245,6 +245,24 @@ ParseResult parse_args(int argc, char *argv[])
             if (!parse_threads("-f", argv[i] + 2, args.fps))
                 return fail(1);
         }
+        else if (arg == "-B" || arg == "--bench")
+        {
+            // Bare form (no value, or next token is not a positive integer) = 200 frames.
+            if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+                args.bench = 200;
+            else
+            {
+                const char *val = get_val(i);
+                if (!val || !parse_threads(flag, val, args.bench))
+                    return fail(1);
+            }
+        }
+        else if (std::strncmp(argv[i], "-B", 2) == 0 &&
+                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        {
+            if (!parse_threads("-B", argv[i] + 2, args.bench))
+                return fail(1);
+        }
         else if (arg == "-s" || arg == "--shading")
         {
             const char *val = get_val(i);
@@ -316,6 +334,7 @@ ParseResult parse_args(int argc, char *argv[])
                 "  -S,     --spin                 Start with auto-rotation enabled\n"
                 "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
                 "  -f [N], --fps [N]              Frame cap: bare -f/--fps uncapped, -f N caps at N fps (default: 60)\n"
+                "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200), prints timing + fps + throughput to stderr\n"
                 "          --no-shadow            Disable shadow map\n"
                 "          --no-ao                Disable ambient occlusion\n"
                 "          --no-hud               Hide the HUD status line\n"

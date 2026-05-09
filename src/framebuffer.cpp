@@ -27,27 +27,33 @@ static int write_int(char *buf, int v)
     return len;
 }
 
-Framebuffer::Framebuffer(int pixel_width, int pixel_height)
+Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
     : m_width(pixel_width),
       m_height(pixel_height),
       m_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
       m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity())
+      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity()),
+      m_headless(headless)
 {
-    // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
-    m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
-
-    std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
-    std::fputs("\033[?25l", stdout);   // hide cursor
-    std::fflush(stdout);
+    if (!m_headless)
+    {
+        // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
+        m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
+        std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
+        std::fputs("\033[?25l", stdout);   // hide cursor
+        std::fflush(stdout);
+    }
 }
 
 Framebuffer::~Framebuffer()
 {
-    // Restore cursor, reset colours, then leave the alternate screen buffer —
-    // this restores the terminal to exactly the state it was in before launch.
-    std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
-    std::fflush(stdout);
+    if (!m_headless)
+    {
+        // Restore cursor, reset colours, then leave the alternate screen buffer —
+        // this restores the terminal to exactly the state it was in before launch.
+        std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
+        std::fflush(stdout);
+    }
 }
 
 void Framebuffer::resize(int pixel_width, int pixel_height)

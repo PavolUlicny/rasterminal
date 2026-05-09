@@ -20,7 +20,8 @@ class Framebuffer
 public:
     // pixel_width  = terminal columns
     // pixel_height = terminal rows * 2  (two pixels per cell via ▀)
-    Framebuffer(int pixel_width, int pixel_height);
+    // headless     = true skips all terminal I/O (ANSI escapes, buffer reserve)
+    Framebuffer(int pixel_width, int pixel_height, bool headless = false);
     ~Framebuffer();
 
     int width() const { return m_width; }
@@ -93,4 +94,5 @@ private:
     std::string m_buf; // reused output buffer, avoids per-frame allocation
     std::string m_hud; // status line written below pixel rows
     bool m_force_redraw = true;
+    bool m_headless = false;
 };
