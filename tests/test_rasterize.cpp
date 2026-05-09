@@ -608,3 +608,213 @@ TEST(rasterize, unequal_w_y_band_unaffected)
     ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
 }
+
+// ─── setup_tri bounding-box & band clamping ───────────────────────────────────
+
+TEST(rasterize, bbox_clamps_to_right_edge)
+{
+    // sb.x=100 is far off-screen; x1 clamps to width-1=19.
+    // Pixels inside the framebuffer must still be drawn (no OOB write).
+    FdRedirect r;
+    Framebuffer fb(20, 20);
+    rast(fb, {2.0f, 5.0f, 0.5f}, {100.0f, 5.0f, 0.5f}, {10.0f, 15.0f, 0.5f},
+         0, fb.height() - 1);
+    ASSERT_TRUE(was_drawn(fb, 8, 10)); // inside triangle and within framebuffer bounds
+}
+
+TEST(rasterize, bbox_clamps_to_bottom_edge)
+{
+    // sc.y=100 is far off-screen; y1 clamps to height-1=19.
+    FdRedirect r;
+    Framebuffer fb(20, 20);
+    rast(fb, {2.0f, 2.0f, 0.5f}, {18.0f, 2.0f, 0.5f}, {10.0f, 100.0f, 0.5f},
+         0, fb.height() - 1);
+    ASSERT_TRUE(was_drawn(fb, 10, 10)); // inside triangle and within framebuffer bounds
+}
+
+TEST(rasterize, triangle_entirely_left_of_screen_no_draw)
+{
+    // All vertices off-screen to the left: x1=min(19,-10)=-10 < x0=max(0,-20)=0.
+    // setup_tri returns false on the s.x0 > s.x1 early-return path.
+    FdRedirect r;
+    Framebuffer fb(20, 20);
+    rast(fb, {-20.0f, 5.0f, 0.5f}, {-10.0f, 5.0f, 0.5f}, {-15.0f, 15.0f, 0.5f},
+         0, fb.height() - 1);
+    for (int y = 0; y < fb.height(); ++y)
+        for (int x = 0; x < fb.width(); ++x)
+            ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
+TEST(rasterize, single_row_band)
+{
+    // y_min == y_max == 10: only row 10 is rasterized; adjacent rows untouched.
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 10, 10);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));  // in triangle, in band
+    ASSERT_FALSE(was_drawn(fb, 20, 9));  // in triangle, outside band above
+    ASSERT_FALSE(was_drawn(fb, 20, 11)); // in triangle, outside band below
+}
+
+TEST(rasterize, band_disjoint_from_triangle_draws_nothing)
+{
+    // Triangle spans y=2..18; band y_min=y_max=19 lies below it.
+    // y0 = max(19,2)=19, y1 = min(19,18)=18 → s.y0 > s.y1 early return.
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 19, 19);
+    for (int y = 0; y < fb.height(); ++y)
+        for (int x = 0; x < fb.width(); ++x)
+            ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
+// ─── degenerate triangle edge cases ──────────────────────────────────────────
+
+TEST(rasterize, three_identical_vertices_no_draw)
+{
+    // All three vertices coincide — single-point zero-area; denom=0 < DEGEN_AREA_EPS.
+    // Distinct from degenerate_collinear_skipped (three different points on a line).
+    FdRedirect r;
+    Framebuffer fb(20, 20);
+    rast(fb, {10.0f, 10.0f, 0.5f}, {10.0f, 10.0f, 0.5f}, {10.0f, 10.0f, 0.5f},
+         0, fb.height() - 1);
+    for (int y = 9; y <= 11; ++y)
+        for (int x = 9; x <= 11; ++x)
+            ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
+TEST(rasterize, winding_agnostic_cw_also_draws)
+{
+    // rasterize() is winding-agnostic: CW triangles fill the same interior pixels
+    // as their CCW mirror. Backface culling is the renderer's responsibility, not
+    // rasterize()'s — it must work correctly for both winding orders.
+    FdRedirect r;
+    Framebuffer fb1(40, 20), fb2(40, 20);
+    rast(fb1, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 0, 19); // CCW
+    rast(fb2, {4.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, 0, 19); // CW (b,c swapped)
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    ASSERT_TRUE(was_drawn(fb2, 20, 10));
+}
+
+// ─── vec3_to_color saturation ─────────────────────────────────────────────────
+
+TEST(rasterize, color_above_one_clamps_to_255)
+{
+    // vec3_to_color clamps each channel to [0,1] before * 255.
+    // Colour (2,2,2) — HDR overflow — must yield (255,255,255).
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 hot{2.0f, 2.0f, 2.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 1.0f, 1.0f, 1.0f, hot, hot, hot, 0, 19);
+    assert_pixel_near(fb, 20, 10, Color{255, 255, 255}, 0);
+}
+
+TEST(rasterize, color_below_zero_clamps_to_0)
+{
+    // Colour (-1,-1,-1) — underflow — must yield (0,0,0).
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    vec3 dark{-1.0f, -1.0f, -1.0f};
+    rast_colored(fb,
+                 {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                 1.0f, 1.0f, 1.0f, dark, dark, dark, 0, 19);
+    assert_pixel_near(fb, 20, 10, Color{0, 0, 0}, 0);
+}
+
+// ─── draw_line additional paths ───────────────────────────────────────────────
+
+TEST(draw_line, depth_interpolates_along_line)
+{
+    // Endpoints z=0.2 and z=0.8; 8 steps → sz=0.075; midpoint (x=6) has z≈0.5.
+    // Existing tests use constant depth — this verifies the sz accumulation.
+    FdRedirect r;
+    Framebuffer fb(20, 10);
+    draw_line(fb, {2.0f, 5.0f, 0.2f}, {10.0f, 5.0f, 0.8f}, Color{255, 255, 255});
+    assert_depth_near(fb, 6, 5, 0.5f, 0.02f);
+}
+
+TEST(draw_line, steep_slope_dy_dominant)
+{
+    // dy=10, dx=2 → steps=10 (y axis dominates); sx=0.2, sy=1.0.
+    // Analytically: step 0 → (3,2), step 5 → (4,7), step 10 → (5,12).
+    FdRedirect r;
+    Framebuffer fb(20, 20);
+    draw_line(fb, {3.0f, 2.0f, 0.5f}, {5.0f, 12.0f, 0.5f}, Color{255, 255, 255});
+    ASSERT_TRUE(was_drawn(fb, 3, 2));  // step 0
+    ASSERT_TRUE(was_drawn(fb, 4, 7));  // step 5: x=round(3+5*0.2)=round(4.0)=4
+    ASSERT_TRUE(was_drawn(fb, 5, 12)); // step 10
+}
+
+// ─── rasterize_phong additional edge cases ────────────────────────────────────
+
+// Minimal rasterize_phong helper: no lights, no textures, no shadows, AO=1.
+static void rast_phong_minimal(Framebuffer &fb,
+                               vec3 sa, vec3 sb, vec3 sc,
+                               const vec3 &ambient,
+                               const Material &mat,
+                               int y_min, int y_max)
+{
+    vec3 zero{};
+    vec3 normal{0.0f, 0.0f, -1.0f};
+    vec3 tan{1.0f, 0.0f, 0.0f};
+    vec3 white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    rasterize_phong(fb, sa, sb, sc,
+                    1.0f, 1.0f, 1.0f,
+                    zero, zero, zero,
+                    normal, normal, normal,
+                    tan, tan, tan,
+                    vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
+                    1.0f, 1.0f, 1.0f,
+                    white, white, white,
+                    false,
+                    eye,
+                    nullptr, 0,
+                    ambient,
+                    mat,
+                    nullptr, nullptr, nullptr, nullptr,
+                    y_min, y_max);
+}
+
+TEST(rasterize_phong, degenerate_collinear_no_crash)
+{
+    // Three collinear vertices → denom=0 → setup_tri returns false; no pixels drawn.
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    Material mat{};
+    rast_phong_minimal(fb,
+                       {5.0f, 5.0f, 0.5f}, {15.0f, 5.0f, 0.5f}, {10.0f, 5.0f, 0.5f},
+                       {0.2f, 0.2f, 0.2f}, mat, 0, fb.height() - 1);
+    for (int x = 4; x <= 16; ++x)
+        ASSERT_FALSE(was_drawn(fb, x, 5));
+}
+
+TEST(rasterize_phong, entirely_off_screen_no_crash)
+{
+    // All vertices far off-screen; setup_tri returns false on bbox check.
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    Material mat{};
+    rast_phong_minimal(fb,
+                       {-50.0f, -30.0f, 0.5f}, {-20.0f, -30.0f, 0.5f}, {-35.0f, -10.0f, 0.5f},
+                       {0.2f, 0.2f, 0.2f}, mat, 0, fb.height() - 1);
+    for (int x = 0; x < fb.width(); ++x)
+        for (int y = 0; y < fb.height(); ++y)
+            ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
+TEST(rasterize_phong, no_lights_uses_ambient_only)
+{
+    // n_lights=0, lights=nullptr → only ambient term: ambient * mat.ambient * ao.
+    // ambient=(0.4,0.4,0.4), mat.ambient=(1,1,1), ao=1 → pixel≈(102,102,102).
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    Material mat{};
+    rast_phong_minimal(fb,
+                       {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
+                       {0.4f, 0.4f, 0.4f}, mat, 0, fb.height() - 1);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    assert_pixel_near(fb, 20, 10, Color{102, 102, 102}, 5);
+}
