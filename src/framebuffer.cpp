@@ -7,6 +7,49 @@
 // Top pixel → foreground color, bottom pixel → background color.
 static const char UPPER_HALF[] = "\xe2\x96\x80";
 
+struct ByteLut
+{
+    char s[256][3];
+    uint8_t len[256];
+};
+static constexpr ByteLut make_byte_lut() noexcept
+{
+    ByteLut t{};
+    for (int i = 0; i < 256; ++i)
+    {
+        if (i < 10)
+        {
+            t.s[i][0] = char('0' + i);
+            t.len[i] = 1;
+        }
+        else if (i < 100)
+        {
+            t.s[i][0] = char('0' + i / 10);
+            t.s[i][1] = char('0' + i % 10);
+            t.len[i] = 2;
+        }
+        else
+        {
+            t.s[i][0] = char('0' + i / 100);
+            t.s[i][1] = char('0' + (i / 10) % 10);
+            t.s[i][2] = char('0' + i % 10);
+            t.len[i] = 3;
+        }
+    }
+    return t;
+}
+static constexpr ByteLut byte_lut = make_byte_lut();
+
+// Always writes 3 bytes (single store); caller advances by the returned length.
+// 1-2 slop bytes past len are within tmp[48] and overwritten by the next write.
+static int write_byte(char *buf, uint8_t v)
+{
+    buf[0] = byte_lut.s[v][0];
+    buf[1] = byte_lut.s[v][1];
+    buf[2] = byte_lut.s[v][2];
+    return byte_lut.len[v];
+}
+
 // Fast integer-to-string: writes decimal digits of v into buf, returns length.
 static int write_int(char *buf, int v)
 {
@@ -124,11 +167,11 @@ void Framebuffer::present()
                 tmp[n++] = ';';
                 tmp[n++] = '2';
                 tmp[n++] = ';';
-                n += write_int(tmp + n, bot.r);
+                n += write_byte(tmp + n, bot.r);
                 tmp[n++] = ';';
-                n += write_int(tmp + n, bot.g);
+                n += write_byte(tmp + n, bot.g);
                 tmp[n++] = ';';
-                n += write_int(tmp + n, bot.b);
+                n += write_byte(tmp + n, bot.b);
                 tmp[n++] = 'm';
                 m_buf.append(tmp, static_cast<size_t>(n));
                 prev_bg = bot;
@@ -156,11 +199,11 @@ void Framebuffer::present()
                     tmp[n++] = ';';
                     tmp[n++] = '2';
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, top.r);
+                    n += write_byte(tmp + n, top.r);
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, top.g);
+                    n += write_byte(tmp + n, top.g);
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, top.b);
+                    n += write_byte(tmp + n, top.b);
                     prev_fg = top;
                     fg_known = true;
                     if (bg_change)
@@ -173,11 +216,11 @@ void Framebuffer::present()
                     tmp[n++] = ';';
                     tmp[n++] = '2';
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, bot.r);
+                    n += write_byte(tmp + n, bot.r);
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, bot.g);
+                    n += write_byte(tmp + n, bot.g);
                     tmp[n++] = ';';
-                    n += write_int(tmp + n, bot.b);
+                    n += write_byte(tmp + n, bot.b);
                     prev_bg = bot;
                     bg_known = true;
                 }
