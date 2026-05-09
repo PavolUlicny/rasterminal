@@ -109,7 +109,7 @@ static void run_bench(const Mesh &mesh, const ParsedArgs &args)
         shadow_ms = std::chrono::duration<double, std::milli>(te - ts).count();
     }
 
-    Framebuffer fb(200, 120, /*headless=*/true);
+    Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
     Renderer renderer(args.n_threads);
     renderer.mode = static_cast<ShadingMode>(args.shading);
     renderer.cull_backfaces = args.cull;
@@ -118,7 +118,7 @@ static void run_bench(const Mesh &mesh, const ParsedArgs &args)
     const int n_lights = args.lighting == 1 ? 1 : (args.lighting == 2 ? 0 : 2);
     const vec3 &cur_ambient = args.lighting == 2 ? FLAT_AMBIENT : ambient;
 
-    const int n_warmup = 20;
+    const int n_warmup = args.bench_warmup;
     const int n_measure = args.bench;
     std::vector<int64_t> frame_ns;
     frame_ns.reserve(static_cast<size_t>(n_measure));
@@ -173,8 +173,8 @@ static void run_bench(const Mesh &mesh, const ParsedArgs &args)
                   : args.n_threads < 0 ? std::min(hw, 4)
                                        : args.n_threads;
 
-    std::fprintf(stderr, "bench: %d frames  200x120 px  threads=%d  mode=%s  (%.0f ms total)\n",
-                 n_measure, threads, shading_mode_name(renderer.mode), total_ms);
+    std::fprintf(stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n",
+                 n_measure, args.bench_width, args.bench_height, threads, shading_mode_name(renderer.mode), total_ms);
     std::fprintf(stderr, "mesh:    %zu tris  %zu verts\n",
                  mesh.triangles.size(), mesh.vertices.size());
     if (shadow_ms)

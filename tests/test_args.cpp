@@ -937,3 +937,127 @@ TEST(args, empty_value_after_equals_is_error)
     ASSERT_FALSE(run({"--bg=", "m.obj"}).ok);
     ASSERT_FALSE(run({"--threads=", "m.obj"}).ok);
 }
+
+// ─── --bench-size / --bench-warmup ───────────────────────────────────────────
+
+TEST(args, bench_size_default)
+{
+    ParseResult r = run({"m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_width, 200);
+    ASSERT_EQ(r.args.bench_height, 120);
+}
+
+TEST(args, bench_size_valid)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "400x240", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_width, 400);
+    ASSERT_EQ(r.args.bench_height, 240);
+}
+
+TEST(args, bench_size_equals_form)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size=800x600", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_width, 800);
+    ASSERT_EQ(r.args.bench_height, 600);
+}
+
+TEST(args, bench_size_no_separator_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "400", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_zero_width_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "0x100", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_zero_height_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "100x0", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_non_numeric_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "axb", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_trailing_garbage_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "100x100x", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_missing_value_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "m.obj"});
+    // "m.obj" consumed as value — then model_path is empty → error
+    ASSERT_FALSE(r.ok);
+}
+
+TEST(args, bench_size_without_bench_is_error)
+{
+    ParseResult r = run({"--bench-size", "400x240", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_warmup_default)
+{
+    ParseResult r = run({"m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_warmup, 20);
+}
+
+TEST(args, bench_warmup_valid)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "100", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_warmup, 100);
+}
+
+TEST(args, bench_warmup_zero_is_valid)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "0", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_warmup, 0);
+}
+
+TEST(args, bench_warmup_negative_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "-5", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_warmup_non_integer_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "foo", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_warmup_missing_value_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "m.obj"});
+    // "m.obj" consumed as value — then model_path is empty → error
+    ASSERT_FALSE(r.ok);
+}
+
+TEST(args, bench_warmup_without_bench_is_error)
+{
+    ParseResult r = run({"--bench-warmup", "50", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}

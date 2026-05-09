@@ -49,6 +49,48 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto parse_nonneg_int = [](const char *flag, const char *val, int &out) -> bool
+    {
+        char *end = nullptr;
+        errno = 0;
+        long v = std::strtol(val, &end, 10);
+        if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
+        {
+            std::fprintf(stderr,
+                         "Error: %s requires a non-negative integer, got '%s'\n",
+                         flag, val);
+            return false;
+        }
+        out = static_cast<int>(v);
+        return true;
+    };
+
+    auto parse_size = [](const char *flag, const char *val, int &w, int &h) -> bool
+    {
+        auto err = [flag, val]() -> bool
+        {
+            std::fprintf(stderr,
+                         "Error: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n",
+                         flag, val);
+            return false;
+        };
+        const char *sep = std::strchr(val, 'x');
+        if (!sep || sep == val)
+            return err();
+        char *end = nullptr;
+        errno = 0;
+        long ww = std::strtol(val, &end, 10);
+        if (end != sep || ww <= 0 || ww > INT_MAX || errno == ERANGE)
+            return err();
+        errno = 0;
+        long hh = std::strtol(sep + 1, &end, 10);
+        if (end == sep + 1 || *end != '\0' || hh <= 0 || hh > INT_MAX || errno == ERANGE)
+            return err();
+        w = static_cast<int>(ww);
+        h = static_cast<int>(hh);
+        return true;
+    };
+
     // Returns true if s is a non-empty string of ASCII digits only.
     auto is_all_digits = [](const char *s) -> bool
     {
@@ -184,6 +226,8 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    bool saw_bench_size = false, saw_bench_warmup = false;
+
     for (int i = 1; i < argc; i++)
     {
         // Split --flag=value → flag name + value pointer.
@@ -263,6 +307,20 @@ ParseResult parse_args(int argc, char *argv[])
             if (!parse_threads("-B", argv[i] + 2, args.bench))
                 return fail(1);
         }
+        else if (arg == "--bench-size")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_size(flag, val, args.bench_width, args.bench_height))
+                return fail(1);
+            saw_bench_size = true;
+        }
+        else if (arg == "--bench-warmup")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_nonneg_int(flag, val, args.bench_warmup))
+                return fail(1);
+            saw_bench_warmup = true;
+        }
         else if (arg == "-s" || arg == "--shading")
         {
             const char *val = get_val(i);
@@ -335,6 +393,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
                 "  -f [N], --fps [N]              Frame cap: bare -f/--fps uncapped, -f N caps at N fps (default: 60)\n"
                 "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200), prints timing + fps + throughput to stderr\n"
+                "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
+                "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
                 "          --no-shadow            Disable shadow map\n"
                 "          --no-ao                Disable ambient occlusion\n"
                 "          --no-hud               Hide the HUD status line\n"
@@ -434,6 +494,17 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else
             args.model_path = argv[i];
+    }
+
+    if (saw_bench_size && args.bench < 1)
+    {
+        std::fprintf(stderr, "Error: --bench-size requires --bench\n");
+        return fail(1);
+    }
+    if (saw_bench_warmup && args.bench < 1)
+    {
+        std::fprintf(stderr, "Error: --bench-warmup requires --bench\n");
+        return fail(1);
     }
 
     if (args.model_path.empty())
