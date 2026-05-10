@@ -331,7 +331,7 @@ int main(int argc, char *argv[])
                     texturing = true;
                 }
                 else
-                    camera.process_key(k, dt);
+                    camera.process_key(k, std::max(dt, 1.0f / 60.0f));
             }
             else if (ev.type == platform::InputEvent::Type::ScrollUp)
             {
