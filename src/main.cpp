@@ -261,6 +261,8 @@ int main(int argc, char *argv[])
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
+    platform::Key held_cam_key = platform::KEY_NONE;
+    clock::time_point held_cam_key_tp = clock::now();
 
     while (true)
     {
@@ -331,7 +333,10 @@ int main(int argc, char *argv[])
                     texturing = true;
                 }
                 else
-                    camera.process_key(k, std::max(dt, 1.0f / 60.0f));
+                {
+                    held_cam_key = k;
+                    held_cam_key_tp = clock::now();
+                }
             }
             else if (ev.type == platform::InputEvent::Type::ScrollUp)
             {
@@ -359,6 +364,16 @@ int main(int argc, char *argv[])
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
             }
+        }
+
+        // ── Camera key movement (once per frame, frame-rate independent) ──
+        if (held_cam_key != platform::KEY_NONE)
+        {
+            float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
+            if (since > 0.1f)
+                held_cam_key = platform::KEY_NONE; // key released
+            else
+                camera.process_key(held_cam_key, dt);
         }
 
         // ── Auto-rotation ────────────────────────────────────────────────
