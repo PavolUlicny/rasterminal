@@ -134,6 +134,119 @@ TEST(gltf_valid, single_sided_flag_clear)
         ASSERT_FALSE(mat.double_sided);
 }
 
+TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_loaded)
+{
+    std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},"
+        "\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":0}]}],"
+        "\"materials\":[{\"alphaMode\":\"MASK\",\"alphaCutoff\":0.25}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}"
+        "],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+        "\"buffers\":[{\"byteLength\":36}]}";
+    while (json.size() % 4 != 0)
+        json += ' ';
+    const uint32_t jlen = static_cast<uint32_t>(json.size());
+
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    const uint32_t blen = static_cast<uint32_t>(bin.size());
+
+    std::string glb;
+    emit_u32_le(glb, 0x46546C67u);
+    emit_u32_le(glb, 2u);
+    emit_u32_le(glb, 12u + 8u + jlen + 8u + blen);
+    emit_u32_le(glb, jlen);
+    emit_u32_le(glb, 0x4E4F534Au);
+    glb += json;
+    emit_u32_le(glb, blen);
+    emit_u32_le(glb, 0x004E4942u);
+    glb += bin;
+
+    TmpFile f(tmp_path("rast_scene_fallback_mask.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].alpha_cutoff, 0.25f, 1e-6f);
+}
+
+TEST(gltf_valid, unused_vertex_keeps_ao_at_one)
+{
+    std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"NORMAL\":1},\"indices\":2}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\"},"
+        "{\"bufferView\":2,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":48},"
+        "{\"buffer\":0,\"byteOffset\":48,\"byteLength\":48},"
+        "{\"buffer\":0,\"byteOffset\":96,\"byteLength\":6}"
+        "],"
+        "\"buffers\":[{\"byteLength\":102}]}";
+    while (json.size() % 4 != 0)
+        json += ' ';
+    const uint32_t jlen = static_cast<uint32_t>(json.size());
+
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    for (int i = 0; i < 4; i++)
+    {
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 1.0f);
+    }
+    bin.push_back(static_cast<char>(0));
+    bin.push_back(static_cast<char>(0));
+    bin.push_back(static_cast<char>(1));
+    bin.push_back(static_cast<char>(0));
+    bin.push_back(static_cast<char>(2));
+    bin.push_back(static_cast<char>(0));
+    const uint32_t blen = static_cast<uint32_t>(bin.size());
+
+    std::string glb;
+    emit_u32_le(glb, 0x46546C67u);
+    emit_u32_le(glb, 2u);
+    emit_u32_le(glb, 12u + 8u + jlen + 8u + blen);
+    emit_u32_le(glb, jlen);
+    emit_u32_le(glb, 0x4E4F534Au);
+    glb += json;
+    emit_u32_le(glb, blen);
+    emit_u32_le(glb, 0x004E4942u);
+    glb += bin;
+
+    TmpFile f(tmp_path("rast_unused_ao.glb"), glb.data(), glb.size());
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(4));
+    ASSERT_NEAR(m.vertices[3].ao, 1.0f, 1e-6f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  REJECTIONS
 // ═══════════════════════════════════════════════════════════════════════════
