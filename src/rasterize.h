@@ -39,6 +39,7 @@ struct RasterTri
     vec2 uva, uvb, uvc;          // texture coordinates
     const Texture *tex;          // diffuse texture  (nullptr if none)
     const ShadowMap *shadow_map; // pre-built shadow map (nullptr if disabled)
+    float alpha_cutoff = 0.0f;   // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
 
     // Flat / Gouraud data (lighting evaluated once per vertex in Phase 1).
     struct FgData
@@ -91,6 +92,7 @@ void rasterize(Framebuffer &fb,
                vec3 pa, vec3 pb, vec3 pc,
                vec2 uva, vec2 uvb, vec2 uvc,
                const Texture *tex,
+               float alpha_cutoff,
                const ShadowMap *shadow_map,
                int y_min, int y_max);
 

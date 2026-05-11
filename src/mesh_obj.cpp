@@ -77,6 +77,10 @@ bool Mesh::load_obj(const std::string &path)
         // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
         mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname)
                                                    : load_tex(m.bump_texname);
+        // map_d present: treat map_Kd's alpha channel as an opacity mask.
+        // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
+        if (!m.alpha_texname.empty())
+            mat.alpha_cutoff = 0.5f;
         materials.push_back(std::move(mat));
     }
 

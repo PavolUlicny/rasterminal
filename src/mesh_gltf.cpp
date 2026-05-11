@@ -83,6 +83,8 @@ bool Mesh::load_gltf(const std::string &path)
         if (m->normal_texture.texture)
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
         mat.double_sided = m->double_sided;
+        if (m->alpha_mode == cgltf_alpha_mode_mask)
+            mat.alpha_cutoff = m->alpha_cutoff;
         return mat;
     };
 

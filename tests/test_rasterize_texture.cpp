@@ -32,7 +32,7 @@ static void rast_tex(Framebuffer &fb,
               ca, cb, cc, ca, cb, cc,
               zero, zero, zero,
               uva, uvb, uvc,
-              tex, nullptr, y_min, y_max);
+              tex, 0.0f, nullptr, y_min, y_max);
 }
 
 // ─── texture-rasterizer integration ──────────────────────────────────────────

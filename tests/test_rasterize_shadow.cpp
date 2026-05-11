@@ -47,7 +47,7 @@ static void rast_shadow(Framebuffer &fb,
               shad, shad, shad,
               pa, pb, pc,
               uv, uv, uv,
-              nullptr, sm, 0, 19);
+              nullptr, 0.0f, sm, 0, 19);
 }
 
 // rasterize_phong() wrapper: canonical triangle, caller-supplied world positions,

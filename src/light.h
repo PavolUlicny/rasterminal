@@ -43,6 +43,7 @@ struct Material
     int specular_tex = -1; // index into Mesh::textures, or -1 if none
     int normal_tex = -1;   // index into Mesh::textures, or -1 if none
     bool double_sided = false;
+    float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
 };
 
 struct Light

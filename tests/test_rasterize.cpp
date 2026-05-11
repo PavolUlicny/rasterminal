@@ -14,7 +14,7 @@ static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_ma
               black, black, black,
               zero, zero, zero,
               vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
-              nullptr, nullptr,
+              nullptr, 0.0f, nullptr,
               y_min, y_max);
 }
 
@@ -356,7 +356,7 @@ static void rast_colored(Framebuffer &fb,
               ca, cb, cc,
               zero, zero, zero,
               vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f}, vec2{0.0f, 0.0f},
-              nullptr, nullptr,
+              nullptr, 0.0f, nullptr,
               y_min, y_max);
 }
 

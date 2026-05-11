@@ -217,6 +217,7 @@ void rasterize(Framebuffer &fb,
                vec3 pa, vec3 pb, vec3 pc,
                vec2 uva, vec2 uvb, vec2 uvc,
                const Texture *tex,
+               float alpha_cutoff,
                const ShadowMap *shadow_map,
                int y_min, int y_max)
 {
@@ -230,6 +231,8 @@ void rasterize(Framebuffer &fb,
     const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
+
+    const bool has_cutout = (alpha_cutoff > 0.0f && tex);
 
     for (int y = s.y0; y <= s.y1; y++)
     {
@@ -256,6 +259,27 @@ void rasterize(Framebuffer &fb,
             // perspective correction would distort it and break depth ordering.
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
+            // Alpha cutout: sample before depth write so discarded pixels don't
+            // claim z-buffer entries (otherwise transparent holes occlude geometry).
+            float pwa = 0.0f, pwb = 0.0f, pwc = 0.0f, w_corr = 1.0f;
+            vec3 cutout_rgb;
+            if (has_cutout)
+            {
+                pwa = ba * inv_wa;
+                pwb = bb * inv_wb;
+                pwc = bc * inv_wc;
+                w_corr = 1.0f / (pwa + pwb + pwc);
+                vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                if (ta.w < alpha_cutoff)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+                cutout_rgb = {ta.x, ta.y, ta.z};
+            }
+
             if (!fb.unchecked_test_and_set_depth(x, y, depth))
             {
                 ba += ba_dx;
@@ -264,8 +288,13 @@ void rasterize(Framebuffer &fb,
             }
 
             // Perspective-correct weights — computed once, reused for all attributes.
-            float pwa = ba * inv_wa, pwb = bb * inv_wb, pwc = bc * inv_wc;
-            float w_corr = 1.0f / (pwa + pwb + pwc);
+            if (!has_cutout)
+            {
+                pwa = ba * inv_wa;
+                pwb = bb * inv_wb;
+                pwc = bc * inv_wc;
+                w_corr = 1.0f / (pwa + pwb + pwc);
+            }
 
             // Per-pixel shadow test using interpolated world position.
             float sf = 0.0f;
@@ -282,8 +311,13 @@ void rasterize(Framebuffer &fb,
 
             if (tex)
             {
-                vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                col = col * tex->sample_rgb(uv.x, uv.y);
+                if (has_cutout)
+                    col = col * cutout_rgb;
+                else
+                {
+                    vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                    col = col * tex->sample_rgb(uv.x, uv.y);
+                }
             }
 
             fb.unchecked_set_pixel(x, y, vec3_to_color(col));
@@ -336,6 +370,8 @@ void rasterize_phong(Framebuffer &fb,
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
 
+    const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
+
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
@@ -357,6 +393,29 @@ void rasterize_phong(Framebuffer &fb,
             }
 
             float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+
+            // Alpha cutout: sample before depth write so discarded pixels don't
+            // claim z-buffer entries (otherwise transparent holes occlude geometry).
+            float pwa = 0.0f, pwb = 0.0f, pwc = 0.0f, w_corr = 1.0f;
+            vec3 cutout_rgb;
+            vec2 uv{}; // hoisted: shared by cutout pre-pass and nmap/stex below
+            if (has_cutout)
+            {
+                pwa = ba * inv_wa;
+                pwb = bb * inv_wb;
+                pwc = bc * inv_wc;
+                w_corr = 1.0f / (pwa + pwb + pwc);
+                uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                if (ta.w < mat.alpha_cutoff)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+                cutout_rgb = {ta.x, ta.y, ta.z};
+            }
+
             if (!fb.unchecked_test_and_set_depth(x, y, depth))
             {
                 ba += ba_dx;
@@ -364,16 +423,20 @@ void rasterize_phong(Framebuffer &fb,
                 continue;
             }
 
-            // Perspective-correct weights — computed once, reused for all attributes.
-            float pwa = ba * inv_wa, pwb = bb * inv_wb, pwc = bc * inv_wc;
-            float w_corr = 1.0f / (pwa + pwb + pwc);
+            if (!has_cutout)
+            {
+                pwa = ba * inv_wa;
+                pwb = bb * inv_wb;
+                pwc = bc * inv_wc;
+                w_corr = 1.0f / (pwa + pwb + pwc);
+            }
 
             vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
             vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
             // Compute UV once — needed by both diffuse and normal map.
-            vec2 uv{};
-            if (tex || nmap || stex)
+            // Skip when has_cutout: uv was already computed in the pre-pass above.
+            if (!has_cutout && (tex || nmap || stex))
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
@@ -408,7 +471,8 @@ void rasterize_phong(Framebuffer &fb,
                 mat_tex = mat;
                 if (tex)
                 {
-                    vec3 tc = tex->sample_rgb(uv.x, uv.y);
+                    // Reuse the rgba sample from the cutout pre-pass when active.
+                    vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
                     mat_tex.diffuse = mat_tex.diffuse * tc;
                     mat_tex.ambient = mat_tex.ambient * tc;
                 }

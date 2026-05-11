@@ -200,6 +200,7 @@ void Renderer::worker_func(int t)
                         rt.uvc = c.uv;
                         rt.tex = tex;
                         rt.shadow_map = shadow_map;
+                        rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0.0f;
 
                         if (smode == ShadingMode::Phong)
                         {
@@ -377,7 +378,7 @@ void Renderer::worker_func(int t)
                                   rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
                                   rt.pa, rt.pb, rt.pc,
                                   rt.uva, rt.uvb, rt.uvc,
-                                  rt.tex, rt.shadow_map,
+                                  rt.tex, rt.alpha_cutoff, rt.shadow_map,
                                   y_min, y_max);
                 }
         }
