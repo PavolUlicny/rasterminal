@@ -246,3 +246,59 @@ TEST(texture, bilinear_2x2_center_averages_all_four_corners)
     ASSERT_NEAR(c.y, 0.5f, 1e-4f);
     ASSERT_NEAR(c.z, 0.5f, 1e-4f);
 }
+
+TEST(texture, sample_rgba_2x2_center_averages_all_four_corners)
+{
+    Texture t = make_tex(2, 2, {
+                                   255,
+                                   0,
+                                   0,
+                                   0,
+                                   0,
+                                   255,
+                                   0,
+                                   64,
+                                   0,
+                                   0,
+                                   255,
+                                   128,
+                                   255,
+                                   255,
+                                   255,
+                                   255,
+                               });
+    vec4 c = t.sample_rgba(0.5f, 0.5f);
+    ASSERT_NEAR(c.x, 0.5f, 1e-4f);
+    ASSERT_NEAR(c.y, 0.5f, 1e-4f);
+    ASSERT_NEAR(c.z, 0.5f, 1e-4f);
+    ASSERT_NEAR(c.w, (0.0f + 64.0f + 128.0f + 255.0f) / 4.0f / 255.0f, 1e-4f);
+}
+
+TEST(texture_load, load_failure_preserves_previous_data)
+{
+    Texture t = solid(255, 0, 0);
+    const int old_w = t.width;
+    const int old_h = t.height;
+    const std::vector<uint8_t> old_pixels = t.pixels;
+
+    ASSERT_FALSE(t.load(tmp_path("rasterminal_missing_texture_XXXXX.png")));
+    ASSERT_EQ(t.width, old_w);
+    ASSERT_EQ(t.height, old_h);
+    if (t.pixels != old_pixels)
+        ASSERT_FAIL("load() should leave pixels unchanged on failure");
+}
+
+TEST(texture_load, load_from_memory_failure_preserves_previous_data)
+{
+    Texture t = solid(0, 255, 0);
+    const int old_w = t.width;
+    const int old_h = t.height;
+    const std::vector<uint8_t> old_pixels = t.pixels;
+
+    const uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF};
+    ASSERT_FALSE(t.load_from_memory(garbage, sizeof(garbage)));
+    ASSERT_EQ(t.width, old_w);
+    ASSERT_EQ(t.height, old_h);
+    if (t.pixels != old_pixels)
+        ASSERT_FAIL("load_from_memory() should leave pixels unchanged on failure");
+}
