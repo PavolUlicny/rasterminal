@@ -46,3 +46,11 @@ TEST(dispatch, multiple_dots_uses_last_extension)
     Mesh m = load_ok(t.path);
     ASSERT_FALSE(m.triangles.empty());
 }
+
+TEST(dispatch, uppercase_extension_is_recognized)
+{
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    TmpFile t(tmp_path("rast_upper.OBJ"), obj);
+    Mesh m = load_ok(t.path);
+    ASSERT_FALSE(m.triangles.empty());
+}
