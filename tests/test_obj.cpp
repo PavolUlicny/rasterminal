@@ -349,3 +349,48 @@ TEST(obj_valid, usemtl_does_not_apply_retroactively)
     ASSERT_NEAR(red.diffuse.x, 1.0f, 1e-5f);
     ASSERT_NEAR(red.diffuse.z, 0.0f, 1e-5f);
 }
+
+TEST(obj_valid, failed_load_rollback_preserves_previous_mesh_state)
+{
+    Mesh m;
+    m.vertices.push_back({vec3{1.0f, 2.0f, 3.0f}, vec3{0.0f, 0.0f, 1.0f}, vec2{0.25f, 0.75f}, 0.9f});
+    m.vertices.push_back({vec3{4.0f, 5.0f, 6.0f}, vec3{0.0f, 1.0f, 0.0f}, vec2{0.5f, 0.5f}, 0.8f});
+    m.triangles.push_back({{0, 0, 0}, 0});
+    m.materials.push_back(Material{});
+    Material mat{};
+    mat.diffuse = {0.2f, 0.3f, 0.4f};
+    mat.ambient = {0.1f, 0.2f, 0.3f};
+    mat.specular = {0.4f, 0.5f, 0.6f};
+    mat.shininess = 16.0f;
+    m.materials.push_back(mat);
+    m.textures.push_back(Texture{});
+    m.tangents.push_back(vec3{1.0f, 0.0f, 0.0f});
+    m.tangents.push_back(vec3{0.0f, 1.0f, 0.0f});
+    m.vertex_colors.push_back(vec3{0.1f, 0.2f, 0.3f});
+    m.vertex_colors.push_back(vec3{0.4f, 0.5f, 0.6f});
+    m.has_vertex_colors = true;
+    m.has_double_sided = true;
+
+    const Mesh before = m;
+
+    TmpFile bad(tmp_path("rast_obj_rollback.obj"),
+                "v 0 0 0\n"
+                "v 1 0 0\n"
+                "v 0 1 0\n"
+                "f 1 2 9\n");
+
+    ASSERT_FALSE(m.load_obj(bad.path));
+
+    ASSERT_EQ(m.vertices.size(), before.vertices.size());
+    ASSERT_EQ(m.triangles.size(), before.triangles.size());
+    ASSERT_EQ(m.materials.size(), before.materials.size());
+    ASSERT_EQ(m.textures.size(), before.textures.size());
+    ASSERT_EQ(m.tangents.size(), before.tangents.size());
+    ASSERT_EQ(m.vertex_colors.size(), before.vertex_colors.size());
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_TRUE(m.has_double_sided);
+    ASSERT_NEAR(m.vertices[0].pos.x, before.vertices[0].pos.x, 1e-6f);
+    ASSERT_NEAR(m.vertices[1].normal.y, before.vertices[1].normal.y, 1e-6f);
+    ASSERT_NEAR(m.vertex_colors[0].x, before.vertex_colors[0].x, 1e-6f);
+    ASSERT_NEAR(m.tangents[1].y, before.tangents[1].y, 1e-6f);
+}
