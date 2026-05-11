@@ -102,6 +102,47 @@ TEST(tangents, tangent_aligns_with_uv_u_gradient)
     }
 }
 
+TEST(tangents, missing_uvs_use_safe_perpendicular_fallback)
+{
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "vn 0 0 1\n"
+        "vn 0 0 1\n"
+        "vn 0 0 1\n"
+        "f 1//1 2//2 3//3\n";
+    TmpFile f(tmp_path("rast_tan_fallback.obj"), obj);
+    Mesh m = load_ok(f.path);
+    for (const auto &t : m.tangents)
+    {
+        ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
+        ASSERT_NEAR(dot(t, vec3{0.0f, 0.0f, 1.0f}), 0.0f, 1e-5f);
+    }
+}
+
+TEST(tangents, collapsed_uvs_use_safe_perpendicular_fallback)
+{
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 1 0 0\n"
+        "v 0 1 0\n"
+        "vn 0 0 1\n"
+        "vn 0 0 1\n"
+        "vn 0 0 1\n"
+        "vt 0.5 0.5\n"
+        "vt 0.5 0.5\n"
+        "vt 0.5 0.5\n"
+        "f 1/1/1 2/2/2 3/3/3\n";
+    TmpFile f(tmp_path("rast_tan_collapse.obj"), obj);
+    Mesh m = load_ok(f.path);
+    for (const auto &t : m.tangents)
+    {
+        ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
+        ASSERT_NEAR(dot(t, vec3{0.0f, 0.0f, 1.0f}), 0.0f, 1e-5f);
+    }
+}
+
 // ─── compute_ao ───────────────────────────────────────────────────────────────
 
 TEST(ao, all_values_in_unit_range)
