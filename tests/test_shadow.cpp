@@ -3,6 +3,7 @@
 #include "../src/light.h"
 #include "../src/mesh.h"
 #include "../src/linalg.h"
+#include "../src/texture.h"
 
 // Builds a mesh with one large flat triangle in the XY plane (z=0).
 // Vertices span ±10 units so the shadow frustum comfortably covers (0,0,±5).
@@ -114,4 +115,152 @@ TEST(shadow, surface_point_not_self_shadowed_by_slope_bias)
     // Catches: slope bias removed or too small → acne on every surface.
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
     ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+}
+
+// ─── Alpha cutout in shadow map ───────────────────────────────────────────────
+
+// Build a 1×1 white RGBA texture with the given alpha for inline test use.
+static Texture make_shadow_tex(uint8_t a)
+{
+    Texture t;
+    t.width = 1;
+    t.height = 1;
+    t.pixels = {255, 255, 255, a};
+    return t;
+}
+
+// Large flat triangle at z=0 with UV [0,1] on each vertex and a 1×1 texture.
+// material_idx 1 carries the cutout material; the triangle is big enough that
+// the shadow frustum always covers the probe point (0,0,−5).
+static Mesh make_cutout_triangle(float alpha_cutoff, uint8_t tex_alpha)
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+
+    v.pos = {-10.0f, -10.0f, 0.0f};
+    v.uv = {0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -10.0f, 0.0f};
+    v.uv = {1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 10.0f, 0.0f};
+    v.uv = {0.5f, 1.0f};
+    m.vertices.push_back(v);
+
+    m.materials.push_back({});
+
+    Material mat{};
+    mat.alpha_cutoff = alpha_cutoff;
+    m.textures.push_back(make_shadow_tex(tex_alpha));
+    mat.diffuse_tex = 0;
+    m.materials.push_back(mat);
+
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 1;
+    m.triangles.push_back(tri);
+
+    return m;
+}
+
+// alpha_cutoff=0 disables the cutout path entirely even if the texture is
+// transparent — the full opaque shadow still forms.
+TEST(shadow, alpha_cutoff_zero_casts_full_shadow)
+{
+    Mesh m = make_cutout_triangle(0.0f, 0); // transparent texture, cutoff disabled
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+}
+
+// alpha_cutoff=0.5 with an all-opaque texture must behave exactly like no cutout
+// (no spurious discards for non-transparent pixels).
+TEST(shadow, opaque_texture_with_cutoff_casts_shadow)
+{
+    Mesh m = make_cutout_triangle(0.5f, 255); // fully opaque texture
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+}
+
+// alpha_cutoff=0.5 with an all-transparent texture: no depth should be written,
+// so the point behind the triangle must NOT be in shadow.
+TEST(shadow, transparent_texture_with_cutoff_casts_no_shadow)
+{
+    Mesh m = make_cutout_triangle(0.5f, 0); // fully transparent (alpha=0)
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+}
+
+// diffuse_tex=-1 with alpha_cutoff>0: no texture means has_cutout=false;
+// the triangle must still cast its shadow.
+TEST(shadow, no_texture_with_cutoff_casts_shadow)
+{
+    Mesh m = make_cutout_triangle(0.5f, 0); // alpha=0 texture set up...
+    // ...but now clear diffuse_tex to simulate "cutoff set but no texture"
+    m.materials[1].diffuse_tex = -1;
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+}
+
+// Mixed-material mesh: one opaque triangle (no cutout) and one fully-transparent
+// cutout triangle covering separate parts of the shadow map.
+// Verifies the per-triangle material lookup is correct — a bug that computed
+// has_cutout once per mesh rather than per triangle would fail here.
+TEST(shadow, mixed_material_opaque_casts_shadow_transparent_does_not)
+{
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+
+    // Triangle A (x < 0): opaque, material 0 (default, no cutout).
+    v.pos = {-10.0f, -5.0f, 0.0f};
+    v.uv = {0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-0.5f, -5.0f, 0.0f};
+    v.uv = {1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-5.0f, 5.0f, 0.0f};
+    v.uv = {0.5f, 1.0f};
+    m.vertices.push_back(v);
+
+    // Triangle B (x > 0): cutout, transparent texture.
+    v.pos = {0.5f, -5.0f, 0.0f};
+    v.uv = {0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -5.0f, 0.0f};
+    v.uv = {1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {5.0f, 5.0f, 0.0f};
+    v.uv = {0.5f, 1.0f};
+    m.vertices.push_back(v);
+
+    m.materials.push_back({});
+
+    Material cut{};
+    cut.alpha_cutoff = 0.5f;
+    m.textures.push_back(make_shadow_tex(0));
+    cut.diffuse_tex = 0;
+    m.materials.push_back(cut);
+
+    Triangle ta{};
+    ta.v[0] = 0;
+    ta.v[1] = 1;
+    ta.v[2] = 2;
+    ta.material_idx = 0;
+    Triangle tb{};
+    tb.v[0] = 3;
+    tb.v[1] = 4;
+    tb.v[2] = 5;
+    tb.material_idx = 1;
+    m.triangles.push_back(ta);
+    m.triangles.push_back(tb);
+
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+
+    // Point behind the opaque triangle → in shadow.
+    ASSERT_NEAR(sm.in_shadow({-5.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    // Point behind the transparent cutout triangle → NOT in shadow.
+    ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
 }

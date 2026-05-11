@@ -1,5 +1,6 @@
 #include "shadow.h"
 #include "clip.h"
+#include "texture.h"
 
 #include <algorithm>
 #include <cmath>
@@ -102,6 +103,18 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         const vec3 &pb = mesh.vertices[tri.v[1]].pos;
         const vec3 &pc = mesh.vertices[tri.v[2]].pos;
 
+        const Material &mat = mesh.mat_at(tri.material_idx);
+        const Texture *atex = (mat.alpha_cutoff > 0.0f && mat.diffuse_tex >= 0)
+                                  ? mesh.tex_at(mat.diffuse_tex)
+                                  : nullptr;
+        vec2 uva{}, uvb{}, uvc{};
+        if (atex)
+        {
+            uva = mesh.vertices[tri.v[0]].uv;
+            uvb = mesh.vertices[tri.v[1]].uv;
+            uvc = mesh.vertices[tri.v[2]].uv;
+        }
+
         // Slope-scale bias: surfaces nearly tangent to the light direction need a
         // larger depth offset to avoid self-shadowing acne.  We bake it into the
         // stored depth so in_shadow() needs only a tiny epsilon.
@@ -163,6 +176,16 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
                 float bc = 1.0f - ba - bb;
                 if (ba >= 0.0f && bb >= 0.0f && bc >= 0.0f)
                 {
+                    if (atex)
+                    {
+                        vec2 uv = uva * ba + uvb * bb + uvc * bc;
+                        if (atex->sample_rgba(uv.x, uv.y).w < mat.alpha_cutoff)
+                        {
+                            ba += ba_dx;
+                            bb += bb_dx;
+                            continue;
+                        }
+                    }
                     float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
                     float &stored = shadow_map.depth[static_cast<size_t>(row_base + x)];
                     if (d < stored)

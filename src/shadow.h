@@ -10,6 +10,8 @@
 // Depth buffer rendered from the key light's perspective.
 // Build once with build_shadow_map() and reuse every frame — the light and mesh
 // geometry are static so the map never changes.
+// Alpha cutout is honoured: pixels whose diffuse-texture alpha is below
+// Material::alpha_cutoff are skipped during depth rasterization.
 
 struct ShadowMap
 {
