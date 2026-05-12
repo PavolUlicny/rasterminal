@@ -67,7 +67,7 @@ vec3 Texture::sample_rgb(float u, float v) const
     {
         const uint8_t *p = pixels.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
         constexpr float inv255 = 1.0f / 255.0f;
-        return {p[0] * inv255, p[1] * inv255, p[2] * inv255};
+        return {static_cast<float>(p[0]) * inv255, static_cast<float>(p[1]) * inv255, static_cast<float>(p[2]) * inv255};
     };
 
     vec3 top = get(x0, y0) * (1.0f - tx) + get(x1, y0) * tx;
@@ -102,10 +102,10 @@ vec4 Texture::sample_rgba(float u, float v) const
     const uint8_t *p01 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x0)) * 4;
     const uint8_t *p11 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x1)) * 4;
 
-    vec4 c00 = {p00[0] * inv255, p00[1] * inv255, p00[2] * inv255, p00[3] * inv255};
-    vec4 c10 = {p10[0] * inv255, p10[1] * inv255, p10[2] * inv255, p10[3] * inv255};
-    vec4 c01 = {p01[0] * inv255, p01[1] * inv255, p01[2] * inv255, p01[3] * inv255};
-    vec4 c11 = {p11[0] * inv255, p11[1] * inv255, p11[2] * inv255, p11[3] * inv255};
+    vec4 c00 = {static_cast<float>(p00[0]) * inv255, static_cast<float>(p00[1]) * inv255, static_cast<float>(p00[2]) * inv255, static_cast<float>(p00[3]) * inv255};
+    vec4 c10 = {static_cast<float>(p10[0]) * inv255, static_cast<float>(p10[1]) * inv255, static_cast<float>(p10[2]) * inv255, static_cast<float>(p10[3]) * inv255};
+    vec4 c01 = {static_cast<float>(p01[0]) * inv255, static_cast<float>(p01[1]) * inv255, static_cast<float>(p01[2]) * inv255, static_cast<float>(p01[3]) * inv255};
+    vec4 c11 = {static_cast<float>(p11[0]) * inv255, static_cast<float>(p11[1]) * inv255, static_cast<float>(p11[2]) * inv255, static_cast<float>(p11[3]) * inv255};
 
     vec4 top = c00 * (1.0f - tx) + c10 * tx;
     vec4 bottom = c01 * (1.0f - tx) + c11 * tx;

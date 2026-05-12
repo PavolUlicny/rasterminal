@@ -28,7 +28,7 @@ static float rd_f(const uint8_t *buf, tinyply::Type t, size_t i)
 static float rd_col(const uint8_t *buf, tinyply::Type t, size_t i)
 {
     if (t == tinyply::Type::UINT8)
-        return buf[i] / 255.0f;
+        return static_cast<float>(buf[i]) / 255.0f;
     if (t == tinyply::Type::FLOAT64)
     {
         double d;
