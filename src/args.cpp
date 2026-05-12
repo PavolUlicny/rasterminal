@@ -240,7 +240,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (eq != std::string::npos)
             {
                 eq_val = argv[i] + eq + 1;
-                arg = arg.substr(0, eq);
+                arg.resize(eq);
             }
         }
         const char *flag = arg.c_str();
