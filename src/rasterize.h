@@ -68,7 +68,7 @@ struct RasterTri
         PhData ph;
     };
 
-    RasterTri() {} // explicit ctor: vec3's non-trivial ctor deletes the union's implicit one
+    RasterTri() {} // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject) — union fields are written before read; explicit ctor: vec3's non-trivial ctor deletes the union's implicit one
 };
 
 // ─── Rasterization primitives ─────────────────────────────────────────────────
