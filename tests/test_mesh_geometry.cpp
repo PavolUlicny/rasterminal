@@ -177,6 +177,33 @@ TEST(ao, flat_triangle_vertices_are_one)
         ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
 }
 
+TEST(ao, isolated_vertex_is_one_and_finite)
+{
+    // Create a mesh with an isolated fourth vertex (not referenced by any face).
+    // The isolated vertex should get ao = 1.0 and remain finite.
+    const std::string ply =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 4\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n"
+        "0 0 0\n"
+        "1 0 0\n"
+        "0 1 0\n"
+        "10 10 10\n"
+        "3 0 1 2\n";
+    TmpFile f(tmp_path("rast_ao_isolated.ply"), ply);
+    Mesh m;
+    bool ok = m.load_model(f.path, /*ao=*/true);
+    ASSERT_TRUE(ok);
+    ASSERT_NEAR(m.vertices[3].ao, 1.0f, 1e-5f);
+    ASSERT_TRUE(std::isfinite(m.vertices[3].ao));
+}
+
 // ─── Mesh::clear() ────────────────────────────────────────────────────────────
 
 TEST(mesh_clear, empties_all_containers)
