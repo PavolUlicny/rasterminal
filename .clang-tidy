@@ -1,1 +1,1 @@
-Checks: "-bugprone-easily-swappable-parameters,-clang-analyzer-*"
+Checks: "bugprone-*,performance-*,misc-unused-*,misc-redundant-expression,-bugprone-easily-swappable-parameters"
