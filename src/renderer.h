@@ -6,13 +6,14 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <vector>
 
 // ─── ShadingMode ──────────────────────────────────────────────────────────────
 
-enum class ShadingMode
+enum class ShadingMode : std::uint8_t
 {
     Wireframe,
     Flat,

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <cstdio>
 
 #ifdef _WIN32
@@ -111,7 +112,7 @@ namespace platform
 
     // ─── input events ────────────────────────────────────────────────────────────
 
-    enum Key
+    enum Key : std::uint8_t
     {
         KEY_NONE = 0,
         KEY_W,
@@ -141,7 +142,7 @@ namespace platform
 
     struct InputEvent
     {
-        enum class Type
+        enum class Type : std::uint8_t
         {
             None,
             Key,
