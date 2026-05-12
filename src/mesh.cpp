@@ -1,5 +1,6 @@
 #include "mesh.h"
 
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -47,12 +48,9 @@ bool Mesh::load_model(const std::string &path, bool ao)
         return false;
     }
 
-    for (const Material &m : materials)
-        if (m.double_sided)
-        {
-            has_double_sided = true;
-            break;
-        }
+    has_double_sided = std::any_of(materials.begin(), materials.end(),
+                                   [](const Material &m)
+                                   { return m.double_sided; });
 
     compute_tangents();
     if (ao && ext != "stl")

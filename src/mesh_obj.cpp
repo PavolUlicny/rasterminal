@@ -2,6 +2,7 @@
 #include "mesh_loader.h"
 #include "texture.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <unordered_map>
@@ -185,12 +186,9 @@ bool Mesh::load_obj(const std::string &path)
                                                      attrib.colors[ci + 1],
                                                      attrib.colors[ci + 2]};
                 }
-        for (const auto &c : vertex_colors)
-            if (c.x < 0.999f || c.y < 0.999f || c.z < 0.999f)
-            {
-                has_vertex_colors = true;
-                break;
-            }
+        has_vertex_colors = std::any_of(vertex_colors.begin(), vertex_colors.end(),
+                                        [](const vec3 &c)
+                                        { return c.x < 0.999f || c.y < 0.999f || c.z < 0.999f; });
         if (!has_vertex_colors)
             vertex_colors.clear();
     }
