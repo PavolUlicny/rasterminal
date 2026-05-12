@@ -29,25 +29,6 @@ TEST(renderer, constructor_thread_count_clamping)
     ASSERT_TRUE(true);
 }
 
-// A3: cycle_shading transitions: Gouraud→Phong→Wireframe→Flat→Gouraud.
-TEST(renderer, cycle_shading_full_loop)
-{
-    Renderer r;
-    ASSERT_TRUE(r.mode == ShadingMode::Gouraud);
-    r.cycle_shading();
-    ASSERT_TRUE(r.mode == ShadingMode::Phong);
-    r.cycle_shading();
-    ASSERT_TRUE(r.mode == ShadingMode::Wireframe);
-    r.cycle_shading();
-    ASSERT_TRUE(r.mode == ShadingMode::Flat);
-    r.cycle_shading();
-    ASSERT_TRUE(r.mode == ShadingMode::Gouraud);
-    // Also test from Wireframe as start.
-    r.mode = ShadingMode::Wireframe;
-    r.cycle_shading();
-    ASSERT_TRUE(r.mode == ShadingMode::Flat);
-}
-
 // ─── Group B — wireframe path ─────────────────────────────────────────────────
 
 // B1: front-facing triangle draws pixels in wireframe mode.

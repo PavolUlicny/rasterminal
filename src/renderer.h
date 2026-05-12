@@ -44,9 +44,6 @@ struct Renderer
                 const Light *lights, int n_lights, const vec3 &ambient,
                 Framebuffer &, const ShadowMap *shadow_map = nullptr);
 
-    // Cycle: Wireframe → Flat → Gouraud → Phong → Wireframe
-    void cycle_shading();
-
 private:
     void worker_func(int t);
 

@@ -497,24 +497,3 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                        { return m_active.load(std::memory_order_acquire) == 0; });
     }
 }
-
-// ─── Renderer::cycle_shading ──────────────────────────────────────────────────
-
-void Renderer::cycle_shading()
-{
-    switch (mode)
-    {
-    case ShadingMode::Wireframe:
-        mode = ShadingMode::Flat;
-        break;
-    case ShadingMode::Flat:
-        mode = ShadingMode::Gouraud;
-        break;
-    case ShadingMode::Gouraud:
-        mode = ShadingMode::Phong;
-        break;
-    case ShadingMode::Phong:
-        mode = ShadingMode::Wireframe;
-        break;
-    }
-}
