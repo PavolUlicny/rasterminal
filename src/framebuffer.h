@@ -38,7 +38,7 @@ public:
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return false;
-        float &d = m_depth[static_cast<size_t>(y * m_width + x)];
+        float &d = m_depth[pixel_idx(x, y)];
         if (depth < d)
         {
             d = depth;
@@ -51,21 +51,21 @@ public:
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return;
-        m_color[static_cast<size_t>(y * m_width + x)] = color;
+        m_color[pixel_idx(x, y)] = color;
     }
 
     inline Color get_pixel(int x, int y) const
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return {};
-        return m_color[static_cast<size_t>(y * m_width + x)];
+        return m_color[pixel_idx(x, y)];
     }
 
     // Unchecked variants — caller guarantees 0 <= x < width, 0 <= y < height.
     // Used by the rasterizer inner loop where setup_tri already clamps bounds.
     inline bool unchecked_test_and_set_depth(int x, int y, float depth)
     {
-        float &d = m_depth[static_cast<size_t>(y * m_width + x)];
+        float &d = m_depth[pixel_idx(x, y)];
         if (depth < d)
         {
             d = depth;
@@ -76,7 +76,7 @@ public:
 
     inline void unchecked_set_pixel(int x, int y, Color color)
     {
-        m_color[static_cast<size_t>(y * m_width + x)] = color;
+        m_color[pixel_idx(x, y)] = color;
     }
 
     // Set a one-line status string rendered below the pixel rows each frame.
@@ -87,6 +87,11 @@ public:
     void present();
 
 private:
+    size_t pixel_idx(int x, int y) const noexcept
+    {
+        return static_cast<size_t>(y) * static_cast<size_t>(m_width) + static_cast<size_t>(x);
+    }
+
     int m_width, m_height;
     std::vector<Color> m_color;
     std::vector<Color> m_prev_color;

@@ -238,13 +238,13 @@ void Framebuffer::present()
             append_cursor_pos(row + 1, 1);
 
             const int prow = row * 2;
-            const int top_base = prow * m_width;
+            const size_t top_base = pixel_idx(0, prow);
             // Guard against odd pixel height: reuse top pixel for bottom row.
-            const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
+            const size_t bot_base = pixel_idx(0, prow + 1 < m_height ? prow + 1 : prow);
 
             for (int col = 0; col < m_width; col++)
-                emit_cell(m_color[static_cast<size_t>(top_base + col)],
-                          m_color[static_cast<size_t>(bot_base + col)]);
+                emit_cell(m_color[top_base + static_cast<size_t>(col)],
+                          m_color[bot_base + static_cast<size_t>(col)]);
         }
         m_force_redraw = false;
     }
@@ -253,23 +253,23 @@ void Framebuffer::present()
         for (int row = 0; row < term_rows; row++)
         {
             const int prow = row * 2;
-            const int top_base = prow * m_width;
-            const int bot_base = (prow + 1 < m_height ? prow + 1 : prow) * m_width;
+            const size_t top_base = pixel_idx(0, prow);
+            const size_t bot_base = pixel_idx(0, prow + 1 < m_height ? prow + 1 : prow);
 
             bool row_started = false;
             int col = 0;
             while (col < m_width)
             {
-                if (m_color[static_cast<size_t>(top_base + col)] != m_prev_color[static_cast<size_t>(top_base + col)] ||
-                    m_color[static_cast<size_t>(bot_base + col)] != m_prev_color[static_cast<size_t>(bot_base + col)])
+                if (m_color[top_base + static_cast<size_t>(col)] != m_prev_color[top_base + static_cast<size_t>(col)] ||
+                    m_color[bot_base + static_cast<size_t>(col)] != m_prev_color[bot_base + static_cast<size_t>(col)])
                 {
                     if (!row_started)
                     {
                         append_cursor_pos(row + 1, col + 1);
                         row_started = true;
                     }
-                    emit_cell(m_color[static_cast<size_t>(top_base + col)],
-                              m_color[static_cast<size_t>(bot_base + col)]);
+                    emit_cell(m_color[top_base + static_cast<size_t>(col)],
+                              m_color[bot_base + static_cast<size_t>(col)]);
                     col++;
                 }
                 else if (!row_started)
@@ -280,8 +280,8 @@ void Framebuffer::present()
                 {
                     int skip = 0;
                     while (col + skip < m_width &&
-                           m_color[static_cast<size_t>(top_base + col + skip)] == m_prev_color[static_cast<size_t>(top_base + col + skip)] &&
-                           m_color[static_cast<size_t>(bot_base + col + skip)] == m_prev_color[static_cast<size_t>(bot_base + col + skip)])
+                           m_color[top_base + static_cast<size_t>(col + skip)] == m_prev_color[top_base + static_cast<size_t>(col + skip)] &&
+                           m_color[bot_base + static_cast<size_t>(col + skip)] == m_prev_color[bot_base + static_cast<size_t>(col + skip)])
                         skip++;
                     if (skip == 1)
                         m_buf.append("\033[C", 3);
