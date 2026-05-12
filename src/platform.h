@@ -375,11 +375,4 @@ namespace platform
         }
     }
 
-    // poll_key: convenience wrapper for callers that only care about keyboard input.
-    inline Key poll_key()
-    {
-        InputEvent ev = poll_event();
-        return (ev.type == InputEvent::Type::Key) ? ev.key : KEY_NONE;
-    }
-
 } // namespace platform
