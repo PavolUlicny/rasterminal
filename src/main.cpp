@@ -180,7 +180,7 @@ static void run_bench(const Mesh &mesh, const ParsedArgs &args)
     if (shadow_ms)
         std::fprintf(stderr, "shadow:  %.2f ms  (one-time)\n", *shadow_ms);
     std::fprintf(stderr, "frame:   min=%.2f  med=%.2f  p95=%.2f  max=%.2f  stddev=%.2f ms  (≈ %d fps)\n",
-                 ms(mn), med_ms, ms(p95), ms(mx), stddev_ms, static_cast<int>(fps + 0.5));
+                 ms(mn), med_ms, ms(p95), ms(mx), stddev_ms, static_cast<int>(std::lround(fps)));
     std::fprintf(stderr, "         %.1f MTri/s  %.1f MVert/s  (input / median frame)\n", mtri_s, mvert_s);
 }
 
