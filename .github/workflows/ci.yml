@@ -69,13 +69,43 @@ jobs:
               portable: OFF,
             }
           # macOS — AppleClang (platform default; Debug×Portable=ON omitted — same flags as OFF)
-          - { os: macos-latest, label: appleclang, build_type: Release, portable: OFF }
-          - { os: macos-latest, label: appleclang, build_type: Release, portable: ON }
-          - { os: macos-latest, label: appleclang, build_type: Debug, portable: OFF }
+          - {
+              os: macos-latest,
+              label: appleclang,
+              build_type: Release,
+              portable: OFF,
+            }
+          - {
+              os: macos-latest,
+              label: appleclang,
+              build_type: Release,
+              portable: ON,
+            }
+          - {
+              os: macos-latest,
+              label: appleclang,
+              build_type: Debug,
+              portable: OFF,
+            }
           # Windows — MSVC (multi-config VS generator; CMAKE_BUILD_TYPE ignored at configure time)
-          - { os: windows-latest, label: msvc, build_type: Release, portable: OFF }
-          - { os: windows-latest, label: msvc, build_type: Release, portable: ON }
-          - { os: windows-latest, label: msvc, build_type: Debug, portable: OFF }
+          - {
+              os: windows-latest,
+              label: msvc,
+              build_type: Release,
+              portable: OFF,
+            }
+          - {
+              os: windows-latest,
+              label: msvc,
+              build_type: Release,
+              portable: ON,
+            }
+          - {
+              os: windows-latest,
+              label: msvc,
+              build_type: Debug,
+              portable: OFF,
+            }
 
     steps:
       - uses: actions/checkout@v6
@@ -123,6 +153,50 @@ jobs:
       - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
         run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}
 
+  # ── clang-tidy (Linux Clang, CMake Debug with compile_commands.json) ────────
+  clang-tidy:
+    name: clang-tidy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure
+        run: >
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          -DCMAKE_CXX_COMPILER=clang++
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy
+        run: >
+          clang-tidy
+          --warnings-as-errors='*'
+          -p build
+          --header-filter='src/.*'
+          src/main.cpp src/args.cpp src/framebuffer.cpp src/mesh.cpp
+          src/mesh_obj.cpp src/mesh_ply.cpp src/mesh_stl.cpp src/mesh_gltf.cpp
+          src/camera.cpp src/shadow.cpp src/rasterize.cpp src/renderer.cpp
+          src/texture.cpp
+
+  # ── cppcheck (Linux) ──────────────────────────────────────────────────────
+  cppcheck:
+    name: cppcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run cppcheck
+        run: >
+          cppcheck --enable=all --std=c++17 --error-exitcode=1
+          --suppress=missingIncludeSystem
+          --suppressions-list=cppcheck-suppressions.txt
+          -I src/
+          -I vendor/cgltf
+          -I vendor/stb
+          -I vendor/stl_reader
+          -I vendor/tinyobjloader
+          -I vendor/tinyply
+          src/*.cpp
+
   # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────
   sanitizers:
     name: sanitizer / ${{ matrix.label }}
@@ -132,7 +206,8 @@ jobs:
       matrix:
         include:
           - label: asan-ubsan
-            san_flags: -fsanitize=address,undefined -fno-sanitize-recover=undefined
+            san_flags:
+              -fsanitize=address,undefined -fno-sanitize-recover=undefined
               -fno-omit-frame-pointer
             asan_options: detect_leaks=1:halt_on_error=1:abort_on_error=1
             ubsan_options: halt_on_error=1:print_stacktrace=1
