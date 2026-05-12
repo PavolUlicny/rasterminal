@@ -1,3 +1,6 @@
+// Suppress all warnings from vendored third-party headers.
+*:vendor/*
+
 // Utility library functions intentionally kept for completeness; exercised by tests.
 unusedFunction:src/framebuffer.h
 unusedFunction:src/linalg.h
