@@ -96,7 +96,7 @@ bool Mesh::load_stl(const std::string &path)
         {
             const unsigned int vi = tris[3 * i + static_cast<size_t>(j)];
             Vertex v{};
-            v.pos = {coords[3 * vi], coords[3 * vi + 1], coords[3 * vi + 2]};
+            v.pos = {coords[3 * static_cast<size_t>(vi)], coords[3 * static_cast<size_t>(vi) + 1], coords[3 * static_cast<size_t>(vi) + 2]};
             v.ao = 1.0f;
             vertices.push_back(v);
         }
