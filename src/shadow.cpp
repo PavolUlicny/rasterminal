@@ -45,7 +45,7 @@ float ShadowMap::in_shadow(vec3 world_pos) const
     {
         for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)
-                if (ref > depth[static_cast<size_t>((cy + dy) * SIZE + (cx + dx))])
+                if (ref > depth[static_cast<size_t>(cy + dy) * SIZE + static_cast<size_t>(cx + dx)])
                     hits++;
     }
     else
@@ -56,7 +56,7 @@ float ShadowMap::in_shadow(vec3 world_pos) const
             for (int dx = -1; dx <= 1; dx++)
             {
                 int px = std::clamp(cx + dx, 0, SIZE - 1);
-                if (ref > depth[static_cast<size_t>(py * SIZE + px)])
+                if (ref > depth[static_cast<size_t>(py) * SIZE + static_cast<size_t>(px)])
                     hits++;
             }
         }
@@ -170,7 +170,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         for (int y = y0; y <= y1; y++)
         {
             float ba = ba_row, bb = bb_row;
-            const int row_base = y * S;
+            const size_t row_base = static_cast<size_t>(y) * S;
             for (int x = x0; x <= x1; x++)
             {
                 float bc = 1.0f - ba - bb;
@@ -187,7 +187,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
                         }
                     }
                     float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
-                    float &stored = shadow_map.depth[static_cast<size_t>(row_base + x)];
+                    float &stored = shadow_map.depth[row_base + static_cast<size_t>(x)];
                     if (d < stored)
                         stored = d;
                 }

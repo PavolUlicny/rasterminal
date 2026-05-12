@@ -21,7 +21,7 @@ struct ShadowMap
 
     void clear()
     {
-        depth.assign(static_cast<size_t>(SIZE * SIZE), 1.0f);
+        depth.assign(static_cast<size_t>(SIZE) * SIZE, 1.0f);
     }
 
     // Returns shadow factor in [0,1]: 0=fully lit, 1=fully shadowed.
