@@ -81,7 +81,7 @@ bool Mesh::load_obj(const std::string &path)
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
         if (!m.alpha_texname.empty())
             mat.alpha_cutoff = 0.5f;
-        materials.push_back(std::move(mat));
+        materials.push_back(mat);
     }
 
     // Vertex deduplication: identical (vertex_index, normal_index, texcoord_index)
