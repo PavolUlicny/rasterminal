@@ -22,11 +22,11 @@ bool Mesh::load_model(const std::string &path, bool ao)
 {
     clear();
 
-    size_t dot = path.find_last_of('.');
-    if (dot == std::string::npos)
+    size_t ext_pos = path.find_last_of('.');
+    if (ext_pos == std::string::npos)
         return false;
 
-    std::string ext = path.substr(dot + 1);
+    std::string ext = path.substr(ext_pos + 1);
     for (char &c : ext)
         if (c >= 'A' && c <= 'Z')
             c += 32;
