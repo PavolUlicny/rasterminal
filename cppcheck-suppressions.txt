@@ -1,6 +1,9 @@
 // Suppress all warnings from vendored third-party headers.
 *:vendor/*
 
+// stb_image.h has many #ifdef configurations; cppcheck only checks a subset.
+toomanyconfigs
+
 // Utility library functions intentionally kept for completeness; exercised by tests.
 unusedFunction:src/framebuffer.h
 unusedFunction:src/linalg.h
