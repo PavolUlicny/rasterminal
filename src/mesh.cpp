@@ -72,9 +72,9 @@ void Mesh::compute_normals()
     // triangle area, giving area-weighted averaging for free.
     for (const auto &tri : triangles)
     {
-        vec3 &p0 = vertices[tri.v[0]].pos;
-        vec3 &p1 = vertices[tri.v[1]].pos;
-        vec3 &p2 = vertices[tri.v[2]].pos;
+        const vec3 &p0 = vertices[tri.v[0]].pos;
+        const vec3 &p1 = vertices[tri.v[1]].pos;
+        const vec3 &p2 = vertices[tri.v[2]].pos;
 
         vec3 face_normal = cross(p1 - p0, p2 - p0);
 
