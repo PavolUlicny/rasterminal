@@ -140,7 +140,7 @@ bool Mesh::load_ply(const std::string &path)
     {
         normals = file.request_properties_from_element("vertex", {"nx", "ny", "nz"});
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
 
@@ -150,7 +150,7 @@ bool Mesh::load_ply(const std::string &path)
         {
             uvs = file.request_properties_from_element("vertex", {"u", "v"});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     if (!uvs)
@@ -158,7 +158,7 @@ bool Mesh::load_ply(const std::string &path)
         {
             uvs = file.request_properties_from_element("vertex", {"s", "t"});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
     if (!uvs)
@@ -166,7 +166,7 @@ bool Mesh::load_ply(const std::string &path)
         {
             uvs = file.request_properties_from_element("vertex", {"texture_u", "texture_v"});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
 
@@ -175,7 +175,7 @@ bool Mesh::load_ply(const std::string &path)
     {
         vcolors = file.request_properties_from_element("vertex", {"red", "green", "blue"});
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
     if (!vcolors)
@@ -183,7 +183,7 @@ bool Mesh::load_ply(const std::string &path)
         {
             vcolors = file.request_properties_from_element("vertex", {"r", "g", "b"});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
 
@@ -211,7 +211,7 @@ bool Mesh::load_ply(const std::string &path)
         {
             fcolors = file.request_properties_from_element("face", {"red", "green", "blue"});
         }
-        catch (...)
+        catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
         if (!fcolors)
@@ -219,7 +219,7 @@ bool Mesh::load_ply(const std::string &path)
             {
                 fcolors = file.request_properties_from_element("face", {"r", "g", "b"});
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
             }
     }
