@@ -7,20 +7,25 @@
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
-// Orthographic projection: maps axis-aligned box to NDC cube [-1,1]^3.
-// l/r/b/t are left/right/bottom/top extents in light view space.
-// n/f are near/far distances (positive).
-static mat4 ortho(float l, float r, float b, float t, float n, float f)
+namespace
 {
-    mat4 m = mat4::identity();
-    m.m[0][0] = 2.0f / (r - l);
-    m.m[1][1] = 2.0f / (t - b);
-    m.m[2][2] = -2.0f / (f - n);
-    m.m[3][0] = -(r + l) / (r - l);
-    m.m[3][1] = -(t + b) / (t - b);
-    m.m[3][2] = -(f + n) / (f - n);
-    return m;
-}
+
+    // Orthographic projection: maps axis-aligned box to NDC cube [-1,1]^3.
+    // l/r/b/t are left/right/bottom/top extents in light view space.
+    // n/f are near/far distances (positive).
+    mat4 ortho(float l, float r, float b, float t, float n, float f)
+    {
+        mat4 m = mat4::identity();
+        m.m[0][0] = 2.0f / (r - l);
+        m.m[1][1] = 2.0f / (t - b);
+        m.m[2][2] = -2.0f / (f - n);
+        m.m[3][0] = -(r + l) / (r - l);
+        m.m[3][1] = -(t + b) / (t - b);
+        m.m[3][2] = -(f + n) / (f - n);
+        return m;
+    }
+
+} // namespace
 
 // ─── ShadowMap ────────────────────────────────────────────────────────────────
 

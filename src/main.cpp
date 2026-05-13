@@ -18,171 +18,176 @@
 #include <thread>
 #include <vector>
 
-static volatile sig_atomic_t g_interrupted = 0;
-static void signal_handler(int) { g_interrupted = 1; }
-
-static constexpr Color BG_BLACK = {0, 0, 0};
-static constexpr Color BG_GRAY = {128, 128, 128};
-static constexpr Color BG_WHITE = {240, 240, 240};
-static const vec3 FLAT_AMBIENT = {0.85f, 0.85f, 0.85f};
-
-static constexpr Color WIREFRAME_PALETTE[6] = {
-    {200, 200, 200}, // white
-    {220, 80, 80},   // red
-    {80, 200, 120},  // green
-    {230, 200, 80},  // yellow
-    {100, 200, 220}, // cyan
-    {220, 120, 200}, // magenta
-};
-static const char *const WIREFRAME_NAMES[6] = {
-    "white", "red", "green", "yellow", "cyan", "magenta"};
-
-static Camera auto_fit_camera(const Mesh &mesh)
+namespace
 {
-    vec3 lo = mesh.vertices[0].pos;
-    vec3 hi = lo;
-    for (const Vertex &v : mesh.vertices)
+
+    volatile sig_atomic_t g_interrupted = 0;
+    void signal_handler(int) { g_interrupted = 1; }
+
+    constexpr Color BG_BLACK = {0, 0, 0};
+    constexpr Color BG_GRAY = {128, 128, 128};
+    constexpr Color BG_WHITE = {240, 240, 240};
+    const vec3 FLAT_AMBIENT = {0.85f, 0.85f, 0.85f};
+
+    constexpr Color WIREFRAME_PALETTE[6] = {
+        {200, 200, 200}, // white
+        {220, 80, 80},   // red
+        {80, 200, 120},  // green
+        {230, 200, 80},  // yellow
+        {100, 200, 220}, // cyan
+        {220, 120, 200}, // magenta
+    };
+    const char *const WIREFRAME_NAMES[6] = {
+        "white", "red", "green", "yellow", "cyan", "magenta"};
+
+    Camera auto_fit_camera(const Mesh &mesh)
     {
-        lo.x = std::min(lo.x, v.pos.x);
-        lo.y = std::min(lo.y, v.pos.y);
-        lo.z = std::min(lo.z, v.pos.z);
-        hi.x = std::max(hi.x, v.pos.x);
-        hi.y = std::max(hi.y, v.pos.y);
-        hi.z = std::max(hi.z, v.pos.z);
-    }
-    vec3 centre = (lo + hi) * 0.5f;
-    float radius = (hi - lo).length() * 0.5f;
-    if (radius < 1e-4f)
-        radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
+        vec3 lo = mesh.vertices[0].pos;
+        vec3 hi = lo;
+        for (const Vertex &v : mesh.vertices)
+        {
+            lo.x = std::min(lo.x, v.pos.x);
+            lo.y = std::min(lo.y, v.pos.y);
+            lo.z = std::min(lo.z, v.pos.z);
+            hi.x = std::max(hi.x, v.pos.x);
+            hi.y = std::max(hi.y, v.pos.y);
+            hi.z = std::max(hi.z, v.pos.z);
+        }
+        vec3 centre = (lo + hi) * 0.5f;
+        float radius = (hi - lo).length() * 0.5f;
+        if (radius < 1e-4f)
+            radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
 
-    Camera camera;
-    camera.target = centre;
-    camera.distance = radius * 2.0f;
-    // Scale near/far to the model so arbitrarily-sized models aren't clipped.
-    camera.near_plane = radius * 0.01f;
-    camera.far_plane = radius * 20.0f;
-    camera.orientation = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, -0.3f);
-    return camera;
-}
-
-static void make_default_lights(Light out[2], vec3 &ambient)
-{
-    out[0].direction = {0.408f, 0.816f, 0.408f};
-    out[0].color = {1.0f, 0.9f, 0.75f};
-    out[1].direction = {-0.667f, -0.333f, -0.667f};
-    out[1].color = {0.15f, 0.25f, 0.5f};
-    ambient = {0.2f, 0.2f, 0.25f};
-}
-
-static const char *shading_mode_name(ShadingMode mode)
-{
-    switch (mode)
-    {
-    case ShadingMode::Wireframe:
-        return "Wireframe";
-    case ShadingMode::Flat:
-        return "Flat";
-    case ShadingMode::Gouraud:
-        return "Gouraud";
-    case ShadingMode::Phong:
-        return "Phong";
-    }
-    return "Unknown";
-}
-
-static void run_bench(const Mesh &mesh, const ParsedArgs &args)
-{
-    using clock = std::chrono::steady_clock;
-
-    Camera camera = auto_fit_camera(mesh);
-    Light lights[2];
-    vec3 ambient;
-    make_default_lights(lights, ambient);
-
-    std::optional<double> shadow_ms;
-    std::optional<ShadowMap> shadow_map;
-    if (args.shadow)
-    {
-        auto ts = clock::now();
-        shadow_map = build_shadow_map(mesh, lights[0]);
-        auto te = clock::now();
-        shadow_ms = std::chrono::duration<double, std::milli>(te - ts).count();
+        Camera camera;
+        camera.target = centre;
+        camera.distance = radius * 2.0f;
+        // Scale near/far to the model so arbitrarily-sized models aren't clipped.
+        camera.near_plane = radius * 0.01f;
+        camera.far_plane = radius * 20.0f;
+        camera.orientation = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, -0.3f);
+        return camera;
     }
 
-    Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
-    Renderer renderer(args.n_threads);
-    renderer.mode = static_cast<ShadingMode>(args.shading);
-    renderer.cull_backfaces = args.cull;
-    renderer.show_texture = args.texture;
-
-    const int n_lights = args.lighting == 1 ? 1 : (args.lighting == 2 ? 0 : 2);
-    const vec3 &cur_ambient = args.lighting == 2 ? FLAT_AMBIENT : ambient;
-
-    const int n_warmup = args.bench_warmup;
-    const int n_measure = args.bench;
-    std::vector<int64_t> frame_ns;
-    frame_ns.reserve(static_cast<size_t>(n_measure));
-
-    auto loop_t0 = clock::now();
-    for (int i = 0; i < n_warmup + n_measure; i++)
+    void make_default_lights(Light out[2], vec3 &ambient)
     {
-        camera.spin_world_y(0.8f / 60.0f);
-        fb.clear({0, 0, 0});
-        auto t0 = clock::now();
-        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
-                        shadow_map ? &*shadow_map : nullptr);
-        auto t1 = clock::now();
-        if (i >= n_warmup)
-            frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        out[0].direction = {0.408f, 0.816f, 0.408f};
+        out[0].color = {1.0f, 0.9f, 0.75f};
+        out[1].direction = {-0.667f, -0.333f, -0.667f};
+        out[1].color = {0.15f, 0.25f, 0.5f};
+        ambient = {0.2f, 0.2f, 0.25f};
     }
-    double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
 
-    // Compute stats via nth_element (linear) — no full sort needed.
-    auto ms = [](int64_t ns)
-    { return static_cast<double>(ns) * 1e-6; };
-
-    auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
-    int64_t mn = *mn_it, mx = *mx_it;
-
-    size_t mid = static_cast<size_t>(n_measure) / 2;
-    std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
-    int64_t med = frame_ns[mid];
-
-    size_t p95i = static_cast<size_t>(n_measure * 95 / 100);
-    std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
-    int64_t p95 = frame_ns[p95i];
-
-    // Welford's online algorithm — single pass, numerically stable.
-    double welford_mean = 0.0, welford_m2 = 0.0;
-    for (int k = 0; k < n_measure; k++)
+    const char *shading_mode_name(ShadingMode mode)
     {
-        double x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
-        double delta = x - welford_mean;
-        welford_mean += delta / (k + 1);
-        welford_m2 += delta * (x - welford_mean);
+        switch (mode)
+        {
+        case ShadingMode::Wireframe:
+            return "Wireframe";
+        case ShadingMode::Flat:
+            return "Flat";
+        case ShadingMode::Gouraud:
+            return "Gouraud";
+        case ShadingMode::Phong:
+            return "Phong";
+        }
+        return "Unknown";
     }
-    double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
 
-    double med_ms = ms(med);
-    double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
-    double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
-    double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
+    void run_bench(const Mesh &mesh, const ParsedArgs &args)
+    {
+        using clock = std::chrono::steady_clock;
 
-    int hw = static_cast<int>(std::thread::hardware_concurrency());
-    int threads = args.n_threads == 0  ? hw
-                  : args.n_threads < 0 ? std::min(hw, 4)
-                                       : args.n_threads;
+        Camera camera = auto_fit_camera(mesh);
+        Light lights[2];
+        vec3 ambient;
+        make_default_lights(lights, ambient);
 
-    std::fprintf(stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n",
-                 n_measure, args.bench_width, args.bench_height, threads, shading_mode_name(renderer.mode), total_ms);
-    std::fprintf(stderr, "mesh:    %zu tris  %zu verts\n",
-                 mesh.triangles.size(), mesh.vertices.size());
-    if (shadow_ms)
-        std::fprintf(stderr, "shadow:  %.2f ms  (one-time)\n", *shadow_ms);
-    std::fprintf(stderr, "frame:   min=%.2f  med=%.2f  p95=%.2f  max=%.2f  stddev=%.2f ms  (≈ %d fps)\n",
-                 ms(mn), med_ms, ms(p95), ms(mx), stddev_ms, static_cast<int>(std::lround(fps)));
-    std::fprintf(stderr, "         %.1f MTri/s  %.1f MVert/s  (input / median frame)\n", mtri_s, mvert_s);
-}
+        std::optional<double> shadow_ms;
+        std::optional<ShadowMap> shadow_map;
+        if (args.shadow)
+        {
+            auto ts = clock::now();
+            shadow_map = build_shadow_map(mesh, lights[0]);
+            auto te = clock::now();
+            shadow_ms = std::chrono::duration<double, std::milli>(te - ts).count();
+        }
+
+        Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
+        Renderer renderer(args.n_threads);
+        renderer.mode = static_cast<ShadingMode>(args.shading);
+        renderer.cull_backfaces = args.cull;
+        renderer.show_texture = args.texture;
+
+        const int n_lights = args.lighting == 1 ? 1 : (args.lighting == 2 ? 0 : 2);
+        const vec3 &cur_ambient = args.lighting == 2 ? FLAT_AMBIENT : ambient;
+
+        const int n_warmup = args.bench_warmup;
+        const int n_measure = args.bench;
+        std::vector<int64_t> frame_ns;
+        frame_ns.reserve(static_cast<size_t>(n_measure));
+
+        auto loop_t0 = clock::now();
+        for (int i = 0; i < n_warmup + n_measure; i++)
+        {
+            camera.spin_world_y(0.8f / 60.0f);
+            fb.clear({0, 0, 0});
+            auto t0 = clock::now();
+            renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb,
+                            shadow_map ? &*shadow_map : nullptr);
+            auto t1 = clock::now();
+            if (i >= n_warmup)
+                frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        }
+        double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
+
+        // Compute stats via nth_element (linear) — no full sort needed.
+        auto ms = [](int64_t ns)
+        { return static_cast<double>(ns) * 1e-6; };
+
+        auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
+        int64_t mn = *mn_it, mx = *mx_it;
+
+        size_t mid = static_cast<size_t>(n_measure) / 2;
+        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
+        int64_t med = frame_ns[mid];
+
+        size_t p95i = static_cast<size_t>(n_measure * 95 / 100);
+        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
+        int64_t p95 = frame_ns[p95i];
+
+        // Welford's online algorithm — single pass, numerically stable.
+        double welford_mean = 0.0, welford_m2 = 0.0;
+        for (int k = 0; k < n_measure; k++)
+        {
+            double x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
+            double delta = x - welford_mean;
+            welford_mean += delta / (k + 1);
+            welford_m2 += delta * (x - welford_mean);
+        }
+        double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
+
+        double med_ms = ms(med);
+        double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
+        double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
+        double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
+
+        int hw = static_cast<int>(std::thread::hardware_concurrency());
+        int threads = args.n_threads == 0  ? hw
+                      : args.n_threads < 0 ? std::min(hw, 4)
+                                           : args.n_threads;
+
+        std::fprintf(stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n",
+                     n_measure, args.bench_width, args.bench_height, threads, shading_mode_name(renderer.mode), total_ms);
+        std::fprintf(stderr, "mesh:    %zu tris  %zu verts\n",
+                     mesh.triangles.size(), mesh.vertices.size());
+        if (shadow_ms)
+            std::fprintf(stderr, "shadow:  %.2f ms  (one-time)\n", *shadow_ms);
+        std::fprintf(stderr, "frame:   min=%.2f  med=%.2f  p95=%.2f  max=%.2f  stddev=%.2f ms  (≈ %d fps)\n",
+                     ms(mn), med_ms, ms(p95), ms(mx), stddev_ms, static_cast<int>(std::lround(fps)));
+        std::fprintf(stderr, "         %.1f MTri/s  %.1f MVert/s  (input / median frame)\n", mtri_s, mvert_s);
+    }
+
+} // namespace
 
 int main(int argc, char *argv[])
 {

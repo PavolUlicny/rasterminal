@@ -3,72 +3,77 @@
 #include <algorithm>
 #include <cstdio>
 
-// UTF-8 encoding of ▀ (U+2580 UPPER HALF BLOCK)
-// Top pixel → foreground color, bottom pixel → background color.
-static const char UPPER_HALF[] = "\xe2\x96\x80";
+namespace
+{
 
-struct ByteLut
-{
-    char s[256][3];
-    uint8_t len[256];
-};
-static constexpr ByteLut make_byte_lut() noexcept
-{
-    ByteLut t{};
-    for (int i = 0; i < 256; ++i)
-    {
-        if (i < 10)
-        {
-            t.s[i][0] = char('0' + i);
-            t.len[i] = 1;
-        }
-        else if (i < 100)
-        {
-            t.s[i][0] = char('0' + i / 10);
-            t.s[i][1] = char('0' + i % 10);
-            t.len[i] = 2;
-        }
-        else
-        {
-            t.s[i][0] = char('0' + i / 100);
-            t.s[i][1] = char('0' + (i / 10) % 10);
-            t.s[i][2] = char('0' + i % 10);
-            t.len[i] = 3;
-        }
-    }
-    return t;
-}
-static constexpr ByteLut byte_lut = make_byte_lut();
+    // UTF-8 encoding of ▀ (U+2580 UPPER HALF BLOCK)
+    // Top pixel → foreground color, bottom pixel → background color.
+    const char UPPER_HALF[] = "\xe2\x96\x80";
 
-// Always writes 3 bytes (single store); caller advances by the returned length.
-// 1-2 slop bytes past len are within tmp[48] and overwritten by the next write.
-static int write_byte(char *buf, uint8_t v)
-{
-    buf[0] = byte_lut.s[v][0];
-    buf[1] = byte_lut.s[v][1];
-    buf[2] = byte_lut.s[v][2];
-    return byte_lut.len[v];
-}
+    struct ByteLut
+    {
+        char s[256][3];
+        uint8_t len[256];
+    };
+    constexpr ByteLut make_byte_lut() noexcept
+    {
+        ByteLut t{};
+        for (int i = 0; i < 256; ++i)
+        {
+            if (i < 10)
+            {
+                t.s[i][0] = char('0' + i);
+                t.len[i] = 1;
+            }
+            else if (i < 100)
+            {
+                t.s[i][0] = char('0' + i / 10);
+                t.s[i][1] = char('0' + i % 10);
+                t.len[i] = 2;
+            }
+            else
+            {
+                t.s[i][0] = char('0' + i / 100);
+                t.s[i][1] = char('0' + (i / 10) % 10);
+                t.s[i][2] = char('0' + i % 10);
+                t.len[i] = 3;
+            }
+        }
+        return t;
+    }
+    constexpr ByteLut byte_lut = make_byte_lut();
 
-// Fast integer-to-string: writes decimal digits of v into buf, returns length.
-static int write_int(char *buf, int v)
-{
-    if (v == 0)
+    // Always writes 3 bytes (single store); caller advances by the returned length.
+    // 1-2 slop bytes past len are within tmp[48] and overwritten by the next write.
+    int write_byte(char *buf, uint8_t v)
     {
-        buf[0] = '0';
-        return 1;
+        buf[0] = byte_lut.s[v][0];
+        buf[1] = byte_lut.s[v][1];
+        buf[2] = byte_lut.s[v][2];
+        return byte_lut.len[v];
     }
-    char tmp[12]; // 10 digits max for INT_MAX (2147483647) + headroom
-    int len = 0;
-    while (v > 0)
+
+    // Fast integer-to-string: writes decimal digits of v into buf, returns length.
+    int write_int(char *buf, int v)
     {
-        tmp[len++] = static_cast<char>('0' + (v % 10));
-        v /= 10;
+        if (v == 0)
+        {
+            buf[0] = '0';
+            return 1;
+        }
+        char tmp[12]; // 10 digits max for INT_MAX (2147483647) + headroom
+        int len = 0;
+        while (v > 0)
+        {
+            tmp[len++] = static_cast<char>('0' + (v % 10));
+            v /= 10;
+        }
+        for (int i = 0; i < len; i++)
+            buf[i] = tmp[len - 1 - i];
+        return len;
     }
-    for (int i = 0; i < len; i++)
-        buf[i] = tmp[len - 1 - i];
-    return len;
-}
+
+} // namespace
 
 Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
     : m_width(pixel_width),

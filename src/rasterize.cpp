@@ -5,62 +5,67 @@
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
-static constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
-
-static Color vec3_to_color(vec3 c)
+namespace
 {
-    return {
-        static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
-        static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
-        static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
-}
 
-// Precomputed barycentric rasterization setup for one triangle.
-struct TriSetup
-{
-    int x0, x1, y0, y1;           // pixel bounding box, clamped to band and screen
-    float inv_wa, inv_wb, inv_wc; // reciprocal clip-space w (perspective correction)
-    float ba_dx, ba_dy;           // ba gradient per pixel-column / pixel-row
-    float bb_dx, bb_dy;
-    float ba_row, bb_row; // ba/bb at pixel center (x0+0.5, y0+0.5)
-};
+    constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
 
-// Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
-// width is the framebuffer width; y_min/y_max are the thread's row band.
-// Returns false if the triangle is degenerate or misses the band entirely.
-static bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
-                      float wa, float wb, float wc,
-                      int width, int y_min, int y_max,
-                      TriSetup &s)
-{
-    s.x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-    s.x1 = std::min(width - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
-    s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-    s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
-    if (s.y0 > s.y1 || s.x0 > s.x1)
-        return false;
+    Color vec3_to_color(vec3 c)
+    {
+        return {
+            static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+            static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+            static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
+    }
 
-    // Barycentric denominator (proportional to 2× signed screen area).
-    float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
-    if (std::abs(denom) < DEGEN_AREA_EPS)
-        return false;
-    float inv_d = 1.0f / denom;
+    // Precomputed barycentric rasterization setup for one triangle.
+    struct TriSetup
+    {
+        int x0, x1, y0, y1;           // pixel bounding box, clamped to band and screen
+        float inv_wa, inv_wb, inv_wc; // reciprocal clip-space w (perspective correction)
+        float ba_dx, ba_dy;           // ba gradient per pixel-column / pixel-row
+        float bb_dx, bb_dy;
+        float ba_row, bb_row; // ba/bb at pixel center (x0+0.5, y0+0.5)
+    };
 
-    s.inv_wa = 1.0f / wa;
-    s.inv_wb = 1.0f / wb;
-    s.inv_wc = 1.0f / wc;
+    // Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
+    // width is the framebuffer width; y_min/y_max are the thread's row band.
+    // Returns false if the triangle is degenerate or misses the band entirely.
+    bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
+                   float wa, float wb, float wc,
+                   int width, int y_min, int y_max,
+                   TriSetup &s)
+    {
+        s.x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
+        s.x1 = std::min(width - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
+        s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+        s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+        if (s.y0 > s.y1 || s.x0 > s.x1)
+            return false;
 
-    s.ba_dx = (sb.y - sc.y) * inv_d;
-    s.ba_dy = (sc.x - sb.x) * inv_d;
-    s.bb_dx = (sc.y - sa.y) * inv_d;
-    s.bb_dy = (sa.x - sc.x) * inv_d;
+        // Barycentric denominator (proportional to 2× signed screen area).
+        float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+        if (std::abs(denom) < DEGEN_AREA_EPS)
+            return false;
+        float inv_d = 1.0f / denom;
 
-    const float px0 = static_cast<float>(s.x0) + 0.5f;
-    const float py0 = static_cast<float>(s.y0) + 0.5f;
-    s.ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
-    s.bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
-    return true;
-}
+        s.inv_wa = 1.0f / wa;
+        s.inv_wb = 1.0f / wb;
+        s.inv_wc = 1.0f / wc;
+
+        s.ba_dx = (sb.y - sc.y) * inv_d;
+        s.ba_dy = (sc.x - sb.x) * inv_d;
+        s.bb_dx = (sc.y - sa.y) * inv_d;
+        s.bb_dy = (sa.x - sc.x) * inv_d;
+
+        const float px0 = static_cast<float>(s.x0) + 0.5f;
+        const float py0 = static_cast<float>(s.y0) + 0.5f;
+        s.ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
+        s.bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+        return true;
+    }
+
+} // namespace
 
 // ─── clip_near ────────────────────────────────────────────────────────────────
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent

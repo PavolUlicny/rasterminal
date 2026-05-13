@@ -12,85 +12,90 @@
 
 // ─── typed-buffer helpers ────────────────────────────────────────────────────
 
-static float rd_f(const uint8_t *buf, tinyply::Type t, size_t i)
+namespace
 {
-    if (t == tinyply::Type::FLOAT64)
-    {
-        double d;
-        std::memcpy(&d, buf + i * 8, 8);
-        return static_cast<float>(d);
-    }
-    float f;
-    std::memcpy(&f, buf + i * 4, 4);
-    return f;
-}
 
-static float rd_col(const uint8_t *buf, tinyply::Type t, size_t i)
-{
-    if (t == tinyply::Type::UINT8)
-        return static_cast<float>(buf[i]) / 255.0f;
-    if (t == tinyply::Type::FLOAT64)
+    float rd_f(const uint8_t *buf, tinyply::Type t, size_t i)
     {
-        double d;
-        std::memcpy(&d, buf + i * 8, 8);
-        return static_cast<float>(d);
+        if (t == tinyply::Type::FLOAT64)
+        {
+            double d;
+            std::memcpy(&d, buf + i * 8, 8);
+            return static_cast<float>(d);
+        }
+        float f;
+        std::memcpy(&f, buf + i * 4, 4);
+        return f;
     }
-    float f;
-    std::memcpy(&f, buf + i * 4, 4);
-    return f;
-}
 
-static uint32_t rd_idx(const uint8_t *buf, tinyply::Type t, size_t i)
-{
-    switch (t)
+    float rd_col(const uint8_t *buf, tinyply::Type t, size_t i)
     {
-    case tinyply::Type::UINT8:
-        return buf[i];
-    case tinyply::Type::INT8:
-        return static_cast<uint32_t>(static_cast<int8_t>(buf[i]));
-    case tinyply::Type::UINT16:
-    {
-        uint16_t v;
-        std::memcpy(&v, buf + i * 2, 2);
-        return v;
+        if (t == tinyply::Type::UINT8)
+            return static_cast<float>(buf[i]) / 255.0f;
+        if (t == tinyply::Type::FLOAT64)
+        {
+            double d;
+            std::memcpy(&d, buf + i * 8, 8);
+            return static_cast<float>(d);
+        }
+        float f;
+        std::memcpy(&f, buf + i * 4, 4);
+        return f;
     }
-    case tinyply::Type::INT16:
-    {
-        int16_t v;
-        std::memcpy(&v, buf + i * 2, 2);
-        return static_cast<uint32_t>(v);
-    }
-    case tinyply::Type::INT32:
-    {
-        int32_t v;
-        std::memcpy(&v, buf + i * 4, 4);
-        return static_cast<uint32_t>(v);
-    }
-    default:
-    {
-        uint32_t v;
-        std::memcpy(&v, buf + i * 4, 4);
-        return v;
-    }
-    }
-}
 
-static size_t type_stride(tinyply::Type t)
-{
-    switch (t)
+    uint32_t rd_idx(const uint8_t *buf, tinyply::Type t, size_t i)
     {
-    case tinyply::Type::INT8:
-    case tinyply::Type::UINT8:
-        return 1;
-    case tinyply::Type::INT16:
-    case tinyply::Type::UINT16:
-        return 2;
-    case tinyply::Type::FLOAT64:
-        return 8;
-    default:
-        return 4;
+        switch (t)
+        {
+        case tinyply::Type::UINT8:
+            return buf[i];
+        case tinyply::Type::INT8:
+            return static_cast<uint32_t>(static_cast<int8_t>(buf[i]));
+        case tinyply::Type::UINT16:
+        {
+            uint16_t v;
+            std::memcpy(&v, buf + i * 2, 2);
+            return v;
+        }
+        case tinyply::Type::INT16:
+        {
+            int16_t v;
+            std::memcpy(&v, buf + i * 2, 2);
+            return static_cast<uint32_t>(v);
+        }
+        case tinyply::Type::INT32:
+        {
+            int32_t v;
+            std::memcpy(&v, buf + i * 4, 4);
+            return static_cast<uint32_t>(v);
+        }
+        default:
+        {
+            uint32_t v;
+            std::memcpy(&v, buf + i * 4, 4);
+            return v;
+        }
+        }
     }
-}
+
+    size_t type_stride(tinyply::Type t)
+    {
+        switch (t)
+        {
+        case tinyply::Type::INT8:
+        case tinyply::Type::UINT8:
+            return 1;
+        case tinyply::Type::INT16:
+        case tinyply::Type::UINT16:
+            return 2;
+        case tinyply::Type::FLOAT64:
+            return 8;
+        default:
+            return 4;
+        }
+    }
+
+} // namespace
 
 // ─── Mesh::load_ply ───────────────────────────────────────────────────────────
 

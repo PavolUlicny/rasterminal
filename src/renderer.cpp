@@ -5,32 +5,37 @@
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
-// NDC → screen-space pixel coordinates.
-// NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
-// z is kept as NDC depth for the z-buffer.
-static vec3 ndc_to_screen(vec3 ndc, int width, int height)
+namespace
 {
-    return {
-        (ndc.x + 1.0f) * 0.5f * static_cast<float>(width),
-        (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
-        ndc.z};
-}
 
-// Choose a conservative dynamic chunk size for Phase 1 work stealing.
-// This keeps enough claims per worker for balance while bounding overhead.
-static int choose_phase1_chunk(int total_tris, int n_workers)
-{
-    constexpr int MIN_CHUNK = 64;
-    constexpr int MAX_CHUNK = 256;
-    constexpr int TARGET_CLAIMS_PER_WORKER = 12;
+    // NDC → screen-space pixel coordinates.
+    // NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
+    // z is kept as NDC depth for the z-buffer.
+    vec3 ndc_to_screen(vec3 ndc, int width, int height)
+    {
+        return {
+            (ndc.x + 1.0f) * 0.5f * static_cast<float>(width),
+            (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
+            ndc.z};
+    }
 
-    if (total_tris <= 0 || n_workers <= 0)
-        return MIN_CHUNK;
+    // Choose a conservative dynamic chunk size for Phase 1 work stealing.
+    // This keeps enough claims per worker for balance while bounding overhead.
+    int choose_phase1_chunk(int total_tris, int n_workers)
+    {
+        constexpr int MIN_CHUNK = 64;
+        constexpr int MAX_CHUNK = 256;
+        constexpr int TARGET_CLAIMS_PER_WORKER = 12;
 
-    const int denom = n_workers * TARGET_CLAIMS_PER_WORKER;
-    const int raw = (total_tris + denom - 1) / denom; // ceil(total/denom)
-    return std::clamp(raw, MIN_CHUNK, MAX_CHUNK);
-}
+        if (total_tris <= 0 || n_workers <= 0)
+            return MIN_CHUNK;
+
+        const int denom = n_workers * TARGET_CLAIMS_PER_WORKER;
+        const int raw = (total_tris + denom - 1) / denom; // ceil(total/denom)
+        return std::clamp(raw, MIN_CHUNK, MAX_CHUNK);
+    }
+
+} // namespace
 
 // ─── Renderer: constructor / destructor ───────────────────────────────────────
 
