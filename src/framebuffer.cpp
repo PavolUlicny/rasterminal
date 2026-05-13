@@ -1,7 +1,9 @@
 #include "framebuffer.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdio>
+#include <limits>
 
 namespace
 {

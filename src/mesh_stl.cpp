@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "light.h"
 #include "mesh_loader.h"
 
 #define STL_READER_NO_EXCEPTIONS
@@ -7,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 bool Mesh::load_stl(const std::string &path)

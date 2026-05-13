@@ -2,14 +2,19 @@
 #include "camera.h"
 #include "framebuffer.h"
 #include "light.h"
+#include "linalg.h"
 #include "mesh.h"
 #include "platform.h"
 #include "renderer.h"
+#include "shadow.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <ratio>
 #include <csignal>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

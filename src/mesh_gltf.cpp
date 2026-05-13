@@ -1,10 +1,13 @@
 #include "mesh.h"
+#include "light.h"
 #include "mesh_loader.h"
 #include "texture.h"
 
+#include <cstdint>
 #include <cstring>
 #include <functional>
 #include <string>
+#include <utility>
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"

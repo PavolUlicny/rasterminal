@@ -1,11 +1,15 @@
 #include "mesh.h"
+#include "light.h"
 #include "mesh_loader.h"
 #include "texture.h"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"

@@ -1,7 +1,12 @@
 #include "texture.h"
+#include "linalg.h"
 
-#include <cmath>
 #include <algorithm>
+#include <climits>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <string>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"

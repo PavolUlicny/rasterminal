@@ -1,7 +1,13 @@
 #include "rasterize.h"
+#include "framebuffer.h"
+#include "light.h"
+#include "linalg.h"
+#include "shadow.h"
+#include "texture.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 

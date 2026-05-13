@@ -1,9 +1,13 @@
 #include "shadow.h"
 #include "clip.h"
+#include "light.h"
+#include "linalg.h"
+#include "mesh.h"
 #include "texture.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 

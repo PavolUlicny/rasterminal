@@ -1,6 +1,19 @@
 #include "renderer.h"
+#include "camera.h"
+#include "clip.h"
+#include "framebuffer.h"
+#include "light.h"
+#include "linalg.h"
+#include "mesh.h"
+#include "rasterize.h"
+#include "shadow.h"
+#include "texture.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
+#include <cstddef>
+#include <mutex>
 #include <thread>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────

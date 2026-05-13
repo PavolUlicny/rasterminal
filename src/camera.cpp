@@ -1,4 +1,6 @@
 #include "camera.h"
+#include "linalg.h"
+#include "platform.h"
 
 #include <cmath>
 

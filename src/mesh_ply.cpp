@@ -1,10 +1,13 @@
 #include "mesh.h"
+#include "light.h"
 #include "mesh_loader.h"
 
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <ios>
 #include <memory>
+#include <string>
 #include <vector>
 
 #define TINYPLY_IMPLEMENTATION
