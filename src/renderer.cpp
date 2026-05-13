@@ -24,7 +24,7 @@ namespace
     // NDC → screen-space pixel coordinates.
     // NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
     // z is kept as NDC depth for the z-buffer.
-    constexpr vec3 ndc_to_screen(vec3 ndc, int width, int height)
+    constexpr vec3 ndc_to_screen(vec3 ndc, int width, int height) noexcept
     {
         return {
             (ndc.x + 1.0f) * 0.5f * static_cast<float>(width),
@@ -34,7 +34,7 @@ namespace
 
     // Choose a conservative dynamic chunk size for Phase 1 work stealing.
     // This keeps enough claims per worker for balance while bounding overhead.
-    constexpr int choose_phase1_chunk(int total_tris, int n_workers)
+    constexpr int choose_phase1_chunk(int total_tris, int n_workers) noexcept
     {
         constexpr int MIN_CHUNK = 64;
         constexpr int MAX_CHUNK = 256;

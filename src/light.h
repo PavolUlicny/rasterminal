@@ -4,7 +4,7 @@
 
 #include <cmath>
 
-inline float specular_pow(float ndh, float shininess)
+inline float specular_pow(float ndh, float shininess) noexcept
 {
     // Common MTL shininess values get an exact multiply chain; arbitrary
     // values fall back to exp2f(s*log2f(x)) which is faster than std::pow.
@@ -61,7 +61,7 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,
                              const Material &mat = {},
-                             float ao = 1.0f)
+                             float ao = 1.0f) noexcept
 {
     const vec3 n = normalize(normal);
 
@@ -91,7 +91,7 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,
                              const Material &mat = {},
-                             float ao = 1.0f)
+                             float ao = 1.0f) noexcept
 {
     return compute_lighting(normal, normalize(eye_pos - pos),
                             lights, n_lights, ambient, mat, ao);

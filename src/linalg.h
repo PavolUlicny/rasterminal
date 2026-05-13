@@ -8,13 +8,13 @@ struct vec2
 {
     float x, y;
 
-    constexpr vec2() : x(0), y(0) {}
-    constexpr vec2(float x_, float y_) : x(x_), y(y_) {}
+    constexpr vec2() noexcept : x(0), y(0) {}
+    constexpr vec2(float x_, float y_) noexcept : x(x_), y(y_) {}
 
-    constexpr vec2 operator+(const vec2 &o) const { return {x + o.x, y + o.y}; }
-    constexpr vec2 operator-(const vec2 &o) const { return {x - o.x, y - o.y}; }
-    constexpr vec2 operator*(float t) const { return {x * t, y * t}; }
-    constexpr vec2 operator/(float t) const { return {x / t, y / t}; }
+    constexpr vec2 operator+(const vec2 &o) const noexcept { return {x + o.x, y + o.y}; }
+    constexpr vec2 operator-(const vec2 &o) const noexcept { return {x - o.x, y - o.y}; }
+    constexpr vec2 operator*(float t) const noexcept { return {x * t, y * t}; }
+    constexpr vec2 operator/(float t) const noexcept { return {x / t, y / t}; }
 };
 
 // ─── vec3 ────────────────────────────────────────────────────────────────────
@@ -23,24 +23,24 @@ struct vec3
 {
     float x, y, z;
 
-    constexpr vec3() : x(0), y(0), z(0) {}
-    constexpr vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+    constexpr vec3() noexcept : x(0), y(0), z(0) {}
+    constexpr vec3(float x_, float y_, float z_) noexcept : x(x_), y(y_), z(z_) {}
 
-    constexpr vec3 operator+(const vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
-    constexpr vec3 operator-(const vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
-    constexpr vec3 operator*(float t) const { return {x * t, y * t, z * t}; }
-    constexpr vec3 operator*(const vec3 &o) const { return {x * o.x, y * o.y, z * o.z}; } // component-wise
-    constexpr vec3 operator/(float t) const { return {x / t, y / t, z / t}; }
-    constexpr vec3 operator-() const { return {-x, -y, -z}; }
+    constexpr vec3 operator+(const vec3 &o) const noexcept { return {x + o.x, y + o.y, z + o.z}; }
+    constexpr vec3 operator-(const vec3 &o) const noexcept { return {x - o.x, y - o.y, z - o.z}; }
+    constexpr vec3 operator*(float t) const noexcept { return {x * t, y * t, z * t}; }
+    constexpr vec3 operator*(const vec3 &o) const noexcept { return {x * o.x, y * o.y, z * o.z}; } // component-wise
+    constexpr vec3 operator/(float t) const noexcept { return {x / t, y / t, z / t}; }
+    constexpr vec3 operator-() const noexcept { return {-x, -y, -z}; }
 
-    constexpr vec3 &operator+=(const vec3 &o)
+    constexpr vec3 &operator+=(const vec3 &o) noexcept
     {
         x += o.x;
         y += o.y;
         z += o.z;
         return *this;
     }
-    constexpr vec3 &operator*=(float t)
+    constexpr vec3 &operator*=(float t) noexcept
     {
         x *= t;
         y *= t;
@@ -48,16 +48,16 @@ struct vec3
         return *this;
     }
 
-    float length() const { return std::sqrt(x * x + y * y + z * z); }
-    constexpr float length_sq() const { return x * x + y * y + z * z; }
+    float length() const noexcept { return std::sqrt(x * x + y * y + z * z); }
+    constexpr float length_sq() const noexcept { return x * x + y * y + z * z; }
 };
 
-constexpr float dot(const vec3 &a, const vec3 &b)
+constexpr float dot(const vec3 &a, const vec3 &b) noexcept
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-constexpr vec3 cross(const vec3 &a, const vec3 &b)
+constexpr vec3 cross(const vec3 &a, const vec3 &b) noexcept
 {
     return {
         a.y * b.z - a.z * b.y,
@@ -65,7 +65,7 @@ constexpr vec3 cross(const vec3 &a, const vec3 &b)
         a.x * b.y - a.y * b.x};
 }
 
-inline vec3 normalize(const vec3 &v)
+inline vec3 normalize(const vec3 &v) noexcept
 {
     const float len_sq = v.length_sq();
     if (len_sq < 1e-16f)
@@ -74,12 +74,12 @@ inline vec3 normalize(const vec3 &v)
     return {v.x * inv_len, v.y * inv_len, v.z * inv_len};
 }
 
-constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t)
+constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t) noexcept
 {
     return a + (b - a) * t;
 }
 
-constexpr vec3 reflect(const vec3 &incident, const vec3 &normal)
+constexpr vec3 reflect(const vec3 &incident, const vec3 &normal) noexcept
 {
     return incident - normal * (2.0f * dot(incident, normal));
 }
@@ -90,17 +90,17 @@ struct vec4
 {
     float x, y, z, w;
 
-    constexpr vec4() : x(0), y(0), z(0), w(0) {}
-    constexpr vec4(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
-    constexpr vec4(const vec3 &v, float w_) : x(v.x), y(v.y), z(v.z), w(w_) {}
+    constexpr vec4() noexcept : x(0), y(0), z(0), w(0) {}
+    constexpr vec4(float x_, float y_, float z_, float w_) noexcept : x(x_), y(y_), z(z_), w(w_) {}
+    constexpr vec4(const vec3 &v, float w_) noexcept : x(v.x), y(v.y), z(v.z), w(w_) {}
 
-    constexpr vec4 operator+(const vec4 &o) const { return {x + o.x, y + o.y, z + o.z, w + o.w}; }
-    constexpr vec4 operator-(const vec4 &o) const { return {x - o.x, y - o.y, z - o.z, w - o.w}; }
-    constexpr vec4 operator*(float t) const { return {x * t, y * t, z * t, w * t}; }
+    constexpr vec4 operator+(const vec4 &o) const noexcept { return {x + o.x, y + o.y, z + o.z, w + o.w}; }
+    constexpr vec4 operator-(const vec4 &o) const noexcept { return {x - o.x, y - o.y, z - o.z, w - o.w}; }
+    constexpr vec4 operator*(float t) const noexcept { return {x * t, y * t, z * t, w * t}; }
 
     // perspective divide: clip space → NDC
-    constexpr vec3 xyz() const { return {x, y, z}; }
-    constexpr vec3 perspective_divide() const
+    constexpr vec3 xyz() const noexcept { return {x, y, z}; }
+    constexpr vec3 perspective_divide() const noexcept
     {
         const float inv_w = 1.0f / w;
         return {x * inv_w, y * inv_w, z * inv_w};
@@ -114,16 +114,16 @@ struct mat4
 {
     float m[4][4];
 
-    constexpr mat4() : m{} {}
+    constexpr mat4() noexcept : m{} {}
 
-    static constexpr mat4 identity()
+    static constexpr mat4 identity() noexcept
     {
         mat4 result;
         result.m[0][0] = result.m[1][1] = result.m[2][2] = result.m[3][3] = 1.0f;
         return result;
     }
 
-    constexpr mat4 operator*(const mat4 &o) const
+    constexpr mat4 operator*(const mat4 &o) const noexcept
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
@@ -133,7 +133,7 @@ struct mat4
         return result;
     }
 
-    constexpr vec4 operator*(const vec4 &v) const
+    constexpr vec4 operator*(const vec4 &v) const noexcept
     {
         return {
             m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z + m[3][0] * v.w,
@@ -142,7 +142,7 @@ struct mat4
             m[0][3] * v.x + m[1][3] * v.y + m[2][3] * v.z + m[3][3] * v.w};
     }
 
-    constexpr mat4 transposed() const
+    constexpr mat4 transposed() const noexcept
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
@@ -154,7 +154,7 @@ struct mat4
 
 // ─── transform factories ─────────────────────────────────────────────────────
 
-constexpr mat4 translation(float tx, float ty, float tz)
+constexpr mat4 translation(float tx, float ty, float tz) noexcept
 {
     mat4 m = mat4::identity();
     m.m[3][0] = tx;
@@ -163,12 +163,12 @@ constexpr mat4 translation(float tx, float ty, float tz)
     return m;
 }
 
-constexpr mat4 translation(const vec3 &t)
+constexpr mat4 translation(const vec3 &t) noexcept
 {
     return translation(t.x, t.y, t.z);
 }
 
-constexpr mat4 scale(float sx, float sy, float sz)
+constexpr mat4 scale(float sx, float sy, float sz) noexcept
 {
     mat4 m = mat4::identity();
     m.m[0][0] = sx;
@@ -177,12 +177,12 @@ constexpr mat4 scale(float sx, float sy, float sz)
     return m;
 }
 
-constexpr mat4 scale(float s)
+constexpr mat4 scale(float s) noexcept
 {
     return scale(s, s, s);
 }
 
-inline mat4 rotation_x(float radians)
+inline mat4 rotation_x(float radians) noexcept
 {
     mat4 m = mat4::identity();
     const float c = std::cos(radians);
@@ -194,7 +194,7 @@ inline mat4 rotation_x(float radians)
     return m;
 }
 
-inline mat4 rotation_y(float radians)
+inline mat4 rotation_y(float radians) noexcept
 {
     mat4 m = mat4::identity();
     const float c = std::cos(radians);
@@ -206,7 +206,7 @@ inline mat4 rotation_y(float radians)
     return m;
 }
 
-inline mat4 rotation_z(float radians)
+inline mat4 rotation_z(float radians) noexcept
 {
     mat4 m = mat4::identity();
     const float c = std::cos(radians);
@@ -220,7 +220,7 @@ inline mat4 rotation_z(float radians)
 
 // ─── view / projection ───────────────────────────────────────────────────────
 
-inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up)
+inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up) noexcept
 {
     const vec3 f = normalize(target - eye); // forward
     const vec3 r = normalize(cross(f, up)); // right
@@ -243,7 +243,7 @@ inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up)
 }
 
 // fov_y in radians, near/far are positive distances
-inline mat4 perspective(float fov_y, float aspect, float near, float far)
+inline mat4 perspective(float fov_y, float aspect, float near, float far) noexcept
 {
     const float tan_half = std::tan(fov_y / 2.0f);
 
@@ -262,19 +262,19 @@ struct quat
 {
     float x, y, z, w;
 
-    constexpr quat() : x(0), y(0), z(0), w(1) {}
-    constexpr quat(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
+    constexpr quat() noexcept : x(0), y(0), z(0), w(1) {}
+    constexpr quat(float x_, float y_, float z_, float w_) noexcept : x(x_), y(y_), z(z_), w(w_) {}
 
-    static constexpr quat identity() { return {0, 0, 0, 1}; }
+    static constexpr quat identity() noexcept { return {0, 0, 0, 1}; }
 
-    static quat from_axis_angle(const vec3 &axis, float radians)
+    static quat from_axis_angle(const vec3 &axis, float radians) noexcept
     {
         const float half = radians * 0.5f;
         const float s = std::sin(half);
         return {axis.x * s, axis.y * s, axis.z * s, std::cos(half)};
     }
 
-    constexpr quat operator*(const quat &o) const
+    constexpr quat operator*(const quat &o) const noexcept
     {
         return {
             w * o.x + x * o.w + y * o.z - z * o.y,
@@ -283,7 +283,7 @@ struct quat
             w * o.w - x * o.x - y * o.y - z * o.z};
     }
 
-    constexpr vec3 rotate(const vec3 &v) const
+    constexpr vec3 rotate(const vec3 &v) const noexcept
     {
         const vec3 qv{x, y, z};
         const vec3 t = cross(qv, v) * 2.0f;
@@ -291,7 +291,7 @@ struct quat
     }
 };
 
-inline quat normalize(const quat &q)
+inline quat normalize(const quat &q) noexcept
 {
     const float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     if (len_sq < 1e-8f)
@@ -302,12 +302,12 @@ inline quat normalize(const quat &q)
 
 // ─── scalar utilities ────────────────────────────────────────────────────────
 
-constexpr float clamp(float v, float lo, float hi)
+constexpr float clamp(float v, float lo, float hi) noexcept
 {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-constexpr float to_radians(float degrees)
+constexpr float to_radians(float degrees) noexcept
 {
     return degrees * (3.14159265358979323846f / 180.0f);
 }

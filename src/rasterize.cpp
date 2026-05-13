@@ -16,7 +16,7 @@ namespace
 
     constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
 
-    constexpr Color vec3_to_color(vec3 c)
+    constexpr Color vec3_to_color(vec3 c) noexcept
     {
         return {
             static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),

@@ -8,12 +8,12 @@
 struct Color
 {
     uint8_t r, g, b;
-    constexpr Color() : r(0), g(0), b(0) {}
-    constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
+    constexpr Color() noexcept : r(0), g(0), b(0) {}
+    constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) noexcept : r(r_), g(g_), b(b_) {}
 };
 
-constexpr bool operator==(Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
-constexpr bool operator!=(Color a, Color b) { return !(a == b); }
+constexpr bool operator==(Color a, Color b) noexcept { return a.r == b.r && a.g == b.g && a.b == b.b; }
+constexpr bool operator!=(Color a, Color b) noexcept { return !(a == b); }
 
 class Framebuffer
 {
