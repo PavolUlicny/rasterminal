@@ -82,7 +82,7 @@ namespace
         ambient = {0.2f, 0.2f, 0.25f};
     }
 
-    const char *shading_mode_name(ShadingMode mode)
+    constexpr const char *shading_mode_name(ShadingMode mode) noexcept
     {
         switch (mode)
         {
