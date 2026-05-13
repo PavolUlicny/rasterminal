@@ -26,7 +26,7 @@ struct ShadowMap
 
     // Returns shadow factor in [0,1]: 0=fully lit, 1=fully shadowed.
     // Uses 3×3 PCF kernel for soft edges.
-    float in_shadow(vec3 world_pos) const;
+    [[nodiscard]] float in_shadow(vec3 world_pos) const;
 };
 
 // Build a shadow map for a directional light. Fits an orthographic frustum to

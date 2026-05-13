@@ -13,11 +13,11 @@ struct Camera
     float far_plane = 100.0f;
 
     // World-space position of the camera eye, derived from orbit parameters.
-    vec3 eye() const;
+    [[nodiscard]] vec3 eye() const;
 
-    mat4 view() const;
-    mat4 view(const vec3 &eye_pos) const;
-    mat4 projection(int pixel_width, int pixel_height) const;
+    [[nodiscard]] mat4 view() const;
+    [[nodiscard]] mat4 view(const vec3 &eye_pos) const;
+    [[nodiscard]] mat4 projection(int pixel_width, int pixel_height) const;
 
     // Update camera state from a single key event.
     // dt: seconds elapsed since last frame, for speed-independent movement.

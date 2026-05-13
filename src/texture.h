@@ -28,10 +28,10 @@ struct Texture
     // V is flipped so that OBJ convention (v = 0 at bottom) maps correctly
     // to image storage order (row 0 at top).
     // Returns RGB in [0, 1].
-    vec3 sample_rgb(float u, float v) const;
+    [[nodiscard]] vec3 sample_rgb(float u, float v) const;
 
     // Same as sample_rgb but also returns the alpha channel in .w.
     // Used by the alpha-cutout path; separate from sample_rgb so non-cutout
     // callers (nmap, stex) pay no alpha computation cost.
-    vec4 sample_rgba(float u, float v) const;
+    [[nodiscard]] vec4 sample_rgba(float u, float v) const;
 };
