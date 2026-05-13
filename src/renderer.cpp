@@ -41,12 +41,12 @@ namespace
 
 Renderer::Renderer(int n_threads)
 {
-    int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+    const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
     // -1 = auto (default): min(hw, 4)
     //  0 = all hardware threads
     //  N = exactly N, clamped to [1, hw]
-    int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw
-                                                                   : n_threads;
+    const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw
+                                                                         : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
@@ -56,7 +56,7 @@ Renderer::Renderer(int n_threads)
 Renderer::~Renderer()
 {
     {
-        std::lock_guard<std::mutex> lk(m_mutex);
+        const std::lock_guard<std::mutex> lk(m_mutex);
         m_stop = true;
         ++m_generation; // ensure workers see the stop flag
     }
@@ -88,7 +88,7 @@ void Renderer::worker_func(int t)
         {
             if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
             {
-                std::lock_guard<std::mutex> done_lk(m_mutex);
+                const std::lock_guard<std::mutex> done_lk(m_mutex);
                 m_cv_done.notify_one();
             }
             continue;
@@ -101,19 +101,19 @@ void Renderer::worker_func(int t)
             const mat4 &vp = m_vp;
             const vec3 &eye = m_eye;
             const Light *lights = m_lights;
-            int n_lights = m_n_lights;
+            const int n_lights = m_n_lights;
             const vec3 &ambient = m_ambient;
             const ShadowMap *shadow_map = m_shadow_map;
-            float near_plane = m_near_plane;
-            int width = m_width;
-            int height = m_height;
-            ShadingMode smode = m_smode;
-            bool do_cull = m_cull_backfaces;
-            bool show_tex = m_show_texture;
+            const float near_plane = m_near_plane;
+            const int width = m_width;
+            const int height = m_height;
+            const ShadingMode smode = m_smode;
+            const bool do_cull = m_cull_backfaces;
+            const bool show_tex = m_show_texture;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
-            int total = static_cast<int>(mesh->triangles.size());
+            const int total = static_cast<int>(mesh->triangles.size());
             const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
             const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
 
@@ -123,10 +123,10 @@ void Renderer::worker_func(int t)
             const int chunk = choose_phase1_chunk(total, n);
             while (true)
             {
-                int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
+                const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
                 if (start >= total)
                     break;
-                int end = std::min(start + chunk, total);
+                const int end = std::min(start + chunk, total);
                 for (int i = start; i < end; i++)
                 {
                     const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
@@ -170,7 +170,7 @@ void Renderer::worker_func(int t)
                     }
 
                     ClipVert clipped[2][3];
-                    int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
+                    const int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
 
                     for (int ti = 0; ti < n_tris; ti++)
                     {
@@ -181,9 +181,9 @@ void Renderer::worker_func(int t)
                         if (clip_reject(a.c, b.c, c.c))
                             continue;
 
-                        vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
-                        vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
-                        vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
+                        const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                        const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                        const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
                         // No zero-init: every field used downstream is explicitly
                         // written below (mode-dependent). Fields unused by the
@@ -237,13 +237,13 @@ void Renderer::worker_func(int t)
                             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             if (flip_normals)
                                 face_n = face_n * -1.0f;
-                            vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                            float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                            const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
+                            const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                             const Material *flat_mat = &mat;
                             Material vcol_mat;
                             if (mesh->has_vertex_colors)
                             {
-                                vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                                const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
                                 if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
                                 {
                                     vcol_mat = mat;
@@ -300,8 +300,8 @@ void Renderer::worker_func(int t)
                         // Scan from the first band whose bottom edge reaches
                         // tri_y0 down to the last band whose top edge is still
                         // above tri_y1.  n is small (≤16) so the scan is cheap.
-                        int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-                        int tri_y1 = std::min(height - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+                        const int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
+                        const int tri_y1 = std::min(height - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
                         int b_lo = 0;
                         while (b_lo < n - 1 && height * (b_lo + 1) / n - 1 < tri_y0)
                             ++b_lo;
@@ -321,7 +321,7 @@ void Renderer::worker_func(int t)
         if (m_phase1_done.fetch_add(1, std::memory_order_acq_rel) == n - 1)
         {
             {
-                std::lock_guard<std::mutex> phase_lk(m_phase_mutex);
+                const std::lock_guard<std::mutex> phase_lk(m_phase_mutex);
                 m_phase2_ready.store(true, std::memory_order_release);
             }
             m_cv_phase2.notify_all();
@@ -347,8 +347,8 @@ void Renderer::worker_func(int t)
         // Each worker owns band t — only triangles pre-bucketed into that band,
         // so no wasted iterations over triangles from other parts of the screen.
         {
-            int y_min = m_height * t / n;
-            int y_max = m_height * (t + 1) / n - 1;
+            const int y_min = m_height * t / n;
+            const int y_max = m_height * (t + 1) / n - 1;
 
             // Per-frame Phong lighting constants — read from renderer state
             // instead of duplicating into every RasterTri. Safe to read without
@@ -391,7 +391,7 @@ void Renderer::worker_func(int t)
         // Signal completion. If this is the last worker, wake render().
         if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
         {
-            std::lock_guard<std::mutex> done_lk(m_mutex);
+            const std::lock_guard<std::mutex> done_lk(m_mutex);
             m_cv_done.notify_one();
         }
     }
@@ -428,12 +428,12 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                     continue;
             }
 
-            ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao};
-            ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao};
-            ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao};
+            const ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao};
+            const ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao};
+            const ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao};
 
             ClipVert clipped[2][3];
-            int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
+            const int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
 
             for (int ti = 0; ti < n_tris; ti++)
             {
@@ -444,9 +444,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                 if (clip_reject(a.c, b.c, c.c))
                     continue;
 
-                vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
-                vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
-                vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
+                const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
                 const Color wf = wireframe_color;
                 draw_line(fb, sa, sb, wf);
@@ -475,7 +475,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     m_phase1_done.store(0, std::memory_order_relaxed);
     m_phase2_ready.store(false, std::memory_order_relaxed);
     {
-        std::lock_guard<std::mutex> lk(m_mutex);
+        const std::lock_guard<std::mutex> lk(m_mutex);
         m_mesh = &mesh;
         m_vp = vp;
         m_eye = eye;

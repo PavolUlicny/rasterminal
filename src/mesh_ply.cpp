@@ -358,7 +358,7 @@ bool Mesh::load_ply(const std::string &path)
                     continue;
 
                 const uint32_t base = static_cast<uint32_t>(vertices.size());
-                for (uint32_t pi : {i0, iv, iw})
+                for (const uint32_t pi : {i0, iv, iw})
                 {
                     Vertex vert{};
                     vert.pos = pool[pi].pos;

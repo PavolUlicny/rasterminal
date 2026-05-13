@@ -67,10 +67,10 @@ inline vec3 cross(const vec3 &a, const vec3 &b)
 
 inline vec3 normalize(const vec3 &v)
 {
-    float len_sq = v.length_sq();
+    const float len_sq = v.length_sq();
     if (len_sq < 1e-16f)
         return {};
-    float inv_len = 1.0f / std::sqrt(len_sq);
+    const float inv_len = 1.0f / std::sqrt(len_sq);
     return {v.x * inv_len, v.y * inv_len, v.z * inv_len};
 }
 
@@ -102,7 +102,7 @@ struct vec4
     vec3 xyz() const { return {x, y, z}; }
     vec3 perspective_divide() const
     {
-        float inv_w = 1.0f / w;
+        const float inv_w = 1.0f / w;
         return {x * inv_w, y * inv_w, z * inv_w};
     }
 };
@@ -224,9 +224,9 @@ inline mat4 rotation_z(float radians)
 
 inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up)
 {
-    vec3 f = normalize(target - eye); // forward
-    vec3 r = normalize(cross(f, up)); // right
-    vec3 u = cross(r, f);             // up (reorthogonalized)
+    const vec3 f = normalize(target - eye); // forward
+    const vec3 r = normalize(cross(f, up)); // right
+    const vec3 u = cross(r, f);             // up (reorthogonalized)
 
     mat4 m = mat4::identity();
     m.m[0][0] = r.x;
@@ -247,7 +247,7 @@ inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up)
 // fov_y in radians, near/far are positive distances
 inline mat4 perspective(float fov_y, float aspect, float near, float far)
 {
-    float tan_half = std::tan(fov_y / 2.0f);
+    const float tan_half = std::tan(fov_y / 2.0f);
 
     mat4 m;
     m.m[0][0] = 1.0f / (aspect * tan_half);
@@ -271,8 +271,8 @@ struct quat
 
     static quat from_axis_angle(const vec3 &axis, float radians)
     {
-        float half = radians * 0.5f;
-        float s = std::sin(half);
+        const float half = radians * 0.5f;
+        const float s = std::sin(half);
         return {axis.x * s, axis.y * s, axis.z * s, std::cos(half)};
     }
 
@@ -287,18 +287,18 @@ struct quat
 
     vec3 rotate(const vec3 &v) const
     {
-        vec3 qv{x, y, z};
-        vec3 t = cross(qv, v) * 2.0f;
+        const vec3 qv{x, y, z};
+        const vec3 t = cross(qv, v) * 2.0f;
         return v + t * w + cross(qv, t);
     }
 };
 
 inline quat normalize(const quat &q)
 {
-    float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    const float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     if (len_sq < 1e-8f)
         return quat::identity();
-    float inv = 1.0f / std::sqrt(len_sq);
+    const float inv = 1.0f / std::sqrt(len_sq);
     return {q.x * inv, q.y * inv, q.z * inv, q.w * inv};
 }
 

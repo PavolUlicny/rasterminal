@@ -19,7 +19,7 @@ bool Mesh::load_gltf(const std::string &path)
     if (slash != std::string::npos)
         dir = path.substr(0, slash + 1);
 
-    cgltf_options opts{};
+    const cgltf_options opts{};
     cgltf_data *data = nullptr;
 
     if (cgltf_parse_file(&opts, path.c_str(), &data) != cgltf_result_success)

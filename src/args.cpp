@@ -37,7 +37,7 @@ ParseResult parse_args(int argc, char *argv[])
     {
         char *end = nullptr;
         errno = 0;
-        long v = std::strtol(val, &end, 10);
+        const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v <= 0 || v > INT_MAX || errno == ERANGE)
         {
             std::fprintf(stderr,
@@ -53,7 +53,7 @@ ParseResult parse_args(int argc, char *argv[])
     {
         char *end = nullptr;
         errno = 0;
-        long v = std::strtol(val, &end, 10);
+        const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
         {
             std::fprintf(stderr,
@@ -79,11 +79,11 @@ ParseResult parse_args(int argc, char *argv[])
             return err();
         char *end = nullptr;
         errno = 0;
-        long ww = std::strtol(val, &end, 10);
+        const long ww = std::strtol(val, &end, 10);
         if (end != sep || ww <= 0 || ww > INT_MAX || errno == ERANGE)
             return err();
         errno = 0;
-        long hh = std::strtol(sep + 1, &end, 10);
+        const long hh = std::strtol(sep + 1, &end, 10);
         if (end == sep + 1 || *end != '\0' || hh <= 0 || hh > INT_MAX || errno == ERANGE)
             return err();
         w = static_cast<int>(ww);
@@ -236,7 +236,7 @@ ParseResult parse_args(int argc, char *argv[])
         std::string arg = argv[i];
         if (arg.size() > 2 && arg[0] == '-' && arg[1] == '-')
         {
-            size_t eq = arg.find('=');
+            const size_t eq = arg.find('=');
             if (eq != std::string::npos)
             {
                 eq_val = argv[i] + eq + 1;

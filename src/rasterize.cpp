@@ -44,10 +44,10 @@ namespace
             return false;
 
         // Barycentric denominator (proportional to 2× signed screen area).
-        float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+        const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
         if (std::abs(denom) < DEGEN_AREA_EPS)
             return false;
-        float inv_d = 1.0f / denom;
+        const float inv_d = 1.0f / denom;
 
         s.inv_wa = 1.0f / wa;
         s.inv_wb = 1.0f / wb;
@@ -105,7 +105,7 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
     // vertex v1 to find the exact w = NEAR_W crossing.
     auto cross_edge = [&](const ClipVert &v0, const ClipVert &v1) -> ClipVert
     {
-        float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
+        const float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
         return {v0.c + (v1.c - v0.c) * t,
                 v0.pos + (v1.pos - v0.pos) * t,
                 v0.normal + (v1.normal - v0.normal) * t,
@@ -120,14 +120,14 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
         // Rotate so the single inside vertex is first.
         if (ib)
         {
-            ClipVert t = aa;
+            const ClipVert t = aa;
             aa = bb;
             bb = cc;
             cc = t;
         }
         else if (ic)
         {
-            ClipVert t = aa;
+            const ClipVert t = aa;
             aa = cc;
             cc = bb;
             bb = t;
@@ -145,21 +145,21 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
     }
     else if (!ia)
     {
-        ClipVert t = aa;
+        const ClipVert t = aa;
         aa = bb;
         bb = cc;
         cc = t;
     }
     else
     {
-        ClipVert t = bb;
+        const ClipVert t = bb;
         bb = aa;
         aa = cc;
         cc = t;
     }
     // a, b inside; c outside → clipped quad → two triangles.
-    ClipVert ac = cross_edge(aa, cc);
-    ClipVert bc = cross_edge(bb, cc);
+    const ClipVert ac = cross_edge(aa, cc);
+    const ClipVert bc = cross_edge(bb, cc);
     out[0][0] = aa;
     out[0][1] = bb;
     out[0][2] = bc;
@@ -177,9 +177,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     int x0 = static_cast<int>(std::round(a.x)), y0 = static_cast<int>(std::round(a.y));
     int x1 = static_cast<int>(std::round(b.x)), y1 = static_cast<int>(std::round(b.y));
 
-    int dx = std::abs(x1 - x0);
-    int dy = std::abs(y1 - y0);
-    int steps = std::max(dx, dy);
+    const int dx = std::abs(x1 - x0);
+    const int dy = std::abs(y1 - y0);
+    const int steps = std::max(dx, dy);
 
     if (steps == 0)
     {
@@ -188,9 +188,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
         return;
     }
 
-    float sx = static_cast<float>(x1 - x0) / static_cast<float>(steps);
-    float sy = static_cast<float>(y1 - y0) / static_cast<float>(steps);
-    float sz = (b.z - a.z) / static_cast<float>(steps);
+    const float sx = static_cast<float>(x1 - x0) / static_cast<float>(steps);
+    const float sy = static_cast<float>(y1 - y0) / static_cast<float>(steps);
+    const float sz = (b.z - a.z) / static_cast<float>(steps);
 
     float x = static_cast<float>(x0), y = static_cast<float>(y0), z = a.z;
     for (int i = 0; i <= steps; i++)
@@ -251,7 +251,7 @@ void rasterize(Framebuffer &fb,
                 bb += bb_dx;
                 continue;
             }
-            float bc = 1.0f - ba - bb;
+            const float bc = 1.0f - ba - bb;
             if (bc < 0.0f)
             {
                 ba += ba_dx;
@@ -262,7 +262,7 @@ void rasterize(Framebuffer &fb,
             // z_ndc is linear in screen space (projection makes it A + B/z_view,
             // which is linear in NDC x/y), so plain barycentric is correct here —
             // perspective correction would distort it and break depth ordering.
-            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            const float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
@@ -274,8 +274,8 @@ void rasterize(Framebuffer &fb,
                 pwb = bb * inv_wb;
                 pwc = bc * inv_wc;
                 w_corr = 1.0f / (pwa + pwb + pwc);
-                vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                const vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                const vec4 ta = tex->sample_rgba(uv.x, uv.y);
                 if (ta.w < alpha_cutoff)
                 {
                     ba += ba_dx;
@@ -305,7 +305,7 @@ void rasterize(Framebuffer &fb,
             float sf = 0.0f;
             if (shadow_map)
             {
-                vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
+                const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 sf = shadow_map->in_shadow(pos);
             }
             vec3 ca = col_a, cb = col_b, cc = col_c;
@@ -324,7 +324,7 @@ void rasterize(Framebuffer &fb,
                     col = col * cutout_rgb;
                 else
                 {
-                    vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                    const vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
                     col = col * tex->sample_rgb(uv.x, uv.y);
                 }
             }
@@ -393,7 +393,7 @@ void rasterize_phong(Framebuffer &fb,
                 bb += bb_dx;
                 continue;
             }
-            float bc = 1.0f - ba - bb;
+            const float bc = 1.0f - ba - bb;
             if (bc < 0.0f)
             {
                 ba += ba_dx;
@@ -401,7 +401,7 @@ void rasterize_phong(Framebuffer &fb,
                 continue;
             }
 
-            float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            const float depth = ba * sa.z + bb * sb.z + bc * sc.z;
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
@@ -415,7 +415,7 @@ void rasterize_phong(Framebuffer &fb,
                 pwc = bc * inv_wc;
                 w_corr = 1.0f / (pwa + pwb + pwc);
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                const vec4 ta = tex->sample_rgba(uv.x, uv.y);
                 if (ta.w < mat.alpha_cutoff)
                 {
                     ba += ba_dx;
@@ -440,7 +440,7 @@ void rasterize_phong(Framebuffer &fb,
                 w_corr = 1.0f / (pwa + pwb + pwc);
             }
 
-            vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
+            const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
             vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
             // Compute UV once — needed by both diffuse and normal map.
@@ -451,26 +451,26 @@ void rasterize_phong(Framebuffer &fb,
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
             if (nmap)
             {
-                vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
+                const vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
-                vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
+                const vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
 
                 // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
                 // then derive B so TBN is a proper orthonormal basis.
-                vec3 N = normalize(normal);
-                vec3 T = normalize(tan - N * dot(N, tan));
-                vec3 B = cross(N, T);
+                const vec3 N = normalize(normal);
+                const vec3 T = normalize(tan - N * dot(N, tan));
+                const vec3 B = cross(N, T);
 
                 // Transform tangent-space normal to world space.
                 normal = T * nm.x + B * nm.y + N * nm.z;
                 // normal will be normalized inside compute_lighting.
             }
 
-            float ao = (aoa * pwa + aob * pwb + aoc * pwc) * w_corr;
+            const float ao = (aoa * pwa + aob * pwb + aoc * pwc) * w_corr;
 
             // Precompute view vector once — reused by both shadow branches.
-            vec3 v = normalize(eye - pos);
+            const vec3 v = normalize(eye - pos);
 
             // Only copy Material when a texture modifies it; otherwise use mat directly.
             Material mat_tex;
@@ -481,7 +481,7 @@ void rasterize_phong(Framebuffer &fb,
                 if (tex)
                 {
                     // Reuse the rgba sample from the cutout pre-pass when active.
-                    vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
+                    const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
                     mat_tex.diffuse = mat_tex.diffuse * tc;
                     mat_tex.ambient = mat_tex.ambient * tc;
                 }
@@ -493,7 +493,7 @@ void rasterize_phong(Framebuffer &fb,
             // Vertex color tint: skip entirely when all vertices are white (common case).
             if (has_vcol)
             {
-                vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
+                const vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
                 if (use_mat == &mat)
                 {
                     mat_tex = mat;
@@ -504,7 +504,7 @@ void rasterize_phong(Framebuffer &fb,
             }
 
             // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.
-            float sf = shadow_map ? shadow_map->in_shadow(pos) : 0.0f;
+            const float sf = shadow_map ? shadow_map->in_shadow(pos) : 0.0f;
             const Light *sl = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color;
@@ -514,8 +514,8 @@ void rasterize_phong(Framebuffer &fb,
                 color = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
             else
             {
-                vec3 lit = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
-                vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
+                const vec3 lit = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
+                const vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
                 color = lerp(lit, shd, sf);
             }
             fb.unchecked_set_pixel(x, y, vec3_to_color(color));

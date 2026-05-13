@@ -255,7 +255,7 @@ namespace platform
         auto rb = []() -> char
         {
             char b = 0;
-            ssize_t n = read(STDIN_FILENO, &b, 1);
+            const ssize_t n = read(STDIN_FILENO, &b, 1);
             (void)n;
             return b;
         };
@@ -268,11 +268,11 @@ namespace platform
             if (poll(&pfd, 1, ms) <= 0)
                 return 0;
             char b = 0;
-            ssize_t n = read(STDIN_FILENO, &b, 1);
+            const ssize_t n = read(STDIN_FILENO, &b, 1);
             (void)n;
             return b;
         };
-        char c = rb();
+        const char c = rb();
         if (c == 0)
             return ev;
 #endif
@@ -288,7 +288,7 @@ namespace platform
         // ── Escape sequence ──────────────────────────────────────────────────────
         // Use a 50 ms timeout: imperceptible to the user but long enough to cover
         // fragmented delivery over SSH.  If nothing arrives, treat \033 as bare ESC.
-        char b1 = rb_timeout(50);
+        const char b1 = rb_timeout(50);
         if (b1 != '[')
         {
             ev.type = InputEvent::Type::Key;
@@ -296,7 +296,7 @@ namespace platform
             return ev;
         }
 
-        char b2 = rb_timeout(50);
+        const char b2 = rb_timeout(50);
         if (b2 == 0)
         {
             ev.type = InputEvent::Type::Key;
@@ -312,7 +312,7 @@ namespace platform
             char fin = 0;
             for (;;)
             {
-                char d = rb_timeout(50);
+                const char d = rb_timeout(50);
                 if (d == 0)
                     break; // incomplete sequence — discard
                 if (d == ';')
@@ -335,7 +335,7 @@ namespace platform
             if (fin != 'M' && fin != 'm')
                 return ev; // Type::None
 
-            int btn = nums[0];
+            const int btn = nums[0];
             ev.x = nums[1];
             ev.y = nums[2];
             ev.btn = btn & 3; // low 2 bits = button number

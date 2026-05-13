@@ -23,7 +23,7 @@ bool Mesh::load_model(const std::string &path, bool ao)
 {
     clear();
 
-    size_t ext_pos = path.find_last_of('.');
+    const size_t ext_pos = path.find_last_of('.');
     if (ext_pos == std::string::npos)
         return false;
 
@@ -74,7 +74,7 @@ void Mesh::compute_normals()
         const vec3 &p1 = vertices[tri.v[1]].pos;
         const vec3 &p2 = vertices[tri.v[2]].pos;
 
-        vec3 face_normal = cross(p1 - p0, p2 - p0);
+        const vec3 face_normal = cross(p1 - p0, p2 - p0);
 
         vertices[tri.v[0]].normal += face_normal;
         vertices[tri.v[1]].normal += face_normal;
@@ -83,7 +83,7 @@ void Mesh::compute_normals()
 
     for (auto &v : vertices)
     {
-        float len = v.normal.length();
+        const float len = v.normal.length();
         if (len > 1e-6f)
             v.normal = v.normal / len;
     }
@@ -104,18 +104,18 @@ void Mesh::compute_tangents()
         const Vertex &v1 = vertices[tri.v[1]];
         const Vertex &v2 = vertices[tri.v[2]];
 
-        vec3 dp1 = v1.pos - v0.pos;
-        vec3 dp2 = v2.pos - v0.pos;
-        float du1 = v1.uv.x - v0.uv.x;
-        float dv1 = v1.uv.y - v0.uv.y;
-        float du2 = v2.uv.x - v0.uv.x;
-        float dv2 = v2.uv.y - v0.uv.y;
+        const vec3 dp1 = v1.pos - v0.pos;
+        const vec3 dp2 = v2.pos - v0.pos;
+        const float du1 = v1.uv.x - v0.uv.x;
+        const float dv1 = v1.uv.y - v0.uv.y;
+        const float du2 = v2.uv.x - v0.uv.x;
+        const float dv2 = v2.uv.y - v0.uv.y;
 
-        float det = du1 * dv2 - du2 * dv1;
+        const float det = du1 * dv2 - du2 * dv1;
         if (std::abs(det) < 1e-8f)
             continue;
 
-        vec3 T = (dp1 * dv2 - dp2 * dv1) * (1.0f / det);
+        const vec3 T = (dp1 * dv2 - dp2 * dv1) * (1.0f / det);
 
         tangents[tri.v[0]] += T;
         tangents[tri.v[1]] += T;
@@ -129,12 +129,12 @@ void Mesh::compute_tangents()
         const vec3 &n = vertices[i].normal;
         vec3 &t = tangents[i];
 
-        float len = t.length();
+        const float len = t.length();
         if (len < 1e-6f)
         {
             // No UV contribution — pick an arbitrary vector perpendicular to n.
-            vec3 up = (std::abs(n.z) < 0.9f) ? vec3{0.0f, 0.0f, 1.0f}
-                                             : vec3{1.0f, 0.0f, 0.0f};
+            const vec3 up = (std::abs(n.z) < 0.9f) ? vec3{0.0f, 0.0f, 1.0f}
+                                                   : vec3{1.0f, 0.0f, 0.0f};
             t = normalize(cross(n, up));
         }
         else
@@ -163,8 +163,8 @@ void Mesh::compute_ao()
     {
         for (int i = 0; i < 3; i++)
         {
-            uint32_t a = tri.v[i];
-            uint32_t b = tri.v[(i + 1) % 3];
+            const uint32_t a = tri.v[i];
+            const uint32_t b = tri.v[(i + 1) % 3];
             adj[a].push_back(b);
             adj[b].push_back(a);
         }
@@ -183,12 +183,12 @@ void Mesh::compute_ao()
 
         // Centroid of neighboring positions.
         vec3 centroid{};
-        for (uint32_t j : adj[i])
+        for (const uint32_t j : adj[i])
             centroid += vertices[j].pos;
         centroid = centroid * (1.0f / static_cast<float>(adj[i].size()));
 
-        vec3 d = centroid - p;
-        float len = d.length();
+        const vec3 d = centroid - p;
+        const float len = d.length();
         if (len < 1e-8f)
         {
             vertices[i].ao = 1.0f;
@@ -197,7 +197,7 @@ void Mesh::compute_ao()
 
         // Positive curvature = concave = cavity → reduce AO.
         // Clamp so convex surfaces stay at 1 and deep cavities don't go fully black.
-        float curvature = dot(d * (1.0f / len), N);
+        const float curvature = dot(d * (1.0f / len), N);
         vertices[i].ao = 1.0f - clamp(curvature * 0.5f, 0.0f, 0.15f);
     }
 }

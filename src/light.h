@@ -10,23 +10,23 @@ inline float specular_pow(float ndh, float shininess)
     // values fall back to exp2f(s*log2f(x)) which is faster than std::pow.
     if (shininess == 32.0f)
     {
-        float x2 = ndh * ndh;
-        float x4 = x2 * x2;
-        float x8 = x4 * x4;
-        float x16 = x8 * x8;
+        const float x2 = ndh * ndh;
+        const float x4 = x2 * x2;
+        const float x8 = x4 * x4;
+        const float x16 = x8 * x8;
         return x16 * x16;
     }
     if (shininess == 16.0f)
     {
-        float x2 = ndh * ndh;
-        float x4 = x2 * x2;
-        float x8 = x4 * x4;
+        const float x2 = ndh * ndh;
+        const float x4 = x2 * x2;
+        const float x8 = x4 * x4;
         return x8 * x8;
     }
     if (shininess == 8.0f)
     {
-        float x2 = ndh * ndh;
-        float x4 = x2 * x2;
+        const float x2 = ndh * ndh;
+        const float x4 = x2 * x2;
         return x4 * x4;
     }
     return std::exp2f(shininess * std::log2f(ndh));
@@ -63,7 +63,7 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
                              const Material &mat = {},
                              float ao = 1.0f)
 {
-    vec3 n = normalize(normal);
+    const vec3 n = normalize(normal);
 
     vec3 result = ambient * mat.ambient * ao;
 
@@ -72,11 +72,11 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
         const vec3 &l = lights[i].direction;
         const vec3 &light_color = lights[i].color;
 
-        float diff = dot(n, l);
+        const float diff = dot(n, l);
         if (diff > 0.0f)
             result += light_color * mat.diffuse * diff;
 
-        float ndh = dot(n, normalize(l + v));
+        const float ndh = dot(n, normalize(l + v));
         if (ndh > 0.0f)
             result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
     }

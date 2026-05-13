@@ -53,7 +53,7 @@ namespace
             hi.y = std::max(hi.y, v.pos.y);
             hi.z = std::max(hi.z, v.pos.z);
         }
-        vec3 centre = (lo + hi) * 0.5f;
+        const vec3 centre = (lo + hi) * 0.5f;
         float radius = (hi - lo).length() * 0.5f;
         if (radius < 1e-4f)
             radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
@@ -138,7 +138,7 @@ namespace
             if (i >= n_warmup)
                 frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
         }
-        double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
+        const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
 
         // Compute stats via nth_element (linear) — no full sort needed.
         auto ms = [](int64_t ns)
@@ -147,34 +147,34 @@ namespace
         auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
         int64_t mn = *mn_it, mx = *mx_it;
 
-        size_t mid = static_cast<size_t>(n_measure) / 2;
+        const size_t mid = static_cast<size_t>(n_measure) / 2;
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
-        int64_t med = frame_ns[mid];
+        const int64_t med = frame_ns[mid];
 
-        size_t p95i = static_cast<size_t>(n_measure * 95 / 100);
+        const size_t p95i = static_cast<size_t>(n_measure * 95 / 100);
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
-        int64_t p95 = frame_ns[p95i];
+        const int64_t p95 = frame_ns[p95i];
 
         // Welford's online algorithm — single pass, numerically stable.
         double welford_mean = 0.0, welford_m2 = 0.0;
         for (int k = 0; k < n_measure; k++)
         {
-            double x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
-            double delta = x - welford_mean;
+            const double x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
+            const double delta = x - welford_mean;
             welford_mean += delta / (k + 1);
             welford_m2 += delta * (x - welford_mean);
         }
-        double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
+        const double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
 
-        double med_ms = ms(med);
-        double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
-        double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
-        double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
+        const double med_ms = ms(med);
+        const double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
+        const double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
+        const double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
 
-        int hw = static_cast<int>(std::thread::hardware_concurrency());
-        int threads = args.n_threads == 0  ? hw
-                      : args.n_threads < 0 ? std::min(hw, 4)
-                                           : args.n_threads;
+        const int hw = static_cast<int>(std::thread::hardware_concurrency());
+        const int threads = args.n_threads == 0  ? hw
+                            : args.n_threads < 0 ? std::min(hw, 4)
+                                                 : args.n_threads;
 
         std::fprintf(stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n",
                      n_measure, args.bench_width, args.bench_height, threads, shading_mode_name(renderer.mode), total_ms);
@@ -191,7 +191,7 @@ namespace
 
 int main(int argc, char *argv[])
 {
-    ParseResult parsed = parse_args(argc, argv);
+    const ParseResult parsed = parse_args(argc, argv);
     if (!parsed.ok)
         return parsed.exit_code;
     const ParsedArgs &args = parsed.args;
@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
     std::string model_name = args.model_path;
     {
-        size_t slash = model_name.find_last_of("/\\");
+        const size_t slash = model_name.find_last_of("/\\");
         if (slash != std::string::npos)
             model_name = model_name.substr(slash + 1);
     }
@@ -273,17 +273,17 @@ int main(int argc, char *argv[])
     {
         // ── Frame timing ──────────────────────────────────────────────────
         auto now = clock::now();
-        float raw_dt = std::chrono::duration<float>(now - prev).count();
+        const float raw_dt = std::chrono::duration<float>(now - prev).count();
         prev = now;
         // Cap dt used for movement/spin so a stall doesn't cause a huge jump.
-        float dt = (raw_dt > 0.1f) ? 0.1f : raw_dt;
+        const float dt = (raw_dt > 0.1f) ? 0.1f : raw_dt;
 
         // Use raw_dt for fps so the 0.1s cap doesn't corrupt slow-model readings.
         // Skip the near-zero first frame (prev was just set); seed directly on
         // the second frame so the display is accurate from the start.
         if (raw_dt > 0.001f)
         {
-            float fps = 1.0f / raw_dt;
+            const float fps = 1.0f / raw_dt;
             fps_smooth = (fps_smooth < 0.0f) ? fps : fps_smooth * 0.9f + fps * 0.1f;
         }
 
@@ -294,13 +294,13 @@ int main(int argc, char *argv[])
         // Drain all queued input events so held keys and mouse feel responsive.
         while (true)
         {
-            platform::InputEvent ev = platform::poll_event();
+            const platform::InputEvent ev = platform::poll_event();
             if (ev.type == platform::InputEvent::Type::None)
                 break;
 
             if (ev.type == platform::InputEvent::Type::Key)
             {
-                platform::Key k = ev.key;
+                const platform::Key k = ev.key;
                 if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
                     goto quit;
                 if (k == platform::KEY_SPACE)
@@ -361,10 +361,10 @@ int main(int argc, char *argv[])
             }
             else if (ev.type == platform::InputEvent::Type::MouseMove)
             {
-                int dx = ev.x - mouse_last_x;
-                int dy = ev.y - mouse_last_y;
-                float dx_rad = static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
-                float dy_rad = static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
+                const int dx = ev.x - mouse_last_x;
+                const int dy = ev.y - mouse_last_y;
+                const float dx_rad = static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
+                const float dy_rad = static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
                 camera.orbit(dx_rad, -dy_rad);
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
@@ -374,7 +374,7 @@ int main(int argc, char *argv[])
         // ── Camera key movement (once per frame, frame-rate independent) ──
         if (held_cam_key != platform::KEY_NONE)
         {
-            float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
+            const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
             if (since > 0.1f)
                 held_cam_key = platform::KEY_NONE; // key released
             else
@@ -488,7 +488,7 @@ int main(int argc, char *argv[])
         {
             const float target_dt = 1.0f / static_cast<float>(args.fps);
             auto frame_end = clock::now();
-            float elapsed = std::chrono::duration<float>(frame_end - now).count();
+            const float elapsed = std::chrono::duration<float>(frame_end - now).count();
             if (elapsed < target_dt)
                 std::this_thread::sleep_for(
                     std::chrono::duration<float>(target_dt - elapsed));
