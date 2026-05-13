@@ -11,10 +11,10 @@ struct vec2
     constexpr vec2() : x(0), y(0) {}
     constexpr vec2(float x_, float y_) : x(x_), y(y_) {}
 
-    vec2 operator+(const vec2 &o) const { return {x + o.x, y + o.y}; }
-    vec2 operator-(const vec2 &o) const { return {x - o.x, y - o.y}; }
-    vec2 operator*(float t) const { return {x * t, y * t}; }
-    vec2 operator/(float t) const { return {x / t, y / t}; }
+    constexpr vec2 operator+(const vec2 &o) const { return {x + o.x, y + o.y}; }
+    constexpr vec2 operator-(const vec2 &o) const { return {x - o.x, y - o.y}; }
+    constexpr vec2 operator*(float t) const { return {x * t, y * t}; }
+    constexpr vec2 operator/(float t) const { return {x / t, y / t}; }
 };
 
 // ─── vec3 ────────────────────────────────────────────────────────────────────
@@ -26,21 +26,21 @@ struct vec3
     constexpr vec3() : x(0), y(0), z(0) {}
     constexpr vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
 
-    vec3 operator+(const vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
-    vec3 operator-(const vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
-    vec3 operator*(float t) const { return {x * t, y * t, z * t}; }
-    vec3 operator*(const vec3 &o) const { return {x * o.x, y * o.y, z * o.z}; } // component-wise
-    vec3 operator/(float t) const { return {x / t, y / t, z / t}; }
-    vec3 operator-() const { return {-x, -y, -z}; }
+    constexpr vec3 operator+(const vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
+    constexpr vec3 operator-(const vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
+    constexpr vec3 operator*(float t) const { return {x * t, y * t, z * t}; }
+    constexpr vec3 operator*(const vec3 &o) const { return {x * o.x, y * o.y, z * o.z}; } // component-wise
+    constexpr vec3 operator/(float t) const { return {x / t, y / t, z / t}; }
+    constexpr vec3 operator-() const { return {-x, -y, -z}; }
 
-    vec3 &operator+=(const vec3 &o)
+    constexpr vec3 &operator+=(const vec3 &o)
     {
         x += o.x;
         y += o.y;
         z += o.z;
         return *this;
     }
-    vec3 &operator*=(float t)
+    constexpr vec3 &operator*=(float t)
     {
         x *= t;
         y *= t;
@@ -49,15 +49,15 @@ struct vec3
     }
 
     float length() const { return std::sqrt(x * x + y * y + z * z); }
-    float length_sq() const { return x * x + y * y + z * z; }
+    constexpr float length_sq() const { return x * x + y * y + z * z; }
 };
 
-inline float dot(const vec3 &a, const vec3 &b)
+constexpr float dot(const vec3 &a, const vec3 &b)
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-inline vec3 cross(const vec3 &a, const vec3 &b)
+constexpr vec3 cross(const vec3 &a, const vec3 &b)
 {
     return {
         a.y * b.z - a.z * b.y,
@@ -74,12 +74,12 @@ inline vec3 normalize(const vec3 &v)
     return {v.x * inv_len, v.y * inv_len, v.z * inv_len};
 }
 
-inline vec3 lerp(const vec3 &a, const vec3 &b, float t)
+constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t)
 {
     return a + (b - a) * t;
 }
 
-inline vec3 reflect(const vec3 &incident, const vec3 &normal)
+constexpr vec3 reflect(const vec3 &incident, const vec3 &normal)
 {
     return incident - normal * (2.0f * dot(incident, normal));
 }
@@ -90,17 +90,17 @@ struct vec4
 {
     float x, y, z, w;
 
-    vec4() : x(0), y(0), z(0), w(0) {}
-    vec4(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
-    vec4(const vec3 &v, float w_) : x(v.x), y(v.y), z(v.z), w(w_) {}
+    constexpr vec4() : x(0), y(0), z(0), w(0) {}
+    constexpr vec4(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
+    constexpr vec4(const vec3 &v, float w_) : x(v.x), y(v.y), z(v.z), w(w_) {}
 
-    vec4 operator+(const vec4 &o) const { return {x + o.x, y + o.y, z + o.z, w + o.w}; }
-    vec4 operator-(const vec4 &o) const { return {x - o.x, y - o.y, z - o.z, w - o.w}; }
-    vec4 operator*(float t) const { return {x * t, y * t, z * t, w * t}; }
+    constexpr vec4 operator+(const vec4 &o) const { return {x + o.x, y + o.y, z + o.z, w + o.w}; }
+    constexpr vec4 operator-(const vec4 &o) const { return {x - o.x, y - o.y, z - o.z, w - o.w}; }
+    constexpr vec4 operator*(float t) const { return {x * t, y * t, z * t, w * t}; }
 
     // perspective divide: clip space → NDC
-    vec3 xyz() const { return {x, y, z}; }
-    vec3 perspective_divide() const
+    constexpr vec3 xyz() const { return {x, y, z}; }
+    constexpr vec3 perspective_divide() const
     {
         const float inv_w = 1.0f / w;
         return {x * inv_w, y * inv_w, z * inv_w};
@@ -114,21 +114,16 @@ struct mat4
 {
     float m[4][4];
 
-    mat4()
-    {
-        for (int c = 0; c < 4; c++)
-            for (int r = 0; r < 4; r++)
-                m[c][r] = 0.0f;
-    }
+    constexpr mat4() : m{} {}
 
-    static mat4 identity()
+    static constexpr mat4 identity()
     {
         mat4 result;
         result.m[0][0] = result.m[1][1] = result.m[2][2] = result.m[3][3] = 1.0f;
         return result;
     }
 
-    mat4 operator*(const mat4 &o) const
+    constexpr mat4 operator*(const mat4 &o) const
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
@@ -138,7 +133,7 @@ struct mat4
         return result;
     }
 
-    vec4 operator*(const vec4 &v) const
+    constexpr vec4 operator*(const vec4 &v) const
     {
         return {
             m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z + m[3][0] * v.w,
@@ -147,7 +142,7 @@ struct mat4
             m[0][3] * v.x + m[1][3] * v.y + m[2][3] * v.z + m[3][3] * v.w};
     }
 
-    mat4 transposed() const
+    constexpr mat4 transposed() const
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
@@ -267,10 +262,10 @@ struct quat
 {
     float x, y, z, w;
 
-    quat() : x(0), y(0), z(0), w(1) {}
-    quat(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
+    constexpr quat() : x(0), y(0), z(0), w(1) {}
+    constexpr quat(float x_, float y_, float z_, float w_) : x(x_), y(y_), z(z_), w(w_) {}
 
-    static quat identity() { return {0, 0, 0, 1}; }
+    static constexpr quat identity() { return {0, 0, 0, 1}; }
 
     static quat from_axis_angle(const vec3 &axis, float radians)
     {
@@ -279,7 +274,7 @@ struct quat
         return {axis.x * s, axis.y * s, axis.z * s, std::cos(half)};
     }
 
-    quat operator*(const quat &o) const
+    constexpr quat operator*(const quat &o) const
     {
         return {
             w * o.x + x * o.w + y * o.z - z * o.y,
@@ -307,12 +302,12 @@ inline quat normalize(const quat &q)
 
 // ─── scalar utilities ────────────────────────────────────────────────────────
 
-inline float clamp(float v, float lo, float hi)
+constexpr float clamp(float v, float lo, float hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 
-inline float to_radians(float degrees)
+constexpr float to_radians(float degrees)
 {
     return degrees * (3.14159265358979323846f / 180.0f);
 }
