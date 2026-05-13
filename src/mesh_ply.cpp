@@ -22,11 +22,11 @@ namespace
     {
         if (t == tinyply::Type::FLOAT64)
         {
-            double d;
+            double d = 0.0;
             std::memcpy(&d, buf + i * 8, 8);
             return static_cast<float>(d);
         }
-        float f;
+        float f = 0.0f;
         std::memcpy(&f, buf + i * 4, 4);
         return f;
     }
@@ -37,11 +37,11 @@ namespace
             return static_cast<float>(buf[i]) / 255.0f;
         if (t == tinyply::Type::FLOAT64)
         {
-            double d;
+            double d = 0.0;
             std::memcpy(&d, buf + i * 8, 8);
             return static_cast<float>(d);
         }
-        float f;
+        float f = 0.0f;
         std::memcpy(&f, buf + i * 4, 4);
         return f;
     }
@@ -56,25 +56,25 @@ namespace
             return static_cast<uint32_t>(static_cast<int8_t>(buf[i]));
         case tinyply::Type::UINT16:
         {
-            uint16_t v;
+            uint16_t v = 0;
             std::memcpy(&v, buf + i * 2, 2);
             return v;
         }
         case tinyply::Type::INT16:
         {
-            int16_t v;
+            int16_t v = 0;
             std::memcpy(&v, buf + i * 2, 2);
             return static_cast<uint32_t>(v);
         }
         case tinyply::Type::INT32:
         {
-            int32_t v;
+            int32_t v = 0;
             std::memcpy(&v, buf + i * 4, 4);
             return static_cast<uint32_t>(v);
         }
         default:
         {
-            uint32_t v;
+            uint32_t v = 0;
             std::memcpy(&v, buf + i * 4, 4);
             return v;
         }

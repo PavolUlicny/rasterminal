@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
     platform::enable_raw_mode();
     platform::enable_mouse();
 
-    int cols, rows;
+    int cols = 0, rows = 0;
     platform::get_terminal_size(cols, rows);
 
     // Each pixel cell covers 2 vertical pixels via ▀ half-block.
@@ -399,7 +399,7 @@ int main(int argc, char *argv[])
 
         // ── Resize detection ─────────────────────────────────────────────
         {
-            int new_cols, new_rows;
+            int new_cols = 0, new_rows = 0;
             platform::get_terminal_size(new_cols, new_rows);
             if (new_cols != cols || new_rows != rows)
             {
@@ -412,7 +412,7 @@ int main(int argc, char *argv[])
         // ── HUD ───────────────────────────────────────────────────────────
         if (args.hud)
         {
-            const char *lighting_str;
+            const char *lighting_str = nullptr;
             switch (lighting_mode)
             {
             case 1:
@@ -426,7 +426,7 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            const char *bg_str;
+            const char *bg_str = nullptr;
             switch (bg_mode)
             {
             case 1:
@@ -473,7 +473,7 @@ int main(int argc, char *argv[])
         fb.clear(bg_color);
         // Select light set based on lighting mode.
         // Flat ambient: no directional lights, bright ambient so the full model is visible.
-        int n_lights;
+        int n_lights = 0;
         switch (lighting_mode)
         {
         case 1:

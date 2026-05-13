@@ -135,7 +135,7 @@ void Framebuffer::present()
     const int term_rows = m_height / 2;
 
     char tmp[48]; // 36 bytes worst case for combined fg+bg SGR sequence
-    int n;
+    int n = 0;
 
     // fg_known / bg_known track whether the terminal's current fg/bg are
     // reflected by prev_fg / prev_bg.  Both start false because \033[0m at
