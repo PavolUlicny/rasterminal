@@ -145,7 +145,8 @@ namespace
         { return static_cast<double>(ns) * 1e-6; };
 
         auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
-        int64_t mn = *mn_it, mx = *mx_it;
+        const int64_t mn = *mn_it;
+        const int64_t mx = *mx_it;
 
         const size_t mid = static_cast<size_t>(n_measure) / 2;
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());

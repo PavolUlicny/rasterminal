@@ -174,8 +174,10 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
 
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 {
-    int x0 = static_cast<int>(std::round(a.x)), y0 = static_cast<int>(std::round(a.y));
-    int x1 = static_cast<int>(std::round(b.x)), y1 = static_cast<int>(std::round(b.y));
+    const int x0 = static_cast<int>(std::round(a.x));
+    const int y0 = static_cast<int>(std::round(a.y));
+    const int x1 = static_cast<int>(std::round(b.x));
+    const int y1 = static_cast<int>(std::round(b.y));
 
     const int dx = std::abs(x1 - x0);
     const int dy = std::abs(y1 - y0);
@@ -195,7 +197,8 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     float x = static_cast<float>(x0), y = static_cast<float>(y0), z = a.z;
     for (int i = 0; i <= steps; i++)
     {
-        int px = static_cast<int>(std::round(x)), py = static_cast<int>(std::round(y));
+        const int px = static_cast<int>(std::round(x));
+        const int py = static_cast<int>(std::round(y));
         if (fb.test_and_set_depth(px, py, z))
             fb.set_pixel(px, py, color);
         x += sx;

@@ -190,7 +190,8 @@ inline mat4 scale(float s)
 inline mat4 rotation_x(float radians)
 {
     mat4 m = mat4::identity();
-    float c = std::cos(radians), s = std::sin(radians);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
     m.m[1][1] = c;
     m.m[2][1] = -s;
     m.m[1][2] = s;
@@ -201,7 +202,8 @@ inline mat4 rotation_x(float radians)
 inline mat4 rotation_y(float radians)
 {
     mat4 m = mat4::identity();
-    float c = std::cos(radians), s = std::sin(radians);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
     m.m[0][0] = c;
     m.m[2][0] = s;
     m.m[0][2] = -s;
@@ -212,7 +214,8 @@ inline mat4 rotation_y(float radians)
 inline mat4 rotation_z(float radians)
 {
     mat4 m = mat4::identity();
-    float c = std::cos(radians), s = std::sin(radians);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
     m.m[0][0] = c;
     m.m[1][0] = -s;
     m.m[0][1] = s;

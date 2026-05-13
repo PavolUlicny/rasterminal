@@ -30,7 +30,7 @@ bool Mesh::load_gltf(const std::string &path)
     {
         cgltf_data *d;
         ~Guard() { cgltf_free(d); }
-    } guard{data};
+    } const guard{data};
 
     if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success)
         return false;
