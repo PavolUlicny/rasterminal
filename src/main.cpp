@@ -26,7 +26,7 @@
 namespace
 {
 
-    volatile sig_atomic_t g_interrupted = 0;
+    volatile sig_atomic_t g_interrupted = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — written by signal handler
     void signal_handler(int) { g_interrupted = 1; }
 
     constexpr Color BG_BLACK = {0, 0, 0};
