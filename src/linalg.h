@@ -112,9 +112,9 @@ struct vec4
 
 struct mat4
 {
-    float m[4][4];
+    float m[4][4] = {};
 
-    constexpr mat4() noexcept : m{} {}
+    constexpr mat4() noexcept {}
 
     static constexpr mat4 identity() noexcept
     {
