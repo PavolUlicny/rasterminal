@@ -275,7 +275,8 @@ int main(int argc, char *argv[])
     platform::Key held_cam_key = platform::KEY_NONE;
     clock::time_point held_cam_key_tp = clock::now();
 
-    while (true)
+    bool running = true;
+    while (running)
     {
         // ── Frame timing ──────────────────────────────────────────────────
         auto now = clock::now();
@@ -295,7 +296,7 @@ int main(int argc, char *argv[])
 
         // ── Input ─────────────────────────────────────────────────────────
         if (g_interrupted)
-            goto quit;
+            break;
 
         // Drain all queued input events so held keys and mouse feel responsive.
         while (true)
@@ -308,7 +309,10 @@ int main(int argc, char *argv[])
             {
                 const platform::Key k = ev.key;
                 if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
-                    goto quit;
+                {
+                    running = false;
+                    break;
+                }
                 if (k == platform::KEY_SPACE)
                     spinning = !spinning;
                 else if (k == platform::KEY_1)
@@ -376,6 +380,8 @@ int main(int argc, char *argv[])
                 mouse_last_y = ev.y;
             }
         }
+        if (!running)
+            break;
 
         // ── Camera key movement (once per frame, frame-rate independent) ──
         if (held_cam_key != platform::KEY_NONE)
@@ -501,7 +507,6 @@ int main(int argc, char *argv[])
         }
     }
 
-quit:
     platform::disable_mouse();
     platform::disable_raw_mode();
     return 0;
