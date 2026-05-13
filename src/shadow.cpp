@@ -17,7 +17,7 @@ namespace
     // Orthographic projection: maps axis-aligned box to NDC cube [-1,1]^3.
     // l/r/b/t are left/right/bottom/top extents in light view space.
     // n/f are near/far distances (positive).
-    mat4 ortho(float l, float r, float b, float t, float n, float f)
+    constexpr mat4 ortho(float l, float r, float b, float t, float n, float f)
     {
         mat4 m = mat4::identity();
         m.m[0][0] = 2.0f / (r - l);
