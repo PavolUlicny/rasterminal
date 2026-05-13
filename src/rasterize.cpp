@@ -303,9 +303,13 @@ void rasterize(Framebuffer &fb,
                 vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 sf = shadow_map->in_shadow(pos);
             }
-            vec3 ca = lerp(col_a, shad_a, sf);
-            vec3 cb = lerp(col_b, shad_b, sf);
-            vec3 cc = lerp(col_c, shad_c, sf);
+            vec3 ca = col_a, cb = col_b, cc = col_c;
+            if (sf > 0.0f)
+            {
+                ca = lerp(col_a, shad_a, sf);
+                cb = lerp(col_b, shad_b, sf);
+                cc = lerp(col_c, shad_c, sf);
+            }
 
             vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
