@@ -6,7 +6,7 @@
 // not rasterizable in clip space. This includes any vertex with non-positive w
 // and triangles where all three vertices lie outside the same frustum half-space.
 // Does not clip — just avoids processing triangles that are obviously invisible.
-inline bool clip_reject(const vec4 &a, const vec4 &b, const vec4 &c)
+constexpr bool clip_reject(const vec4 &a, const vec4 &b, const vec4 &c)
 {
     if (a.w <= 0.0f || b.w <= 0.0f || c.w <= 0.0f)
         return true;

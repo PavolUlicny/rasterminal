@@ -12,8 +12,8 @@ struct Color
     constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) : r(r_), g(g_), b(b_) {}
 };
 
-inline bool operator==(Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
-inline bool operator!=(Color a, Color b) { return !(a == b); }
+constexpr bool operator==(Color a, Color b) { return a.r == b.r && a.g == b.g && a.b == b.b; }
+constexpr bool operator!=(Color a, Color b) { return !(a == b); }
 
 class Framebuffer
 {
