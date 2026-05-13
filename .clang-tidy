@@ -1,1 +1,1 @@
-Checks: "bugprone-*,performance-*,portability-*,concurrency-*,misc-unused-*,misc-redundant-expression,misc-const-correctness,-bugprone-easily-swappable-parameters,-clang-analyzer-*"
+Checks: "bugprone-*,performance-*,portability-*,concurrency-*,misc-*,-bugprone-easily-swappable-parameters,-clang-analyzer-*,-misc-include-cleaner,-misc-non-private-member-variables-in-classes"
