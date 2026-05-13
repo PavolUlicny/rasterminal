@@ -154,7 +154,7 @@ struct mat4
 
 // ─── transform factories ─────────────────────────────────────────────────────
 
-inline mat4 translation(float tx, float ty, float tz)
+constexpr mat4 translation(float tx, float ty, float tz)
 {
     mat4 m = mat4::identity();
     m.m[3][0] = tx;
@@ -163,12 +163,12 @@ inline mat4 translation(float tx, float ty, float tz)
     return m;
 }
 
-inline mat4 translation(const vec3 &t)
+constexpr mat4 translation(const vec3 &t)
 {
     return translation(t.x, t.y, t.z);
 }
 
-inline mat4 scale(float sx, float sy, float sz)
+constexpr mat4 scale(float sx, float sy, float sz)
 {
     mat4 m = mat4::identity();
     m.m[0][0] = sx;
@@ -177,7 +177,7 @@ inline mat4 scale(float sx, float sy, float sz)
     return m;
 }
 
-inline mat4 scale(float s)
+constexpr mat4 scale(float s)
 {
     return scale(s, s, s);
 }
@@ -283,7 +283,7 @@ struct quat
             w * o.w - x * o.x - y * o.y - z * o.z};
     }
 
-    vec3 rotate(const vec3 &v) const
+    constexpr vec3 rotate(const vec3 &v) const
     {
         const vec3 qv{x, y, z};
         const vec3 t = cross(qv, v) * 2.0f;
