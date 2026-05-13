@@ -32,7 +32,7 @@ namespace
     constexpr Color BG_BLACK = {0, 0, 0};
     constexpr Color BG_GRAY = {128, 128, 128};
     constexpr Color BG_WHITE = {240, 240, 240};
-    const vec3 FLAT_AMBIENT = {0.85f, 0.85f, 0.85f};
+    constexpr vec3 FLAT_AMBIENT = {0.85f, 0.85f, 0.85f};
 
     constexpr Color WIREFRAME_PALETTE[6] = {
         {200, 200, 200}, // white

@@ -8,8 +8,8 @@ struct vec2
 {
     float x, y;
 
-    vec2() : x(0), y(0) {}
-    vec2(float x_, float y_) : x(x_), y(y_) {}
+    constexpr vec2() : x(0), y(0) {}
+    constexpr vec2(float x_, float y_) : x(x_), y(y_) {}
 
     vec2 operator+(const vec2 &o) const { return {x + o.x, y + o.y}; }
     vec2 operator-(const vec2 &o) const { return {x - o.x, y - o.y}; }
@@ -23,8 +23,8 @@ struct vec3
 {
     float x, y, z;
 
-    vec3() : x(0), y(0), z(0) {}
-    vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
+    constexpr vec3() : x(0), y(0), z(0) {}
+    constexpr vec3(float x_, float y_, float z_) : x(x_), y(y_), z(z_) {}
 
     vec3 operator+(const vec3 &o) const { return {x + o.x, y + o.y, z + o.z}; }
     vec3 operator-(const vec3 &o) const { return {x - o.x, y - o.y, z - o.z}; }
