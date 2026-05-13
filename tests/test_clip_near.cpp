@@ -125,7 +125,8 @@ TEST(clip_near, inside_vertex_is_copied_verbatim)
     a.ao = 0.8f;
     ClipVert b = make_cv(0.0f), c = make_cv(0.0f);
     ClipVert out[2][3];
-    clip_near(a, b, c, out, NEAR);
+    const int n = clip_near(a, b, c, out, NEAR);
+    ASSERT_EQ(n, 1);
     ASSERT_NEAR(out[0][0].c.w, 5.0f, 1e-6f);
     ASSERT_NEAR(out[0][0].uv.x, 0.3f, 1e-6f);
     ASSERT_NEAR(out[0][0].uv.y, 0.7f, 1e-6f);

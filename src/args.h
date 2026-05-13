@@ -35,4 +35,4 @@ struct ParseResult
     ParsedArgs args;
 };
 
-ParseResult parse_args(int argc, char *argv[]);
+[[nodiscard]] ParseResult parse_args(int argc, char *argv[]);

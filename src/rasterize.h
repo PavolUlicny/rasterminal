@@ -76,8 +76,8 @@ struct RasterTri
 // Clip triangle (a,b,c) against the near plane w = near_w.
 // Produces 0 (fully behind), 1, or 2 output triangles written into out[0..n-1].
 // Returns the count. Winding order is preserved for all outputs.
-int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
-              ClipVert out[2][3], float near_w);
+[[nodiscard]] int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
+                            ClipVert out[2][3], float near_w);
 
 // DDA line rasterizer with per-pixel depth testing (wireframe).
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color);

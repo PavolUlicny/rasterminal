@@ -34,7 +34,7 @@ public:
     void clear(Color bg = {0, 0, 0});
 
     // Returns true if depth test passes, and writes the new depth value.
-    inline bool test_and_set_depth(int x, int y, float depth)
+    [[nodiscard]] inline bool test_and_set_depth(int x, int y, float depth)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return false;
@@ -54,7 +54,7 @@ public:
         m_color[pixel_idx(x, y)] = color;
     }
 
-    inline Color get_pixel(int x, int y) const
+    [[nodiscard]] inline Color get_pixel(int x, int y) const
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return {};
@@ -63,7 +63,7 @@ public:
 
     // Unchecked variants — caller guarantees 0 <= x < width, 0 <= y < height.
     // Used by the rasterizer inner loop where setup_tri already clamps bounds.
-    inline bool unchecked_test_and_set_depth(int x, int y, float depth)
+    [[nodiscard]] inline bool unchecked_test_and_set_depth(int x, int y, float depth)
     {
         float &d = m_depth[pixel_idx(x, y)];
         if (depth < d)

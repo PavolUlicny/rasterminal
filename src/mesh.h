@@ -46,7 +46,7 @@ struct Mesh
 
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
-    bool load_model(const std::string &path, bool ao = true);
+    [[nodiscard]] bool load_model(const std::string &path, bool ao = true);
 
     // Clear all geometry, material, and texture data.
     void clear();

@@ -32,4 +32,4 @@ struct ShadowMap
 // Build a shadow map for a directional light. Fits an orthographic frustum to
 // the mesh bounding sphere and depth-rasterizes all triangles with slope-scale
 // bias to prevent self-shadowing acne.
-ShadowMap build_shadow_map(const Mesh &mesh, const Light &light);
+[[nodiscard]] ShadowMap build_shadow_map(const Mesh &mesh, const Light &light);

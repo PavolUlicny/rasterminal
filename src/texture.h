@@ -15,11 +15,11 @@ struct Texture
     std::vector<uint8_t> pixels; // RGBA, row-major, top-left first
 
     // Load a texture from disk.  Returns false and leaves the object unchanged on error.
-    bool load(const std::string &path);
+    [[nodiscard]] bool load(const std::string &path);
 
     // Load a texture from a memory buffer (e.g. embedded GLB image data).
     // Returns false and leaves the object unchanged on error.
-    bool load_from_memory(const uint8_t *data, size_t size);
+    [[nodiscard]] bool load_from_memory(const uint8_t *data, size_t size);
 
     bool valid() const { return width > 0 && height > 0; }
 
