@@ -116,7 +116,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         const Texture *atex = (mat.alpha_cutoff > 0.0f && mat.diffuse_tex >= 0)
                                   ? mesh.tex_at(mat.diffuse_tex)
                                   : nullptr;
-        vec2 uva{}, uvb{}, uvc{};
+        vec2 uva{};
+        vec2 uvb{};
+        vec2 uvc{};
         if (atex)
         {
             uva = mesh.vertices[tri.v[0]].uv;
@@ -178,7 +180,8 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
 
         for (int y = y0; y <= y1; y++)
         {
-            float ba = ba_row, bb = bb_row;
+            float ba = ba_row;
+            float bb = bb_row;
             const size_t row_base = static_cast<size_t>(y) * S;
             for (int x = x0; x <= x1; x++)
             {

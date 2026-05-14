@@ -200,7 +200,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     const float sy = static_cast<float>(y1 - y0) / static_cast<float>(steps);
     const float sz = (b.z - a.z) / static_cast<float>(steps);
 
-    float x = static_cast<float>(x0), y = static_cast<float>(y0), z = a.z;
+    float x = static_cast<float>(x0);
+    float y = static_cast<float>(y0);
+    float z = a.z;
     for (int i = 0; i <= steps; i++)
     {
         const int px = static_cast<int>(std::round(x));
@@ -240,9 +242,13 @@ void rasterize(Framebuffer &fb,
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
-    const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
-    const float ba_dx = s.ba_dx, ba_dy = s.ba_dy;
-    const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
+    const float inv_wa = s.inv_wa;
+    const float inv_wb = s.inv_wb;
+    const float inv_wc = s.inv_wc;
+    const float ba_dx = s.ba_dx;
+    const float ba_dy = s.ba_dy;
+    const float bb_dx = s.bb_dx;
+    const float bb_dy = s.bb_dy;
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
 
@@ -275,7 +281,10 @@ void rasterize(Framebuffer &fb,
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
-            float pwa = 0.0f, pwb = 0.0f, pwc = 0.0f, w_corr = 1.0f;
+            float pwa = 0.0f;
+            float pwb = 0.0f;
+            float pwc = 0.0f;
+            float w_corr = 1.0f;
             vec3 cutout_rgb;
             if (has_cutout)
             {
@@ -317,7 +326,9 @@ void rasterize(Framebuffer &fb,
                 const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 sf = shadow_map->in_shadow(pos);
             }
-            vec3 ca = col_a, cb = col_b, cc = col_c;
+            vec3 ca = col_a;
+            vec3 cb = col_b;
+            vec3 cc = col_c;
             if (sf > 0.0f)
             {
                 ca = lerp(col_a, shad_a, sf);
@@ -382,9 +393,13 @@ void rasterize_phong(Framebuffer &fb,
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
-    const float inv_wa = s.inv_wa, inv_wb = s.inv_wb, inv_wc = s.inv_wc;
-    const float ba_dx = s.ba_dx, ba_dy = s.ba_dy;
-    const float bb_dx = s.bb_dx, bb_dy = s.bb_dy;
+    const float inv_wa = s.inv_wa;
+    const float inv_wb = s.inv_wb;
+    const float inv_wc = s.inv_wc;
+    const float ba_dx = s.ba_dx;
+    const float ba_dy = s.ba_dy;
+    const float bb_dx = s.bb_dx;
+    const float bb_dy = s.bb_dy;
     float ba_row = s.ba_row;
     float bb_row = s.bb_row;
 
@@ -414,7 +429,10 @@ void rasterize_phong(Framebuffer &fb,
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
-            float pwa = 0.0f, pwb = 0.0f, pwc = 0.0f, w_corr = 1.0f;
+            float pwa = 0.0f;
+            float pwb = 0.0f;
+            float pwc = 0.0f;
+            float w_corr = 1.0f;
             vec3 cutout_rgb;
             vec2 uv{}; // hoisted: shared by cutout pre-pass and nmap/stex below
             if (has_cutout)

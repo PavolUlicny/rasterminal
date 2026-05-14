@@ -162,7 +162,8 @@ namespace
         const int64_t p95 = frame_ns[p95i];
 
         // Welford's online algorithm — single pass, numerically stable.
-        double welford_mean = 0.0, welford_m2 = 0.0;
+        double welford_mean = 0.0;
+        double welford_m2 = 0.0;
         for (int k = 0; k < n_measure; k++)
         {
             const auto x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
@@ -235,7 +236,8 @@ int main(int argc, char *argv[])
     platform::enable_raw_mode();
     platform::enable_mouse();
 
-    int cols = 0, rows = 0;
+    int cols = 0;
+    int rows = 0;
     platform::get_terminal_size(cols, rows);
 
     // Each pixel cell covers 2 vertical pixels via ▀ half-block.
@@ -264,11 +266,12 @@ int main(int argc, char *argv[])
     bool spinning = args.spin;
     bool culling = args.cull;
     bool texturing = args.texture;
-    int mouse_last_x = 0, mouse_last_y = 0; // last seen drag position (terminal cells)
-    int bg_mode = args.bg;                  // 0=black, 1=gray, 2=white
-    int lighting_mode = args.lighting;      // 0=dual, 1=single, 2=flat ambient
-    int wf_color = args.wireframe_color;    // 0=white..5=magenta
-    const float spin_speed = 0.8f;          // radians/sec
+    int mouse_last_x = 0; // last seen drag position (terminal cells)
+    int mouse_last_y = 0;
+    int bg_mode = args.bg;               // 0=black, 1=gray, 2=white
+    int lighting_mode = args.lighting;   // 0=dual, 1=single, 2=flat ambient
+    int wf_color = args.wireframe_color; // 0=white..5=magenta
+    const float spin_speed = 0.8f;       // radians/sec
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
@@ -399,7 +402,8 @@ int main(int argc, char *argv[])
 
         // ── Resize detection ─────────────────────────────────────────────
         {
-            int new_cols = 0, new_rows = 0;
+            int new_cols = 0;
+            int new_rows = 0;
             platform::get_terminal_size(new_cols, new_rows);
             if (new_cols != cols || new_rows != rows)
             {

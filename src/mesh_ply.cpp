@@ -133,7 +133,12 @@ bool Mesh::load_ply(const std::string &path)
                 return false;
     }
 
-    std::shared_ptr<tinyply::PlyData> positions, normals, uvs, vcolors, faces, fcolors;
+    std::shared_ptr<tinyply::PlyData> positions;
+    std::shared_ptr<tinyply::PlyData> normals;
+    std::shared_ptr<tinyply::PlyData> uvs;
+    std::shared_ptr<tinyply::PlyData> vcolors;
+    std::shared_ptr<tinyply::PlyData> faces;
+    std::shared_ptr<tinyply::PlyData> fcolors;
 
     try
     {

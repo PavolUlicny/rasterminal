@@ -15,7 +15,9 @@
 
 bool Texture::load(const std::string &path)
 {
-    int w = 0, h = 0, channels = 0;
+    int w = 0;
+    int h = 0;
+    int channels = 0;
     // Force 4 output channels (RGBA) regardless of source format.
     uint8_t *data = stbi_load(path.c_str(), &w, &h, &channels, 4);
     if (!data)
@@ -34,7 +36,9 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
 {
     if (!data || size == 0 || size > static_cast<size_t>(INT_MAX))
         return false;
-    int w = 0, h = 0, channels = 0;
+    int w = 0;
+    int h = 0;
+    int channels = 0;
     uint8_t *img = stbi_load_from_memory(data, static_cast<int>(size), &w, &h, &channels, 4);
     if (!img)
         return false;

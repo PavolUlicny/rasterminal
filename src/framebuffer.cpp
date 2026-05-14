@@ -140,7 +140,8 @@ void Framebuffer::present()
     // fg_known / bg_known track whether the terminal's current fg/bg are
     // reflected by prev_fg / prev_bg.  Both start false because \033[0m at
     // the end of the previous frame reset SGR to an unknown terminal default.
-    Color prev_fg{}, prev_bg{};
+    Color prev_fg{};
+    Color prev_bg{};
     bool fg_known = false;
     bool bg_known = false;
 
