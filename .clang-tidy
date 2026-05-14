@@ -4,6 +4,7 @@ Checks: >-
   cppcoreguidelines-*,
   hicpp-*,
   modernize-*,
+  readability-*,
   performance-*,
   portability-*,
   concurrency-*,
@@ -28,4 +29,11 @@ Checks: >-
   -hicpp-vararg,
   -hicpp-member-init,
   -modernize-use-trailing-return-type,
-  -modernize-avoid-c-arrays
+  -modernize-avoid-c-arrays,
+  -readability-identifier-length,
+  -readability-uppercase-literal-suffix,
+  -readability-braces-around-statements,
+  -readability-magic-numbers,
+  -readability-implicit-bool-conversion,
+  -readability-function-cognitive-complexity,
+  -readability-avoid-nested-conditional-operator
