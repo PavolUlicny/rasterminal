@@ -114,7 +114,7 @@ struct mat4
 {
     float m[4][4] = {};
 
-    constexpr mat4() noexcept {}
+    constexpr mat4() noexcept = default;
 
     static constexpr mat4 identity() noexcept
     {
