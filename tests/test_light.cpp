@@ -246,3 +246,103 @@ TEST(specular_pow, zero_base_returns_zero)
     ASSERT_NEAR(specular_pow(0.0f, 32.0f), 0.0f, 1e-5f);
     ASSERT_NEAR(specular_pow(0.0f, 1.0f), 0.0f, 1e-5f);
 }
+
+// ─── overload / robustness ────────────────────────────────────────────────────
+
+TEST(light, overload_derives_view_vector)
+{
+    // The pos/eye_pos overload must produce the same result as the precomputed-v
+    // overload when v = normalize(eye_pos - pos).
+    Material mat;
+    mat.diffuse = {0.8f, 0.6f, 0.4f};
+    mat.specular = {0.5f, 0.5f, 0.5f};
+    mat.shininess = 16.0f;
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    vec3 n{0, 1, 0};
+    vec3 pos{0, 0, 0};
+    vec3 eye_pos{0, 0, 5};
+
+    vec3 v = normalize(eye_pos - pos);
+    vec3 r1 = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r2 = compute_lighting(pos, n, eye_pos, &l, 1, ambient, mat);
+
+    ASSERT_NEAR(r1.x, r2.x, EPS);
+    ASSERT_NEAR(r1.y, r2.y, EPS);
+    ASSERT_NEAR(r1.z, r2.z, EPS);
+}
+
+TEST(light, normal_is_normalized_internally)
+{
+    // Passing a non-unit normal (scaled by 5) must give identical results to
+    // the pre-normalized form since compute_lighting normalizes internally.
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {1, 1, 1};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0, 1, 0};
+    l.color = {1, 1, 1};
+    vec3 ambient{0.2f, 0.2f, 0.2f};
+    vec3 v{0, 1, 0};
+    vec3 n_unit{0, 1, 0};
+    vec3 n_scaled{0, 5, 0};
+
+    vec3 r_unit = compute_lighting(n_unit, v, &l, 1, ambient, mat);
+    vec3 r_scaled = compute_lighting(n_scaled, v, &l, 1, ambient, mat);
+
+    ASSERT_NEAR(r_unit.x, r_scaled.x, EPS);
+    ASSERT_NEAR(r_unit.y, r_scaled.y, EPS);
+    ASSERT_NEAR(r_unit.z, r_scaled.z, EPS);
+}
+
+TEST(light, multiple_lights_sum_specular)
+{
+    // Two lights, specular isolated (diffuse = 0), distinct colors.
+    // Result must equal the per-light sum.
+    Material mat;
+    mat.diffuse = {0, 0, 0};
+    mat.specular = {1, 1, 1};
+    mat.shininess = 32.0f;
+    Light ls[2];
+    ls[0].direction = {0, 1, 0};
+    ls[0].color = {0.4f, 0, 0};
+    ls[1].direction = {0, 1, 0};
+    ls[1].color = {0, 0.6f, 0};
+    vec3 ambient{0, 0, 0};
+    vec3 v{0, 1, 0}; // half-vector == normal → ndh = 1 for both lights
+    vec3 n{0, 1, 0};
+
+    // Individual contributions
+    vec3 r0 = compute_lighting(n, v, &ls[0], 1, ambient, mat);
+    vec3 r1 = compute_lighting(n, v, &ls[1], 1, ambient, mat);
+
+    // Combined
+    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat);
+
+    ASSERT_NEAR(r.x, r0.x + r1.x, EPS);
+    ASSERT_NEAR(r.y, r0.y + r1.y, EPS);
+    ASSERT_NEAR(r.z, r0.z + r1.z, EPS);
+}
+
+TEST(light, specular_independent_of_diffuse_branch)
+{
+    // n={0,1,0}, l={1,0,0}: diff=dot(n,l)=0 so the diffuse branch (diff>0) is
+    // not entered. v=normalize({-1,1,0}): h=normalize(l+v) has h.y≈0.924>0 so
+    // the specular branch still fires. Proves the two branches are independent.
+    Material mat;
+    mat.diffuse = {1, 1, 1};
+    mat.specular = {1, 1, 1};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {1, 0, 0}; // tangential to n={0,1,0}: diff = 0, branch skipped
+    l.color = {1, 1, 1};
+    vec3 ambient{0, 0, 0};
+    vec3 n{0, 1, 0};
+    vec3 v = normalize(vec3{-1, 1, 0}); // half-vector tilted toward n → ndh > 0
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_TRUE(r.x > 0.0f);
+}
