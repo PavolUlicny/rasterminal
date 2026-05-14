@@ -306,3 +306,28 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
     ASSERT_EQ(cn.g, cw.g);
     ASSERT_EQ(cn.b, cw.b);
 }
+
+// ─── Group E: alpha exactly at cutoff boundary ────────────────────────────────
+// The discard condition is strict < (alpha < cutoff), so alpha == cutoff → drawn.
+// cutoff = 128 * (1/255) matches how sample_rgba converts alpha bytes, making
+// the comparison bit-exact.
+
+TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_gouraud)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    constexpr float cutoff = 128.0f * (1.0f / 255.0f);
+    Texture tex = make_tex(1, 1, {255, 255, 255, 128});
+    rast(fb, &tex, cutoff);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+}
+
+TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
+{
+    FdRedirect r;
+    Framebuffer fb(40, 20);
+    constexpr float cutoff = 128.0f * (1.0f / 255.0f);
+    Texture tex = make_tex(1, 1, {255, 255, 255, 128});
+    rast_phong(fb, &tex, cutoff);
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+}
