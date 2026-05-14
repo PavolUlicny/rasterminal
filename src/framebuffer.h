@@ -29,8 +29,8 @@ public:
     Framebuffer(Framebuffer &&) = delete;
     Framebuffer &operator=(Framebuffer &&) = delete;
 
-    int width() const { return m_width; }
-    int height() const { return m_height; }
+    [[nodiscard]] int width() const { return m_width; }
+    [[nodiscard]] int height() const { return m_height; }
 
     // Resize pixel buffer to new dimensions and clear. Emits a one-shot
     // \033[2J so any leftover content from the old (larger) size is wiped.
@@ -92,7 +92,7 @@ public:
     void present();
 
 private:
-    size_t pixel_idx(int x, int y) const noexcept
+    [[nodiscard]] size_t pixel_idx(int x, int y) const noexcept
     {
         return static_cast<size_t>(y) * static_cast<size_t>(m_width) + static_cast<size_t>(x);
     }

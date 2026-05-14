@@ -32,12 +32,12 @@ struct Mesh
     bool has_vertex_colors = false;  // true when any loader populates vertex_colors (PLY, OBJ, glTF COLOR_0)
     bool has_double_sided = false;   // true if any material in the mesh has double_sided = true
 
-    const Material &mat_at(uint32_t idx) const
+    [[nodiscard]] const Material &mat_at(uint32_t idx) const
     {
         return idx < materials.size() ? materials[idx] : materials[0];
     }
 
-    const Texture *tex_at(int idx) const
+    [[nodiscard]] const Texture *tex_at(int idx) const
     {
         return (idx >= 0 && idx < static_cast<int>(textures.size()))
                    ? &textures[static_cast<size_t>(idx)]

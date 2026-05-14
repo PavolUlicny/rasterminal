@@ -48,8 +48,8 @@ struct vec3
         return *this;
     }
 
-    float length() const noexcept { return std::sqrt(x * x + y * y + z * z); }
-    constexpr float length_sq() const noexcept { return x * x + y * y + z * z; }
+    [[nodiscard]] float length() const noexcept { return std::sqrt(x * x + y * y + z * z); }
+    [[nodiscard]] constexpr float length_sq() const noexcept { return x * x + y * y + z * z; }
 };
 
 constexpr float dot(const vec3 &a, const vec3 &b) noexcept
@@ -99,8 +99,8 @@ struct vec4
     constexpr vec4 operator*(float t) const noexcept { return {x * t, y * t, z * t, w * t}; }
 
     // perspective divide: clip space → NDC
-    constexpr vec3 xyz() const noexcept { return {x, y, z}; }
-    constexpr vec3 perspective_divide() const noexcept
+    [[nodiscard]] constexpr vec3 xyz() const noexcept { return {x, y, z}; }
+    [[nodiscard]] constexpr vec3 perspective_divide() const noexcept
     {
         const float inv_w = 1.0f / w;
         return {x * inv_w, y * inv_w, z * inv_w};
@@ -142,7 +142,7 @@ struct mat4
             m[0][3] * v.x + m[1][3] * v.y + m[2][3] * v.z + m[3][3] * v.w};
     }
 
-    constexpr mat4 transposed() const noexcept
+    [[nodiscard]] constexpr mat4 transposed() const noexcept
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
@@ -283,7 +283,7 @@ struct quat
             w * o.w - x * o.x - y * o.y - z * o.z};
     }
 
-    constexpr vec3 rotate(const vec3 &v) const noexcept
+    [[nodiscard]] constexpr vec3 rotate(const vec3 &v) const noexcept
     {
         const vec3 qv{x, y, z};
         const vec3 t = cross(qv, v) * 2.0f;
