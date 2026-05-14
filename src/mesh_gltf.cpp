@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -29,11 +30,7 @@ bool Mesh::load_gltf(const std::string &path)
         return false;
 
     // RAII guard — ensures cgltf_free on every exit path.
-    struct Guard
-    {
-        cgltf_data *d;
-        ~Guard() { cgltf_free(d); }
-    } const guard{data};
+    const auto guard = std::unique_ptr<cgltf_data, decltype(&cgltf_free)>(data, cgltf_free);
 
     if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success)
         return false;

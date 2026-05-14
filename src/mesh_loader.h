@@ -35,6 +35,8 @@ struct MeshSnapshot
 
     MeshSnapshot(const MeshSnapshot &) = delete;
     MeshSnapshot &operator=(const MeshSnapshot &) = delete;
+    MeshSnapshot(MeshSnapshot &&) = delete;
+    MeshSnapshot &operator=(MeshSnapshot &&) = delete;
 
 private:
     Mesh &m_mesh;

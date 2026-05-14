@@ -38,6 +38,8 @@ struct Renderer
 
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
+    Renderer(Renderer &&) = delete;
+    Renderer &operator=(Renderer &&) = delete;
 
     // shadow_map: pre-built shadow map from build_shadow_map(). Pass nullptr to
     // disable shadows, or a valid pointer to reuse a cached map every frame.

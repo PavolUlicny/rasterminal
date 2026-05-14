@@ -24,6 +24,11 @@ public:
     Framebuffer(int pixel_width, int pixel_height, bool headless = false);
     ~Framebuffer();
 
+    Framebuffer(const Framebuffer &) = delete;
+    Framebuffer &operator=(const Framebuffer &) = delete;
+    Framebuffer(Framebuffer &&) = delete;
+    Framebuffer &operator=(Framebuffer &&) = delete;
+
     int width() const { return m_width; }
     int height() const { return m_height; }
 
