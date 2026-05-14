@@ -24,20 +24,20 @@ namespace
         {
             if (i < 10)
             {
-                t.s[i][0] = char('0' + i);
+                t.s[i][0] = static_cast<char>('0' + i);
                 t.len[i] = 1;
             }
             else if (i < 100)
             {
-                t.s[i][0] = char('0' + i / 10);
-                t.s[i][1] = char('0' + i % 10);
+                t.s[i][0] = static_cast<char>('0' + i / 10);
+                t.s[i][1] = static_cast<char>('0' + i % 10);
                 t.len[i] = 2;
             }
             else
             {
-                t.s[i][0] = char('0' + i / 100);
-                t.s[i][1] = char('0' + (i / 10) % 10);
-                t.s[i][2] = char('0' + i % 10);
+                t.s[i][0] = static_cast<char>('0' + i / 100);
+                t.s[i][1] = static_cast<char>('0' + (i / 10) % 10);
+                t.s[i][2] = static_cast<char>('0' + i % 10);
                 t.len[i] = 3;
             }
         }

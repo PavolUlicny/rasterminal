@@ -49,7 +49,7 @@ namespace platform
             static termios t;
             return t;
         }
-    }
+    } // namespace detail
 #endif
 
     inline void enable_raw_mode()
@@ -219,7 +219,7 @@ namespace platform
                 return KEY_NONE;
             }
         }
-    }
+    } // namespace detail
 
     // ─── poll_event ──────────────────────────────────────────────────────────────
     // Returns the next keyboard or mouse event, or InputEvent{Type::None} if the
