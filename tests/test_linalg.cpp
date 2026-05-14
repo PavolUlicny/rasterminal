@@ -452,6 +452,30 @@ TEST(vec4, vec3_constructor_copies_xyz)
     ASSERT_NEAR(r.w, 5.0f, 1e-6f);
 }
 
+// ─── vec2 ─────────────────────────────────────────────────────────────────────
+
+TEST(vec2, arithmetic_operators)
+{
+    vec2 a{3.0f, 7.0f};
+    vec2 b{1.0f, 2.0f};
+
+    vec2 s = a + b;
+    ASSERT_NEAR(s.x, 4.0f, 1e-6f);
+    ASSERT_NEAR(s.y, 9.0f, 1e-6f);
+
+    vec2 d = a - b;
+    ASSERT_NEAR(d.x, 2.0f, 1e-6f);
+    ASSERT_NEAR(d.y, 5.0f, 1e-6f);
+
+    vec2 m = a * 2.0f;
+    ASSERT_NEAR(m.x, 6.0f, 1e-6f);
+    ASSERT_NEAR(m.y, 14.0f, 1e-6f);
+
+    vec2 q = a / 2.0f;
+    ASSERT_NEAR(q.x, 1.5f, 1e-6f);
+    ASSERT_NEAR(q.y, 3.5f, 1e-6f);
+}
+
 // ─── rotation_x / rotation_z ─────────────────────────────────────────────────
 
 TEST(rotation_x, 90deg_maps_y_axis_to_z)
