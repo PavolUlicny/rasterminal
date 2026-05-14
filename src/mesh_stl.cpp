@@ -90,7 +90,7 @@ bool Mesh::load_stl(const std::string &path)
 
     for (size_t i = 0; i < n_tris; i++)
     {
-        const uint32_t base = static_cast<uint32_t>(vertices.size());
+        const auto base = static_cast<uint32_t>(vertices.size());
         for (int j = 0; j < 3; j++)
         {
             const unsigned int vi = tris[3 * i + static_cast<size_t>(j)];

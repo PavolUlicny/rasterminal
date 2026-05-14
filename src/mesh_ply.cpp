@@ -360,7 +360,7 @@ bool Mesh::load_ply(const std::string &path)
                 if (i0 >= n_verts || iv >= n_verts || iw >= n_verts)
                     continue;
 
-                const uint32_t base = static_cast<uint32_t>(vertices.size());
+                const auto base = static_cast<uint32_t>(vertices.size());
                 for (const uint32_t pi : {i0, iv, iw})
                 {
                     Vertex vert{};

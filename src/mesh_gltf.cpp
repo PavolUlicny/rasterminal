@@ -112,7 +112,7 @@ bool Mesh::load_gltf(const std::string &path)
                 {
                     if (!prim.material)
                         return 0u;
-                    const uint32_t idx = static_cast<uint32_t>(materials.size());
+                    const auto idx = static_cast<uint32_t>(materials.size());
                     materials.push_back(map_mat(prim.material));
                     return idx;
                 }();

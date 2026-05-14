@@ -101,7 +101,7 @@ vec4 Texture::sample_rgba(float u, float v) const
 
     constexpr float inv255 = 1.0f / 255.0f;
     const uint8_t *base = pixels.data();
-    const size_t w = static_cast<size_t>(width);
+    const auto w = static_cast<size_t>(width);
     const uint8_t *p00 = base + (static_cast<size_t>(y0) * w + static_cast<size_t>(x0)) * 4;
     const uint8_t *p10 = base + (static_cast<size_t>(y0) * w + static_cast<size_t>(x1)) * 4;
     const uint8_t *p01 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x0)) * 4;

@@ -157,7 +157,7 @@ namespace
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
         const int64_t med = frame_ns[mid];
 
-        const size_t p95i = static_cast<size_t>(n_measure * 95 / 100);
+        const auto p95i = static_cast<size_t>(n_measure * 95 / 100);
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
         const int64_t p95 = frame_ns[p95i];
 
@@ -165,7 +165,7 @@ namespace
         double welford_mean = 0.0, welford_m2 = 0.0;
         for (int k = 0; k < n_measure; k++)
         {
-            const double x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
+            const auto x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
             const double delta = x - welford_mean;
             welford_mean += delta / (k + 1);
             welford_m2 += delta * (x - welford_mean);
