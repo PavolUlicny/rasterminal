@@ -274,6 +274,47 @@ TEST(texture, sample_rgba_2x2_center_averages_all_four_corners)
     ASSERT_NEAR(c.w, (0.0f + 64.0f + 128.0f + 255.0f) / 4.0f / 255.0f, 1e-4f);
 }
 
+// ─── sample_rgba UV wrap ──────────────────────────────────────────────────────
+// sample_rgba has the same wrap + V-flip code as sample_rgb; these tests confirm
+// all four channels including alpha.
+
+TEST(texture, sample_rgba_wraps_positive_coords)
+{
+    // 2×1: left=(255,0,0,200), right=(0,0,255,100). u=0.25 and u=1.25 must agree.
+    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    vec4 a = t.sample_rgba(0.25f, 0.5f);
+    vec4 b = t.sample_rgba(1.25f, 0.5f);
+    vec4 c = t.sample_rgba(1000.25f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-4f);
+    ASSERT_NEAR(a.y, b.y, 1e-4f);
+    ASSERT_NEAR(a.z, b.z, 1e-4f);
+    ASSERT_NEAR(a.w, b.w, 1e-4f);
+    ASSERT_NEAR(a.x, c.x, 1e-4f);
+    ASSERT_NEAR(a.w, c.w, 1e-4f);
+}
+
+TEST(texture, sample_rgba_wraps_negative_coords)
+{
+    // u=−0.75 → floor(−0.75)=−1 → −0.75−(−1)=0.25 — same as u=0.25.
+    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    vec4 a = t.sample_rgba(0.25f, 0.5f);
+    vec4 b = t.sample_rgba(-0.75f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-5f);
+    ASSERT_NEAR(a.y, b.y, 1e-5f);
+    ASSERT_NEAR(a.z, b.z, 1e-5f);
+    ASSERT_NEAR(a.w, b.w, 1e-5f);
+}
+
+TEST(texture, sample_rgba_flips_v_axis)
+{
+    // 1×2: image row0 (top)=(255,0,0,200), row1 (bottom)=(0,0,255,100).
+    // OBJ v=0 (texture bottom) → flip → samples image row1 → alpha=100/255.
+    Texture t = make_tex(1, 2, {255, 0, 0, 200, 0, 0, 255, 100});
+    vec4 c = t.sample_rgba(0.0f, 0.0f);
+    ASSERT_NEAR(c.w, 100.0f / 255.0f, 1e-4f);
+    ASSERT_NEAR(c.z, 1.0f, 1e-4f); // blue channel confirms row1 was sampled
+}
+
 TEST(texture_load, load_failure_preserves_previous_data)
 {
     Texture t = solid(255, 0, 0);
