@@ -43,9 +43,9 @@ struct Renderer
 
     // shadow_map: pre-built shadow map from build_shadow_map(). Pass nullptr to
     // disable shadows, or a valid pointer to reuse a cached map every frame.
-    void render(const Mesh &, const Camera &,
+    void render(const Mesh &mesh, const Camera &camera,
                 const Light *lights, int n_lights, const vec3 &ambient,
-                Framebuffer &, const ShadowMap *shadow_map = nullptr);
+                Framebuffer &fb, const ShadowMap *shadow_map = nullptr);
 
 private:
     void worker_func(int t);
