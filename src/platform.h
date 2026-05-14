@@ -338,7 +338,7 @@ namespace platform
             const int btn = nums[0];
             ev.x = nums[1];
             ev.y = nums[2];
-            ev.btn = btn & 3; // low 2 bits = button number
+            ev.btn = static_cast<int>(static_cast<unsigned int>(btn) & 3U); // low 2 bits = button number
 
             if (btn == 64)
                 ev.type = InputEvent::Type::ScrollUp;

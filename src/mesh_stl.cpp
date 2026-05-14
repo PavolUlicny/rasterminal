@@ -39,9 +39,9 @@ bool Mesh::load_stl(const std::string &path)
     const bool have_tri_count = (std::fread(tcb, 1, 4, f.get()) == 4);
     const uint32_t tri_count = have_tri_count
                                    ? (static_cast<uint32_t>(tcb[0]) |
-                                      (static_cast<uint32_t>(tcb[1]) << 8) |
-                                      (static_cast<uint32_t>(tcb[2]) << 16) |
-                                      (static_cast<uint32_t>(tcb[3]) << 24))
+                                      (static_cast<uint32_t>(tcb[1]) << 8U) |
+                                      (static_cast<uint32_t>(tcb[2]) << 16U) |
+                                      (static_cast<uint32_t>(tcb[3]) << 24U))
                                    : 0u;
 
     long file_size = -1;
