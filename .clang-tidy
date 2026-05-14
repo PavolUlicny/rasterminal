@@ -1,6 +1,7 @@
 Checks: >-
   bugprone-*,
   cert-*,
+  google-*,
   cppcoreguidelines-*,
   hicpp-*,
   modernize-*,
@@ -36,4 +37,6 @@ Checks: >-
   -readability-magic-numbers,
   -readability-implicit-bool-conversion,
   -readability-function-cognitive-complexity,
-  -readability-avoid-nested-conditional-operator
+  -readability-avoid-nested-conditional-operator,
+  -google-readability-braces-around-statements,
+  -google-runtime-int
