@@ -142,3 +142,38 @@ TEST(clip_near, rotation_puts_b_as_inside_vertex_first)
     ASSERT_EQ(clip_near(a, b, c, out, NEAR), 1);
     ASSERT_NEAR(out[0][0].c.w, 1.5f, 1e-6f);
 }
+
+TEST(clip_near, rotation_puts_c_as_inside_vertex_first)
+{
+    // When c is the only inside vertex, clip_near rotates it to out[0][0].
+    ClipVert a = make_cv(0.05f), b = make_cv(0.05f), c = make_cv(1.5f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 1);
+    ASSERT_NEAR(out[0][0].c.w, 1.5f, 1e-6f);
+}
+
+TEST(clip_near, two_inside_a_outside_correct_output)
+{
+    // a outside, b and c inside — the !ia rotation puts b/c into aa/bb slots.
+    // out[0][0]=b(w=1.0), out[0][1]=c(w=2.0); both clipped edges land at NEAR.
+    ClipVert a = make_cv(0.05f), b = make_cv(1.0f), c = make_cv(2.0f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
+    ASSERT_NEAR(out[0][0].c.w, 1.0f, 1e-5f); // b preserved
+    ASSERT_NEAR(out[0][1].c.w, 2.0f, 1e-5f); // c preserved
+    ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f); // clipped edge
+    ASSERT_NEAR(out[1][2].c.w, NEAR, 1e-5f); // clipped edge
+}
+
+TEST(clip_near, two_inside_b_outside_correct_output)
+{
+    // a and c inside, b outside — the else rotation puts c/a into aa/bb slots.
+    // out[0][0]=c(w=2.0), out[0][1]=a(w=1.0); both clipped edges land at NEAR.
+    ClipVert a = make_cv(1.0f), b = make_cv(0.05f), c = make_cv(2.0f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
+    ASSERT_NEAR(out[0][0].c.w, 2.0f, 1e-5f); // c preserved
+    ASSERT_NEAR(out[0][1].c.w, 1.0f, 1e-5f); // a preserved
+    ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f); // clipped edge
+    ASSERT_NEAR(out[1][2].c.w, NEAR, 1e-5f); // clipped edge
+}
