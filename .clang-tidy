@@ -2,6 +2,7 @@ Checks: >-
   bugprone-*,
   cert-*,
   cppcoreguidelines-*,
+  hicpp-*,
   performance-*,
   portability-*,
   concurrency-*,
@@ -18,4 +19,10 @@ Checks: >-
   -cppcoreguidelines-avoid-c-arrays,
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-non-private-member-variables-in-classes,
-  -cppcoreguidelines-owning-memory
+  -cppcoreguidelines-owning-memory,
+  -hicpp-uppercase-literal-suffix,
+  -hicpp-braces-around-statements,
+  -hicpp-no-array-decay,
+  -hicpp-avoid-c-arrays,
+  -hicpp-vararg,
+  -hicpp-member-init
