@@ -236,3 +236,87 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
 
     fb.present(); // dirty-tracking path — must not crash
 }
+
+// ─── HUD ─────────────────────────────────────────────────────────────────────
+// CaptureStdout redirects stdout to a temp file for the duration of its lifetime,
+// then reads back the captured bytes. Used to verify HUD presence/absence.
+
+struct CaptureStdout
+{
+    std::FILE *tmp;
+    int saved_out;
+
+    CaptureStdout() : tmp(std::tmpfile()), saved_out(test_dup(TEST_STDOUT))
+    {
+        std::fflush(stdout);
+#ifdef _WIN32
+        test_dup2(_fileno(tmp), TEST_STDOUT);
+#else
+        test_dup2(fileno(tmp), TEST_STDOUT);
+#endif
+    }
+
+    ~CaptureStdout()
+    {
+        std::fflush(stdout);
+        test_dup2(saved_out, TEST_STDOUT);
+        test_close(saved_out);
+        std::fclose(tmp);
+    }
+
+    std::string read()
+    {
+        std::fflush(stdout);
+        std::rewind(tmp);
+        std::string out;
+        char buf[4096];
+        for (;;)
+        {
+            const size_t n = std::fread(buf, 1, sizeof(buf), tmp);
+            if (n == 0)
+                break;
+            out.append(buf, n);
+        }
+        return out;
+    }
+};
+
+TEST(framebuffer, hud_text_appears_in_present_output)
+{
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.set_hud("RASTERMINAL_HUD");
+    fb.present();
+    ASSERT_TRUE(cap.read().find("RASTERMINAL_HUD") != std::string::npos);
+}
+
+TEST(framebuffer, hud_empty_emits_no_hud_escape)
+{
+    // HUD is empty by default — the !m_hud.empty() block must be skipped,
+    // so \033[?7l (disable-autowrap, unique to the HUD block) must not appear.
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present();
+    ASSERT_TRUE(cap.read().find("\033[?7l") == std::string::npos);
+}
+
+TEST(framebuffer, hud_cleared_after_set_is_omitted)
+{
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+
+    fb.set_hud("MAGIC_MARKER_A");
+    fb.present(); // frame 1: HUD block fires
+    fb.clear();
+    fb.set_hud("");
+    fb.present(); // frame 2: HUD is empty, block must not fire
+
+    const std::string out = cap.read();
+
+    // Frame 1's HUD content is present in the combined output.
+    ASSERT_TRUE(out.find("MAGIC_MARKER_A") != std::string::npos);
+    // HUD escape \033[?7l appears exactly once (frame 1 only; not frame 2).
+    const size_t first_pos = out.find("\033[?7l");
+    ASSERT_TRUE(first_pos != std::string::npos);
+    ASSERT_TRUE(out.find("\033[?7l", first_pos + 1) == std::string::npos);
+}
