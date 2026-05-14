@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -19,16 +20,13 @@ bool Mesh::load_stl(const std::string &path)
     // is large enough to hold the declared triangles. Without this, a crafted
     // binary STL with tri_count=0xFFFFFFFF would let stl_reader attempt a ~200 GB
     // allocation even with STL_READER_NO_EXCEPTIONS.
-    FILE *f = std::fopen(path.c_str(), "rb");
+    const auto f = std::unique_ptr<FILE, int (*)(FILE *)>(std::fopen(path.c_str(), "rb"), std::fclose);
     if (!f)
         return false;
 
     char header[80];
-    if (std::fread(header, 1, 80, f) < 5)
-    {
-        std::fclose(f);
+    if (std::fread(header, 1, 80, f.get()) < 5)
         return false;
-    }
 
     // ASCII detection: header starts with "solid" (ignoring leading whitespace).
     const char *h = header;
@@ -38,7 +36,7 @@ bool Mesh::load_stl(const std::string &path)
 
     // Read tri_count (bytes 80–83).
     uint8_t tcb[4];
-    const bool have_tri_count = (std::fread(tcb, 1, 4, f) == 4);
+    const bool have_tri_count = (std::fread(tcb, 1, 4, f.get()) == 4);
     const uint32_t tri_count = have_tri_count
                                    ? (static_cast<uint32_t>(tcb[0]) |
                                       (static_cast<uint32_t>(tcb[1]) << 8) |
@@ -47,9 +45,8 @@ bool Mesh::load_stl(const std::string &path)
                                    : 0u;
 
     long file_size = -1;
-    if (std::fseek(f, 0, SEEK_END) == 0)
-        file_size = std::ftell(f);
-    std::fclose(f);
+    if (std::fseek(f.get(), 0, SEEK_END) == 0)
+        file_size = std::ftell(f.get());
 
     const uint64_t expected_binary = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
 
