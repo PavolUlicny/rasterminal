@@ -200,8 +200,8 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     const float sy = static_cast<float>(y1 - y0) / static_cast<float>(steps);
     const float sz = (b.z - a.z) / static_cast<float>(steps);
 
-    float x = static_cast<float>(x0);
-    float y = static_cast<float>(y0);
+    auto x = static_cast<float>(x0);
+    auto y = static_cast<float>(y0);
     float z = a.z;
     for (int i = 0; i <= steps; i++)
     {
