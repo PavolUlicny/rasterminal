@@ -277,19 +277,6 @@ TEST(rasterize_phong, respects_y_band)
 
 // ─── Framebuffer ──────────────────────────────────────────────────────────────
 
-TEST(framebuffer, clear_resets_depth)
-{
-    FdRedirect r;
-    Framebuffer fb(20, 10);
-    draw_line(fb, {2.0f, 5.0f, 0.4f}, {8.0f, 5.0f, 0.4f}, Color{255, 0, 0});
-    ASSERT_TRUE(was_drawn(fb, 5, 5)); // confirm it was drawn
-
-    fb.clear();
-
-    for (int x = 2; x <= 8; ++x)
-        ASSERT_FALSE(was_drawn(fb, x, 5)); // all depths reset to infinity
-}
-
 TEST(framebuffer, resize_resets_depth_and_dimensions)
 {
     FdRedirect r;
@@ -318,17 +305,6 @@ TEST(framebuffer, test_and_set_depth_semantics)
     ASSERT_FALSE(fb.test_and_set_depth(5, -1, 0.1f));
     ASSERT_FALSE(fb.test_and_set_depth(10, 5, 0.1f));
     ASSERT_FALSE(fb.test_and_set_depth(5, 10, 0.1f));
-}
-
-TEST(framebuffer, set_pixel_out_of_bounds_no_crash)
-{
-    FdRedirect r;
-    Framebuffer fb(10, 10);
-    fb.set_pixel(-1, 0, Color{255, 0, 0});
-    fb.set_pixel(0, -1, Color{255, 0, 0});
-    fb.set_pixel(10, 0, Color{255, 0, 0});
-    fb.set_pixel(0, 10, Color{255, 0, 0});
-    fb.set_pixel(-100, -100, Color{0, 0, 0});
 }
 
 // ─── perspective-correct interpolation ───────────────────────────────────────

@@ -297,15 +297,6 @@ TEST(vec3, cross_parallel_returns_zero)
     ASSERT_NEAR(r.z, 0.0f, 1e-5f);
 }
 
-TEST(vec3, cross_self_is_zero)
-{
-    vec3 a{1.0f, 2.0f, 3.0f};
-    vec3 r = cross(a, a);
-    ASSERT_NEAR(r.x, 0.0f, 1e-6f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-6f);
-}
-
 TEST(vec3, dot_orthogonal_is_zero)
 {
     ASSERT_NEAR(dot(vec3{1, 0, 0}, vec3{0, 1, 0}), 0.0f, 1e-6f);

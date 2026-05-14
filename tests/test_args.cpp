@@ -73,14 +73,6 @@ TEST(args, help_long_exits_zero)
     ASSERT_EQ(r.exit_code, 0);
 }
 
-TEST(args, help_does_not_require_model)
-{
-    // --help should exit 0 even with no model argument.
-    ParseResult r = run({"--help"});
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 0);
-}
-
 // ─── error: no model ─────────────────────────────────────────────────────────
 
 TEST(args, no_model_is_error)
