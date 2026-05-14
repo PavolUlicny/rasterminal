@@ -12,7 +12,7 @@
 // A clip-space vertex bundled with the world-space attributes needed for
 // lighting and near-plane clipping.
 
-struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init) — ao is always set from vertex.ao before use
+struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — ao is always set from vertex.ao before use
 {
     vec4 c;       // clip-space position (w = -z_view; > 0 means in front of camera)
     vec3 pos;     // world-space position
@@ -68,7 +68,7 @@ struct RasterTri
         PhData ph;
     };
 
-    RasterTri() {} // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init) — all fields written by Phase 1 before Phase 2 reads them; explicit ctor needed because vec3's non-trivial ctor deletes the union's implicit one
+    RasterTri() {} // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init,hicpp-member-init) — all fields written by Phase 1 before Phase 2 reads them; explicit ctor needed because vec3's non-trivial ctor deletes the union's implicit one
 };
 
 // ─── Rasterization primitives ─────────────────────────────────────────────────
