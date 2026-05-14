@@ -17,7 +17,7 @@ struct Vertex
 
 struct Triangle
 {
-    uint32_t v[3];             // indices into Mesh::vertices
+    uint32_t v[3] = {};        // indices into Mesh::vertices
     uint32_t material_idx = 0; // index into Mesh::materials (0 = default)
 };
 

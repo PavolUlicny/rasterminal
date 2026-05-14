@@ -62,7 +62,7 @@ namespace platform
         GetConsoleMode(hout, &mode);
         SetConsoleMode(hout, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 #else
-        termios raw;
+        termios raw = {};
         tcgetattr(STDIN_FILENO, &raw);
         detail::saved_termios() = raw;
 

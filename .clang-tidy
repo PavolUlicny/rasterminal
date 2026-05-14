@@ -1,1 +1,1 @@
-Checks: "bugprone-*,cert-*,performance-*,portability-*,concurrency-*,misc-*,-bugprone-easily-swappable-parameters,-cert-err33-c,-clang-analyzer-*,-misc-non-private-member-variables-in-classes"
+Checks: "bugprone-*,cert-*,cppcoreguidelines-*,performance-*,portability-*,concurrency-*,misc-*,-bugprone-easily-swappable-parameters,-cert-err33-c,-clang-analyzer-*,-misc-non-private-member-variables-in-classes"

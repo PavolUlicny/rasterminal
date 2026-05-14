@@ -236,7 +236,7 @@ void rasterize(Framebuffer &fb,
                int y_min, int y_max)
 {
     const int width = fb.width();
-    TriSetup s;
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init) — setup_tri writes all fields before they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
@@ -378,7 +378,7 @@ void rasterize_phong(Framebuffer &fb,
                      int y_min, int y_max)
 {
     const int width = fb.width();
-    TriSetup s;
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init) — setup_tri writes all fields before they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
