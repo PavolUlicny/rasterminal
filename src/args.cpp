@@ -226,7 +226,8 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    bool saw_bench_size = false, saw_bench_warmup = false;
+    bool saw_bench_size = false;
+    bool saw_bench_warmup = false;
 
     for (int i = 1; i < argc; i++)
     {
