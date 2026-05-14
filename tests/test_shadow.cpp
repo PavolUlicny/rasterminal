@@ -264,3 +264,77 @@ TEST(shadow, mixed_material_opaque_casts_shadow_transparent_does_not)
     // Point behind the transparent cutout triangle → NOT in shadow.
     ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
 }
+
+// ─── PCF kernel ───────────────────────────────────────────────────────────────
+// Tests use a manually constructed ShadowMap with light_vp = mat4::identity().
+// With identity VP, NDC == world_pos. Probe (0,0,0.5) maps to:
+//   u = 0.5 → cx = int(0.5 * 2048) = 1024 (interior, fast path)
+//   v = 0.5 → cy = 1024
+//   ref = 0.5 − 0.001 = 0.499
+// Stored 0.0 → ref > 0.0 → hit (occluded). Stored 1.0 → ref > 1.0 → miss (lit).
+
+TEST(shadow, pcf_partial_occlusion_returns_fraction)
+{
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    // Set 4 of the 9 kernel texels to 0.0 (occluded); 5 remain at 1.0 (lit).
+    int cnt = 0;
+    for (int dy = -1; dy <= 1 && cnt < 4; dy++)
+        for (int dx = -1; dx <= 1 && cnt < 4; dx++)
+        {
+            sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = 0.0f;
+            cnt++;
+        }
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.5f}), 4.0f / 9.0f, 1e-6f);
+}
+
+TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
+{
+    // ref = ndc.z − fp_eps = 0.499. Stored exactly ref → ref > ref is false → lit.
+    // Proves the comparison is strict > (not >=).
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    constexpr float ref = 0.5f - 0.001f;
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = ref;
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.5f}), 0.0f, 1e-6f);
+}
+
+TEST(shadow, pcf_border_clamps_kernel_samples)
+{
+    // Probe (−1, 0, 0.5): cx=0 → else-branch (border clamping).
+    // dx∈{−1,0,1} clamps to px∈{0,0,1}; column x=0 set to 0.0, x=1 stays 1.0.
+    // Each of 3 rows contributes 2 hits (both x=0 samples share the same occluded texel)
+    // → 6 hits total → 6/9.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    for (int py = 1023; py <= 1025; py++)
+        sm.depth[static_cast<size_t>(py * ShadowMap::SIZE + 0)] = 0.0f;
+    ASSERT_NEAR(sm.in_shadow({-1.0f, 0.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+}
+
+TEST(shadow, pcf_negative_w_returns_lit)
+{
+    // m[3][3] = −1 → light_clip.w = −1 ≤ 0 → early-out returns 0 (lit).
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    sm.light_vp.m[3][3] = -1.0f;
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+}
+
+// ─── Alpha cutout boundary ────────────────────────────────────────────────────
+// build_shadow_map discards pixels with `alpha < cutoff` (strict <), so a pixel
+// with alpha == cutoff must write depth and cast a shadow.
+
+TEST(shadow, alpha_exactly_at_cutoff_casts_shadow)
+{
+    constexpr float cutoff = 128.0f * (1.0f / 255.0f);
+    Mesh m = make_cutout_triangle(cutoff, 128);
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+}
