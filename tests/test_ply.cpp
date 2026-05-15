@@ -707,3 +707,150 @@ TEST(ply_valid, face_colors_with_file_normals_recomputes)
     for (const Vertex &v : m.vertices)
         ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ipf < 3 REJECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(reject, ply_face_list_count_below_3)
+{
+    // Face list with only 2 indices per face → ipf=2 < 3 → load_ply returns false.
+    TmpFile t(tmp_path("rast_ipf2.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "2 0 1\n");
+    assert_rejects(t.path);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OOB INDEX SKIPPING
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(reject, ply_all_faces_have_oob_indices_standard_path)
+{
+    // All faces reference an out-of-bounds vertex index → every triangle
+    // skipped → triangles empty → load_ply returns false.
+    TmpFile t(tmp_path("rast_oob_std.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 99\n");
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_all_faces_have_oob_indices_face_color_path)
+{
+    // Same but with face colors — exercises the separate OOB guard in the
+    // face-color expand path; all vertices skipped → empty → returns false.
+    TmpFile t(tmp_path("rast_oob_fcol.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 99 255 0 0\n");
+    assert_rejects(t.path);
+}
+
+TEST(ply_valid, partial_oob_indices_valid_faces_survive)
+{
+    // Two faces: first has valid indices, second has one OOB index. Only the
+    // valid face produces a triangle; the bad one is silently skipped.
+    TmpFile t(tmp_path("rast_partial_oob.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 2\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 2\n"
+              "3 0 1 99\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  NON-INT32 FACE INDEX TYPES (rd_idx UINT16 and UINT32)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, binary_le_uint16_face_indices)
+{
+    // "property list uchar ushort" exercises the UINT16 case in rd_idx.
+    // Most PLY files use "int" (INT32); ushort is common in compact meshes.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar ushort vertex_indices\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back('\x03'); // list count (uchar)
+    s.push_back('\x00');
+    s.push_back('\x00'); // index 0 (uint16 LE)
+    s.push_back('\x01');
+    s.push_back('\x00'); // index 1
+    s.push_back('\x02');
+    s.push_back('\x00'); // index 2
+    TmpFile t(tmp_path("rast_u16idx.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+}
+
+TEST(ply_valid, binary_le_uint32_face_indices)
+{
+    // "property list uchar uint" exercises the UINT32 default case in rd_idx.
+    // Prior tests all use "int" (INT32) — the default branch is different.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar uint vertex_indices\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    TmpFile t(tmp_path("rast_u32idx.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+}
