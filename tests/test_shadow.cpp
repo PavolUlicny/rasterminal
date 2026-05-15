@@ -338,3 +338,105 @@ TEST(shadow, alpha_exactly_at_cutoff_casts_shadow)
     ShadowMap sm = build_shadow_map(m, make_light_z());
     ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
 }
+
+// ─── in_shadow NDC z bounds ───────────────────────────────────────────────────
+
+TEST(shadow, in_shadow_ndc_z_above_one_returns_lit)
+{
+    // With identity VP, world_pos.z becomes ndc.z directly.
+    // ndc.z = 1.5 > 1.0 → NDC z bounds check → early-out returns 0 (lit).
+    // Without the z check, ref = 1.499 > depths = 0.0 for all 9 kernel texels → sf = 1.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 1.5f}), 0.0f, 1e-6f);
+}
+
+// ─── Depth min-test ───────────────────────────────────────────────────────────
+
+TEST(shadow, depth_min_test_closer_triangle_wins)
+{
+    // Two overlapping triangles: closer one (z=+5, to the +Z light) listed first,
+    // farther one (z=−5) listed second. The depth min-test must prevent the farther
+    // triangle from overwriting the closer depth entry. The query at (0,0,0) lies
+    // between them — it is in shadow of the closer triangle but would be falsely lit
+    // if the farther triangle's larger depth overwrote the closer one.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {-10.0f, -10.0f, 5.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -10.0f, 5.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 10.0f, 5.0f};
+    m.vertices.push_back(v);
+    v.pos = {-10.0f, -10.0f, -5.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -10.0f, -5.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 10.0f, -5.0f};
+    m.vertices.push_back(v);
+    m.materials.push_back({});
+    m.triangles.push_back({{0, 1, 2}}); // closer first
+    m.triangles.push_back({{3, 4, 5}}); // farther second
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 1.0f, 1e-6f);
+}
+
+// ─── Slope-bias clamp path ────────────────────────────────────────────────────
+
+TEST(shadow, back_facing_triangle_not_self_shadowed)
+{
+    // Reversed-winding flat triangle: face_n = (0,0,−1), n_dot_l = −1 ≤ 0.01
+    // → slope_bias = 0.5 (clamped path). The stored depth is ndc_z(surface) + 0.5,
+    // which is far larger than ref = ndc_z(surface) − fp_eps, so a point on the
+    // surface is not falsely in shadow.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    // Reversed winding vs make_flat_triangle() → normal points −Z (away from +Z light).
+    v.pos = {-10.0f, -10.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 10.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -10.0f, 0.0f};
+    m.vertices.push_back(v);
+    m.triangles.push_back({{0, 1, 2}});
+    m.materials.push_back({});
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+}
+
+// ─── PCF right-edge and corner border clamping ────────────────────────────────
+
+TEST(shadow, pcf_right_border_clamps_kernel_samples)
+{
+    // ndc.x = 1.0 → u = 1.0 → cx = int(1.0 × 2048) = 2048, clamped to SIZE−1 = 2047.
+    // cx < SIZE−1 is false → else-branch fires.
+    // dx = {−1,0,+1} clamp to px = {2046, 2047, 2047}: dx=0 and dx=+1 share the same
+    // column. Setting only column SIZE−1 to 0.0 → 2 hits per row × 3 rows = 6 → sf=6/9.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    constexpr int S = ShadowMap::SIZE;
+    for (int py = 1023; py <= 1025; py++)
+        sm.depth[static_cast<size_t>(py) * S + (S - 1)] = 0.0f;
+    ASSERT_NEAR(sm.in_shadow({1.0f, 0.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+}
+
+TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
+{
+    // ndc = (−1,−1,0.5) → cx = cy = 0 → else-branch on both axes.
+    // dy,dx ∈ {−1,0,+1}: py clamps to {0,0,1}, px clamps to {0,0,1}.
+    // Setting the 2×2 block (rows 0..1, cols 0..1) to 0.0 → all 9 kernel samples hit
+    // (each of the 9 (py,px) pairs maps into that block) → sf = 1.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    constexpr int S = ShadowMap::SIZE;
+    for (int py = 0; py <= 1; py++)
+        for (int px = 0; px <= 1; px++)
+            sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+    ASSERT_NEAR(sm.in_shadow({-1.0f, -1.0f, 0.5f}), 1.0f, 1e-6f);
+}
