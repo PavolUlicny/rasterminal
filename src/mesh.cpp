@@ -87,9 +87,9 @@ void Mesh::compute_normals()
 
     for (auto &v : vertices)
     {
-        const float len = v.normal.length();
-        if (len > 1e-6f)
-            v.normal = v.normal / len;
+        const float len_sq = v.normal.length_sq();
+        if (len_sq > 1e-12f)
+            v.normal = v.normal * (1.0f / std::sqrt(len_sq));
     }
 }
 
@@ -133,8 +133,7 @@ void Mesh::compute_tangents()
         const vec3 &n = vertices[i].normal;
         vec3 &t = tangents[i];
 
-        const float len = t.length();
-        if (len < 1e-6f)
+        if (t.length_sq() < 1e-12f)
         {
             // No UV contribution — pick an arbitrary vector perpendicular to n.
             const vec3 up = (std::abs(n.z) < 0.9f) ? vec3{0.0f, 0.0f, 1.0f}
@@ -192,8 +191,8 @@ void Mesh::compute_ao()
         centroid = centroid * (1.0f / static_cast<float>(adj[i].size()));
 
         const vec3 d = centroid - p;
-        const float len = d.length();
-        if (len < 1e-8f)
+        const float len_sq = d.length_sq();
+        if (len_sq < 1e-16f)
         {
             vertices[i].ao = 1.0f;
             continue;
@@ -201,7 +200,7 @@ void Mesh::compute_ao()
 
         // Positive curvature = concave = cavity → reduce AO.
         // Clamp so convex surfaces stay at 1 and deep cavities don't go fully black.
-        const float curvature = dot(d * (1.0f / len), N);
+        const float curvature = dot(d * (1.0f / std::sqrt(len_sq)), N);
         vertices[i].ao = 1.0f - clamp(curvature * 0.5f, 0.0f, 0.15f);
     }
 }

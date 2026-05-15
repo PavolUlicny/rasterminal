@@ -76,9 +76,15 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
         if (diff > 0.0f)
             result += light_color * mat.diffuse * diff;
 
-        const float ndh = dot(n, normalize(l + v));
-        if (ndh > 0.0f)
-            result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
+        // Avoid sqrt in normalize when the half-vector faces away from the surface.
+        const vec3 h = l + v;
+        const float ndh_raw = dot(n, h);
+        if (ndh_raw > 0.0f)
+        {
+            const float ndh = dot(n, normalize(h));
+            if (ndh > 0.0f)
+                result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
+        }
     }
 
     return result;
