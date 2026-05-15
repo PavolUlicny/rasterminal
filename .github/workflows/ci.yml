@@ -234,18 +234,11 @@ jobs:
 
       - name: Download models
         run: |
-          mkdir -p models/gltf models/glb models/stl
+          mkdir -p bench
           BASE_KHRONOS="https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck"
-          BASE_ALEC="https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data"
           BASE_BUNNY="https://raw.githubusercontent.com/reprap-io/reprapio_stanford_bunny/master"
-          curl -fsSL "$BASE_KHRONOS/glTF/Duck.gltf"        -o models/gltf/Duck.gltf
-          curl -fsSL "$BASE_KHRONOS/glTF/Duck0.bin"        -o models/gltf/Duck0.bin
-          curl -fsSL "$BASE_KHRONOS/glTF/DuckCM.png"       -o models/gltf/DuckCM.png
-          curl -fsSL "$BASE_KHRONOS/glTF-Binary/Duck.glb"  -o models/glb/Duck.glb
-          curl -fsSL "$BASE_ALEC/teapot.obj"               -o models/obj/teapot.obj
-          curl -fsSL "$BASE_ALEC/suzanne.obj"              -o models/obj/suzanne.obj
-          curl -fsSL "$BASE_ALEC/xyzrgb_dragon.obj"        -o models/obj/xyzrgb_dragon.obj
-          curl -fsSL "$BASE_BUNNY/bunny.stl"               -o models/stl/Stanford_Bunny.stl
+          curl -fsSL "$BASE_KHRONOS/glTF-Binary/Duck.glb" -o bench/Duck.glb
+          curl -fsSL "$BASE_BUNNY/bunny.stl"              -o bench/Stanford_Bunny.stl
 
       - name: Test
         env:
@@ -260,5 +253,5 @@ jobs:
           UBSAN_OPTIONS: ${{ matrix.ubsan_options }}
           TSAN_OPTIONS: ${{ matrix.tsan_options }}
         run: |
-          ./build/rasterminal --bench 500 --bench-warmup 50 models/glb/Duck.glb
-          ./build/rasterminal --bench 500 --bench-warmup 50 models/stl/Stanford_Bunny.stl
+          ./build/rasterminal --bench 500 --bench-warmup 50 bench/Duck.glb
+          ./build/rasterminal --bench 500 --bench-warmup 50 bench/Stanford_Bunny.stl

@@ -1,27 +1,40 @@
 #include "loader_util.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  SHIPPED OBJ MODELS
-// ═══════════════════════════════════════════════════════════════════════════
-
-TEST(shipped, obj_cube_with_mtl)
-{
-    Mesh m = load_ok("models/obj/cube.obj");
-    // cube.mtl defines multiple materials; index 0 is always default.
-    if (m.materials.size() < 2)
-        ASSERT_FAIL("cube.obj should load materials from cube.mtl");
-}
-
-TEST(shipped, obj_cube_quad_triangulation)
-{
-    Mesh m = load_ok("models/obj/cube.obj");
-    // 6 quad faces each fan-triangulated to 2 → 12 triangles total.
-    ASSERT_EQ(m.triangles.size(), size_t{12});
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 //  HAND-CRAFTED VALID OBJ — exercises specific format features in isolation
 // ═══════════════════════════════════════════════════════════════════════════
+
+TEST(obj_valid, mtl_multi_material_loaded)
+{
+    TmpFile mtl(tmp_path("rast_cube.mtl"),
+                "newmtl red\nKd 0.9 0.1 0.1\n"
+                "newmtl blue\nKd 0.1 0.2 0.9\n");
+    TmpFile obj(tmp_path("rast_cube.obj"),
+                "mtllib rast_cube.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                "usemtl red\nf 1 2 3\n"
+                "usemtl blue\nf 1 2 4\n");
+    Mesh m = load_ok(obj.path);
+    // Two usemtl directives → at least 2 non-default materials loaded.
+    if (m.materials.size() < 2)
+        ASSERT_FAIL("multi-material OBJ should produce at least 2 materials");
+}
+
+TEST(obj_valid, quad_multi_face_triangulates_to_twelve)
+{
+    // 6 quads (a cube) fan-triangulated → 12 triangles.
+    TmpFile t(tmp_path("rast_cube6q.obj"),
+              "v -1 -1  1\nv  1 -1  1\nv  1  1  1\nv -1  1  1\n"
+              "v -1 -1 -1\nv  1 -1 -1\nv  1  1 -1\nv -1  1 -1\n"
+              "f 1 2 3 4\n"
+              "f 5 6 7 8\n"
+              "f 1 2 6 5\n"
+              "f 3 4 8 7\n"
+              "f 1 4 8 5\n"
+              "f 2 3 7 6\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{12});
+}
 
 TEST(obj_valid, single_triangle)
 {
