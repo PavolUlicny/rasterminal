@@ -233,7 +233,18 @@ jobs:
         run: cmake --build build --config Debug -j
 
       - name: Download models
-        run: cmake -P scripts/download_models.cmake
+        run: |
+          BASE_KHRONOS="https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck"
+          BASE_ALEC="https://raw.githubusercontent.com/alecjacobson/common-3d-test-models/master/data"
+          BASE_BUNNY="https://raw.githubusercontent.com/reprap-io/reprapio_stanford_bunny/master"
+          curl -fsSL "$BASE_KHRONOS/glTF/Duck.gltf"        -o models/gltf/Duck.gltf
+          curl -fsSL "$BASE_KHRONOS/glTF/Duck0.bin"        -o models/gltf/Duck0.bin
+          curl -fsSL "$BASE_KHRONOS/glTF/DuckCM.png"       -o models/gltf/DuckCM.png
+          curl -fsSL "$BASE_KHRONOS/glTF-Binary/Duck.glb"  -o models/glb/Duck.glb
+          curl -fsSL "$BASE_ALEC/teapot.obj"               -o models/obj/teapot.obj
+          curl -fsSL "$BASE_ALEC/suzanne.obj"              -o models/obj/suzanne.obj
+          curl -fsSL "$BASE_ALEC/xyzrgb_dragon.obj"        -o models/obj/xyzrgb_dragon.obj
+          curl -fsSL "$BASE_BUNNY/bunny.stl"               -o models/stl/Stanford_Bunny.stl
 
       - name: Test
         env:
