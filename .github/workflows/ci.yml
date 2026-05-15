@@ -238,3 +238,12 @@ jobs:
           UBSAN_OPTIONS: ${{ matrix.ubsan_options }}
           TSAN_OPTIONS: ${{ matrix.tsan_options }}
         run: ctest --test-dir build -C Debug --output-on-failure
+
+      - name: Bench (full-pipeline sanitizer coverage)
+        env:
+          ASAN_OPTIONS: ${{ matrix.asan_options }}
+          UBSAN_OPTIONS: ${{ matrix.ubsan_options }}
+          TSAN_OPTIONS: ${{ matrix.tsan_options }}
+        run: |
+          ./build/rasterminal --bench 500 --bench-warmup 50 models/glb/Duck.glb
+          ./build/rasterminal --bench 500 --bench-warmup 50 models/stl/Stanford_Bunny.stl
