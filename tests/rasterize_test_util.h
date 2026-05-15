@@ -8,8 +8,9 @@
 #include <string>
 
 // Redirects stdout to /dev/null for the duration of its lifetime.
-// Must outlive any Framebuffer in the same scope so that the Framebuffer
-// ctor/dtor ANSI escape codes are silenced.
+// Use for tests that call Framebuffer::resize() or Framebuffer::present(),
+// which write to stdout regardless of headless mode.  Tests that only
+// construct, draw, and read back a Framebuffer should use headless=true instead.
 struct FdRedirect
 {
     int saved_out;

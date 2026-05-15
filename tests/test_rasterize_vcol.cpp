@@ -60,8 +60,7 @@ static void rast_phong_vcol(Framebuffer &fb,
 // Catches: has_vcol flag silently ignored (always-on tinting).
 TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     mat.ambient = {1.0f, 1.0f, 1.0f};
     mat.diffuse = {1.0f, 1.0f, 1.0f};
@@ -79,8 +78,7 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 // Catches: the has_vcol branch never executes.
 TEST(rasterize_phong, has_vcol_true_tints_ambient)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     mat.ambient = {1.0f, 1.0f, 1.0f};
     mat.diffuse = {1.0f, 1.0f, 1.0f};
@@ -101,14 +99,13 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
 // (wrong material copy, lost specular, double-multiply, etc.).
 TEST(rasterize_phong, white_vcol_matches_no_vcol)
 {
-    FdRedirect r;
     Material mat{};
     mat.ambient = {0.7f, 0.5f, 0.3f};
     mat.diffuse = {0.7f, 0.5f, 0.3f};
     mat.specular = {0.0f, 0.0f, 0.0f};
     vec3 white{1.0f, 1.0f, 1.0f};
 
-    Framebuffer fb_off(40, 20), fb_on(40, 20);
+    Framebuffer fb_off(40, 20, /*headless=*/true), fb_on(40, 20, /*headless=*/true);
     rast_phong_vcol(fb_off, white, white, white, false, 1.0f, 1.0f, 1.0f, mat, nullptr);
     rast_phong_vcol(fb_on, white, white, white, true, 1.0f, 1.0f, 1.0f, mat, nullptr);
 
@@ -123,8 +120,7 @@ TEST(rasterize_phong, white_vcol_matches_no_vcol)
 // Catches: vcol interpolation broken (constant, swapped indices, wrong weights).
 TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     mat.ambient = {1.0f, 1.0f, 1.0f};
     mat.diffuse = {1.0f, 1.0f, 1.0f};
@@ -143,8 +139,7 @@ TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
 // Catches: vcol interpolation regressed to plain barycentric (much redder result).
 TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     mat.ambient = {1.0f, 1.0f, 1.0f};
     mat.diffuse = {1.0f, 1.0f, 1.0f};
@@ -167,8 +162,7 @@ TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
 //          (the bug the `if (use_mat == &mat)` guard prevents).
 TEST(rasterize_phong, vcol_combined_with_diffuse_texture)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     mat.ambient = {1.0f, 1.0f, 1.0f};
     mat.diffuse = {1.0f, 1.0f, 1.0f};

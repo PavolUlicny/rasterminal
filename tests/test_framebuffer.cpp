@@ -8,29 +8,25 @@
 
 TEST(framebuffer, test_and_set_depth_rejects_negative_x)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     ASSERT_FALSE(fb.test_and_set_depth(-1, 0, 0.5f));
 }
 
 TEST(framebuffer, test_and_set_depth_rejects_x_at_width)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     ASSERT_FALSE(fb.test_and_set_depth(fb.width(), 0, 0.5f));
 }
 
 TEST(framebuffer, test_and_set_depth_rejects_negative_y)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     ASSERT_FALSE(fb.test_and_set_depth(0, -1, 0.5f));
 }
 
 TEST(framebuffer, test_and_set_depth_rejects_y_at_height)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     ASSERT_FALSE(fb.test_and_set_depth(0, fb.height(), 0.5f));
 }
 
@@ -38,8 +34,7 @@ TEST(framebuffer, test_and_set_depth_rejects_y_at_height)
 
 TEST(framebuffer, set_pixel_oob_silently_ignored)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     // OOB writes must not corrupt adjacent in-bounds pixels.
     fb.set_pixel(-1, 0, {1, 2, 3});
     fb.set_pixel(fb.width(), 0, {1, 2, 3});
@@ -63,8 +58,7 @@ TEST(framebuffer, set_pixel_oob_silently_ignored)
 
 TEST(framebuffer, clear_fills_all_pixels_with_bg)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     fb.clear({10, 20, 30});
     for (int y = 0; y < fb.height(); ++y)
     {
@@ -80,8 +74,7 @@ TEST(framebuffer, clear_fills_all_pixels_with_bg)
 
 TEST(framebuffer, clear_resets_depth_to_infinity)
 {
-    FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     // Write a finite depth so depth[2,2] < +inf.
     ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.5f));
     // After clear, depth should be +inf again — any finite value passes.
@@ -94,7 +87,7 @@ TEST(framebuffer, clear_resets_depth_to_infinity)
 TEST(framebuffer, resize_resets_depth_to_infinity)
 {
     FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.3f));
     fb.resize(8, 8);
     // After resize, depth must be +inf — large finite value must pass.
@@ -104,7 +97,7 @@ TEST(framebuffer, resize_resets_depth_to_infinity)
 TEST(framebuffer, resize_to_same_size_is_idempotent)
 {
     FdRedirect rd;
-    Framebuffer fb(6, 6);
+    Framebuffer fb(6, 6, /*headless=*/true);
     fb.resize(6, 6);
     // Basic operations must still work after a no-op resize.
     fb.set_pixel(3, 3, {77, 88, 99});
@@ -118,7 +111,7 @@ TEST(framebuffer, resize_to_same_size_is_idempotent)
 TEST(framebuffer, resize_sequence_clears_each_time)
 {
     FdRedirect rd;
-    Framebuffer fb(10, 10);
+    Framebuffer fb(10, 10, /*headless=*/true);
 
     // Write something into the initial 10×10.
     fb.set_pixel(5, 5, {1, 2, 3});
@@ -146,7 +139,7 @@ TEST(framebuffer, resize_sequence_clears_each_time)
 TEST(framebuffer, zero_size_construction_present_does_not_crash)
 {
     FdRedirect rd;
-    Framebuffer fb(0, 0);
+    Framebuffer fb(0, 0, /*headless=*/true);
     ASSERT_EQ(fb.width(), 0);
     ASSERT_EQ(fb.height(), 0);
     fb.clear();
@@ -160,7 +153,7 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     // the guard `prow + 1 < m_height ? prow + 1 : prow` exercises the
     // bottom-row fallback path when height is odd.
     FdRedirect rd;
-    Framebuffer fb(2, 3);
+    Framebuffer fb(2, 3, /*headless=*/true);
     ASSERT_EQ(fb.width(), 2);
     ASSERT_EQ(fb.height(), 3);
     fb.set_pixel(0, 2, {100, 150, 200}); // row 2 — the lone odd row
@@ -221,7 +214,7 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
     // First present() takes the full-redraw path; second takes the dirty path
     // with most cells clean.  Verifies the dirty path doesn't crash or corrupt.
     FdRedirect rd;
-    Framebuffer fb(4, 4);
+    Framebuffer fb(4, 4, /*headless=*/true);
     fb.set_pixel(0, 0, {255, 0, 0});
     fb.present(); // full-redraw path; swaps m_color ↔ m_prev_color
 

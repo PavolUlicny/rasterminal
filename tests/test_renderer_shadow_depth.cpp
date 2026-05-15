@@ -95,7 +95,7 @@ TEST(renderer, phong_shadow_map_darkens_occluded_pixel)
     r.mode = ShadingMode::Phong;
 
     // Baseline: no shadow map.
-    Framebuffer fb_lit(40, 20);
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
     fb_lit.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_lit);
     ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
@@ -105,7 +105,7 @@ TEST(renderer, phong_shadow_map_darkens_occluded_pixel)
 
     // Shadow map built from full scene (receiver+occluder) so frustum covers both.
     ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
-    Framebuffer fb_shadow(40, 20);
+    Framebuffer fb_shadow(40, 20, /*headless=*/true);
     fb_shadow.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
@@ -125,7 +125,7 @@ TEST(renderer, flat_shadow_map_darkens_occluded_pixel)
     Renderer r;
     r.mode = ShadingMode::Flat;
 
-    Framebuffer fb_lit(40, 20);
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
     fb_lit.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_lit);
     ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
@@ -134,7 +134,7 @@ TEST(renderer, flat_shadow_map_darkens_occluded_pixel)
         ASSERT_FAIL("Flat lit baseline R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
 
     ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
-    Framebuffer fb_shadow(40, 20);
+    Framebuffer fb_shadow(40, 20, /*headless=*/true);
     fb_shadow.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
@@ -154,7 +154,7 @@ TEST(renderer, gouraud_shadow_map_darkens_occluded_pixel)
     Renderer r;
     r.mode = ShadingMode::Gouraud;
 
-    Framebuffer fb_lit(40, 20);
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
     fb_lit.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_lit);
     ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
@@ -163,7 +163,7 @@ TEST(renderer, gouraud_shadow_map_darkens_occluded_pixel)
         ASSERT_FAIL("Gouraud lit baseline R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
 
     ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
-    Framebuffer fb_shadow(40, 20);
+    Framebuffer fb_shadow(40, 20, /*headless=*/true);
     fb_shadow.clear();
     r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
@@ -184,7 +184,7 @@ TEST(renderer, shadow_map_no_occluder_no_false_darkening)
     r.mode = ShadingMode::Phong;
 
     ShadowMap sm = build_shadow_map(receiver, light);
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(receiver, cam, &light, 1, ambient, fb, &sm);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -209,12 +209,12 @@ TEST(renderer, n_lights_zero_discards_shadow_map)
     r.mode = ShadingMode::Phong;
 
     // n_lights=0 with non-null shadow_map — must not crash; result = ambient only.
-    Framebuffer fb_sm(40, 20);
+    Framebuffer fb_sm(40, 20, /*headless=*/true);
     fb_sm.clear();
     r.render(receiver, cam, &light, 0, ambient, fb_sm, &sm);
 
     // n_lights=0 with nullptr — baseline.
-    Framebuffer fb_null(40, 20);
+    Framebuffer fb_null(40, 20, /*headless=*/true);
     fb_null.clear();
     r.render(receiver, cam, &light, 0, ambient, fb_null, nullptr);
 
@@ -241,7 +241,7 @@ TEST(renderer, phong_multi_light_only_key_shadowed)
 
     Renderer r;
     r.mode = ShadingMode::Phong;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(receiver, cam, lights, 2, ambient, fb, &sm);
 
@@ -268,7 +268,7 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
 
     Renderer r;
     r.mode = ShadingMode::Gouraud;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(receiver, cam, lights, 2, ambient, fb, &sm);
 
@@ -366,7 +366,7 @@ TEST(renderer, phong_depth_order_independent)
     Renderer r(1);
     r.mode = ShadingMode::Phong;
 
-    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    Framebuffer fb_cf(40, 20, /*headless=*/true), fb_ff(40, 20, /*headless=*/true);
     fb_cf.clear();
     fb_ff.clear();
 
@@ -404,7 +404,7 @@ TEST(renderer, gouraud_depth_order_independent)
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
 
-    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    Framebuffer fb_cf(40, 20, /*headless=*/true), fb_ff(40, 20, /*headless=*/true);
     fb_cf.clear();
     fb_ff.clear();
 
@@ -442,7 +442,7 @@ TEST(renderer, flat_depth_order_independent)
     Renderer r(1);
     r.mode = ShadingMode::Flat;
 
-    Framebuffer fb_cf(40, 20), fb_ff(40, 20);
+    Framebuffer fb_cf(40, 20, /*headless=*/true), fb_ff(40, 20, /*headless=*/true);
     fb_cf.clear();
     fb_ff.clear();
 
@@ -484,7 +484,7 @@ TEST(renderer, depth_value_matches_closer_triangle)
     Renderer r(1);
     r.mode = ShadingMode::Phong;
 
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     Mesh m = make_two_z_triangles(false); // farther first
     r.render(m, cam, &light, 1, ambient, fb);

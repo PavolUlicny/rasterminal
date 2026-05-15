@@ -110,14 +110,13 @@ static Mesh make_fully_behind_triangle()
 // clip_near produces 2 output tris → pixels must be drawn (MT path).
 TEST(renderer, near_clip_one_vertex_behind_renders)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_straddling_triangle_one_behind();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
@@ -128,14 +127,13 @@ TEST(renderer, near_clip_one_vertex_behind_renders)
 // clip_near produces 1 output tri → pixels must be drawn (MT path).
 TEST(renderer, near_clip_two_vertices_behind_renders)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_straddling_triangle_two_behind();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
@@ -145,12 +143,11 @@ TEST(renderer, near_clip_two_vertices_behind_renders)
 // G3: all three vertices behind near plane → clip_near returns 0 → no pixels (MT path).
 TEST(renderer, near_clip_fully_behind_draws_nothing)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_fully_behind_triangle();
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.1f, 0.1f, 0.1f}, fb);
     if (count_drawn_pixels(fb) != 0)
@@ -161,12 +158,11 @@ TEST(renderer, near_clip_fully_behind_draws_nothing)
 // Covers the separate clip_near call in the wireframe branch (renderer.cpp:430).
 TEST(renderer, near_clip_wireframe_straddling_renders)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     Mesh mesh = make_straddling_triangle_one_behind();
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     if (count_drawn_pixels(fb) == 0)
@@ -176,12 +172,11 @@ TEST(renderer, near_clip_wireframe_straddling_renders)
 // G5: wireframe path with all vertices behind → no pixels.
 TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     Mesh mesh = make_fully_behind_triangle();
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     if (count_drawn_pixels(fb) != 0)
@@ -193,7 +188,6 @@ TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
 // camera.near_plane in the MT dispatch path (renderer.cpp:480).
 TEST(renderer, near_clip_uses_camera_near_plane_value)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle(); // all vertices at z=0, clip w=5
@@ -201,7 +195,7 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
     cam.near_plane = 10.0f; // all w=5 < 10 → clip_near returns 0 for every tri
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) != 0)
@@ -269,14 +263,13 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
 // Catches: chunk-loop early exit → only ~12% of grid processed.
 TEST(renderer, many_triangles_grid_renders_expected_coverage)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     int drawn = count_drawn_pixels(fb);
@@ -288,13 +281,12 @@ TEST(renderer, many_triangles_grid_renders_expected_coverage)
 // Catches: worker data race, cursor double-claim, band ordering bug.
 TEST(renderer, many_triangles_consistent_across_thread_counts)
 {
-    FdRedirect rd;
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
 
-    Framebuffer fb1(40, 20), fb4(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb4(40, 20, /*headless=*/true);
     fb1.clear();
     fb4.clear();
     {
@@ -319,7 +311,6 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
 // Catches: m_tri_cursor not reset → second render claims 0 work → empty fb2.
 TEST(renderer, many_triangles_repeated_render_resets_cursor)
 {
-    FdRedirect rd;
     Renderer r(2);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_grid_mesh(16, 16);
@@ -327,7 +318,7 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
 
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
     fb2.clear();
     r.render(mesh, cam, &light, 1, ambient, fb1);
@@ -346,7 +337,6 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
 // the previous frame and draws the grid again.
 TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 {
-    FdRedirect rd;
     Renderer r(2);
     r.mode = ShadingMode::Gouraud;
     Mesh grid = make_grid_mesh(16, 16);
@@ -356,7 +346,7 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
 
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
     fb2.clear();
     r.render(grid, cam, &light, 1, ambient, fb1);
@@ -445,13 +435,12 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
 // Catches: ao dropped from ClipVert construction or Flat face_ao path.
 TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -465,13 +454,12 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
 // a bright pixel when ao=1, making the uniform-zero tests falsifiable.
 TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(1.0f, 1.0f, 1.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -484,13 +472,12 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
 // Catches: Flat picking a single vertex's ao instead of averaging.
 TEST(renderer, flat_ao_averaged_across_vertices)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -505,13 +492,12 @@ TEST(renderer, flat_ao_averaged_across_vertices)
 // Catches: ao dropped from any of the three Gouraud compute_lighting calls.
 TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -525,13 +511,12 @@ TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
 // Catches: Gouraud hardcoding ao=1 or using the wrong vertex's ao.
 TEST(renderer, gouraud_ao_interpolates_across_triangle)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
 
@@ -551,13 +536,12 @@ TEST(renderer, gouraud_ao_interpolates_across_triangle)
 // Catches: ao not copied into rt.ph.aoa/b/c or not forwarded to rasterize_phong.
 TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -570,13 +554,12 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 // Catches: Phong using a uniform ao or hardcoding ao=1 per pixel.
 TEST(renderer, phong_ao_interpolates_per_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
     vec3 ambient{0.8f, 0.0f, 0.0f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
 
@@ -598,14 +581,13 @@ TEST(renderer, phong_ao_interpolates_per_pixel)
 // Catches: a regression multiplying AO into the diffuse term.
 TEST(renderer, ao_does_not_affect_direct_diffuse)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Camera cam = make_test_camera();
     Light light = make_key_light_z({0.5f, 0.0f, 0.0f});
     vec3 ambient{0.0f, 0.0f, 0.0f};
 
-    Framebuffer fb0(40, 20), fb1(40, 20);
+    Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
     fb0.clear();
     fb1.clear();
 

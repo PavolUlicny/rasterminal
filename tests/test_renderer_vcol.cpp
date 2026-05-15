@@ -71,13 +71,12 @@ static Mesh make_vcol_triangle(vec3 vca, vec3 vcb, vec3 vcc, bool has_colors = t
 //          rt.ph.vcola/b/c not propagated to rasterize_phong.
 TEST(renderer, phong_vcol_uniform_red_tints_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_vcol_triangle({1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f}); // white key from +z
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -92,7 +91,6 @@ TEST(renderer, phong_vcol_uniform_red_tints_pixel)
 // Catches: flag ignored (always-on tinting from vertex_colors array).
 TEST(renderer, phong_vcol_flag_false_no_tint)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     // has_colors=false: data present but flag off.
@@ -100,7 +98,7 @@ TEST(renderer, phong_vcol_flag_false_no_tint)
                                    /*has_colors=*/false);
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -116,13 +114,12 @@ TEST(renderer, phong_vcol_flag_false_no_tint)
 // Catches: vcol collapsed to a single vertex (e.g. always vcola).
 TEST(renderer, phong_vcol_per_vertex_interpolation)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_vcol_triangle({1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f});
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -139,13 +136,12 @@ TEST(renderer, phong_vcol_per_vertex_interpolation)
 //          not tinted.
 TEST(renderer, flat_vcol_uniform_tints_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_vcol_triangle({1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -166,9 +162,8 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
     vec3 ambient{0.1f, 0.1f, 0.1f};
 
     // A: has_vertex_colors=true, all white.
-    Framebuffer fb_a(40, 20);
+    Framebuffer fb_a(40, 20, /*headless=*/true);
     {
-        FdRedirect rd;
         Renderer r(1);
         r.mode = ShadingMode::Flat;
         Mesh mesh = make_vcol_triangle({1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f});
@@ -177,9 +172,8 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
     }
 
     // B: has_vertex_colors=false baseline.
-    Framebuffer fb_b(40, 20);
+    Framebuffer fb_b(40, 20, /*headless=*/true);
     {
-        FdRedirect rd;
         Renderer r(1);
         r.mode = ShadingMode::Flat;
         Mesh mesh = make_unit_triangle();
@@ -204,13 +198,12 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
 // Catches: gouraud_mat lambda broken (gvcol_mat not tinted, or wrong mat returned).
 TEST(renderer, gouraud_vcol_uniform_tints_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_vcol_triangle({1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -230,9 +223,8 @@ TEST(renderer, gouraud_vcol_white_matches_no_vcol)
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.1f, 0.1f, 0.1f};
 
-    Framebuffer fb_a(40, 20);
+    Framebuffer fb_a(40, 20, /*headless=*/true);
     {
-        FdRedirect rd;
         Renderer r(1);
         r.mode = ShadingMode::Gouraud;
         Mesh mesh = make_vcol_triangle({1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 1.0f});
@@ -240,9 +232,8 @@ TEST(renderer, gouraud_vcol_white_matches_no_vcol)
         r.render(mesh, cam, &light, 1, ambient, fb_a);
     }
 
-    Framebuffer fb_b(40, 20);
+    Framebuffer fb_b(40, 20, /*headless=*/true);
     {
-        FdRedirect rd;
         Renderer r(1);
         r.mode = ShadingMode::Gouraud;
         Mesh mesh = make_unit_triangle();
@@ -269,14 +260,13 @@ TEST(renderer, gouraud_vcol_white_matches_no_vcol)
 // Catches: gvcol_mat reuse producing wrong colour on the second/third vertex.
 TEST(renderer, gouraud_vcol_mixed_white_and_color)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     // v0=white, v1=red, v2=red — two red vertices dominate the triangle interior.
     Mesh mesh = make_vcol_triangle({1.0f, 1.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, {0.1f, 0.1f, 0.1f}, fb);
 
@@ -294,12 +284,11 @@ TEST(renderer, gouraud_vcol_mixed_white_and_color)
 //          consuming vcol data.
 TEST(renderer, wireframe_vcol_does_not_affect_output)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     Mesh mesh = make_vcol_triangle({1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f});
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     // Wireframe draws edges regardless of vcol; just confirm it renders without crash.

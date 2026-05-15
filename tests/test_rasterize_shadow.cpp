@@ -91,13 +91,12 @@ static void rast_phong_shadow(Framebuffer &fb,
 // Catches: nullptr short-circuit broken, or a lit query still uses shad color.
 TEST(rasterize, shadow_lit_position_matches_nullptr)
 {
-    FdRedirect r;
     Light light = make_light_z_shadow();
     ShadowMap sm = build_shadow_map(make_occluder_z0(), light);
     vec3 above{0.0f, 0.0f, 10.0f};
     vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
 
-    Framebuffer fb_null(40, 20), fb_sm(40, 20);
+    Framebuffer fb_null(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_shadow(fb_null, above, above, above, red, blue, nullptr);
     rast_shadow(fb_sm, above, above, above, red, blue, &sm);
 
@@ -111,13 +110,12 @@ TEST(rasterize, shadow_lit_position_matches_nullptr)
 // Catches: shadow lerp inverted, col/shad swapped, or sf never reaches 1.
 TEST(rasterize, shadow_occluded_position_uses_shad_color)
 {
-    FdRedirect r;
     Light light = make_light_z_shadow();
     ShadowMap sm = build_shadow_map(make_occluder_z0(), light);
     vec3 below{0.0f, 0.0f, -5.0f};
     vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
 
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     rast_shadow(fb, below, below, below, red, blue, &sm);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -135,7 +133,6 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
 // Catches: Phong shadow query crashes, or sf<=0 branch alters the result.
 TEST(rasterize_phong, shadow_lit_position_matches_nullptr)
 {
-    FdRedirect r;
     Light key{};
     key.direction = {0.0f, 0.0f, 1.0f};
     key.color = {1.0f, 0.0f, 0.0f};
@@ -146,7 +143,7 @@ TEST(rasterize_phong, shadow_lit_position_matches_nullptr)
     ShadowMap sm = build_shadow_map(make_occluder_z0(), make_light_z_shadow());
     vec3 above{0.0f, 0.0f, 10.0f};
 
-    Framebuffer fb_null(40, 20), fb_sm(40, 20);
+    Framebuffer fb_null(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_phong_shadow(fb_null, above, above, above, &key, 1, mat, nullptr);
     rast_phong_shadow(fb_sm, above, above, above, &key, 1, mat, &sm);
 
@@ -164,7 +161,6 @@ TEST(rasterize_phong, shadow_lit_position_matches_nullptr)
 // Catches: key-light-exclusion branch dropped → key light leaks into shadow.
 TEST(rasterize_phong, shadow_occluded_position_excludes_key_light)
 {
-    FdRedirect r;
     Light lights[2];
     lights[0].direction = {0.0f, 0.0f, 1.0f};
     lights[0].color = {1.0f, 0.0f, 0.0f};
@@ -177,7 +173,7 @@ TEST(rasterize_phong, shadow_occluded_position_excludes_key_light)
     ShadowMap sm = build_shadow_map(make_occluder_z0(), make_light_z_shadow());
     vec3 below{0.0f, 0.0f, -5.0f};
 
-    Framebuffer fb_nosm(40, 20), fb_sm(40, 20);
+    Framebuffer fb_nosm(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_phong_shadow(fb_nosm, below, below, below, lights, 2, mat, nullptr);
     rast_phong_shadow(fb_sm, below, below, below, lights, 2, mat, &sm);
 

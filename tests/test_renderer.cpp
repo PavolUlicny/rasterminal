@@ -34,12 +34,11 @@ TEST(renderer, constructor_thread_count_clamping)
 // B1: front-facing triangle draws pixels in wireframe mode.
 TEST(renderer, wireframe_visible_triangle_drawn)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
@@ -48,13 +47,12 @@ TEST(renderer, wireframe_visible_triangle_drawn)
 // B2: backface culled in wireframe mode → no pixels drawn.
 TEST(renderer, wireframe_backface_culled)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     r.cull_backfaces = true;
     Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
@@ -63,13 +61,12 @@ TEST(renderer, wireframe_backface_culled)
 // B3: culling disabled → backface still renders.
 TEST(renderer, wireframe_culling_disabled_renders_backface)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     r.cull_backfaces = false;
     Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
@@ -78,13 +75,12 @@ TEST(renderer, wireframe_culling_disabled_renders_backface)
 // B4: wireframe_color is honoured — every drawn pixel must match.
 TEST(renderer, wireframe_uses_wireframe_color)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
     r.wireframe_color = {255, 0, 0}; // red
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
 
@@ -118,14 +114,13 @@ TEST(renderer, wireframe_uses_wireframe_color)
 // C1: Flat shading produces a lit centre pixel.
 TEST(renderer, flat_shading_renders_lit_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
     vec3 ambient{0.05f, 0.05f, 0.05f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -141,14 +136,13 @@ TEST(renderer, flat_shading_renders_lit_pixel)
 // C2: Gouraud shading produces a lit centre pixel.
 TEST(renderer, gouraud_shading_renders_lit_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
     vec3 ambient{0.05f, 0.05f, 0.05f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -164,14 +158,13 @@ TEST(renderer, gouraud_shading_renders_lit_pixel)
 // C3: Phong shading produces a lit centre pixel.
 TEST(renderer, phong_shading_renders_lit_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
     vec3 ambient{0.05f, 0.05f, 0.05f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -189,7 +182,6 @@ TEST(renderer, phong_shading_renders_lit_pixel)
 // D1: backface triangle is culled — no pixels drawn in Phong mode.
 TEST(renderer, mt_backface_culled)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
@@ -197,7 +189,7 @@ TEST(renderer, mt_backface_culled)
     Camera cam = make_test_camera();
     Light light = make_key_light_z();
     vec3 ambient{0.05f, 0.05f, 0.05f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
@@ -206,7 +198,6 @@ TEST(renderer, mt_backface_culled)
 // D2: double-sided material bypasses culling — pixels drawn even for a backface.
 TEST(renderer, mt_double_sided_renders_backface)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
@@ -215,7 +206,7 @@ TEST(renderer, mt_double_sided_renders_backface)
     Camera cam = make_test_camera();
     // Ambient-only so color is non-zero even with flip_normals darkening diffuse.
     vec3 ambient{0.5f, 0.5f, 0.5f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
@@ -227,13 +218,12 @@ TEST(renderer, mt_double_sided_renders_backface)
 // E1: empty mesh completes without hanging; framebuffer stays undrawn.
 TEST(renderer, empty_mesh_completes)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh;
     mesh.materials.push_back(Material{}); // at least one material required
     Camera cam = make_test_camera();
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
@@ -242,7 +232,6 @@ TEST(renderer, empty_mesh_completes)
 // E2: rendering the same scene twice gives matching pixels (deterministic).
 TEST(renderer, repeated_render_deterministic)
 {
-    FdRedirect rd;
     Renderer r; // default thread count
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle();
@@ -250,7 +239,7 @@ TEST(renderer, repeated_render_deterministic)
     Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
     vec3 ambient{0.05f, 0.05f, 0.05f};
 
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
     fb2.clear();
     r.render(mesh, cam, &light, 1, ambient, fb1);
@@ -268,14 +257,13 @@ TEST(renderer, repeated_render_deterministic)
 // Checks: y=3 (band 0), y=7 (band 1), y=10 (band 2), y=17 (band 3).
 TEST(renderer, large_triangle_spans_all_bands)
 {
-    FdRedirect rd;
     Renderer r(4);
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.2f, 0.2f, 0.2f};
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -294,7 +282,6 @@ TEST(renderer, large_triangle_spans_all_bands)
 // F1: n_lights=0 → ambient-only output; passing a non-null shadow_map must not crash.
 TEST(renderer, zero_lights_renders_ambient_only)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
@@ -306,7 +293,7 @@ TEST(renderer, zero_lights_renders_ambient_only)
     ShadowMap sm;
     sm.clear();
 
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb, &sm);
 
@@ -326,7 +313,6 @@ TEST(renderer, zero_lights_renders_ambient_only)
 // green; with show_texture=false the pixel is white (white light × white mat).
 TEST(renderer, show_texture_toggle_changes_pixel)
 {
-    FdRedirect rd;
     Renderer r(1);
     r.mode = ShadingMode::Phong;
 
@@ -342,13 +328,13 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     vec3 ambient{0.0f, 0.0f, 0.0f};                     // no ambient so tex colour is clear
 
     // Render with texture enabled.
-    Framebuffer fb_tex(40, 20);
+    Framebuffer fb_tex(40, 20, /*headless=*/true);
     fb_tex.clear();
     r.show_texture = true;
     r.render(mesh, cam, &light, 1, ambient, fb_tex);
 
     // Render with texture disabled.
-    Framebuffer fb_notex(40, 20);
+    Framebuffer fb_notex(40, 20, /*headless=*/true);
     fb_notex.clear();
     r.show_texture = false;
     r.render(mesh, cam, &light, 1, ambient, fb_notex);
@@ -483,7 +469,7 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
     Renderer r;
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -504,7 +490,7 @@ TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
     Renderer r;
     r.mode = ShadingMode::Gouraud;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -525,7 +511,7 @@ TEST(renderer, flat_double_sided_back_face_lit_correctly)
     Renderer r;
     r.mode = ShadingMode::Flat;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -548,7 +534,7 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
     Renderer r;
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = false;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -570,7 +556,7 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
     Renderer r;
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = false;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -593,7 +579,7 @@ TEST(renderer, double_sided_front_face_lit_normally)
     Renderer r;
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
 
@@ -615,7 +601,7 @@ TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
     Renderer r;
     r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
 
@@ -640,7 +626,7 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
     Renderer r;
     r.mode = ShadingMode::Wireframe;
     r.cull_backfaces = true;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
 

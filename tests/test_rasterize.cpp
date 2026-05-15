@@ -22,8 +22,7 @@ static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_ma
 
 TEST(draw_line, horizontal)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {2.0f, 5.0f, 0.5f}, {8.0f, 5.0f, 0.5f}, Color{255, 255, 255});
 
     for (int x = 2; x <= 8; ++x)
@@ -36,8 +35,7 @@ TEST(draw_line, horizontal)
 
 TEST(draw_line, vertical)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {5.0f, 2.0f, 0.5f}, {5.0f, 8.0f, 0.5f}, Color{255, 255, 255});
 
     for (int y = 2; y <= 8; ++y)
@@ -50,8 +48,7 @@ TEST(draw_line, vertical)
 
 TEST(draw_line, diagonal)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {1.0f, 1.0f, 0.5f}, {7.0f, 7.0f, 0.5f}, Color{255, 255, 255});
 
     for (int i = 1; i <= 7; ++i)
@@ -60,8 +57,7 @@ TEST(draw_line, diagonal)
 
 TEST(draw_line, single_pixel)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {5.0f, 5.0f, 0.3f}, {5.0f, 5.0f, 0.3f}, Color{255, 0, 0});
 
     ASSERT_TRUE(was_drawn(fb, 5, 5));
@@ -75,16 +71,14 @@ TEST(draw_line, depth_closer_wins)
 {
     // Far line (z=0.7) drawn first; near line (z=0.3) second — near must win.
     {
-        FdRedirect r;
-        Framebuffer fb(20, 10);
+        Framebuffer fb(20, 10, /*headless=*/true);
         draw_line(fb, {2.0f, 5.0f, 0.7f}, {8.0f, 5.0f, 0.7f}, Color{255, 0, 0});
         draw_line(fb, {2.0f, 5.0f, 0.3f}, {8.0f, 5.0f, 0.3f}, Color{0, 0, 255});
         assert_depth_near(fb, 5, 5, 0.3f, 0.05f);
     }
     // Near line (z=0.3) drawn first; far (z=0.7) drawn second — near must still win.
     {
-        FdRedirect r;
-        Framebuffer fb(20, 10);
+        Framebuffer fb(20, 10, /*headless=*/true);
         draw_line(fb, {2.0f, 5.0f, 0.3f}, {8.0f, 5.0f, 0.3f}, Color{0, 0, 255});
         draw_line(fb, {2.0f, 5.0f, 0.7f}, {8.0f, 5.0f, 0.7f}, Color{255, 0, 0});
         assert_depth_near(fb, 5, 5, 0.3f, 0.05f);
@@ -93,8 +87,7 @@ TEST(draw_line, depth_closer_wins)
 
 TEST(draw_line, out_of_bounds_no_crash)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     // Line starts off-screen at (-5,-5) and ends on-screen at (7,7).
     draw_line(fb, {-5.0f, -5.0f, 0.5f}, {7.0f, 7.0f, 0.5f}, Color{255, 255, 255});
 
@@ -104,8 +97,7 @@ TEST(draw_line, out_of_bounds_no_crash)
 
 TEST(draw_line, reversed_endpoints_same_pixels)
 {
-    FdRedirect r;
-    Framebuffer fb1(20, 10), fb2(20, 10);
+    Framebuffer fb1(20, 10, /*headless=*/true), fb2(20, 10, /*headless=*/true);
     draw_line(fb1, {2.0f, 5.0f, 0.5f}, {8.0f, 5.0f, 0.5f}, Color{255, 255, 255});
     draw_line(fb2, {8.0f, 5.0f, 0.5f}, {2.0f, 5.0f, 0.5f}, Color{255, 255, 255});
     for (int x = 2; x <= 8; x++)
@@ -117,8 +109,7 @@ TEST(draw_line, reversed_endpoints_same_pixels)
 
 TEST(draw_line, fully_offscreen_draws_nothing)
 {
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {-10.0f, -10.0f, 0.5f}, {-5.0f, -5.0f, 0.5f}, Color{255, 255, 255});
     // No pixel inside the framebuffer should have been touched.
     for (int y = 0; y < fb.height(); y++)
@@ -133,8 +124,7 @@ TEST(draw_line, fully_offscreen_draws_nothing)
 
 TEST(rasterize, triangle_fill_covers_interior)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 0, fb.height() - 1);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // clearly inside
@@ -143,8 +133,7 @@ TEST(rasterize, triangle_fill_covers_interior)
 
 TEST(rasterize, respects_y_band)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     // y_min=6, y_max=12: pixel (20,4) is inside the triangle but below the band.
     rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 6, 12);
 
@@ -160,16 +149,14 @@ TEST(rasterize, depth_closer_wins)
 
     // Far drawn first, near second — near must win (depth test passes for second).
     {
-        FdRedirect r;
-        Framebuffer fb(40, 20);
+        Framebuffer fb(40, 20, /*headless=*/true);
         rast(fb, sa_far, sb_far, sc_far, 0, fb.height() - 1);
         rast(fb, sa_near, sb_near, sc_near, 0, fb.height() - 1);
         assert_depth_near(fb, 20, 10, 0.2f, 0.05f);
     }
     // Near drawn first, far second — near must still win (depth test rejects far).
     {
-        FdRedirect r;
-        Framebuffer fb(40, 20);
+        Framebuffer fb(40, 20, /*headless=*/true);
         rast(fb, sa_near, sb_near, sc_near, 0, fb.height() - 1);
         rast(fb, sa_far, sb_far, sc_far, 0, fb.height() - 1);
         assert_depth_near(fb, 20, 10, 0.2f, 0.05f);
@@ -178,8 +165,7 @@ TEST(rasterize, depth_closer_wins)
 
 TEST(rasterize, degenerate_collinear_skipped)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     // All three vertices on the same horizontal line — denom=0, setup_tri returns false.
     rast(fb, {5.0f, 5.0f, 0.5f}, {15.0f, 5.0f, 0.5f}, {10.0f, 5.0f, 0.5f}, 0, fb.height() - 1);
 
@@ -189,8 +175,7 @@ TEST(rasterize, degenerate_collinear_skipped)
 
 TEST(rasterize, entirely_off_screen_no_crash)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     // All vertices far off-screen in the negative direction.
     rast(fb, {-50.0f, -30.0f, 0.5f}, {-20.0f, -30.0f, 0.5f}, {-35.0f, -10.0f, 0.5f},
          0, fb.height() - 1);
@@ -202,8 +187,7 @@ TEST(rasterize, entirely_off_screen_no_crash)
 
 TEST(rasterize, subpixel_degenerate_no_crash)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     // Vertices spaced much less than one pixel — must not crash.
     rast(fb, {10.0f, 10.0f, 0.5f}, {10.3f, 10.0f, 0.5f}, {10.15f, 10.3f, 0.5f},
          0, fb.height() - 1);
@@ -213,8 +197,7 @@ TEST(rasterize, subpixel_degenerate_no_crash)
 
 TEST(rasterize_phong, fills_interior)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
 
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{0.0f, 0.0f, 0.0f};
@@ -245,8 +228,7 @@ TEST(rasterize_phong, fills_interior)
 
 TEST(rasterize_phong, respects_y_band)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
 
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{0.0f, 0.0f, 0.0f};
@@ -280,10 +262,10 @@ TEST(rasterize_phong, respects_y_band)
 TEST(framebuffer, resize_resets_depth_and_dimensions)
 {
     FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {2.0f, 5.0f, 0.4f}, {8.0f, 5.0f, 0.4f}, Color{255, 0, 0});
 
-    fb.resize(30, 16); // also emits \033[2J — still safe, stdout is redirected
+    fb.resize(30, 16); // resize() emits \033[2J regardless of headless — FdRedirect covers it
 
     ASSERT_EQ(fb.width(), 30);
     ASSERT_EQ(fb.height(), 16);
@@ -292,8 +274,7 @@ TEST(framebuffer, resize_resets_depth_and_dimensions)
 
 TEST(framebuffer, test_and_set_depth_semantics)
 {
-    FdRedirect r;
-    Framebuffer fb(10, 10);
+    Framebuffer fb(10, 10, /*headless=*/true);
 
     ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.5f));  // fresh: always succeeds
     ASSERT_FALSE(fb.test_and_set_depth(5, 5, 0.6f)); // deeper: fails
@@ -344,11 +325,10 @@ TEST(rasterize, equal_w_nontrivial_matches_w1)
 {
     // Colours: a=red, b=green, c=blue.  At pixel (20,10): ba=0.21875, bb=0.25, bc=0.53125.
     // Expected: R≈55, G≈63, B≈135 for any uniform w.
-    FdRedirect r;
     vec3 red{1.0f, 0.0f, 0.0f}, green{0.0f, 1.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
 
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     rast_colored(fb1, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, green, blue, 0, 19);
     rast_colored(fb2, sa, sb, sc, 5.0f, 5.0f, 5.0f, red, green, blue, 0, 19);
 
@@ -364,7 +344,6 @@ TEST(rasterize, equal_w_nontrivial_matches_w1)
 // aoc=1, others=0; ambient=(1,0,0).  At pixel (20,10): ao=bc=0.53125 → R≈135.
 TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
@@ -383,7 +362,7 @@ TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
                         0, 19);
     };
 
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     rph(fb1, 1.0f, 1.0f, 1.0f);
     rph(fb2, 5.0f, 5.0f, 5.0f);
 
@@ -398,8 +377,7 @@ TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
 // Using uniform wa=wb=wc=10 with constant depth 0.5 — depth must still be 0.5.
 TEST(rasterize, equal_w_does_not_change_depth)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 white{1.0f, 1.0f, 1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -415,8 +393,7 @@ TEST(rasterize, equal_w_does_not_change_depth)
 // Perspective-correct: R≈20, B≈234 (biased toward near blue vertex c).
 TEST(rasterize, unequal_w_color_biased_to_near_vertex)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -440,8 +417,7 @@ TEST(rasterize, unequal_w_color_biased_to_near_vertex)
 // Linear interpolation would give R≈120, G≈135.
 TEST(rasterize, unequal_w_screen_midpoint_not_attribute_midpoint)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 white{1.0f, 1.0f, 1.0f}, red{1.0f, 0.0f, 0.0f}, green{0.0f, 1.0f, 0.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -465,7 +441,6 @@ TEST(rasterize, unequal_w_screen_midpoint_not_attribute_midpoint)
 // The unequal-w run must be significantly brighter than the equal-w baseline.
 TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
@@ -484,7 +459,7 @@ TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
                         0, 19);
     };
 
-    Framebuffer fb_persp(40, 20), fb_linear(40, 20);
+    Framebuffer fb_persp(40, 20, /*headless=*/true), fb_linear(40, 20, /*headless=*/true);
     rph(fb_persp, 10.0f, 10.0f, 1.0f);
     rph(fb_linear, 1.0f, 1.0f, 1.0f);
 
@@ -504,8 +479,7 @@ TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
 // Also verifies no NaN/inf crashes from near-zero gamma/wc contribution.
 TEST(rasterize, extreme_w_ratio_numerical_stability)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -530,8 +504,7 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
 // Perspective-correct depth would be ≈0.751 — far outside the tolerance window.
 TEST(rasterize, unequal_w_depth_still_linear)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 white{1.0f, 1.0f, 1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.2f}, {36.0f, 2.0f, 0.2f}, {20.0f, 18.0f, 0.8f},
@@ -545,8 +518,7 @@ TEST(rasterize, unequal_w_depth_still_linear)
 // Same depth-linearity invariant in the Phong rasterizer path.
 TEST(rasterize_phong, unequal_w_depth_still_linear)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 zero{}, normal{0.0f, 0.0f, -1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
     Material mat{};
@@ -572,8 +544,7 @@ TEST(rasterize_phong, unequal_w_depth_still_linear)
 // correction does not bleed into the row-exclusion decision.
 TEST(rasterize, unequal_w_y_band_unaffected)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 white{1.0f, 1.0f, 1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -591,8 +562,7 @@ TEST(rasterize, bbox_clamps_to_right_edge)
 {
     // sb.x=100 is far off-screen; x1 clamps to width-1=19.
     // Pixels inside the framebuffer must still be drawn (no OOB write).
-    FdRedirect r;
-    Framebuffer fb(20, 20);
+    Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, {2.0f, 5.0f, 0.5f}, {100.0f, 5.0f, 0.5f}, {10.0f, 15.0f, 0.5f},
          0, fb.height() - 1);
     ASSERT_TRUE(was_drawn(fb, 8, 10)); // inside triangle and within framebuffer bounds
@@ -601,8 +571,7 @@ TEST(rasterize, bbox_clamps_to_right_edge)
 TEST(rasterize, bbox_clamps_to_bottom_edge)
 {
     // sc.y=100 is far off-screen; y1 clamps to height-1=19.
-    FdRedirect r;
-    Framebuffer fb(20, 20);
+    Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, {2.0f, 2.0f, 0.5f}, {18.0f, 2.0f, 0.5f}, {10.0f, 100.0f, 0.5f},
          0, fb.height() - 1);
     ASSERT_TRUE(was_drawn(fb, 10, 10)); // inside triangle and within framebuffer bounds
@@ -612,8 +581,7 @@ TEST(rasterize, triangle_entirely_left_of_screen_no_draw)
 {
     // All vertices off-screen to the left: x1=min(19,-10)=-10 < x0=max(0,-20)=0.
     // setup_tri returns false on the s.x0 > s.x1 early-return path.
-    FdRedirect r;
-    Framebuffer fb(20, 20);
+    Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, {-20.0f, 5.0f, 0.5f}, {-10.0f, 5.0f, 0.5f}, {-15.0f, 15.0f, 0.5f},
          0, fb.height() - 1);
     for (int y = 0; y < fb.height(); ++y)
@@ -624,8 +592,7 @@ TEST(rasterize, triangle_entirely_left_of_screen_no_draw)
 TEST(rasterize, single_row_band)
 {
     // y_min == y_max == 10: only row 10 is rasterized; adjacent rows untouched.
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 10, 10);
     ASSERT_TRUE(was_drawn(fb, 20, 10));  // in triangle, in band
     ASSERT_FALSE(was_drawn(fb, 20, 9));  // in triangle, outside band above
@@ -636,8 +603,7 @@ TEST(rasterize, band_disjoint_from_triangle_draws_nothing)
 {
     // Triangle spans y=2..18; band y_min=y_max=19 lies below it.
     // y0 = max(19,2)=19, y1 = min(19,18)=18 → s.y0 > s.y1 early return.
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     rast(fb, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 19, 19);
     for (int y = 0; y < fb.height(); ++y)
         for (int x = 0; x < fb.width(); ++x)
@@ -650,8 +616,7 @@ TEST(rasterize, three_identical_vertices_no_draw)
 {
     // All three vertices coincide — single-point zero-area; denom=0 < DEGEN_AREA_EPS.
     // Distinct from degenerate_collinear_skipped (three different points on a line).
-    FdRedirect r;
-    Framebuffer fb(20, 20);
+    Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, {10.0f, 10.0f, 0.5f}, {10.0f, 10.0f, 0.5f}, {10.0f, 10.0f, 0.5f},
          0, fb.height() - 1);
     for (int y = 9; y <= 11; ++y)
@@ -664,8 +629,7 @@ TEST(rasterize, winding_agnostic_cw_also_draws)
     // rasterize() is winding-agnostic: CW triangles fill the same interior pixels
     // as their CCW mirror. Backface culling is the renderer's responsibility, not
     // rasterize()'s — it must work correctly for both winding orders.
-    FdRedirect r;
-    Framebuffer fb1(40, 20), fb2(40, 20);
+    Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     rast(fb1, {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, 0, 19); // CCW
     rast(fb2, {4.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, 0, 19); // CW (b,c swapped)
     ASSERT_TRUE(was_drawn(fb1, 20, 10));
@@ -678,8 +642,7 @@ TEST(rasterize, color_above_one_clamps_to_255)
 {
     // vec3_to_color clamps each channel to [0,1] before * 255.
     // Colour (2,2,2) — HDR overflow — must yield (255,255,255).
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 hot{2.0f, 2.0f, 2.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -690,8 +653,7 @@ TEST(rasterize, color_above_one_clamps_to_255)
 TEST(rasterize, color_below_zero_clamps_to_0)
 {
     // Colour (-1,-1,-1) — underflow — must yield (0,0,0).
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 dark{-1.0f, -1.0f, -1.0f};
     rast_colored(fb,
                  {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},
@@ -705,8 +667,7 @@ TEST(draw_line, depth_interpolates_along_line)
 {
     // Endpoints z=0.2 and z=0.8; 8 steps → sz=0.075; midpoint (x=6) has z≈0.5.
     // Existing tests use constant depth — this verifies the sz accumulation.
-    FdRedirect r;
-    Framebuffer fb(20, 10);
+    Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, {2.0f, 5.0f, 0.2f}, {10.0f, 5.0f, 0.8f}, Color{255, 255, 255});
     assert_depth_near(fb, 6, 5, 0.5f, 0.02f);
 }
@@ -715,8 +676,7 @@ TEST(draw_line, steep_slope_dy_dominant)
 {
     // dy=10, dx=2 → steps=10 (y axis dominates); sx=0.2, sy=1.0.
     // Analytically: step 0 → (3,2), step 5 → (4,7), step 10 → (5,12).
-    FdRedirect r;
-    Framebuffer fb(20, 20);
+    Framebuffer fb(20, 20, /*headless=*/true);
     draw_line(fb, {3.0f, 2.0f, 0.5f}, {5.0f, 12.0f, 0.5f}, Color{255, 255, 255});
     ASSERT_TRUE(was_drawn(fb, 3, 2));  // step 0
     ASSERT_TRUE(was_drawn(fb, 4, 7));  // step 5: x=round(3+5*0.2)=round(4.0)=4
@@ -757,8 +717,7 @@ static void rast_phong_minimal(Framebuffer &fb,
 TEST(rasterize_phong, degenerate_collinear_no_crash)
 {
     // Three collinear vertices → denom=0 → setup_tri returns false; no pixels drawn.
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     rast_phong_minimal(fb,
                        {5.0f, 5.0f, 0.5f}, {15.0f, 5.0f, 0.5f}, {10.0f, 5.0f, 0.5f},
@@ -770,8 +729,7 @@ TEST(rasterize_phong, degenerate_collinear_no_crash)
 TEST(rasterize_phong, entirely_off_screen_no_crash)
 {
     // All vertices far off-screen; setup_tri returns false on bbox check.
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     rast_phong_minimal(fb,
                        {-50.0f, -30.0f, 0.5f}, {-20.0f, -30.0f, 0.5f}, {-35.0f, -10.0f, 0.5f},
@@ -785,8 +743,7 @@ TEST(rasterize_phong, no_lights_uses_ambient_only)
 {
     // n_lights=0, lights=nullptr → only ambient term: ambient * mat.ambient * ao.
     // ambient=(0.4,0.4,0.4), mat.ambient=(1,1,1), ao=1 → pixel≈(102,102,102).
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
     rast_phong_minimal(fb,
                        {4.0f, 2.0f, 0.5f}, {36.0f, 2.0f, 0.5f}, {20.0f, 18.0f, 0.5f},

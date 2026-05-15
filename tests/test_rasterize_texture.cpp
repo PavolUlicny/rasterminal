@@ -49,8 +49,7 @@ static void rast_tex(Framebuffer &fb,
 // Catches: texture multiply silently dropped.
 TEST(rasterize, solid_diffuse_texture_replaces_color)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex_rgba(1, 1, {255, 0, 0, 255});
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 white{1.0f, 1.0f, 1.0f};
@@ -70,8 +69,7 @@ TEST(rasterize, solid_diffuse_texture_replaces_color)
 // Catches: texture applied to wrong channel or in wrong multiply order.
 TEST(rasterize, texture_modulates_with_vertex_color)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex_rgba(1, 1, {255, 0, 0, 255});
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 green{0.0f, 1.0f, 0.0f};
@@ -90,8 +88,7 @@ TEST(rasterize, texture_modulates_with_vertex_color)
 // Catches: UV interpolation regressed to plain barycentric.
 TEST(rasterize, texture_uv_perspective_correct_unequal_w)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex_rgba(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 white{1.0f, 1.0f, 1.0f};
@@ -113,8 +110,7 @@ TEST(rasterize, texture_uv_perspective_correct_unequal_w)
 // Catches: V-flip removed (produces red) or doubled (also produces red).
 TEST(rasterize, texture_v_flip_convention)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex_rgba(1, 2, {255, 0, 0, 255, 0, 0, 255, 255});
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 white{1.0f, 1.0f, 1.0f};
@@ -134,8 +130,7 @@ TEST(rasterize, texture_v_flip_convention)
 // Catches: UV wrap removed (would clamp to blue instead of wrapping to red).
 TEST(rasterize, texture_uv_wrap)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex_rgba(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 white{1.0f, 1.0f, 1.0f};
@@ -158,7 +153,6 @@ TEST(rasterize, texture_uv_wrap)
 // Catches: texture not applied to ambient, or applied to diffuse only.
 TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
@@ -182,7 +176,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
                         0, 19);
     };
 
-    Framebuffer fb_notex(40, 20), fb_tex(40, 20);
+    Framebuffer fb_notex(40, 20, /*headless=*/true), fb_tex(40, 20, /*headless=*/true);
     rph(fb_notex, nullptr);
     rph(fb_tex, &gray_tex);
 
@@ -201,8 +195,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
 // Catches: Phong UV interpolation diverges from the Gouraud path (separate code).
 TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
 {
-    FdRedirect r;
-    Framebuffer fb(40, 20);
+    Framebuffer fb(40, 20, /*headless=*/true);
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
@@ -236,7 +229,6 @@ TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
 // Catches: tex multiply introduces precision loss or incorrect normalization.
 TEST(rasterize_phong, white_texture_matches_no_texture)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
@@ -260,7 +252,7 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
                         0, 19);
     };
 
-    Framebuffer fb_notex(40, 20), fb_tex(40, 20);
+    Framebuffer fb_notex(40, 20, /*headless=*/true), fb_tex(40, 20, /*headless=*/true);
     rph(fb_notex, nullptr);
     rph(fb_tex, &white_tex);
 
@@ -278,7 +270,6 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
 // Catches: stex dropped or applied additively instead of multiplicatively.
 TEST(rasterize_phong, specular_texture_zeroes_highlight)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{0.0f, 0.0f, 5.0f};
@@ -306,7 +297,7 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
                         0, 19);
     };
 
-    Framebuffer fb_nostex(40, 20), fb_stex(40, 20);
+    Framebuffer fb_nostex(40, 20, /*headless=*/true), fb_stex(40, 20, /*headless=*/true);
     rph(fb_nostex, nullptr);
     rph(fb_stex, &black_stex);
 
@@ -326,7 +317,6 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
 // Catches: nmap unpack removed, or TBN basis transposed/wrong handedness.
 TEST(rasterize_phong, normal_map_redirects_lighting)
 {
-    FdRedirect r;
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
     vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
     vec3 eye{0.0f, 0.0f, 5.0f};
@@ -353,7 +343,7 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
                         0, 19);
     };
 
-    Framebuffer fb_nonmap(40, 20), fb_nmap(40, 20);
+    Framebuffer fb_nonmap(40, 20, /*headless=*/true), fb_nmap(40, 20, /*headless=*/true);
     rph(fb_nonmap, nullptr);
     rph(fb_nmap, &nmap_tex);
 
