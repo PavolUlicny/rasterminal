@@ -1,4 +1,5 @@
 #include "loader_util.h"
+#include "inline_bmp.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  HAND-CRAFTED VALID OBJ — exercises specific format features in isolation
@@ -360,6 +361,12 @@ TEST(obj_valid, mtl_map_d_sets_alpha_cutoff)
     ASSERT_NEAR(m.materials[1].alpha_cutoff, 0.5f, 1e-6f);
 }
 
+// Note: the src_has_vcol guard in mesh_obj.cpp checks
+// attrib.colors.size() == attrib.vertices.size(). tinyobjloader either leaves
+// attrib.colors empty (no color data) or fills it with exactly the same
+// element count as attrib.vertices — the mismatched-non-empty case cannot
+// occur through valid OBJ input and there is no test for it.
+
 TEST(obj_valid, vertex_colors_extension)
 {
     // OBJ "v x y z r g b" extension: per-vertex RGB encoded directly in the v line.
@@ -477,4 +484,88 @@ TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
                              v.normal.z * v.normal.z;
         ASSERT_NEAR(len_sq, 1.0f, 0.01f);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TEXTURE SUCCESS PATHS — load_tex() with a real BMP on disk
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(obj_valid, mtl_map_kd_real_file_sets_diffuse_tex)
+{
+    // First test to exercise the load_tex success branch (mesh_obj.cpp:62-64):
+    // a real file is present, so load_tex pushes a Texture and returns index 0.
+    TmpFile bmp(tmp_path("rast_kd_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_kd_tex.mtl"),
+                "newmtl M\nKd 1 1 1\nmap_Kd rast_kd_tex.bmp\n");
+    TmpFile obj(tmp_path("rast_kd_tex.obj"),
+                "mtllib rast_kd_tex.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{1});
+}
+
+TEST(obj_valid, mtl_map_ks_real_file_sets_specular_tex)
+{
+    TmpFile bmp(tmp_path("rast_ks_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_ks_tex.mtl"),
+                "newmtl M\nKs 1 1 1\nmap_Ks rast_ks_tex.bmp\n");
+    TmpFile obj(tmp_path("rast_ks_tex.obj"),
+                "mtllib rast_ks_tex.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].specular_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{1});
+}
+
+TEST(obj_valid, mtl_map_kn_real_file_sets_normal_tex)
+{
+    // Exercises the !normal_texname.empty() true-branch success path.
+    // tinyobjloader's keyword for normal_texname is "norm" (not "map_Kn").
+    TmpFile bmp(tmp_path("rast_kn_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_kn_tex.mtl"),
+                "newmtl M\nKd 1 1 1\nnorm rast_kn_tex.bmp\n");
+    TmpFile obj(tmp_path("rast_kn_tex.obj"),
+                "mtllib rast_kn_tex.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_EQ(m.textures.size(), size_t{1});
+}
+
+TEST(obj_valid, mtl_map_bump_fallback_when_map_kn_absent)
+{
+    // Only map_Bump declared (no map_Kn) → normal_texname is empty →
+    // the else branch at mesh_obj.cpp:84 fires: load_tex(m.bump_texname).
+    TmpFile bmp(tmp_path("rast_bump_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_bump_tex.mtl"),
+                "newmtl M\nKd 1 1 1\nmap_Bump rast_bump_tex.bmp\n");
+    TmpFile obj(tmp_path("rast_bump_tex.obj"),
+                "mtllib rast_bump_tex.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_EQ(m.textures.size(), size_t{1});
+}
+
+TEST(obj_valid, face_without_usemtl_uses_default_material)
+{
+    // mtllib declares a material, but no usemtl → tinyobjloader sets mat_id=-1
+    // for the face → the mat_id < 0 branch fires → material_idx = 0 (default white).
+    TmpFile mtl(tmp_path("rast_no_usemtl.mtl"), "newmtl M\nKd 1 0 0\n");
+    TmpFile obj(tmp_path("rast_no_usemtl.obj"),
+                "mtllib rast_no_usemtl.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "f 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].material_idx, 0u);
 }
