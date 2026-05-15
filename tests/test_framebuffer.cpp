@@ -320,3 +320,37 @@ TEST(framebuffer, hud_cleared_after_set_is_omitted)
     ASSERT_TRUE(first_pos != std::string::npos);
     ASSERT_TRUE(out.find("\033[?7l", first_pos + 1) == std::string::npos);
 }
+
+// ─── incremental skip path ────────────────────────────────────────────────────
+
+TEST(framebuffer, incremental_single_skip_emits_cursor_advance)
+{
+    // After the first present() establishes m_prev_color, a second present() where
+    // a dirty cell starts a row and exactly one unchanged cell follows must emit
+    // \033[C (single-step cursor advance, not \033[1C) for the skip.
+    Framebuffer fb(4, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // full-redraw — establishes m_prev_color = all black
+
+    fb.clear();
+    fb.set_pixel(0, 0, {100, 0, 0}); // col 0 dirty
+    fb.set_pixel(2, 0, {0, 100, 0}); // col 2 dirty; col 1 unchanged → skip=1
+    fb.present();                    // incremental path fires skip=1 branch
+
+    ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
+}
+
+TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
+{
+    // When a dirty cell starts a row and multiple unchanged columns follow, the
+    // skip path must emit \033[NC with an explicit count, not the bare \033[C form.
+    Framebuffer fb(5, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // full-redraw
+
+    fb.clear();
+    fb.set_pixel(0, 0, {100, 0, 0}); // col 0 dirty; cols 1-4 unchanged → skip=4
+    fb.present();                    // incremental path fires skip>1 branch
+
+    ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
+}
