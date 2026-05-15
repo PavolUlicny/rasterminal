@@ -354,3 +354,106 @@ TEST(camera, spin_world_y_rotates_around_world_up)
 
     ASSERT_NEAR(c.eye().y, y_before, 1e-3f);
 }
+
+TEST(camera, spin_world_y_rotates_xz_correctly)
+{
+    // Identity orientation → eye on +Z. A +90° world-Y spin rotates +Z toward +X
+    // (right-hand rule around +Y: +Z → +X). Both distance and Y must be unchanged.
+    Camera c;
+    c.target = {0.0f, 0.0f, 0.0f};
+    c.distance = 5.0f;
+    c.orientation = quat::identity();
+    c.spin_world_y(to_radians(90.0f));
+    vec3 e = c.eye();
+    ASSERT_NEAR(e.x, 5.0f, EPS);
+    ASSERT_NEAR(e.y, 0.0f, EPS);
+    ASSERT_NEAR(e.z, 0.0f, EPS);
+}
+
+TEST(camera, spin_world_y_zero_is_noop)
+{
+    Camera c;
+    c.target = {0.0f, 0.0f, 0.0f};
+    c.distance = 5.0f;
+    c.orientation = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(37.0f));
+    vec3 e_before = c.eye();
+    c.spin_world_y(0.0f);
+    vec3 e_after = c.eye();
+    ASSERT_NEAR(e_after.x, e_before.x, EPS);
+    ASSERT_NEAR(e_after.y, e_before.y, EPS);
+    ASSERT_NEAR(e_after.z, e_before.z, EPS);
+}
+
+// ─── projection() additional degenerate inputs ────────────────────────────────
+
+TEST(camera, projection_zero_height_fallback)
+{
+    // pixel_height = 0 fails the guard → aspect = 1, no division by zero.
+    Camera c;
+    mat4 P = c.projection(100, 0);
+    ASSERT_TRUE(std::isfinite(P.m[0][0]));
+    ASSERT_TRUE(std::isfinite(P.m[1][1]));
+}
+
+TEST(camera, projection_negative_dimension_fallback)
+{
+    // Negative width fails pixel_width > 0 → aspect = 1 fallback.
+    Camera c;
+    mat4 P = c.projection(-1, 100);
+    ASSERT_TRUE(std::isfinite(P.m[0][0]));
+    ASSERT_TRUE(std::isfinite(P.m[1][1]));
+}
+
+// ─── view(eye_pos) overload ───────────────────────────────────────────────────
+
+TEST(camera, view_explicit_eye_pos_maps_to_origin)
+{
+    // The two-arg overload must use the supplied position, not recompute eye().
+    // We pass a position offset from the normal eye() — it must still map to origin.
+    Camera c;
+    c.target = {2.0f, 3.0f, 4.0f};
+    c.distance = 5.0f;
+    c.orientation = normalize(quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(50.0f)));
+    const vec3 custom_eye = c.target + vec3{0.0f, 2.0f, 6.0f};
+    mat4 V = c.view(custom_eye);
+    vec4 r = V * vec4{custom_eye.x, custom_eye.y, custom_eye.z, 1.0f};
+    ASSERT_NEAR(r.x, 0.0f, EPS);
+    ASSERT_NEAR(r.y, 0.0f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
+// ─── orbit() zero step ────────────────────────────────────────────────────────
+
+TEST(camera, orbit_zero_is_noop)
+{
+    Camera c;
+    c.target = {0.0f, 0.0f, 0.0f};
+    c.distance = 5.0f;
+    c.orientation = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(20.0f));
+    vec3 e_before = c.eye();
+    c.orbit(0.0f, 0.0f);
+    vec3 e_after = c.eye();
+    ASSERT_NEAR(e_after.x, e_before.x, EPS);
+    ASSERT_NEAR(e_after.y, e_before.y, EPS);
+    ASSERT_NEAR(e_after.z, e_before.z, EPS);
+}
+
+// ─── process_key() dt=0 ───────────────────────────────────────────────────────
+
+TEST(camera, process_key_dt_zero_is_noop)
+{
+    // With dt=0 both orbit and zoom steps compute zero delta → state unchanged.
+    Camera c;
+    c.distance = 3.0f;
+    c.orientation = quat::identity();
+    const vec3 e_before = c.eye();
+    const float d_before = c.distance;
+    for (auto key : {platform::KEY_A, platform::KEY_D, platform::KEY_W, platform::KEY_S,
+                     platform::KEY_PLUS, platform::KEY_MINUS})
+        c.process_key(key, 0.0f);
+    ASSERT_NEAR(c.distance, d_before, EPS);
+    vec3 e_after = c.eye();
+    ASSERT_NEAR(e_after.x, e_before.x, EPS);
+    ASSERT_NEAR(e_after.y, e_before.y, EPS);
+    ASSERT_NEAR(e_after.z, e_before.z, EPS);
+}
