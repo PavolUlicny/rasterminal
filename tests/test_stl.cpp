@@ -169,3 +169,101 @@ TEST(reject, stl_ascii_missing_third_vertex)
               "endsolid test\n");
     assert_rejects(t.path);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CORRECTNESS — verify loaded geometry values
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(stl_valid, ascii_vertex_positions_and_defaults)
+{
+    // Verify actual coordinate values, per-vertex ao, material index, and mesh
+    // defaults — the count-only tests above don't exercise any of this.
+    TmpFile t(tmp_path("rasterminal_test_pos.stl"),
+              "solid test\n"
+              "facet normal 0 0 1\n"
+              "  outer loop\n"
+              "    vertex 1 2 3\n"
+              "    vertex 4 5 6\n"
+              "    vertex 7 8 9\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    Mesh m = load_ok(t.path);
+
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.vertices.size(), size_t{3});
+    ASSERT_EQ(m.materials.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].material_idx, 0u);
+    ASSERT_FALSE(m.has_vertex_colors);
+
+    // Positions; stl_reader preserves declaration order for a single triangle.
+    ASSERT_NEAR(m.vertices[0].pos.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].pos.y, 2.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].pos.z, 3.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[1].pos.x, 4.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[2].pos.x, 7.0f, 1e-5f);
+
+    // ao is hardcoded to 1.0 in the expansion loop (STL has no AO data).
+    for (const Vertex &v : m.vertices)
+        ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
+}
+
+TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
+{
+    // STL face normals are read by stl_reader but discarded by our loader;
+    // compute_normals() always runs.  Use a deliberate wrong file normal so
+    // the test fails if file normals are ever accidentally applied.
+    //
+    // Geometry: (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal = (0,0,+1).
+    // File says normal 0 0 -1.  Loaded vertex normals must have z > 0.
+    TmpFile t(tmp_path("rasterminal_test_wrongnorm.stl"),
+              "solid test\n"
+              "facet normal 0 0 -1\n"
+              "  outer loop\n"
+              "    vertex 0 0 0\n"
+              "    vertex 1 0 0\n"
+              "    vertex 0 1 0\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    Mesh m = load_ok(t.path);
+    for (const Vertex &v : m.vertices)
+        ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+}
+
+TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
+{
+    // The loader re-expands stl_reader's deduplicated output to 3 unshared
+    // vertices per triangle. Verify counts and triangle index offsets for n=2.
+    std::string s(80, 'X');
+    emit_u32_le(s, 2); // two triangles
+    for (int tri = 0; tri < 2; tri++)
+    {
+        for (int i = 0; i < 3; i++)
+            emit_f32_le(s, 0.0f); // normal (ignored)
+        // Non-degenerate triangle, shifted per tri so no vertex deduplication.
+        emit_f32_le(s, static_cast<float>(tri * 10));
+        emit_f32_le(s, 0.0f);
+        emit_f32_le(s, 0.0f); // v0
+        emit_f32_le(s, static_cast<float>(tri * 10 + 1));
+        emit_f32_le(s, 0.0f);
+        emit_f32_le(s, 0.0f); // v1
+        emit_f32_le(s, static_cast<float>(tri * 10));
+        emit_f32_le(s, 1.0f);
+        emit_f32_le(s, 0.0f); // v2
+        s.push_back(0);
+        s.push_back(0); // attr
+    }
+    TmpFile t(tmp_path("rasterminal_test_2tri.stl"), s);
+    Mesh m = load_ok(t.path);
+
+    ASSERT_EQ(m.vertices.size(), size_t{6});
+    ASSERT_EQ(m.triangles.size(), size_t{2});
+    // Second triangle's indices must be offset by vert_base=3.
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+    ASSERT_EQ(m.triangles[1].v[0], 3u);
+    ASSERT_EQ(m.triangles[1].v[1], 4u);
+    ASSERT_EQ(m.triangles[1].v[2], 5u);
+}
