@@ -354,3 +354,109 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     if (fb_nmap.get_pixel(20, 10).r < 240)
         ASSERT_FAIL("with nmap: R too low -- redirected normal ~(1,0,0) should give full red diffuse");
 }
+
+// D2: degenerate tangent (tan parallel to normal) must not crash or produce NaN.
+// When tan=(0,0,1) == N=(0,0,1): Gram-Schmidt gives T=normalize(0,0,0)=(0,0,0),
+// B=cross(N,T)=(0,0,0). Mapped normal = T*nm.x + B*nm.y + N*nm.z = N*nm.z.
+// With nmap texel (128,128,255): nm≈(0,0,1) → normal≈N → same as no nmap.
+// The test verifies: (a) no crash, (b) pixel is drawn, (c) each channel in [0,255].
+TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 tan_degenerate{0.0f, 0.0f, 1.0f}; // same direction as normal → T=0 after Gram-Schmidt
+    vec3 eye{0.0f, 0.0f, 5.0f};
+    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+    Light light{};
+    light.direction = {0.0f, 0.0f, 1.0f};
+    light.color = {1.0f, 1.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+    Texture nmap_tex = make_tex_rgba(1, 1, {128, 128, 255, 255}); // nm≈(0,0,1) → near-identity
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                    zero, zero, zero,
+                    normal, normal, normal,
+                    tan_degenerate, tan_degenerate, tan_degenerate,
+                    uv, uv, uv,
+                    1.0f, 1.0f, 1.0f,
+                    white, white, white, false,
+                    eye, &light, 1, ambient, mat,
+                    nullptr, &nmap_tex, nullptr, nullptr,
+                    0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    // nmap texel (128,128,255): nm≈(0,0,1) → mapped normal≈N*nm.z≈N.
+    // Result should be close to normal-map-free lighting (bright, not black).
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 100)
+        ASSERT_FAIL("degenerate tangent: T/B=0 so normal falls back to N*nm.z≈N; "
+                    "expected bright pixel, got R=" +
+                    std::to_string(static_cast<int>(c.r)));
+}
+
+// ── Group E: diffuse + specular texture simultaneously ────────────────────────
+
+// E1: tex and stex both non-null. The if(tex||stex) block must apply both:
+//   mat_tex.diffuse  *= tex->sample_rgb()
+//   mat_tex.specular *= stex->sample_rgb()
+// Setup: mat.diffuse=(1,1,1), mat.specular=(1,1,1), mat.ambient=(1,1,1).
+//   tex = red (255,0,0) → diffuse and ambient become (1,0,0).
+//   stex = green (0,255,0) → specular becomes (0,1,0).
+// Light dir=(0,0,1), normal=(0,0,1), eye=(0,0,5) → N·L=1, H=N → peak specular.
+// With both textures: R comes from diffuse/ambient (red), G from specular (green).
+// Without stex (tex only): no green specular → G should be much lower.
+TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{0.0f, 0.0f, 5.0f};
+    vec3 ambient{1.0f, 1.0f, 1.0f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.shininess = 32.0f;
+    Light light{};
+    light.direction = {0.0f, 0.0f, 1.0f};
+    light.color = {1.0f, 1.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+    Texture red_tex = make_tex_rgba(1, 1, {255, 0, 0, 255});  // kills G+B diffuse/ambient
+    Texture grn_stex = make_tex_rgba(1, 1, {0, 255, 0, 255}); // kills R+B specular
+
+    auto rph = [&](Framebuffer &fb, const Texture *tex, const Texture *stex)
+    {
+        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        uv, uv, uv,
+                        1.0f, 1.0f, 1.0f,
+                        white, white, white, false,
+                        eye, &light, 1, ambient, mat,
+                        tex, nullptr, stex, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb_both(40, 20, /*headless=*/true), fb_texonly(40, 20, /*headless=*/true);
+    rph(fb_both, &red_tex, &grn_stex);
+    rph(fb_texonly, &red_tex, nullptr);
+
+    ASSERT_TRUE(was_drawn(fb_both, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_texonly, 20, 10));
+
+    Color both = fb_both.get_pixel(20, 10);
+    Color texonly = fb_texonly.get_pixel(20, 10);
+
+    // tex-only (red diffuse, white specular): B_specular=1 → B≈255.
+    // both (red diffuse, green specular): B_specular=0, B_diffuse=0 → B≈0.
+    // Green stex zeroes the blue specular channel; this is the distinguishing observable.
+    if (texonly.b < 200)
+        ASSERT_FAIL("tex-only: white specular should give high B, got B=" +
+                    std::to_string(static_cast<int>(texonly.b)));
+    if (both.b > 20)
+        ASSERT_FAIL("both textures: green stex zeroes B specular, expected B≈0, got B=" +
+                    std::to_string(static_cast<int>(both.b)));
+}
