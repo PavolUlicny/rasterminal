@@ -6,6 +6,21 @@
 #include <cstdint>
 #include <vector>
 
+// Minimal 1×1 red BMP: 14-byte file header + 40-byte DIB header + 4-byte pixel data.
+// Pixel stored as BGR (0x00, 0x00, 0xFF) + 1 row-padding byte.
+// stb_image decodes to RGBA: {255, 0, 0, 255}.
+static const uint8_t k1x1_red_bmp[] = {
+    // file header (14 bytes)
+    0x42, 0x4D, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00,
+    // DIB header (40 bytes)
+    0x28, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x18, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // pixel data: BGR red (0x00,0x00,0xFF) + 1 pad byte
+    0x00, 0x00, 0xFF, 0x00};
+
 // Build a Texture from a raw RGBA pixel buffer, bypassing stb_image.
 // Pixels are row-major, top-left first (same layout as Texture::pixels).
 static Texture make_tex(int w, int h, std::vector<uint8_t> rgba)
@@ -303,4 +318,48 @@ TEST(texture_load, load_from_memory_failure_preserves_previous_data)
     ASSERT_EQ(t.height, old_h);
     if (t.pixels != old_pixels)
         ASSERT_FAIL("load_from_memory() should leave pixels unchanged on failure");
+}
+
+// ─── success paths for load() and load_from_memory() ─────────────────────────
+
+TEST(texture_load, load_from_memory_valid_image_populates_texture)
+{
+    // Exercises the success branch of load_from_memory (lines 44-49 in texture.cpp).
+    Texture t;
+    ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
+    ASSERT_TRUE(t.valid());
+    ASSERT_EQ(t.width, 1);
+    ASSERT_EQ(t.height, 1);
+    ASSERT_EQ(t.pixels.size(), size_t{4});
+    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R
+    ASSERT_EQ(t.pixels[1], uint8_t{0});   // G
+    ASSERT_EQ(t.pixels[2], uint8_t{0});   // B
+}
+
+TEST(texture_load, load_valid_file_populates_texture)
+{
+    // Exercises the success branch of load() (lines 26-30 in texture.cpp).
+    TmpFile f(tmp_path("rasterminal_test_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    Texture t;
+    ASSERT_TRUE(t.load(f.path));
+    ASSERT_TRUE(t.valid());
+    ASSERT_EQ(t.width, 1);
+    ASSERT_EQ(t.height, 1);
+    ASSERT_EQ(t.pixels.size(), size_t{4});
+    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R
+    // Verify sampling works on the loaded data.
+    vec3 c = t.sample_rgb(0.5f, 0.5f);
+    ASSERT_NEAR(c.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(c.y, 0.0f, 1e-4f);
+    ASSERT_NEAR(c.z, 0.0f, 1e-4f);
+}
+
+TEST(texture_load, load_from_memory_success_overwrites_previous)
+{
+    // Complements load_from_memory_failure_preserves_previous_data: a SUCCESSFUL
+    // load must replace the existing texture, not leave the old data in place.
+    Texture t = solid(0, 255, 0); // green
+    ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
+    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R now 255 (was 0)
+    ASSERT_EQ(t.pixels[1], uint8_t{0});   // G now 0 (was 255)
 }
