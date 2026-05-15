@@ -177,3 +177,37 @@ TEST(clip_near, two_inside_b_outside_correct_output)
     ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f); // clipped edge
     ASSERT_NEAR(out[1][2].c.w, NEAR, 1e-5f); // clipped edge
 }
+
+TEST(clip_near, two_inside_c_outside_correct_output)
+{
+    // a and b inside, c outside — the !ic case performs no rotation.
+    // out[0] = {a, b, cross(b,c)};  out[1] = {a, cross(b,c), cross(a,c)}.
+    // Mirrors the !ia and !ib tests to ensure all three rotation branches are verified.
+    ClipVert a = make_cv(1.0f), b = make_cv(2.0f), c = make_cv(0.05f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
+    ASSERT_NEAR(out[0][0].c.w, 1.0f, 1e-5f); // a preserved
+    ASSERT_NEAR(out[0][1].c.w, 2.0f, 1e-5f); // b preserved
+    ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f); // cross(b,c) at near plane
+    ASSERT_NEAR(out[1][2].c.w, NEAR, 1e-5f); // cross(a,c) at near plane
+}
+
+TEST(clip_near, two_inside_uv_interpolated_at_both_crossings)
+{
+    // Verifies cross_edge UV interpolation in the n=2 path (two separate crossings).
+    // a inside: w=2, uv=(0,0).  b inside: w=2, uv=(1,0).  c outside: w=0, uv=(1,1).
+    // t = (NEAR - 2) / (0 - 2) = (0.1 - 2) / (0 - 2) = 0.95 for both edges.
+    // cross(b,c): uv = (1,0) + ((1,1)-(1,0))*0.95 = (1, 0.95)
+    // cross(a,c): uv = (0,0) + ((1,1)-(0,0))*0.95 = (0.95, 0.95)
+    ClipVert a = make_cv(2.0f, 0.0f, 0.0f);
+    ClipVert b = make_cv(2.0f, 1.0f, 0.0f);
+    ClipVert c = make_cv(0.0f, 1.0f, 1.0f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
+    // out[0][2] = cross(b, c)
+    ASSERT_NEAR(out[0][2].uv.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(out[0][2].uv.y, 0.95f, 1e-4f);
+    // out[1][2] = cross(a, c)
+    ASSERT_NEAR(out[1][2].uv.x, 0.95f, 1e-4f);
+    ASSERT_NEAR(out[1][2].uv.y, 0.95f, 1e-4f);
+}
