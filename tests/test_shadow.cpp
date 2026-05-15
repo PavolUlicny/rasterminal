@@ -440,3 +440,55 @@ TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
             sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
     ASSERT_NEAR(sm.in_shadow({-1.0f, -1.0f, 0.5f}), 1.0f, 1e-6f);
 }
+
+TEST(shadow, pcf_top_border_clamps_y_kernel_samples)
+{
+    // ndc = (0, −1, 0.5) → cx = 1024 (interior), cy = 0 (top border).
+    // else-branch fires because cy = 0, not > 0.
+    // dy ∈ {−1,0,+1} clamp to py ∈ {0,0,1}: dy=−1 and dy=0 share row 0.
+    // Setting only row 0 of the 3 center columns to 0.0 → 6 of 9 samples hit → 6/9.
+    // Fails if py is not clamped (dy=−1 would produce invalid access).
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    for (int px = 1023; px <= 1025; px++)
+        sm.depth[static_cast<size_t>(px)] = 0.0f; // row 0
+    ASSERT_NEAR(sm.in_shadow({0.0f, -1.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+}
+
+// ─── in_shadow NDC z below −1 ─────────────────────────────────────────────────
+
+TEST(shadow, in_shadow_ndc_z_below_neg_one_returns_lit)
+{
+    // ndc.z = −1.5 < −1.0 → NDC z bounds check → early-out returns 0 (lit).
+    // With depths set to −2.0, ref = −1.501 > −2.0 would be true without the
+    // check, producing sf = 1.0.  The check must fire to return 0.0.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    std::fill(sm.depth.begin(), sm.depth.end(), -2.0f);
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -1.5f}), 0.0f, 1e-6f);
+}
+
+// ─── Degenerate triangle in build ─────────────────────────────────────────────
+
+TEST(shadow, degenerate_triangle_skipped_no_depth_written)
+{
+    // Collinear vertices → face_n = (0,0,0) → denom = 0 → skipped via the
+    // |denom| < 1e-6 guard.  No depth is written so the depth buffer stays at
+    // 1.0 everywhere and any probe inside the frustum reports lit.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {0.0f, 0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, 0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {2.0f, 0.0f, 0.0f}; // collinear
+    m.vertices.push_back(v);
+    m.triangles.push_back({{0, 1, 2}});
+    m.materials.push_back({});
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    // No depth written → stored = 1.0; ref for any in-frustum point ≤ 0.999 < 1.0 → lit.
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+}
