@@ -113,7 +113,7 @@ inline vec3 compute_lighting(vec3 pos, vec3 normal,
 // assume_unit overloads: caller guarantees normal is already unit-length.
 // Flat face normals and Gouraud vertex normals are always unit after load;
 // skipping normalize() saves one sqrt per Flat triangle and per Gouraud vertex.
-inline vec3 compute_lighting(assume_unit_t, const vec3 &n, const vec3 &v,
+inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, const vec3 &n, const vec3 &v,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,
                              const Material &mat = {},
@@ -143,7 +143,7 @@ inline vec3 compute_lighting(assume_unit_t, const vec3 &n, const vec3 &v,
     return result;
 }
 
-inline vec3 compute_lighting(assume_unit_t, vec3 pos, const vec3 &normal,
+inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, vec3 pos, const vec3 &normal,
                              const vec3 &eye_pos,
                              const Light *lights, int n_lights,
                              const vec3 &ambient,

@@ -1,6 +1,7 @@
 #include "texture.h"
 
 #include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
