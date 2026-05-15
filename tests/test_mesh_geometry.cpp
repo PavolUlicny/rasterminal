@@ -275,3 +275,100 @@ TEST(normals, winding_order_determines_sign)
     ASSERT_TRUE(m1.vertices[0].normal.z > 0.9f);
     ASSERT_TRUE(m2.vertices[0].normal.z < -0.9f);
 }
+
+TEST(normals, area_weighted_averaging)
+{
+    // OBJ vertex 1 (m.vertices[0]) is shared by two triangles:
+    //   large XY triangle: face_normal magnitude ~100
+    //   small XZ triangle: face_normal magnitude ~0.01
+    // The accumulated normal is dominated by the large triangle → z > 0.99.
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 10 0 0\n"
+        "v 0 10 0\n"
+        "v 0.1 0 0\n"
+        "v 0 0 0.1\n"
+        "f 1 2 3\n"
+        "f 1 4 5\n";
+    TmpFile f(tmp_path("rast_norm_awt.obj"), obj);
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.vertices[0].normal.z > 0.99f);
+}
+
+// ─── compute_tangents: Z-up fallback branch ───────────────────────────────────
+
+TEST(tangents, fallback_z_up_branch_for_non_z_normal)
+{
+    // Normal along +Y: abs(n.z)=0 < 0.9 → up={0,0,1} → t=normalize(cross({0,1,0},{0,0,1}))={1,0,0}.
+    // Existing fallback tests use n=(0,0,1) which hits the X-up branch (abs(n.z)>=0.9);
+    // this covers the complementary Z-up branch.
+    const std::string obj =
+        "v 0 0 0\nv 1 0 0\nv 0 0 1\n"
+        "vn 0 1 0\nvn 0 1 0\nvn 0 1 0\n"
+        "f 1//1 2//2 3//3\n";
+    TmpFile f(tmp_path("rast_tan_yfb.obj"), obj);
+    Mesh m = load_ok(f.path);
+    for (size_t i = 0; i < m.tangents.size(); i++)
+    {
+        ASSERT_NEAR(m.tangents[i].length(), 1.0f, 1e-5f);
+        ASSERT_NEAR(dot(m.tangents[i], m.vertices[i].normal), 0.0f, 1e-5f);
+    }
+}
+
+// ─── compute_ao: missing branches ────────────────────────────────────────────
+
+TEST(ao, concave_vertex_darkened)
+{
+    // Pyramid pit: vertex 0 at origin, 4 rim vertices at z=1.
+    // Centroid of vertex 0's neighbors = (0,0,1); normal = (0,0,1);
+    // curvature = 1.0 → ao = 1 − clamp(0.5, 0, 0.15) = 0.85.
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 1 0 1\n"
+        "v 0 1 1\n"
+        "v -1 0 1\n"
+        "v 0 -1 1\n"
+        "f 1 2 3\n"
+        "f 1 3 4\n"
+        "f 1 4 5\n"
+        "f 1 5 2\n";
+    TmpFile f(tmp_path("rast_ao_concave.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    ASSERT_NEAR(m.vertices[0].ao, 0.85f, 1e-4f);
+}
+
+TEST(ao, all_neighbors_coincident_fallback)
+{
+    // All three vertices at the same position → centroid == vertex pos → d.length() < 1e-8 → ao=1.0.
+    const std::string obj = "v 0 0 0\nv 0 0 0\nv 0 0 0\nf 1 2 3\n";
+    TmpFile f(tmp_path("rast_ao_coinc.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
+        ASSERT_TRUE(std::isfinite(v.ao));
+    }
+}
+
+TEST(ao, disabled_skips_computation)
+{
+    // Concave geometry that gives ao=0.85 with ao=true, but ao=false bypasses
+    // compute_ao entirely → all vertices keep the loader's default ao=1.0.
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 1 0 1\n"
+        "v 0 1 1\n"
+        "v -1 0 1\n"
+        "v 0 -1 1\n"
+        "f 1 2 3\n"
+        "f 1 3 4\n"
+        "f 1 4 5\n"
+        "f 1 5 2\n";
+    TmpFile f(tmp_path("rast_ao_off.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/false));
+    for (const auto &v : m.vertices)
+        ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
+}
