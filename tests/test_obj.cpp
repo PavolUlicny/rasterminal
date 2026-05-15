@@ -436,3 +436,45 @@ TEST(obj_valid, failed_load_rollback_preserves_previous_mesh_state)
     ASSERT_NEAR(m.vertex_colors[0].x, before.vertex_colors[0].x, 1e-6f);
     ASSERT_NEAR(m.tangents[1].y, before.tangents[1].y, 1e-6f);
 }
+
+TEST(obj_valid, mtl_map_kn_normal_tex_missing_file)
+{
+    // map_Kn exercises the !normal_texname.empty() true branch in load_obj.
+    // File is absent so load_tex returns -1, but the branch is exercised and
+    // no crash occurs. Without this test, every material path goes through the
+    // bump_texname fallback (else branch) only.
+    TmpFile mtl(tmp_path("rast_mapkn.mtl"),
+                "newmtl M\nKd 1 1 1\nmap_Kn nonexistent_normal.png\n");
+    TmpFile obj(tmp_path("rast_mapkn.obj"),
+                "mtllib rast_mapkn.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].normal_tex, -1);
+}
+
+TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
+{
+    // First face has explicit vn references; second has none. This sets
+    // all_have_normals=false in get_vertex → compute_normals() runs at line 200.
+    // Without this, the !attrib.normals.empty() && !all_have_normals branch
+    // is never triggered — all prior tests either have all normals or none.
+    TmpFile t(tmp_path("rast_partnorm.obj"),
+              "v 0 0 0\n"
+              "v 1 0 0\n"
+              "v 0 1 0\n"
+              "v 0 0 1\n"
+              "vn 0 0 1\n"
+              "f 1//1 2//1 3//1\n"
+              "f 1 2 4\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{2});
+    for (const Vertex &v : m.vertices)
+    {
+        const float len_sq = v.normal.x * v.normal.x +
+                             v.normal.y * v.normal.y +
+                             v.normal.z * v.normal.z;
+        ASSERT_NEAR(len_sq, 1.0f, 0.01f);
+    }
+}
