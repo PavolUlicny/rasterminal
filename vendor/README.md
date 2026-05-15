@@ -6,7 +6,7 @@ All libraries are single-header (or minimal) and vendored directly. Do not edit 
 | --- | --- | --- | --- | --- |
 | stb_image | v2.30 | `31c1ad37456438565541f4919958214b6e762fb4` | <https://github.com/nothings/stb> | MIT / Unlicense (dual) |
 | cgltf | v1.15 | `bbeb5b0b070ddacddac6852fb72143eb68454937` | <https://github.com/jkuhlmann/cgltf> | MIT |
-| tinyply | 3.0 | `c13f5b06220487bf79db564a42d6b6dc7a5e92bf` | <https://github.com/ddiakopoulos/tinyply> | public domain |
+| tinyply | 3.0 | `c9bb690dfe5e9105961e9e28120c48c9ae084bc6` | <https://github.com/ddiakopoulos/tinyply> | public domain |
 | tinyobjloader | v2.0.0rc13 | `2945a967c5303b2c8c14174117c45f3302591150` | <https://github.com/tinyobjloader/tinyobjloader> | MIT |
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 
