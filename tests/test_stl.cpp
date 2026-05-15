@@ -267,3 +267,31 @@ TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
     ASSERT_EQ(m.triangles[1].v[1], 4u);
     ASSERT_EQ(m.triangles[1].v[2], 5u);
 }
+
+TEST(reject, stl_header_read_under_5_bytes)
+{
+    // fread(header, 1, 80, ...) returns 3 < 5 — the early-exit guard fires before
+    // any ASCII/binary detection.  stl_too_small_for_header uses 6 bytes (returns
+    // 6 ≥ 5) so that test exercises stl_reader failure, not this guard.
+    TmpFile t(tmp_path("rasterminal_test_3b.stl"), "abc");
+    assert_rejects(t.path);
+}
+
+TEST(stl_valid, ascii_header_leading_whitespace)
+{
+    // Header starts with a space before "solid" — the whitespace-skip loop must
+    // advance h past the space before strncmp fires, otherwise is_ascii stays
+    // false and the binary-size check rejects the (non-binary) file.
+    TmpFile t(tmp_path("rasterminal_test_wsp.stl"),
+              " solid test\n"
+              "facet normal 0 0 1\n"
+              "  outer loop\n"
+              "    vertex 0 0 0\n"
+              "    vertex 1 0 0\n"
+              "    vertex 0 1 0\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+}
