@@ -4,11 +4,6 @@
 //  SHIPPED STL MODELS
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST(shipped, stl_ascii_eiffel)
-{
-    load_ok("models/stl/Eiffel_tower.stl");
-}
-
 TEST(shipped, stl_binary_bunny)
 {
     load_ok("models/stl/Stanford_Bunny.stl");

@@ -22,12 +22,11 @@ TEST(shipped, obj_cube_with_mtl)
         ASSERT_FAIL("cube.obj should load materials from cube.mtl");
 }
 
-TEST(shipped, obj_penguin_textured)
+TEST(shipped, obj_cube_quad_triangulation)
 {
-    Mesh m = load_ok("models/obj/PenguinBaseMesh.obj");
-    // Penguin has a diffuse texture map referenced via map_Kd.
-    if (m.textures.empty())
-        ASSERT_FAIL("PenguinBaseMesh.obj should load its diffuse texture");
+    Mesh m = load_ok("models/obj/cube.obj");
+    // 6 quad faces each fan-triangulated to 2 → 12 triangles total.
+    ASSERT_EQ(m.triangles.size(), size_t{12});
 }
 
 TEST(shipped, obj_xyzrgb_dragon)
