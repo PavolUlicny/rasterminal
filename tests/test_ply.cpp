@@ -565,3 +565,145 @@ TEST(ply_valid, ascii_vertex_index_singular_alias)
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UV PROPERTY NAME: u/v (primary alias)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_uv_u_v_property_names)
+{
+    // "u"/"v" is the first alias tried — prior tests only exercise the fallback
+    // aliases ("s"/"t" and "texture_u"/"texture_v").
+    TmpFile t(tmp_path("rast_uv_uv.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float u\nproperty float v\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0 0.1 0.9\n"
+              "1 0 0 0.5 0.5\n"
+              "0 1 0 0.75 0.25\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_NEAR(m.vertices[0].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].uv.y, 0.9f, 1e-5f);
+    ASSERT_NEAR(m.vertices[1].uv.x, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FLOAT-TYPED VERTEX COLORS (rd_col FLOAT32 and FLOAT64 paths)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_vertex_colors_float32)
+{
+    // "property float red/green/blue" exercises the FLOAT32 default path in
+    // rd_col. Prior tests only cover the UINT8 (÷255) path.
+    TmpFile t(tmp_path("rast_vcol_f32.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float red\nproperty float green\nproperty float blue\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0 0.5 0.25 0.75\n"
+              "1 0 0 0.5 0.25 0.75\n"
+              "0 1 0 0.5 0.25 0.75\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.25f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.75f, 1e-5f);
+}
+
+TEST(ply_valid, binary_le_vertex_colors_float64)
+{
+    // "property double red/green/blue" exercises the FLOAT64 path in rd_col.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property double red\nproperty double green\nproperty double blue\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n";
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(s, static_cast<float>(i));
+        emit_f32_le(s, 0.0f);
+        emit_f32_le(s, 0.0f);
+        emit_f64_le(s, 0.2);
+        emit_f64_le(s, 0.4);
+        emit_f64_le(s, 0.6);
+    }
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    TmpFile t(tmp_path("rast_vcol_f64.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_NEAR(m.vertex_colors[0].x, 0.2f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.4f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.6f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE COLOR r/g/b ALIAS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_face_colors_r_g_b_alias)
+{
+    // Face element using "r"/"g"/"b" rather than "red"/"green"/"blue" — the
+    // second alias branch in load_ply was previously dead.
+    TmpFile t(tmp_path("rast_fcol_rgb.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar r\nproperty uchar g\nproperty uchar b\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 2 100 150 200\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 100.0f / 255.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 150.0f / 255.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 200.0f / 255.0f, 1e-4f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE COLORS + FILE NORMALS: compute_normals always runs
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, face_colors_with_file_normals_recomputes)
+{
+    // When face colors are present, compute_normals() always runs regardless
+    // of whether the file also supplies vertex normals. Deliberate wrong file
+    // normal (0,0,-1) verifies the recompute path overwrites it with (0,0,+1).
+    TmpFile t(tmp_path("rast_fcol_norm.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float nx\nproperty float ny\nproperty float nz\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0  0 0 -1\n"
+              "1 0 0  0 0 -1\n"
+              "0 1 0  0 0 -1\n"
+              "3 0 1 2 255 0 0\n");
+    Mesh m = load_ok(t.path);
+    // Geometry (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal is (0,0,+1).
+    for (const Vertex &v : m.vertices)
+        ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+}
