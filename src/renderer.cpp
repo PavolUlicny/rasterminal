@@ -266,10 +266,10 @@ void Renderer::worker_func(int t)
                                 }
                             }
                             rt.fg.col_a = rt.fg.col_b = rt.fg.col_c =
-                                compute_lighting(fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
+                                compute_lighting(assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
                             if (shadow_map)
                                 rt.fg.shad_a = rt.fg.shad_b = rt.fg.shad_c =
-                                    compute_lighting(fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
+                                    compute_lighting(assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
                         }
                         else // Gouraud
                         {
@@ -285,26 +285,26 @@ void Renderer::worker_func(int t)
                                     gvcol_mat.ambient = gvcol_mat.ambient * vcol;
                                     return gvcol_mat;
                                 };
-                                rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
-                                rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
-                                rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
+                                rt.fg.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
+                                rt.fg.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
+                                rt.fg.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
                                 if (shadow_map)
                                 {
-                                    rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
-                                    rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
-                                    rt.fg.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                    rt.fg.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
+                                    rt.fg.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
+                                    rt.fg.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
                                 }
                             }
                             else
                             {
-                                rt.fg.col_a = compute_lighting(a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
-                                rt.fg.col_b = compute_lighting(b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
-                                rt.fg.col_c = compute_lighting(c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                                rt.fg.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
+                                rt.fg.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
+                                rt.fg.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
                                 if (shadow_map)
                                 {
-                                    rt.fg.shad_a = compute_lighting(a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                                    rt.fg.shad_b = compute_lighting(b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                                    rt.fg.shad_c = compute_lighting(c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                    rt.fg.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                                    rt.fg.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                                    rt.fg.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
                                 }
                             }
                         }
