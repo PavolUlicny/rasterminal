@@ -6,7 +6,17 @@
 *.lo
 *.o
 *.obj
-!models/**/*.obj
+!models/obj/cube.obj
+
+# Downloaded test models (fetch with: cmake -P scripts/download_models.cmake)
+models/obj/teapot.obj
+models/obj/suzanne.obj
+models/obj/xyzrgb_dragon.obj
+models/stl/Stanford_Bunny.stl
+models/gltf/Duck.gltf
+models/gltf/Duck0.bin
+models/gltf/DuckCM.png
+models/glb/Duck.glb
 
 # Precompiled Headers
 *.gch

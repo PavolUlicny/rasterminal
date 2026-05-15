@@ -138,15 +138,6 @@ TEST(texture, v_near_one_maps_toward_top_image_row)
 
 // ─── Texture::load / load_from_memory ────────────────────────────────────────
 
-TEST(texture_load, load_valid_file)
-{
-    Texture t;
-    ASSERT_TRUE(t.load("models/gltf/DuckCM.png"));
-    ASSERT_TRUE(t.valid());
-    ASSERT_TRUE(t.width > 0);
-    ASSERT_TRUE(t.height > 0);
-}
-
 TEST(texture_load, load_nonexistent_returns_false)
 {
     Texture t;
@@ -175,36 +166,6 @@ TEST(texture_load, load_from_memory_garbage_returns_false)
     const uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF};
     ASSERT_FALSE(t.load_from_memory(garbage, sizeof(garbage)));
     ASSERT_FALSE(t.valid());
-}
-
-TEST(texture_load, load_from_memory_valid_png)
-{
-    std::FILE *f = std::fopen("models/gltf/DuckCM.png", "rb");
-    ASSERT_TRUE(f != nullptr);
-    std::fseek(f, 0, SEEK_END);
-    const size_t sz = static_cast<size_t>(std::ftell(f));
-    std::fseek(f, 0, SEEK_SET);
-    std::vector<uint8_t> buf(sz);
-    const size_t nread = std::fread(buf.data(), 1, sz, f);
-    ASSERT_EQ(nread, sz);
-    std::fclose(f);
-
-    Texture t;
-    ASSERT_TRUE(t.load_from_memory(buf.data(), sz));
-    ASSERT_TRUE(t.valid());
-    ASSERT_TRUE(t.width > 0);
-    ASSERT_TRUE(t.height > 0);
-}
-
-TEST(texture_load, reload_overwrites_previous_data)
-{
-    // Manually seed a 1×1 texture, then load a real file over it.
-    Texture t = solid(255, 0, 0);
-    ASSERT_EQ(t.width, 1);
-    ASSERT_TRUE(t.load("models/gltf/DuckCM.png"));
-    ASSERT_TRUE(t.valid());
-    // DuckCM.png is not 1×1, so dimensions must have changed.
-    ASSERT_TRUE(t.width > 1 || t.height > 1);
 }
 
 // ─── bilinear 2×2 full interpolation ─────────────────────────────────────────

@@ -4,16 +4,6 @@
 //  SHIPPED OBJ MODELS
 // ═══════════════════════════════════════════════════════════════════════════
 
-TEST(shipped, obj_suzanne)
-{
-    load_ok("models/obj/suzanne.obj");
-}
-
-TEST(shipped, obj_teapot)
-{
-    load_ok("models/obj/teapot.obj");
-}
-
 TEST(shipped, obj_cube_with_mtl)
 {
     Mesh m = load_ok("models/obj/cube.obj");
@@ -27,12 +17,6 @@ TEST(shipped, obj_cube_quad_triangulation)
     Mesh m = load_ok("models/obj/cube.obj");
     // 6 quad faces each fan-triangulated to 2 → 12 triangles total.
     ASSERT_EQ(m.triangles.size(), size_t{12});
-}
-
-TEST(shipped, obj_xyzrgb_dragon)
-{
-    // ~11 MB, high-poly — exercises the loader on a realistic large mesh.
-    load_ok("models/obj/xyzrgb_dragon.obj");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,26 +1,6 @@
 #include "loader_util.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  SHIPPED GLTF/GLB MODELS
-// ═══════════════════════════════════════════════════════════════════════════
-
-TEST(shipped, gltf_duck)
-{
-    Mesh m = load_ok("models/gltf/Duck.gltf");
-    ASSERT_TRUE(m.triangles.size() > 0);
-    ASSERT_TRUE(!m.textures.empty());
-    ASSERT_TRUE(m.materials.size() >= 2);
-}
-
-TEST(shipped, glb_duck)
-{
-    Mesh m = load_ok("models/glb/Duck.glb");
-    ASSERT_TRUE(m.triangles.size() > 0);
-    ASSERT_TRUE(!m.textures.empty());
-    ASSERT_TRUE(m.materials.size() >= 2);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 //  DOUBLE-SIDED MATERIALS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -123,15 +103,6 @@ TEST(gltf_valid, double_sided_flag_set)
     ASSERT_TRUE(m.has_double_sided);
     ASSERT_TRUE(m.materials.size() >= 2);
     ASSERT_TRUE(m.materials[1].double_sided);
-}
-
-TEST(gltf_valid, single_sided_flag_clear)
-{
-    // GLB Duck has no doubleSided flag (defaults to false).
-    Mesh m = load_ok("models/glb/Duck.glb");
-    ASSERT_FALSE(m.has_double_sided);
-    for (const auto &mat : m.materials)
-        ASSERT_FALSE(mat.double_sided);
 }
 
 TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_loaded)
