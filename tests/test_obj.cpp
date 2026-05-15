@@ -346,6 +346,52 @@ TEST(obj_valid, usemtl_does_not_apply_retroactively)
     ASSERT_NEAR(red.diffuse.z, 0.0f, 1e-5f);
 }
 
+TEST(obj_valid, mtl_map_d_sets_alpha_cutoff)
+{
+    // map_d in MTL marks the material as cutout — alpha_cutoff must be 0.5.
+    TmpFile mtl(tmp_path("rast_mapd.mtl"),
+                "newmtl M\nKd 1 1 1\nmap_d mask.png\n");
+    TmpFile obj(tmp_path("rast_mapd.obj"),
+                "mtllib rast_mapd.mtl\n"
+                "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                "usemtl M\nf 1 2 3\n");
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].alpha_cutoff, 0.5f, 1e-6f);
+}
+
+TEST(obj_valid, vertex_colors_extension)
+{
+    // OBJ "v x y z r g b" extension: per-vertex RGB encoded directly in the v line.
+    TmpFile t(tmp_path("rast_vcol_obj.obj"),
+              "v 0 0 0 1.0 0.0 0.0\n"
+              "v 1 0 0 0.0 1.0 0.0\n"
+              "v 0 1 0 0.0 0.0 1.0\n"
+              "f 1 2 3\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[1].y, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[2].z, 1.0f, 1e-5f);
+}
+
+TEST(obj_valid, all_white_vertex_colors_flag_is_false)
+{
+    // When all "v x y z r g b" colors are white, has_vertex_colors must be false
+    // (white is the neutral multiplicative identity, same as no color data).
+    TmpFile t(tmp_path("rast_vcol_white.obj"),
+              "v 0 0 0 1.0 1.0 1.0\n"
+              "v 1 0 0 1.0 1.0 1.0\n"
+              "v 0 1 0 1.0 1.0 1.0\n"
+              "f 1 2 3\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_FALSE(m.has_vertex_colors);
+    ASSERT_TRUE(m.vertex_colors.empty());
+}
+
 TEST(obj_valid, failed_load_rollback_preserves_previous_mesh_state)
 {
     Mesh m;

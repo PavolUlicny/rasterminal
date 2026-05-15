@@ -449,3 +449,119 @@ TEST(reject, ply_missing_xyz_properties)
               "3 0 1 2\n");
     assert_rejects(t.path);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UV PROPERTY NAME FALLBACKS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_uv_st_property_names)
+{
+    // Loader falls back to "s"/"t" when "u"/"v" are absent.
+    TmpFile t(tmp_path("rast_uv_st.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float s\nproperty float t\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0 0.1 0.2\n"
+              "1 0 0 0.3 0.4\n"
+              "0 1 0 0.5 0.6\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_NEAR(m.vertices[0].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].uv.y, 0.2f, 1e-5f);
+    ASSERT_NEAR(m.vertices[1].uv.x, 0.3f, 1e-5f);
+    ASSERT_NEAR(m.vertices[2].uv.x, 0.5f, 1e-5f);
+}
+
+TEST(ply_valid, ascii_uv_texture_uv_property_names)
+{
+    // Loader falls back to "texture_u"/"texture_v" when "u"/"v" and "s"/"t" are absent.
+    TmpFile t(tmp_path("rast_uv_tuvtv.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float texture_u\nproperty float texture_v\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "end_header\n"
+              "0 0 0 0.25 0.75\n"
+              "1 0 0 0.50 0.50\n"
+              "0 1 0 0.75 0.25\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_NEAR(m.vertices[0].uv.x, 0.25f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].uv.y, 0.75f, 1e-5f);
+    ASSERT_NEAR(m.vertices[1].uv.x, 0.50f, 1e-5f);
+    ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FLOAT64 COORDINATE TYPE
+// ═══════════════════════════════════════════════════════════════════════════
+
+static void emit_f64_le(std::string &s, double v)
+{
+    uint64_t u;
+    std::memcpy(&u, &v, 8);
+    for (int i = 0; i < 8; i++)
+        s.push_back(static_cast<char>((u >> (i * 8)) & 0xFFu));
+}
+
+TEST(ply_valid, binary_le_float64_coordinates)
+{
+    // Vertices declared as "double" (FLOAT64) — loader must widen to float.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property double x\n"
+        "property double y\n"
+        "property double z\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n";
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 1.5);
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 0.0);
+    emit_f64_le(s, 2.5);
+    emit_f64_le(s, 0.0);
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+
+    TmpFile t(tmp_path("rast_f64.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_NEAR(m.vertices[1].pos.x, 1.5f, 1e-5f);
+    ASSERT_NEAR(m.vertices[2].pos.y, 2.5f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE PROPERTY NAME ALIAS: vertex_index (singular)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_vertex_index_singular_alias)
+{
+    // Some PLY files use "vertex_index" (singular) instead of "vertex_indices".
+    TmpFile t(tmp_path("rast_vi_singular.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_index\n"
+              "end_header\n"
+              "0 0 0\n"
+              "1 0 0\n"
+              "0 1 0\n"
+              "3 0 1 2\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+}
