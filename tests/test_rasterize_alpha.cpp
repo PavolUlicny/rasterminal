@@ -378,7 +378,7 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f};
     vec3 eye{20.0f, 10.0f, -100.0f};
     vec3 ambient{1.0f, 1.0f, 1.0f};
     vec2 uv{0.5f, 0.5f};
