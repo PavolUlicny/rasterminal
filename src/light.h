@@ -4,34 +4,6 @@
 
 #include <cmath>
 
-inline float specular_pow(float ndh, float shininess) noexcept
-{
-    // Common MTL shininess values get an exact multiply chain; arbitrary
-    // values fall back to exp2f(s*log2f(x)) which is faster than std::pow.
-    if (shininess == 32.0f)
-    {
-        const float x2 = ndh * ndh;
-        const float x4 = x2 * x2;
-        const float x8 = x4 * x4;
-        const float x16 = x8 * x8;
-        return x16 * x16;
-    }
-    if (shininess == 16.0f)
-    {
-        const float x2 = ndh * ndh;
-        const float x4 = x2 * x2;
-        const float x8 = x4 * x4;
-        return x8 * x8;
-    }
-    if (shininess == 8.0f)
-    {
-        const float x2 = ndh * ndh;
-        const float x4 = x2 * x2;
-        return x4 * x4;
-    }
-    return std::exp2f(shininess * std::log2f(ndh));
-}
-
 // ndh^shininess given ndh² as input — lets the caller skip a sqrt in the
 // half-vector normalize. For the squaring-chain cases (32/16/8) ndh^N = (ndh²)^(N/2),
 // so we start one step further along the chain with no precision loss.

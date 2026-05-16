@@ -200,51 +200,52 @@ TEST(light, multiple_lights_sum_their_contributions)
     ASSERT_NEAR(r.z, 0.0f, EPS);
 }
 
-// ─── specular_pow fast paths ─────────────────────────────────────────────────
-// The fast paths for shininess ∈ {8, 16, 32} must match the general form.
+// ─── specular_pow_sq fast paths ──────────────────────────────────────────────
+// specular_pow_sq(ndh², s) computes ndh^s = (ndh²)^(s/2).
+// The fast paths for shininess ∈ {8, 16, 32} must match the general exp2/log2 form.
 
-TEST(specular_pow, shininess_32_matches_power)
+TEST(specular_pow_sq, shininess_32_matches_power)
 {
     float x = 0.8f;
-    float got = specular_pow(x, 32.0f);
+    float got = specular_pow_sq(x * x, 32.0f);
     float expected = std::pow(x, 32.0f);
     ASSERT_NEAR(got, expected, 1e-5f);
 }
 
-TEST(specular_pow, shininess_16_matches_power)
+TEST(specular_pow_sq, shininess_16_matches_power)
 {
     float x = 0.7f;
-    float got = specular_pow(x, 16.0f);
+    float got = specular_pow_sq(x * x, 16.0f);
     float expected = std::pow(x, 16.0f);
     ASSERT_NEAR(got, expected, 1e-5f);
 }
 
-TEST(specular_pow, shininess_8_matches_power)
+TEST(specular_pow_sq, shininess_8_matches_power)
 {
     float x = 0.6f;
-    float got = specular_pow(x, 8.0f);
+    float got = specular_pow_sq(x * x, 8.0f);
     float expected = std::pow(x, 8.0f);
     ASSERT_NEAR(got, expected, 1e-5f);
 }
 
-TEST(specular_pow, shininess_1_returns_x)
+TEST(specular_pow_sq, shininess_1_returns_x)
 {
-    // x^1 = x; the exp2f/log2f general path should handle this.
-    ASSERT_NEAR(specular_pow(0.5f, 1.0f), 0.5f, 1e-5f);
+    // (x²)^(1/2) = x; the exp2f/log2f general path handles this.
+    ASSERT_NEAR(specular_pow_sq(0.5f * 0.5f, 1.0f), 0.5f, 1e-5f);
 }
 
-TEST(specular_pow, shininess_zero_returns_one)
+TEST(specular_pow_sq, shininess_zero_returns_one)
 {
-    // x^0 = 1 for any x; exp2f(0 * log2f(x)) = exp2f(0) = 1.
-    ASSERT_NEAR(specular_pow(0.5f, 0.0f), 1.0f, 1e-5f);
-    ASSERT_NEAR(specular_pow(0.9f, 0.0f), 1.0f, 1e-5f);
+    // (x²)^0 = 1 for any x; exp2f(0) = 1.
+    ASSERT_NEAR(specular_pow_sq(0.5f * 0.5f, 0.0f), 1.0f, 1e-5f);
+    ASSERT_NEAR(specular_pow_sq(0.9f * 0.9f, 0.0f), 1.0f, 1e-5f);
 }
 
-TEST(specular_pow, zero_base_returns_zero)
+TEST(specular_pow_sq, zero_base_returns_zero)
 {
-    // 0^n = 0 for n > 0; log2f(0) = -inf, exp2f(-inf) = 0.
-    ASSERT_NEAR(specular_pow(0.0f, 32.0f), 0.0f, 1e-5f);
-    ASSERT_NEAR(specular_pow(0.0f, 1.0f), 0.0f, 1e-5f);
+    // (0²)^(n/2) = 0 for n > 0; log2f(0) = -inf, exp2f(-inf) = 0.
+    ASSERT_NEAR(specular_pow_sq(0.0f, 32.0f), 0.0f, 1e-5f);
+    ASSERT_NEAR(specular_pow_sq(0.0f, 1.0f), 0.0f, 1e-5f);
 }
 
 // ─── overload / robustness ────────────────────────────────────────────────────
