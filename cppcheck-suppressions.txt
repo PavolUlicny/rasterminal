@@ -9,6 +9,9 @@ unusedFunction:src/framebuffer.h
 unusedFunction:src/linalg.h
 unusedFunction:src/texture.h
 
+// RasterTriFg/RasterTriPh fields are intentionally uninitialised — Phase 1 writes all fields before Phase 2 reads them.
+uninitMemberVar:src/rasterize.h
+
 // Raw loops kept where STL algorithm equivalent would require a lambda and be less readable.
 useStlAlgorithm:src/mesh.cpp
 useStlAlgorithm:src/mesh_obj.cpp

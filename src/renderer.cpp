@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
@@ -130,6 +131,15 @@ void Renderer::worker_func(int t)
             const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
             const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
 
+            // Precompute band start rows so the per-triangle band scan avoids
+            // multiply+divide on every iteration. thread_local avoids per-frame
+            // heap allocation; the vector only resizes when n changes (rare).
+            thread_local std::vector<int> band_y;
+            if (static_cast<int>(band_y.size()) != n + 1)
+                band_y.resize(static_cast<size_t>(n) + 1);
+            for (int k = 0; k <= n; k++)
+                band_y[static_cast<size_t>(k)] = height * k / n;
+
             // Dynamic work stealing: each worker atomically claims the next
             // chunk of triangles. This balances load automatically regardless
             // of how visible triangles are distributed across the mesh.
@@ -198,131 +208,139 @@ void Renderer::worker_func(int t)
                         const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
                         const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
-                        // No zero-init: every field used downstream is explicitly
-                        // written below (mode-dependent). Fields unused by the
-                        // active shading path stay uninitialised but are never
-                        // read — rasterize() only touches col_*/shad_* and
-                        // rasterize_phong() only touches normals/tangents/mat.
-                        RasterTri rt;
-                        rt.sa = sa;
-                        rt.sb = sb;
-                        rt.sc = sc;
-                        rt.wa = a.c.w;
-                        rt.wb = b.c.w;
-                        rt.wc = c.c.w;
-                        rt.pa = a.pos;
-                        rt.pb = b.pos;
-                        rt.pc = c.pos;
-                        rt.uva = a.uv;
-                        rt.uvb = b.uv;
-                        rt.uvc = c.uv;
-                        rt.tex = tex;
-                        rt.shadow_map = shadow_map;
-                        rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0.0f;
-
-                        if (smode == ShadingMode::Phong)
-                        {
-                            rt.ph.stex = show_tex ? mesh->tex_at(mat.specular_tex) : nullptr;
-                            rt.ph.nmap = show_tex ? mesh->tex_at(mat.normal_tex) : nullptr;
-                            rt.ph.na = a.normal;
-                            rt.ph.nb = b.normal;
-                            rt.ph.nc = c.normal;
-                            rt.ph.tana = a.tangent;
-                            rt.ph.tanb = b.tangent;
-                            rt.ph.tanc = c.tangent;
-                            rt.ph.aoa = a.ao;
-                            rt.ph.aob = b.ao;
-                            rt.ph.aoc = c.ao;
-                            rt.ph.mat = &mat;
-                            if (mesh->has_vertex_colors)
-                            {
-                                rt.ph.vcola = a.color;
-                                rt.ph.vcolb = b.color;
-                                rt.ph.vcolc = c.color;
-                            }
-                            else
-                            {
-                                rt.ph.vcola = rt.ph.vcolb = rt.ph.vcolc = {1.0f, 1.0f, 1.0f};
-                            }
-                        }
-                        else if (smode == ShadingMode::Flat)
-                        {
-                            vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
-                            if (flip_normals)
-                                face_n = face_n * -1.0f;
-                            const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                            const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
-                            const Material *flat_mat = &mat;
-                            Material vcol_mat;
-                            if (mesh->has_vertex_colors)
-                            {
-                                const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
-                                if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
-                                {
-                                    vcol_mat = mat;
-                                    vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
-                                    vcol_mat.ambient = vcol_mat.ambient * face_vcol;
-                                    flat_mat = &vcol_mat;
-                                }
-                            }
-                            rt.fg.col_a = rt.fg.col_b = rt.fg.col_c =
-                                compute_lighting(assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
-                            if (shadow_map)
-                                rt.fg.shad_a = rt.fg.shad_b = rt.fg.shad_c =
-                                    compute_lighting(assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
-                        }
-                        else // Gouraud
-                        {
-                            if (mesh->has_vertex_colors)
-                            {
-                                Material gvcol_mat;
-                                auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
-                                {
-                                    if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
-                                        return mat;
-                                    gvcol_mat = mat;
-                                    gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
-                                    gvcol_mat.ambient = gvcol_mat.ambient * vcol;
-                                    return gvcol_mat;
-                                };
-                                rt.fg.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
-                                rt.fg.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
-                                rt.fg.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
-                                if (shadow_map)
-                                {
-                                    rt.fg.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
-                                    rt.fg.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
-                                    rt.fg.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
-                                }
-                            }
-                            else
-                            {
-                                rt.fg.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
-                                rt.fg.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
-                                rt.fg.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
-                                if (shadow_map)
-                                {
-                                    rt.fg.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                                    rt.fg.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                                    rt.fg.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
-                                }
-                            }
-                        }
-
                         // Bucket into every y-band this triangle overlaps.
                         // Scan from the first band whose bottom edge reaches
                         // tri_y0 down to the last band whose top edge is still
-                        // above tri_y1.  n is small (≤16) so the scan is cheap.
+                        // above tri_y1.  band_y is precomputed so each iteration
+                        // is a single array read.
                         const int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
                         const int tri_y1 = std::min(height - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
                         int b_lo = 0;
-                        while (b_lo < n - 1 && height * (b_lo + 1) / n - 1 < tri_y0)
+                        while (b_lo < n - 1 && band_y[static_cast<size_t>(b_lo) + 1] - 1 < tri_y0)
                             ++b_lo;
                         int b_hi = n - 1;
-                        while (b_hi > b_lo && height * b_hi / n > tri_y1)
+                        while (b_hi > b_lo && band_y[static_cast<size_t>(b_hi)] > tri_y1)
                             --b_hi;
-                        for (int band = b_lo; band <= b_hi; band++)
-                            m_band_tris[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
+
+                        auto fill_common = [&](auto &rt)
+                        {
+                            rt.sa = sa;
+                            rt.sb = sb;
+                            rt.sc = sc;
+                            rt.wa = a.c.w;
+                            rt.wb = b.c.w;
+                            rt.wc = c.c.w;
+                            rt.pa = a.pos;
+                            rt.pb = b.pos;
+                            rt.pc = c.pos;
+                            rt.uva = a.uv;
+                            rt.uvb = b.uv;
+                            rt.uvc = c.uv;
+                            rt.tex = tex;
+                            rt.shadow_map = shadow_map;
+                        };
+
+                        if (smode == ShadingMode::Phong)
+                        {
+                            RasterTriPh rt;
+                            fill_common(rt);
+                            rt.stex = show_tex ? mesh->tex_at(mat.specular_tex) : nullptr;
+                            rt.nmap = show_tex ? mesh->tex_at(mat.normal_tex) : nullptr;
+                            rt.na = a.normal;
+                            rt.nb = b.normal;
+                            rt.nc = c.normal;
+                            rt.tana = a.tangent;
+                            rt.tanb = b.tangent;
+                            rt.tanc = c.tangent;
+                            rt.aoa = a.ao;
+                            rt.aob = b.ao;
+                            rt.aoc = c.ao;
+                            rt.mat = &mat;
+                            if (mesh->has_vertex_colors)
+                            {
+                                rt.vcola = a.color;
+                                rt.vcolb = b.color;
+                                rt.vcolc = c.color;
+                            }
+                            else
+                            {
+                                rt.vcola = rt.vcolb = rt.vcolc = {1.0f, 1.0f, 1.0f};
+                            }
+                            for (int band = b_lo; band <= b_hi; band++)
+                                m_band_tris_ph[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
+                        }
+                        else
+                        {
+                            RasterTriFg rt;
+                            fill_common(rt);
+                            rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0.0f;
+
+                            if (smode == ShadingMode::Flat)
+                            {
+                                vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                                if (flip_normals)
+                                    face_n = face_n * -1.0f;
+                                const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
+                                const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                                const Material *flat_mat = &mat;
+                                Material vcol_mat;
+                                if (mesh->has_vertex_colors)
+                                {
+                                    const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                                    if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
+                                    {
+                                        vcol_mat = mat;
+                                        vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
+                                        vcol_mat.ambient = vcol_mat.ambient * face_vcol;
+                                        flat_mat = &vcol_mat;
+                                    }
+                                }
+                                rt.col_a = rt.col_b = rt.col_c =
+                                    compute_lighting(assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
+                                if (shadow_map)
+                                    rt.shad_a = rt.shad_b = rt.shad_c =
+                                        compute_lighting(assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
+                            }
+                            else // Gouraud
+                            {
+                                if (mesh->has_vertex_colors)
+                                {
+                                    Material gvcol_mat;
+                                    auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
+                                    {
+                                        if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
+                                            return mat;
+                                        gvcol_mat = mat;
+                                        gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
+                                        gvcol_mat.ambient = gvcol_mat.ambient * vcol;
+                                        return gvcol_mat;
+                                    };
+                                    rt.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
+                                    rt.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
+                                    rt.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
+                                    if (shadow_map)
+                                    {
+                                        rt.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
+                                        rt.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
+                                        rt.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                    }
+                                }
+                                else
+                                {
+                                    rt.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
+                                    rt.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
+                                    rt.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                                    if (shadow_map)
+                                    {
+                                        rt.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                                        rt.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                                        rt.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                    }
+                                }
+                            }
+                            for (int band = b_lo; band <= b_hi; band++)
+                                m_band_tris_fg[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
+                        }
                     }
                 }
             } // while (true) work-stealing loop
@@ -373,32 +391,36 @@ void Renderer::worker_func(int t)
             const vec3 &p2_ambient = m_ambient;
             const bool p2_has_vcol = m_mesh->has_vertex_colors;
 
-            for (int w = 0; w < n; w++)
-                for (const RasterTri &rt : m_band_tris[static_cast<size_t>(w)][static_cast<size_t>(t)])
-                {
-                    if (m_phong)
+            if (m_smode == ShadingMode::Phong)
+            {
+                for (int w = 0; w < n; w++)
+                    for (const RasterTriPh &rt : m_band_tris_ph[static_cast<size_t>(w)][static_cast<size_t>(t)])
                         rasterize_phong(*m_fb,
                                         rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
                                         rt.pa, rt.pb, rt.pc,
-                                        rt.ph.na, rt.ph.nb, rt.ph.nc,
-                                        rt.ph.tana, rt.ph.tanb, rt.ph.tanc,
+                                        rt.na, rt.nb, rt.nc,
+                                        rt.tana, rt.tanb, rt.tanc,
                                         rt.uva, rt.uvb, rt.uvc,
-                                        rt.ph.aoa, rt.ph.aob, rt.ph.aoc,
-                                        rt.ph.vcola, rt.ph.vcolb, rt.ph.vcolc,
+                                        rt.aoa, rt.aob, rt.aoc,
+                                        rt.vcola, rt.vcolb, rt.vcolc,
                                         p2_has_vcol,
-                                        p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.ph.mat,
-                                        rt.tex, rt.ph.nmap, rt.ph.stex, rt.shadow_map,
+                                        p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
+                                        rt.tex, rt.nmap, rt.stex, rt.shadow_map,
                                         y_min, y_max);
-                    else
+            }
+            else
+            {
+                for (int w = 0; w < n; w++)
+                    for (const RasterTriFg &rt : m_band_tris_fg[static_cast<size_t>(w)][static_cast<size_t>(t)])
                         rasterize(*m_fb,
                                   rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                                  rt.fg.col_a, rt.fg.col_b, rt.fg.col_c,
-                                  rt.fg.shad_a, rt.fg.shad_b, rt.fg.shad_c,
+                                  rt.col_a, rt.col_b, rt.col_c,
+                                  rt.shad_a, rt.shad_b, rt.shad_c,
                                   rt.pa, rt.pb, rt.pc,
                                   rt.uva, rt.uvb, rt.uvc,
                                   rt.tex, rt.alpha_cutoff, rt.shadow_map,
                                   y_min, y_max);
-                }
+            }
         }
 
         // Signal completion. If this is the last worker, wake render().
@@ -473,17 +495,29 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     // ── Single dispatch: workers run Phase 1 + Phase 2 without returning ────
     // Cap active workers to framebuffer height / 2 so no band is empty.
     const int n_active = std::max(1, std::min(m_n_workers, height / 2));
-    if (static_cast<int>(m_band_tris.size()) != n_active)
-        m_band_tris.resize(static_cast<size_t>(n_active));
-    for (auto &row : m_band_tris)
+    if (static_cast<int>(m_band_tris_fg.size()) != n_active)
+        m_band_tris_fg.resize(static_cast<size_t>(n_active));
+    if (static_cast<int>(m_band_tris_ph.size()) != n_active)
+        m_band_tris_ph.resize(static_cast<size_t>(n_active));
+    for (auto &row : m_band_tris_fg)
+        if (static_cast<int>(row.size()) != n_active)
+            row.resize(static_cast<size_t>(n_active));
+    for (auto &row : m_band_tris_ph)
         if (static_cast<int>(row.size()) != n_active)
             row.resize(static_cast<size_t>(n_active));
 
     // An internal hybrid barrier (brief spin, then CV park) separates the
     // two phases. Reset barrier state before waking workers.
-    for (auto &row : m_band_tris)
-        for (auto &v : row)
-            v.clear();
+    // Only clear the active vector — the inactive one is never read in Phase 2
+    // so stale data is harmless until that mode becomes active again.
+    if (mode == ShadingMode::Phong)
+        for (auto &row : m_band_tris_ph)
+            for (auto &v : row)
+                v.clear();
+    else
+        for (auto &row : m_band_tris_fg)
+            for (auto &v : row)
+                v.clear();
     m_tri_cursor.store(0, std::memory_order_relaxed);
     m_phase1_done.store(0, std::memory_order_relaxed);
     m_phase2_ready.store(false, std::memory_order_relaxed);
@@ -503,7 +537,6 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_cull_backfaces = cull_backfaces;
         m_show_texture = show_texture;
         m_fb = &fb;
-        m_phong = (mode == ShadingMode::Phong);
         m_n_active = n_active;
         m_active.store(m_n_workers, std::memory_order_release); // all workers must check in, active or not
         ++m_generation;

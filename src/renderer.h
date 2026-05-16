@@ -75,11 +75,12 @@ private:
 
     // 2D staging: [worker][band]. Each worker writes its own row in Phase 1
     // with no locks; Phase 2 worker t reads column t across all rows.
-    std::vector<std::vector<std::vector<RasterTri>>> m_band_tris;
+    // Two separate vectors — only one is populated per frame depending on mode.
+    std::vector<std::vector<std::vector<RasterTriFg>>> m_band_tris_fg;
+    std::vector<std::vector<std::vector<RasterTriPh>>> m_band_tris_ph;
 
     // Phase 2 (rasterize) inputs:
     Framebuffer *m_fb = nullptr;
-    bool m_phong = false;
 
     std::atomic<int> m_tri_cursor{0};        // dynamic work cursor for Phase 1
     std::atomic<int> m_phase1_done{0};       // counts workers that finished Phase 1
