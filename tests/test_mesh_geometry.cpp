@@ -372,3 +372,64 @@ TEST(ao, disabled_skips_computation)
     for (const auto &v : m.vertices)
         ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
 }
+
+TEST(ao, stl_load_skips_compute_ao)
+{
+    // STL uses unshared vertices so compute_ao is explicitly skipped (ext=="stl" guard).
+    // All vertex ao values must stay at the loader default of 1.0.
+    TmpFile f(tmp_path("rast_ao_stl.stl"),
+              "solid test\n"
+              "facet normal 0 0 1\n"
+              "  outer loop\n"
+              "    vertex 0 0 0\n"
+              "    vertex 1 0 0\n"
+              "    vertex 0 1 0\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    for (const auto &v : m.vertices)
+        ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
+}
+
+// ─── load_model failure path ──────────────────────────────────────────────────
+
+TEST(mesh_clear, failed_load_clears_previous_state)
+{
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    TmpFile f(tmp_path("rast_fail_preload.obj"), obj);
+    Mesh m = load_ok(f.path);
+    ASSERT_FALSE(m.vertices.empty());
+
+    bool ok = m.load_model(tmp_path("rast_does_not_exist_xyz.obj"));
+    ASSERT_FALSE(ok);
+    ASSERT_TRUE(m.vertices.empty());
+    ASSERT_TRUE(m.triangles.empty());
+    ASSERT_TRUE(m.materials.empty());
+}
+
+// ─── mat_at / tex_at accessors ────────────────────────────────────────────────
+
+TEST(mesh_accessors, mat_at_oob_returns_first_material)
+{
+    Mesh m;
+    Material mat{};
+    mat.diffuse = {0.3f, 0.5f, 0.7f};
+    m.materials.push_back(mat);
+
+    const Material &r = m.mat_at(5u);
+    ASSERT_NEAR(r.diffuse.x, 0.3f, 1e-6f);
+    ASSERT_NEAR(r.diffuse.y, 0.5f, 1e-6f);
+    ASSERT_NEAR(r.diffuse.z, 0.7f, 1e-6f);
+}
+
+TEST(mesh_accessors, tex_at_negative_and_oob_return_nullptr)
+{
+    Mesh m;
+    m.textures.push_back(Texture{});
+
+    ASSERT_TRUE(m.tex_at(-1) == nullptr);
+    ASSERT_TRUE(m.tex_at(1) == nullptr);
+    ASSERT_TRUE(m.tex_at(0) != nullptr);
+}
