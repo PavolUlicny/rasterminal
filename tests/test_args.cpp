@@ -1053,3 +1053,55 @@ TEST(args, bench_warmup_without_bench_is_error)
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
+
+TEST(args, bench_size_x_leading_is_error)
+{
+    // "x100" → sep == val (string starts with 'x') → error
+    ParseResult r = run({"--bench", "50", "--bench-size", "x100", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_negative_width_is_error)
+{
+    // "-10x100" → ww < 0 → ww <= 0 guard fires
+    ParseResult r = run({"--bench", "50", "--bench-size", "-10x100", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_negative_height_is_error)
+{
+    // "100x-10" → hh < 0 → hh <= 0 guard fires
+    ParseResult r = run({"--bench", "50", "--bench-size", "100x-10", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_overflow_width_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "99999999999999999999x100", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_size_overflow_height_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-size", "100x99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_warmup_overflow_is_error)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup", "99999999999999999999", "m.obj"});
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_warmup_equals_form)
+{
+    ParseResult r = run({"--bench", "50", "--bench-warmup=10", "m.obj"});
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_warmup, 10);
+}
