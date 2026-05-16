@@ -404,6 +404,15 @@ TEST(camera, projection_negative_dimension_fallback)
     ASSERT_TRUE(std::isfinite(P.m[1][1]));
 }
 
+TEST(camera, projection_both_zero_fallback)
+{
+    // Both dimensions zero: guard (pixel_width > 0 && pixel_height > 0) is false → aspect=1.
+    Camera c;
+    mat4 P_sq = c.projection(100, 100);
+    mat4 P_00 = c.projection(0, 0);
+    ASSERT_NEAR(P_00.m[0][0], P_sq.m[0][0], EPS); // x-scale encodes aspect
+}
+
 // ─── view(eye_pos) overload ───────────────────────────────────────────────────
 
 TEST(camera, view_explicit_eye_pos_maps_to_origin)
@@ -422,6 +431,16 @@ TEST(camera, view_explicit_eye_pos_maps_to_origin)
     ASSERT_NEAR(r.z, 0.0f, EPS);
 }
 
+TEST(camera, view_eye_at_target_does_not_crash)
+{
+    // eye == target → look_at forward vector is zero → normalize(zero) → NaN.
+    // No guard; test documents the call completes without aborting.
+    Camera c;
+    c.target = {1.0f, 2.0f, 3.0f};
+    mat4 V = c.view(c.target);
+    (void)V;
+}
+
 // ─── orbit() zero step ────────────────────────────────────────────────────────
 
 TEST(camera, orbit_zero_is_noop)
@@ -436,6 +455,32 @@ TEST(camera, orbit_zero_is_noop)
     ASSERT_NEAR(e_after.x, e_before.x, EPS);
     ASSERT_NEAR(e_after.y, e_before.y, EPS);
     ASSERT_NEAR(e_after.z, e_before.z, EPS);
+}
+
+TEST(camera, orbit_compound_nonzero_matches_formula)
+{
+    // Single orbit(dx, dy) with both non-zero: local_right is from the original orientation,
+    // composition order is normalize(yaw * pitch * orientation).
+    Camera c;
+    c.target = {0.0f, 0.0f, 0.0f};
+    c.distance = 5.0f;
+    c.orientation = quat::identity();
+
+    const float dx = 0.5f, dy = 0.3f;
+    const vec3 local_right = c.orientation.rotate({1.0f, 0.0f, 0.0f});
+    const quat yaw = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, -dx);
+    const quat pitch = quat::from_axis_angle(local_right, dy);
+    Camera c_exp;
+    c_exp.target = {0.0f, 0.0f, 0.0f};
+    c_exp.distance = 5.0f;
+    c_exp.orientation = normalize(yaw * pitch * c.orientation);
+    const vec3 exp = c_exp.eye();
+
+    c.orbit(dx, dy);
+    const vec3 act = c.eye();
+    ASSERT_NEAR(act.x, exp.x, EPS);
+    ASSERT_NEAR(act.y, exp.y, EPS);
+    ASSERT_NEAR(act.z, exp.z, EPS);
 }
 
 // ─── process_key() dt=0 ───────────────────────────────────────────────────────
