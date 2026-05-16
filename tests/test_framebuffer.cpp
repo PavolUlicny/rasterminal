@@ -347,3 +347,86 @@ TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
 
     ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
 }
+
+// ─── additional incremental / emit_cell paths ────────────────────────────────
+
+TEST(framebuffer, present_incremental_entirely_clean_row_emits_no_cursor_pos)
+{
+    // Incremental path: when no cell in a row changed, row_started stays false
+    // and no cursor-positioning or cell output is emitted for that row.
+    // CaptureStdout always rewinds on read(), so we count occurrences across
+    // both frames: \033[1;1H must appear exactly once (from the full-redraw),
+    // not twice, proving the clean incremental frame added none.
+    Framebuffer fb(4, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // frame 1: full-redraw — emits \033[1;1H once
+    fb.present(); // frame 2: entirely clean row — must not emit another \033[1;1H
+
+    const std::string out = cap.read();
+    const size_t first = out.find("\033[1;1H");
+    ASSERT_TRUE(first != std::string::npos);                            // frame 1 emitted it
+    ASSERT_TRUE(out.find("\033[1;1H", first + 1) == std::string::npos); // frame 2 did not
+}
+
+TEST(framebuffer, present_incremental_dirty_at_last_column)
+{
+    // Dirty cell at col m_width-1: after emitting it col==m_width, the outer
+    // while exits immediately — the skip branch is never entered.
+    Framebuffer fb(4, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // full-redraw
+    cap.read();   // drain
+
+    fb.set_pixel(3, 0, {200, 0, 0}); // only last column dirty
+    fb.present();                    // must not crash
+
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[1;4H") != std::string::npos); // cursor jumped to last col
+    ASSERT_TRUE(out.find("\033[C") == std::string::npos);    // no skip advance emitted
+}
+
+TEST(framebuffer, present_height_1_does_not_crash)
+{
+    // height=1 → term_rows=0; the cell loop never runs.
+    // The ternary guard `prow+1 < m_height ? prow+1 : prow` is unreachable dead
+    // code for any height, but this degenerate size must still produce a valid call.
+    FdRedirect rd;
+    Framebuffer fb(4, 1, /*headless=*/true);
+    fb.set_pixel(0, 0, {50, 50, 50});
+    fb.present(); // must not crash
+}
+
+TEST(framebuffer, present_after_resize_forces_full_redraw)
+{
+    // resize() sets m_force_redraw=true; the next present() must take the
+    // full-redraw path and emit cursor positioning for every term row.
+    // Start with a 2-pixel-high FB (1 term row); frames 1-2 only emit \033[1;1H.
+    // Resize to 4-pixel-high (2 term rows); frame 3's full-redraw must emit
+    // \033[2;1H — something frames 1-2 never produced.
+    Framebuffer fb(4, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // frame 1: full-redraw (1 term row — only \033[1;1H)
+    fb.present(); // frame 2: incremental, clean (no cursor pos)
+
+    fb.resize(4, 4); // sets m_force_redraw=true; now 2 term rows
+    fb.present();    // frame 3: full-redraw must emit \033[2;1H
+
+    ASSERT_TRUE(cap.read().find("\033[2;1H") != std::string::npos);
+}
+
+TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
+{
+    // Two adjacent cells with top==bot at the same color: the first emits the
+    // bg SGR; the second suppresses it (bg_change=false) and emits only a space.
+    Framebuffer fb(2, 2, /*headless=*/true);
+    CaptureStdout cap;
+
+    fb.clear({100, 150, 200});
+    fb.present(); // full-redraw; both cells have top==bot=={100,150,200}
+
+    const std::string out = cap.read();
+    const std::string sgr = "\033[48;2;100;150;200m";
+    const size_t first = out.find(sgr);
+    ASSERT_TRUE(first != std::string::npos);                    // emitted at least once
+    ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for second cell
+}
