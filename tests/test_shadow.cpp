@@ -492,3 +492,113 @@ TEST(shadow, degenerate_triangle_skipped_no_depth_written)
     // No depth written → stored = 1.0; ref for any in-frustum point ≤ 0.999 < 1.0 → lit.
     ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
 }
+
+// ─── Slope-bias boundary (n_dot_l near 0.01) ──────────────────────────────────
+
+TEST(shadow, slope_bias_formula_branch_near_threshold)
+{
+    // pa=(-10,0,-10), pb=(10,0,-10), pc=(0,0.22,10):
+    // cross=(0,-400,4.4), |cross|≈400 → face_n.z≈0.011 (just above 0.01).
+    // Formula branch: slope_bias = 0.007/0.011 ≈ 0.636 → surface must not self-shadow.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {-10.0f, 0.0f, -10.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, 0.0f, -10.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 0.22f, 10.0f};
+    m.vertices.push_back(v);
+    m.triangles.push_back({{0, 1, 2}});
+    m.materials.push_back({});
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    // Triangle centroid is on the surface — must not self-shadow.
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.073f, -3.33f}), 0.0f, 1e-6f);
+}
+
+TEST(shadow, slope_bias_clamp_branch_near_threshold)
+{
+    // pa=(-10,0,-10), pb=(10,0,-10), pc=(0,0.18,10):
+    // cross=(0,-400,3.6), |cross|≈400 → face_n.z≈0.009 (just below 0.01).
+    // Clamp branch: slope_bias = 0.5 → front-facing near-tangent surface must not self-shadow.
+    // Existing clamp test uses n_dot_l=-1 (back-facing); this covers the positive side.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {-10.0f, 0.0f, -10.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, 0.0f, -10.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 0.18f, 10.0f};
+    m.vertices.push_back(v);
+    m.triangles.push_back({{0, 1, 2}});
+    m.materials.push_back({});
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.06f, -3.33f}), 0.0f, 1e-6f);
+}
+
+// ─── Alpha cutout: UV-interpolated partial transparency ────────────────────────
+
+TEST(shadow, alpha_cutout_uv_interpolated_partial_transparency)
+{
+    // 2×1 texture: left pixel opaque (alpha=255), right pixel transparent (alpha=0).
+    // Bilinear alpha(u) = 1 − u → u=0.25 → 0.75>0.5 (depth written);
+    //                             u=0.75 → 0.25<0.5 (skipped).
+    Texture tex;
+    tex.width = 2;
+    tex.height = 1;
+    tex.pixels = {255, 255, 255, 255, // pixel 0: fully opaque
+                  255, 255, 255, 0};  // pixel 1: fully transparent
+
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+
+    // Triangle A (x < 0): UVs u ∈ [0, 0.5] → opaque region → casts shadow.
+    v.pos = {-10.0f, -5.0f, 0.0f};
+    v.uv = {0.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-0.5f, -5.0f, 0.0f};
+    v.uv = {0.5f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {-5.0f, 5.0f, 0.0f};
+    v.uv = {0.25f, 1.0f};
+    m.vertices.push_back(v);
+    // Triangle B (x > 0): UVs u ∈ [0.5, 1] → transparent region → no shadow.
+    v.pos = {0.5f, -5.0f, 0.0f};
+    v.uv = {0.5f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {10.0f, -5.0f, 0.0f};
+    v.uv = {1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {5.0f, 5.0f, 0.0f};
+    v.uv = {0.75f, 1.0f};
+    m.vertices.push_back(v);
+
+    m.materials.push_back({}); // material 0: no cutout
+
+    Material cut{};
+    cut.alpha_cutoff = 0.5f;
+    cut.diffuse_tex = 0;
+    m.textures.push_back(tex);
+    m.materials.push_back(cut);
+
+    Triangle ta{};
+    ta.v[0] = 0;
+    ta.v[1] = 1;
+    ta.v[2] = 2;
+    ta.material_idx = 1;
+    Triangle tb{};
+    tb.v[0] = 3;
+    tb.v[1] = 4;
+    tb.v[2] = 5;
+    tb.material_idx = 1;
+    m.triangles.push_back(ta);
+    m.triangles.push_back(tb);
+
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    // Point behind opaque triangle A → in shadow.
+    ASSERT_NEAR(sm.in_shadow({-5.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    // Point behind transparent triangle B → lit.
+    ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+}
