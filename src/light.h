@@ -32,6 +32,32 @@ inline float specular_pow(float ndh, float shininess) noexcept
     return std::exp2f(shininess * std::log2f(ndh));
 }
 
+// ndh^shininess given ndh² as input — lets the caller skip a sqrt in the
+// half-vector normalize. For the squaring-chain cases (32/16/8) ndh^N = (ndh²)^(N/2),
+// so we start one step further along the chain with no precision loss.
+inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
+{
+    if (shininess == 32.0f)
+    {
+        const float x4 = ndh_sq * ndh_sq;
+        const float x8 = x4 * x4;
+        const float x16 = x8 * x8;
+        return x16 * x16;
+    }
+    if (shininess == 16.0f)
+    {
+        const float x4 = ndh_sq * ndh_sq;
+        const float x8 = x4 * x4;
+        return x8 * x8;
+    }
+    if (shininess == 8.0f)
+    {
+        const float x4 = ndh_sq * ndh_sq;
+        return x4 * x4;
+    }
+    return std::exp2f(shininess * 0.5f * std::log2f(ndh_sq));
+}
+
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
@@ -83,14 +109,17 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
         if (diff > 0.0f)
             result += light_color * mat.diffuse * diff;
 
-        // Avoid sqrt in normalize when the half-vector faces away from the surface.
+        // Skip the half-vector normalize entirely: ndh = dot(n, h/|h|),
+        // so ndh² = (n·h)² / (h·h). The squaring-chain forms of specular_pow
+        // operate on ndh² directly, eliminating one sqrt per light. The inner
+        // ndh > 0 check is implied by ndh_raw > 0.
         const vec3 h = l + v;
         const float ndh_raw = dot(n, h);
         if (ndh_raw > 0.0f)
         {
-            const float ndh = dot(n, normalize(h));
-            if (ndh > 0.0f)
-                result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
+            const float hh = dot(h, h);
+            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
+            result += light_color * mat.specular * specular_pow_sq(ndh_sq, mat.shininess);
         }
     }
 
@@ -134,9 +163,9 @@ inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, const vec3 &n, 
         const float ndh_raw = dot(n, h);
         if (ndh_raw > 0.0f)
         {
-            const float ndh = dot(n, normalize(h));
-            if (ndh > 0.0f)
-                result += light_color * mat.specular * specular_pow(ndh, mat.shininess);
+            const float hh = dot(h, h);
+            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
+            result += light_color * mat.specular * specular_pow_sq(ndh_sq, mat.shininess);
         }
     }
 
