@@ -144,6 +144,7 @@ void Renderer::worker_func(int t)
             // chunk of triangles. This balances load automatically regardless
             // of how visible triangles are distributed across the mesh.
             const int chunk = choose_phase1_chunk(total, n);
+            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted out of per-triangle loop; clip_near overwrites before read
             while (true)
             {
                 const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
@@ -192,7 +193,6 @@ void Renderer::worker_func(int t)
                         cvc.normal = cvc.normal * -1.0f;
                     }
 
-                    ClipVert clipped[2][3];
                     const int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
 
                     for (int ti = 0; ti < n_tris; ti++)
@@ -449,6 +449,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     // ── Wireframe: single-threaded (draw_line writes to framebuffer directly) ─
     if (mode == ShadingMode::Wireframe)
     {
+        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near overwrites before read
         for (const Triangle &tri : mesh.triangles)
         {
             const Vertex &va = mesh.vertices[tri.v[0]];
@@ -467,7 +468,6 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
             const ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao};
             const ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao};
 
-            ClipVert clipped[2][3];
             const int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
 
             for (int ti = 0; ti < n_tris; ti++)
