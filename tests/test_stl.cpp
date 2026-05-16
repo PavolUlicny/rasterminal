@@ -295,3 +295,29 @@ TEST(stl_valid, ascii_header_leading_whitespace)
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
+
+TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
+{
+    // Size guard uses < not ==, so extra bytes after the last triangle are
+    // silently ignored. Build a valid 1-triangle binary STL then append 20
+    // extra bytes and verify the load still succeeds.
+    std::string s(80, 'X');
+    emit_u32_le(s, 1); // tri_count = 1
+    for (int i = 0; i < 3; i++)
+        emit_f32_le(s, 0.0f); // normal (ignored)
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(0);
+    s.push_back(0);       // attribute bytes
+    s.append(20, '\xFF'); // 20 surplus trailing bytes
+    TmpFile t(tmp_path("rasterminal_test_surplus.stl"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+}
