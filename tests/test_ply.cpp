@@ -854,3 +854,144 @@ TEST(ply_valid, binary_le_uint32_face_indices)
     ASSERT_EQ(m.triangles[0].v[1], 1u);
     ASSERT_EQ(m.triangles[0].v[2], 2u);
 }
+
+TEST(ply_valid, binary_le_uint8_face_indices)
+{
+    // "uchar" → UINT8 branch: direct buf[i] read.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar uchar vertex_indices\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(3);
+    s.push_back(0);
+    s.push_back(1);
+    s.push_back(2);
+    TmpFile t(tmp_path("rast_u8idx.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+}
+
+TEST(ply_valid, binary_le_int8_face_indices)
+{
+    // "char" → INT8 branch: cast<uint32_t>(cast<int8_t>(buf[i])).
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar char vertex_indices\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(3);
+    s.push_back(0);
+    s.push_back(1);
+    s.push_back(2);
+    TmpFile t(tmp_path("rast_i8idx.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+}
+
+TEST(ply_valid, binary_le_int16_face_indices)
+{
+    // "short" → INT16 branch: int16_t memcpy then cast to uint32_t.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar short vertex_indices\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(3);
+    s.push_back('\x00');
+    s.push_back('\x00'); // index 0 (int16 LE)
+    s.push_back('\x01');
+    s.push_back('\x00'); // index 1
+    s.push_back('\x02');
+    s.push_back('\x00'); // index 2
+    TmpFile t(tmp_path("rast_i16idx.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles[0].v[0], 0u);
+    ASSERT_EQ(m.triangles[0].v[1], 1u);
+    ASSERT_EQ(m.triangles[0].v[2], 2u);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FLOAT64 FACE COLORS (rd_col FLOAT64 path for face element)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, binary_le_face_colors_float64)
+{
+    // "double" face colors → FLOAT64 path in rd_col; prior tests only cover
+    // FLOAT64 vertex colors.
+    std::string s =
+        "ply\n"
+        "format binary_little_endian 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "property double red\nproperty double green\nproperty double blue\n"
+        "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    emit_f64_le(s, 1.0);
+    emit_f64_le(s, 0.5);
+    emit_f64_le(s, 0.0);
+    TmpFile t(tmp_path("rast_fcol_f64.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{3});
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-5f);
+}
