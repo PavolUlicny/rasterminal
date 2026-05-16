@@ -130,3 +130,19 @@ TEST(clip_reject, vertex_exactly_on_boundary_is_accepted)
     vec4 c = clip_v(0, 0.5f, 0, 1);
     ASSERT_FALSE(clip_reject(a, b, c));
 }
+
+TEST(clip_reject, second_vertex_w_zero_rejects)
+{
+    vec4 a = clip_v(0, 0, 0, 1);
+    vec4 b = clip_v(0.5f, 0, 0, 0); // w = 0
+    vec4 c = clip_v(0, 0.5f, 0, 1);
+    ASSERT_TRUE(clip_reject(a, b, c));
+}
+
+TEST(clip_reject, third_vertex_w_zero_rejects)
+{
+    vec4 a = clip_v(0, 0, 0, 1);
+    vec4 b = clip_v(0.5f, 0, 0, 1);
+    vec4 c = clip_v(0, 0.5f, 0, 0); // w = 0
+    ASSERT_TRUE(clip_reject(a, b, c));
+}
