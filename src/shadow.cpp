@@ -138,6 +138,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light)
         const vec4 cb = shadow_map.light_vp * vec4(pb, 1.0f);
         const vec4 cc = shadow_map.light_vp * vec4(pc, 1.0f);
 
+        // Geometrically unreachable for valid meshes: the frustum is sized with a 1.2×
+        // bounding-sphere margin so all vertices always project within clip space.
+        // Kept as a defensive guard against future frustum-sizing changes or NaN inputs.
         if (clip_reject(ca, cb, cc))
             continue;
 
