@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 // ─── Mesh::load_model ─────────────────────────────────────────────────────────
@@ -59,6 +60,7 @@ bool Mesh::load_model(const std::string &path, bool ao)
     compute_tangents();
     if (ao && ext != "stl")
         compute_ao();
+    optimize_vertex_cache();
 
     return true;
 }
@@ -203,4 +205,192 @@ void Mesh::compute_ao()
         const float curvature = dot(d * (1.0f / std::sqrt(len_sq)), N);
         vertices[i].ao = 1.0f - clamp(curvature * 0.5f, 0.0f, 0.15f);
     }
+}
+
+// ─── Mesh::optimize_vertex_cache ─────────────────────────────────────────────
+// Reorders triangles (Forsyth) then remaps vertex arrays to first-use order
+// to maximise hardware vertex cache reuse. Output is bit-identical.
+
+namespace
+{
+    constexpr int VCACHE_SIZE = 32;
+    constexpr float LAST_TRI_SCORE = 0.75f;
+    constexpr float VALENCE_BOOST_SCALE = 2.0f;
+
+    float forsyth_pos_score(int pos) noexcept
+    {
+        if (pos < 3)
+            return LAST_TRI_SCORE;
+        const float t = 1.0f - static_cast<float>(pos - 3) / static_cast<float>(VCACHE_SIZE - 3);
+        return t * std::sqrt(t); // pow(t, 1.5) closed form
+    }
+
+    float forsyth_val_score(int remaining) noexcept
+    {
+        return remaining > 0
+                   ? VALENCE_BOOST_SCALE / std::sqrt(static_cast<float>(remaining)) // pow(r, -0.5) closed form
+                   : 0.0f;
+    }
+} // namespace
+
+void Mesh::optimize_vertex_cache()
+{
+    if (triangles.size() < 2)
+        return;
+
+    const size_t nv = vertices.size();
+    const size_t nt = triangles.size();
+
+    // ── Pass 1: Forsyth triangle reorder ────────────────────────────────────
+
+    // Fully unshared meshes (STL, per-face-color PLY) have nv == nt*3.
+    // Forsyth degenerates to O(n²) there — bail out before any allocation.
+    if (nv == nt * 3)
+        return;
+
+    std::vector<int> adj_count(nv, 0);
+    for (const auto &tri : triangles)
+        for (const uint32_t vi : tri.v)
+            adj_count[vi]++;
+
+    // Catch nearly-unshared meshes the exact check above may miss.
+    {
+        int max_adj = 0;
+        for (const int c : adj_count)
+            if (c > max_adj)
+                max_adj = c;
+        if (max_adj < 2)
+            return;
+    }
+
+    std::vector<int> adj_start(nv + 1, 0);
+    for (size_t v = 0; v < nv; v++)
+        adj_start[v + 1] = adj_start[v] + adj_count[v];
+
+    std::vector<int> adj_list(static_cast<size_t>(adj_start[nv]));
+    {
+        std::vector<int> cursor(adj_start.begin(), adj_start.begin() + static_cast<std::ptrdiff_t>(nv));
+        for (int ti = 0; ti < static_cast<int>(nt); ti++)
+            for (const uint32_t vi : triangles[static_cast<size_t>(ti)].v)
+                adj_list[static_cast<size_t>(cursor[vi]++)] = ti;
+    }
+
+    std::vector<int> remaining(adj_count); // triangles not yet emitted per vertex
+    std::vector<float> vscore(nv);
+    for (size_t v = 0; v < nv; v++)
+        vscore[v] = forsyth_val_score(remaining[v]);
+
+    std::vector<float> tscore(nt);
+    std::vector<uint8_t> tdone(nt, 0); // uint8_t avoids std::vector<bool> bit-proxy overhead
+    for (size_t ti = 0; ti < nt; ti++)
+        tscore[ti] = vscore[triangles[ti].v[0]] + vscore[triangles[ti].v[1]] + vscore[triangles[ti].v[2]];
+
+    std::vector<int> sim_cache(VCACHE_SIZE, -1);
+
+    std::vector<Triangle> out;
+    out.reserve(nt);
+
+    int best = -1;
+    while (out.size() < nt)
+    {
+        // Fall back to linear scan when the cache yielded no candidate.
+        if (best < 0)
+        {
+            float bs = -1.0f;
+            for (size_t ti = 0; ti < nt; ti++)
+            {
+                if (!tdone[ti] && tscore[ti] > bs)
+                {
+                    bs = tscore[ti];
+                    best = static_cast<int>(ti);
+                }
+            }
+        }
+
+        tdone[static_cast<size_t>(best)] = 1;
+        out.push_back(triangles[static_cast<size_t>(best)]);
+
+        for (const uint32_t vraw : triangles[static_cast<size_t>(best)].v)
+        {
+            const int v = static_cast<int>(vraw);
+            remaining[static_cast<size_t>(v)]--;
+
+            int cur = -1;
+            for (int k = 0; k < VCACHE_SIZE; k++)
+                if (sim_cache[static_cast<size_t>(k)] == v)
+                {
+                    cur = k;
+                    break;
+                }
+
+            // Shift entries to open slot 0. If v wasn't cached, the last entry
+            // is silently evicted (it will not appear in the re-derive below).
+            const int shift_from = (cur >= 0) ? cur : VCACHE_SIZE - 1;
+            for (int k = shift_from; k > 0; k--)
+                sim_cache[static_cast<size_t>(k)] = sim_cache[static_cast<size_t>(k - 1)];
+            sim_cache[0] = v;
+        }
+
+        best = -1;
+        float bs = -1.0f;
+        for (int k = 0; k < VCACHE_SIZE; k++)
+        {
+            const int v = sim_cache[static_cast<size_t>(k)];
+            if (v < 0)
+                break;
+            vscore[static_cast<size_t>(v)] = forsyth_pos_score(k) + forsyth_val_score(remaining[static_cast<size_t>(v)]);
+            for (int ai = adj_start[static_cast<size_t>(v)]; ai < adj_start[static_cast<size_t>(v) + 1]; ai++)
+            {
+                const int ti = adj_list[static_cast<size_t>(ai)];
+                if (!tdone[static_cast<size_t>(ti)])
+                {
+                    const auto sti = static_cast<size_t>(ti);
+                    tscore[sti] = vscore[triangles[sti].v[0]] + vscore[triangles[sti].v[1]] + vscore[triangles[sti].v[2]];
+                    if (tscore[sti] > bs)
+                    {
+                        bs = tscore[sti];
+                        best = ti;
+                    }
+                }
+            }
+        }
+    }
+
+    triangles = std::move(out);
+
+    // ── Pass 2: vertex fetch remap ───────────────────────────────────────────
+    // Rebuild vertex arrays in first-use order so sequential triangle access
+    // produces sequential vertex reads.
+
+    std::vector<int> remap(nv, -1);
+    std::vector<Vertex> new_verts;
+    std::vector<vec3> new_tans;
+    std::vector<vec3> new_vcols;
+    new_verts.reserve(nv);
+    new_tans.reserve(nv);
+    if (has_vertex_colors)
+        new_vcols.reserve(nv);
+
+    int next = 0;
+    for (auto &tri : triangles)
+    {
+        for (uint32_t &vi : tri.v)
+        {
+            const size_t old_v = vi;
+            if (remap[old_v] < 0)
+            {
+                remap[old_v] = next++;
+                new_verts.push_back(vertices[old_v]);
+                new_tans.push_back(tangents[old_v]);
+                if (has_vertex_colors)
+                    new_vcols.push_back(vertex_colors[old_v]);
+            }
+            vi = static_cast<uint32_t>(remap[old_v]);
+        }
+    }
+
+    vertices = std::move(new_verts);
+    tangents = std::move(new_tans);
+    if (has_vertex_colors)
+        vertex_colors = std::move(new_vcols);
 }

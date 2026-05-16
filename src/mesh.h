@@ -83,4 +83,9 @@ private:
     // Concave areas (cavities, creases) receive lower AO; convex areas stay at 1.
     // Called by load_model() after compute_tangents(), unless ao=false was passed.
     void compute_ao();
+
+    // Reorder triangles for vertex cache coherence (Tom Forsyth's algorithm) and
+    // remap the vertex array to first-use order. Output is bit-identical to input;
+    // only storage order changes. Called at the end of load_model().
+    void optimize_vertex_cache();
 };
