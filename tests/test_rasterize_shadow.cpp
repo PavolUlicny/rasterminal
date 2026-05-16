@@ -341,3 +341,50 @@ TEST(rasterize_phong, n_lights_one_fully_shadowed_gives_ambient_only)
     if (c_shd.r > 5 || c_shd.g > 5 || c_shd.b > 5)
         ASSERT_FAIL("n_lights=1 fully shadowed: sl=key+1 n_shadow=0 → ambient-only → near-black, got (" + std::to_string(static_cast<int>(c_shd.r)) + "," + std::to_string(static_cast<int>(c_shd.g)) + "," + std::to_string(static_cast<int>(c_shd.b)) + ")");
 }
+
+// S9: rasterize() (Gouraud/Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
+// col=red, shad=blue; sf=5/9 ≈ 0.556. Result must be strictly between fully-lit (red)
+// and fully-shadowed (blue).
+TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 wpos{0.0f, 0.0f, 0.5f}; // maps to cx=cy=1024 with identity light_vp
+    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+
+    auto draw = [&](Framebuffer &fb, const ShadowMap *sm)
+    {
+        rasterize(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                  red, red, red,
+                  blue, blue, blue,
+                  wpos, wpos, wpos,
+                  uv, uv, uv,
+                  nullptr, 0.0f, sm,
+                  0, 19);
+    };
+
+    ShadowMap sm0 = make_manual_sm(0); // sf=0   → if(sf>0) false → col (red)
+    ShadowMap sm9 = make_manual_sm(9); // sf=1   → lerp(red,blue,1) = blue
+    ShadowMap sm5 = make_manual_sm(5); // sf=5/9 → lerp(red,blue,5/9) intermediate
+
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
+    Framebuffer fb_shd(40, 20, /*headless=*/true);
+    Framebuffer fb_par(40, 20, /*headless=*/true);
+    draw(fb_lit, &sm0);
+    draw(fb_shd, &sm9);
+    draw(fb_par, &sm5);
+
+    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_par, 20, 10));
+
+    const int r_lit = static_cast<int>(fb_lit.get_pixel(20, 10).r);
+    const int r_shd = static_cast<int>(fb_shd.get_pixel(20, 10).r);
+    const int r_par = static_cast<int>(fb_par.get_pixel(20, 10).r);
+
+    if (r_lit <= r_shd)
+        ASSERT_FAIL("lit must be redder than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd));
+    if (r_par <= r_shd)
+        ASSERT_FAIL("partial must be redder than fully shadowed: par=" + std::to_string(r_par) + " shd=" + std::to_string(r_shd));
+    if (r_par >= r_lit)
+        ASSERT_FAIL("partial must be less red than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit));
+}

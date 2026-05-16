@@ -317,3 +317,94 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
     rast_phong(fb, &tex, cutoff);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
+
+// ─── Group F: has_cutout + nmap/stex combined ─────────────────────────────────
+
+// F1: has_cutout=true + nmap active — the UV from the cutout pre-pass must be reused
+// for nmap sampling (the `if (!has_cutout && ...)` UV recompute is skipped).
+// nmap texel (255,128,128) → nm≈(1,0,0) → normal redirected to +x in world space.
+// Light dir=(1,0,0): without nmap dot((0,0,1),(1,0,0))=0 → R≈0; with nmap dot≈1 → R≈255.
+// alpha=255 ≥ cutoff=0.5 → pixel passes the cutout test.
+TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{0.0f, 0.0f, 5.0f};
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {0.0f, 0.0f, 0.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.alpha_cutoff = 0.5f;
+    Light light{};
+    light.direction = {1.0f, 0.0f, 0.0f};
+    light.color = {1.0f, 0.0f, 0.0f};
+    vec2 uv{0.5f, 0.5f};
+    Texture diffuse_tex = make_tex(1, 1, {255, 255, 255, 255}); // opaque white → passes cutout
+    Texture nmap_tex = make_tex(1, 1, {255, 128, 128, 255});    // nm≈(1,0,0) → redirects normal to +x
+
+    auto rph = [&](Framebuffer &fb, const Texture *nm)
+    {
+        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        uv, uv, uv,
+                        1.0f, 1.0f, 1.0f,
+                        white, white, white, false,
+                        eye, &light, 1, ambient, mat,
+                        &diffuse_tex, nm, nullptr, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb_nonmap(40, 20, /*headless=*/true), fb_nmap(40, 20, /*headless=*/true);
+    rph(fb_nonmap, nullptr);
+    rph(fb_nmap, &nmap_tex);
+
+    ASSERT_TRUE(was_drawn(fb_nonmap, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_nmap, 20, 10));
+    if (fb_nonmap.get_pixel(20, 10).r > 5)
+        ASSERT_FAIL("without nmap+cutout: R too high, normal perpendicular to light");
+    Color c_nmap = fb_nmap.get_pixel(20, 10);
+    if (c_nmap.r < 230)
+        ASSERT_FAIL("with nmap+cutout: R too low, expected bright red from redirected normal, got R=" +
+                    std::to_string(static_cast<int>(c_nmap.r)));
+}
+
+// ─── Group G: has_vcol + alpha_cutoff combined ────────────────────────────────
+
+// G1: has_vcol=true + alpha_cutoff active — both compose correctly: pixel passes
+// alpha test AND is tinted red by vcol.
+// ambient=(1,1,1), mat.ambient=(1,1,1), red vcol → R≈255, G≈B≈0.
+TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
+{
+    Framebuffer fb(40, 20, /*headless=*/true);
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    vec3 ambient{1.0f, 1.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.alpha_cutoff = 0.5f;
+    Texture opaque_tex = make_tex(1, 1, {255, 255, 255, 255}); // white, alpha=255
+    vec3 red{1.0f, 0.0f, 0.0f};
+
+    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                    uv, uv, uv,
+                    1.0f, 1.0f, 1.0f,
+                    red, red, red, true,
+                    eye, nullptr, 0, ambient, mat,
+                    &opaque_tex, nullptr, nullptr, nullptr,
+                    0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 230)
+        ASSERT_FAIL("has_vcol+cutout: R too low, expected red tint, got R=" +
+                    std::to_string(static_cast<int>(c.r)));
+    if (c.g > 20 || c.b > 20)
+        ASSERT_FAIL("has_vcol+cutout: G/B too high, expected near-zero from red vcol, got (" +
+                    std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+}
