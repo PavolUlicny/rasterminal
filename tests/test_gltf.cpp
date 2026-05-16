@@ -859,3 +859,160 @@ TEST(reject, gltf_no_scenes_array_rejects)
               "{\"asset\":{\"version\":\"2.0\"}}");
     assert_rejects(f.path);
 }
+
+// ─── Group N: load_tex path coverage ──────────────────────────────────────────
+
+TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
+{
+    // image[0] has bufferView=1 (4 garbage bytes) and no URI.
+    // load_tex takes the else-if(img->buffer_view) branch; load_from_memory fails
+    // on the garbage data → load_tex returns -1 → mat.normal_tex = -1.
+    // Covers both the buffer_view branch in load_tex AND the mat.normal_tex
+    // assignment in map_mat.  Mesh geometry still loads.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0},\"material\":0}]}],"
+        "\"materials\":[{\"normalTexture\":{\"index\":0}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":1}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4}"
+        "],"
+        "\"buffers\":[{\"byteLength\":40}]}";
+    std::string bin;
+    emit_tri_verts(bin); // 36 bytes geometry
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0); // 4 bytes garbage image data
+
+    TmpFile f(tmp_path("rast_nmap_bv.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].normal_tex < 0);
+}
+
+TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
+{
+    // image[0] has uri="does_not_exist.tga" (no bufferView).
+    // load_tex takes the URI branch; tex.load(dir + uri) fails because the file
+    // does not exist → load_tex returns -1 → mat.diffuse_tex = -1.
+    // Covers the if(img->uri) branch in load_tex.  Mesh geometry still loads.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0},\"material\":0}]}],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"uri\":\"does_not_exist.tga\"}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
+        "\"buffers\":[{\"byteLength\":36}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+
+    TmpFile f(tmp_path("rast_tex_uri.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].diffuse_tex < 0);
+}
+
+// ─── Group O: cgltf_load_buffers / cgltf_validate failures ────────────────────
+
+TEST(reject, gltf_missing_external_buffer_fails_load_buffers)
+{
+    // .gltf file (not GLB) referencing an external buffer "missing_buf.bin" that
+    // is never created.  cgltf_parse_file succeeds; cgltf_load_buffers fails trying
+    // to open the missing file → load_gltf returns false.
+    TmpFile f(tmp_path("rast_missingbuf.gltf"),
+              "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+              "{\"POSITION\":0}}]}],"
+              "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+              "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+              "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+              "\"buffers\":[{\"byteLength\":36,\"uri\":\"missing_buf.bin\"}]}");
+    assert_rejects(f.path);
+}
+
+TEST(reject, gltf_oversized_buffer_view_fails_validate)
+{
+    // GLB whose buffer_view claims byteLength=1000 but the buffer is only 36 bytes.
+    // cgltf_parse_file succeeds; cgltf_load_buffers succeeds (BIN chunk embedded);
+    // cgltf_validate fails: bv->offset + bv->size (1000) > buffer->size (36).
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":1000}],"
+        "\"buffers\":[{\"byteLength\":36}]}";
+    std::string bin(36, '\0');
+    TmpFile f(tmp_path("rast_bigbv.glb"), make_glb(json, bin));
+    assert_rejects(f.path);
+}
+
+// ─── Group P: vertex_colors white-fill on second primitive ────────────────────
+
+TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
+{
+    // Two-primitive mesh: prim 0 has no COLOR_0 (3 verts), prim 1 has COLOR_0
+    // (3 verts: red, green, blue).  When prim 1 is processed with vert_base=3,
+    // vertex_colors.resize(6, {1,1,1}) fills indices 0-5 with white then the
+    // loop overwrites [3..5] with actual colors.
+    // Covers the vert_base>0 resize path in the color_acc block.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+        "{\"attributes\":{\"POSITION\":0}},"
+        "{\"attributes\":{\"POSITION\":1,\"COLOR_0\":2}}"
+        "]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
+        "],"
+        "\"buffers\":[{\"byteLength\":120}]}";
+
+    std::string bin;
+    emit_tri_verts(bin); // prim 0 positions (36 bytes)
+    emit_tri_verts(bin); // prim 1 positions (36 bytes)
+    // prim 1 COLOR_0: red, green, blue (VEC4 FLOAT, alpha discarded)
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+
+    TmpFile f(tmp_path("rast_vcol_whitefill.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), static_cast<size_t>(6));
+    // Prim 0 vertices: white-filled because prim 0 had no COLOR_0.
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 1.0f, 1e-5f);
+    // Prim 1 vertices: actual COLOR_0 values.
+    ASSERT_NEAR(m.vertex_colors[3].x, 1.0f, 1e-5f); // red
+    ASSERT_NEAR(m.vertex_colors[3].y, 0.0f, 1e-5f);
+    ASSERT_NEAR(m.vertex_colors[4].y, 1.0f, 1e-5f); // green
+    ASSERT_NEAR(m.vertex_colors[5].z, 1.0f, 1e-5f); // blue
+}
