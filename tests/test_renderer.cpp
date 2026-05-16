@@ -358,6 +358,54 @@ TEST(renderer, show_texture_toggle_changes_pixel)
         ASSERT_FAIL("show_texture=false: G too low (" + std::to_string(static_cast<int>(cn.g)) + ")");
 }
 
+// F3: show_texture=false must null-out stex and nmap even when specular_tex and
+// normal_tex are set on the material.  A black specular texture would zero out all
+// specular if stex were incorrectly forwarded — that mismatch catches the bug.
+// Camera at +Z, light at +Z → H=(0,0,1), n·h=1 → specular fires strongly.
+TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+
+    // specular_tex → solid black (zeroes specular if sampled).
+    // normal_tex  → flat neutral (128,128,255 = straight-up tangent normal).
+    Mesh mesh = make_unit_triangle();
+    mesh.materials[0].specular = {1.0f, 1.0f, 1.0f};
+    mesh.materials[0].shininess = 32.0f;
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 0));       // idx 0: black stex
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 128, 128, 255)); // idx 1: flat nmap
+    mesh.materials[0].specular_tex = 0;
+    mesh.materials[0].normal_tex = 1;
+
+    // Baseline: same material, specular_tex/normal_tex at default -1.
+    Mesh base = make_unit_triangle();
+    base.materials[0].specular = {1.0f, 1.0f, 1.0f};
+    base.materials[0].shininess = 32.0f;
+
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    r.show_texture = false;
+
+    Framebuffer fb_with(40, 20, /*headless=*/true);
+    fb_with.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb_with);
+
+    Framebuffer fb_base(40, 20, /*headless=*/true);
+    fb_base.clear();
+    r.render(base, cam, &light, 1, ambient, fb_base);
+
+    ASSERT_TRUE(was_drawn(fb_with, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_base, 20, 10));
+
+    Color cw = fb_with.get_pixel(20, 10);
+    Color cb = fb_base.get_pixel(20, 10);
+    auto diff = [](uint8_t a, uint8_t b)
+    { return a > b ? a - b : b - a; };
+    if (diff(cw.r, cb.r) > 2 || diff(cw.g, cb.g) > 2 || diff(cw.b, cb.b) > 2)
+        ASSERT_FAIL("show_tex=false: stex/nmap not suppressed — output differs from baseline (" + std::to_string(static_cast<int>(cw.r)) + "," + std::to_string(static_cast<int>(cw.g)) + "," + std::to_string(static_cast<int>(cw.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," + std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")");
+}
+
 // ─── Group J: double-sided lighting correctness ───────────────────────────────
 // Existing D2 only checks pixels-drawn (ambient-only). These tests exercise the
 // three normal-flip code paths under a directional light so that a dropped or

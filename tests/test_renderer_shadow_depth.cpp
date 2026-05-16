@@ -253,6 +253,15 @@ TEST(renderer, phong_multi_light_only_key_shadowed)
         ASSERT_FAIL("Phong multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g)));
 }
 
+// Receiver triangle with uniform vertex colors — same geometry as make_receiver_only().
+static Mesh make_vcol_receiver(vec3 color = {1.0f, 0.0f, 0.0f})
+{
+    Mesh m = make_receiver_only();
+    m.vertex_colors.resize(3, color);
+    m.has_vertex_colors = true;
+    return m;
+}
+
 // K7: Gouraud + two lights — covers the Flat/Gouraud shadow_lights split
 // (renderer.cpp:108-109), which is a separate code path from Phong's.
 TEST(renderer, gouraud_multi_light_only_key_shadowed)
@@ -493,4 +502,73 @@ TEST(renderer, depth_value_matches_closer_triangle)
     // ndc_z for world z=+1: (-(far+near)/(far-near))*(-4) + (-(2*far*near)/(far-near)) / 4
     //   = 3.808 / 4 ≈ 0.952; tolerance 0.005 comfortably separates from farther's 0.969.
     assert_depth_near(fb, 20, 10, 0.952f, 0.005f);
+}
+
+// ─── K8/K9: Flat + Gouraud + shadow + vertex colors ──────────────────────────
+// Exercises the combined path where both has_vertex_colors and a shadow_map are
+// active simultaneously — the flat_mat/gouraud_mat vcol tint is applied to
+// the shad_* precomputed colours as well as col_*.
+//
+// Red vcol receiver, diagonal key light, ambient (0.1,0,0):
+//   flat_mat.diffuse = (1,1,1)*(1,0,0) = (1,0,0)
+//   col_*  = ambient*(1,0,0) + (1,0,0)*0.707*(1,0,0) ≈ (0.807,0,0) → R≈206
+//   shad_* = ambient*(1,0,0) (n_shadow_lights=0, no directional) → R≈25
+//   shadow_factor≈1 → shadowed R≈25 ≤ 60.
+
+// K8: Flat shading.
+TEST(renderer, flat_shadow_vcol_darkens_occluded_pixel)
+{
+    Mesh receiver = make_vcol_receiver();
+    Camera cam = make_test_camera();
+    Light light = make_diagonal_key_light();
+    vec3 ambient{0.1f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Flat;
+
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
+    fb_lit.clear();
+    r.render(receiver, cam, &light, 1, ambient, fb_lit);
+    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
+    Color c_lit = fb_lit.get_pixel(20, 10);
+    if (c_lit.r < 150)
+        ASSERT_FAIL("Flat+vcol lit R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
+
+    ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
+    Framebuffer fb_shadow(40, 20, /*headless=*/true);
+    fb_shadow.clear();
+    r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
+    ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
+    Color c_shadow = fb_shadow.get_pixel(20, 10);
+    if (c_shadow.r > 60)
+        ASSERT_FAIL("Flat+vcol shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ")");
+}
+
+// K9: Gouraud shading — exercises shad_a/b/c via gouraud_mat lambda.
+TEST(renderer, gouraud_shadow_vcol_darkens_occluded_pixel)
+{
+    Mesh receiver = make_vcol_receiver();
+    Camera cam = make_test_camera();
+    Light light = make_diagonal_key_light();
+    vec3 ambient{0.1f, 0.0f, 0.0f};
+
+    Renderer r;
+    r.mode = ShadingMode::Gouraud;
+
+    Framebuffer fb_lit(40, 20, /*headless=*/true);
+    fb_lit.clear();
+    r.render(receiver, cam, &light, 1, ambient, fb_lit);
+    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
+    Color c_lit = fb_lit.get_pixel(20, 10);
+    if (c_lit.r < 150)
+        ASSERT_FAIL("Gouraud+vcol lit R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
+
+    ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
+    Framebuffer fb_shadow(40, 20, /*headless=*/true);
+    fb_shadow.clear();
+    r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
+    ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
+    Color c_shadow = fb_shadow.get_pixel(20, 10);
+    if (c_shadow.r > 60)
+        ASSERT_FAIL("Gouraud+vcol shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ")");
 }
