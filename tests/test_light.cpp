@@ -328,6 +328,40 @@ TEST(light, multiple_lights_sum_specular)
     ASSERT_NEAR(r.z, r0.z + r1.z, EPS);
 }
 
+TEST(light, ao_zero_zeroes_ambient)
+{
+    // ao=0 must zero the ambient term even when ambient and mat.ambient are non-zero.
+    Material mat;
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    vec3 ambient{0.5f, 0.5f, 0.5f};
+    vec3 v{0, 0, 1};
+    vec3 r = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 0.0f);
+    ASSERT_NEAR(r.x, 0.0f, EPS);
+    ASSERT_NEAR(r.y, 0.0f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
+TEST(light, ndh_zero_gates_specular)
+{
+    // v = -l → h = l + v = {0,0,0}: ndh_raw = 0, gate fires before hh division.
+    // Without the gate, hh = 0 → 0/0 = NaN. Gate must suppress specular cleanly.
+    Material mat;
+    mat.diffuse = {0.0f, 0.0f, 0.0f};
+    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0.0f, 1.0f, 0.0f};
+    l.color = {1.0f, 1.0f, 1.0f};
+    vec3 ambient{0, 0, 0};
+    vec3 n{0.0f, 1.0f, 0.0f};
+
+    vec3 r = compute_lighting(n, vec3{0.0f, -1.0f, 0.0f}, &l, 1, ambient, mat);
+
+    ASSERT_NEAR(r.x, 0.0f, EPS);
+    ASSERT_NEAR(r.y, 0.0f, EPS);
+    ASSERT_NEAR(r.z, 0.0f, EPS);
+}
+
 TEST(light, specular_independent_of_diffuse_branch)
 {
     // n={0,1,0}, l={1,0,0}: diff=dot(n,l)=0 so the diffuse branch (diff>0) is
