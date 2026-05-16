@@ -42,7 +42,7 @@ struct RasterTriFg // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member
     float alpha_cutoff = 0.0f;
     vec3 col_a, col_b, col_c;    // fully lit (all lights)
     vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
-    RasterTriFg() = default;     // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject) — fields intentionally uninitialised; written by Phase 1 before Phase 2 reads them
+    RasterTriFg() = default;     // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init,hicpp-member-init) — fields written by Phase 1 before Phase 2 reads them
 };
 
 struct RasterTriPh // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — all fields written by Phase 1 before Phase 2 reads them
@@ -60,7 +60,7 @@ struct RasterTriPh // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member
     const Material *mat;
     const Texture *stex;
     const Texture *nmap;
-    RasterTriPh() = default; // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject) — fields intentionally uninitialised; written by Phase 1 before Phase 2 reads them
+    RasterTriPh() = default; // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init,hicpp-member-init) — fields written by Phase 1 before Phase 2 reads them
 };
 
 // ─── Rasterization primitives ─────────────────────────────────────────────────
