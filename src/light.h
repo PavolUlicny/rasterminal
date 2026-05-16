@@ -58,6 +58,26 @@ struct assume_unit_t
 };
 inline constexpr assume_unit_t assume_unit{};
 
+// Half-vector normalize skipped: ndh² = (n·h)² / (h·h), saves one sqrt per light.
+inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v,
+                        const Light &light, const Material &mat) noexcept
+{
+    const float diff = dot(n, light.direction);
+    if (diff >= 0.0f)
+    {
+        result += light.color * mat.diffuse * diff;
+
+        const vec3 h = light.direction + v;
+        const float ndh_raw = dot(n, h);
+        if (ndh_raw > 0.0f)
+        {
+            const float hh = dot(h, h);
+            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
+            result += light.color * mat.specular * specular_pow_sq(ndh_sq, mat.shininess);
+        }
+    }
+}
+
 // Blinn-Phong illumination summed over an array of directional lights.
 // ambient is a scene-level term added once (not per light).
 // v must be the unit view vector (normalize(eye - pos)) — precomputed by caller.
@@ -69,32 +89,9 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
                              float ao = 1.0f) noexcept
 {
     const vec3 n = normalize(normal);
-
     vec3 result = ambient * mat.ambient * ao;
-
     for (int i = 0; i < n_lights; i++)
-    {
-        const vec3 &l = lights[i].direction;
-        const vec3 &light_color = lights[i].color;
-
-        const float diff = dot(n, l);
-        if (diff > 0.0f)
-            result += light_color * mat.diffuse * diff;
-
-        // Skip the half-vector normalize entirely: ndh = dot(n, h/|h|),
-        // so ndh² = (n·h)² / (h·h). The squaring-chain forms of specular_pow
-        // operate on ndh² directly, eliminating one sqrt per light. The inner
-        // ndh > 0 check is implied by ndh_raw > 0.
-        const vec3 h = l + v;
-        const float ndh_raw = dot(n, h);
-        if (ndh_raw > 0.0f)
-        {
-            const float hh = dot(h, h);
-            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
-            result += light_color * mat.specular * specular_pow_sq(ndh_sq, mat.shininess);
-        }
-    }
-
+        apply_light(result, n, v, lights[i], mat);
     return result;
 }
 
@@ -121,26 +118,8 @@ inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, const vec3 &n, 
                              float ao = 1.0f) noexcept
 {
     vec3 result = ambient * mat.ambient * ao;
-
     for (int i = 0; i < n_lights; i++)
-    {
-        const vec3 &l = lights[i].direction;
-        const vec3 &light_color = lights[i].color;
-
-        const float diff = dot(n, l);
-        if (diff > 0.0f)
-            result += light_color * mat.diffuse * diff;
-
-        const vec3 h = l + v;
-        const float ndh_raw = dot(n, h);
-        if (ndh_raw > 0.0f)
-        {
-            const float hh = dot(h, h);
-            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
-            result += light_color * mat.specular * specular_pow_sq(ndh_sq, mat.shininess);
-        }
-    }
-
+        apply_light(result, n, v, lights[i], mat);
     return result;
 }
 
