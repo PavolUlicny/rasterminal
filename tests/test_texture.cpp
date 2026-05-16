@@ -3,6 +3,7 @@
 #include "inline_bmp.h"
 #include "../src/texture.h"
 
+#include <climits>
 #include <cstdio>
 #include <cstdint>
 #include <vector>
@@ -348,4 +349,36 @@ TEST(texture_load, load_from_memory_success_overwrites_previous)
     ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
     ASSERT_EQ(t.pixels[0], uint8_t{255}); // R now 255 (was 0)
     ASSERT_EQ(t.pixels[1], uint8_t{0});   // G now 0 (was 255)
+}
+
+TEST(texture_load, load_from_memory_oversized_returns_false)
+{
+    // size > INT_MAX triggers the early-return before stbi is called.
+    // The actual buffer need not be that large; only the size argument matters.
+    Texture t;
+    const uint8_t dummy = 0;
+    ASSERT_FALSE(t.load_from_memory(&dummy, static_cast<size_t>(INT_MAX) + 1));
+    ASSERT_FALSE(t.valid());
+}
+
+TEST(texture, sample_rgba_v_near_one_maps_to_top_image_row)
+{
+    // 1×2: image row0 (top) = red/alpha=200, row1 (bottom) = blue/alpha=100.
+    // v=0.999 → wrap→0.999 → flip→0.001 → fy≈0 → mostly image row0.
+    Texture t = make_tex(1, 2, {255, 0, 0, 200, 0, 0, 255, 100});
+    vec4 c = t.sample_rgba(0.0f, 0.999f);
+    ASSERT_TRUE(c.x > 0.9f);                   // mostly red (row0)
+    ASSERT_TRUE(c.z < 0.1f);                   // little blue
+    ASSERT_TRUE(c.w > 200.0f / 255.0f * 0.9f); // alpha mostly from row0
+}
+
+TEST(texture_load, load_from_memory_success_updates_dimensions)
+{
+    // Previous overwrite test uses same-size textures; here we verify width/height
+    // are actually reassigned when the new image has different dimensions.
+    Texture t = make_tex(2, 2, {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255});
+    ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
+    ASSERT_EQ(t.width, 1);
+    ASSERT_EQ(t.height, 1);
+    ASSERT_EQ(t.pixels.size(), size_t{4});
 }
