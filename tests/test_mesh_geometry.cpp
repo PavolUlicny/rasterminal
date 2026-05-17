@@ -410,6 +410,67 @@ TEST(ao, stl_load_skips_compute_ao)
         ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
 }
 
+TEST(ao, ply_load_runs_compute_ao)
+{
+    // PLY + ao=true must run compute_ao() (unlike STL where ext=="stl" skips it).
+    // Same concave-pit geometry as ao/concave_vertex_darkened: vertex 0 → ao = 0.85.
+    const std::string ply =
+        "ply\n"
+        "format ascii 1.0\n"
+        "element vertex 5\n"
+        "property float x\n"
+        "property float y\n"
+        "property float z\n"
+        "element face 4\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n"
+        "0 0 0\n"
+        "1 0 1\n"
+        "0 1 1\n"
+        "-1 0 1\n"
+        "0 -1 1\n"
+        "3 0 1 2\n"
+        "3 0 2 3\n"
+        "3 0 3 4\n"
+        "3 0 4 1\n";
+    TmpFile f(tmp_path("rast_ao_ply_concave.ply"), ply);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    ASSERT_NEAR(m.vertices[0].ao, 0.85f, 1e-4f);
+}
+
+TEST(ao, convex_vertex_stays_at_one)
+{
+    // Spike tip at origin, 4 base verts at z=-1.
+    // Tip normal = (0,0,1); centroid of neighbors = (0,0,-1);
+    // curvature = dot((0,0,-1),(0,0,1)) = -1 (convex) → clamp(-0.5,0,0.15)=0 → ao=1.0.
+    const std::string obj =
+        "v 0 0 0\n"
+        "v 1 0 -1\n"
+        "v 0 1 -1\n"
+        "v -1 0 -1\n"
+        "v 0 -1 -1\n"
+        "f 1 2 3\n"
+        "f 1 3 4\n"
+        "f 1 4 5\n"
+        "f 1 5 2\n";
+    TmpFile f(tmp_path("rast_ao_convex.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    ASSERT_NEAR(m.vertices[0].ao, 1.0f, 1e-5f);
+}
+
+TEST(mesh, load_model_sets_has_double_sided_false_for_obj)
+{
+    // std::any_of in load_model() checks all materials; OBJ never sets double_sided.
+    // Verifies the flag is computed via the std::any_of path, not left at its clear() default.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    TmpFile f(tmp_path("rast_ds_obj.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/false));
+    ASSERT_FALSE(m.has_double_sided);
+}
+
 // ─── load_model failure path ──────────────────────────────────────────────────
 
 TEST(mesh_clear, failed_load_clears_previous_state)
