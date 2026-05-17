@@ -202,3 +202,46 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
     if (count_drawn_pixels(fb) != 0)
         ASSERT_FAIL("clip_reject wireframe: off-screen triangle must produce no pixels");
 }
+
+// ─── N7: Phong mode with zero tangents uses vertex normals ───────────────────
+//
+// Mesh with all-zero tangents (no TBN perturbation available).
+// p_tans[i] = {0,0,0} → rasterize_phong receives zero tangents and falls
+// back to the interpolated vertex normals for per-pixel lighting.
+// Verifies that ambient lighting still reaches the framebuffer.
+
+TEST(renderer, phong_zero_tangents_uses_vertex_normals)
+{
+    Mesh mesh;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.normal = {0.0f, 0.0f, 1.0f};
+    v.uv = {0.5f, 0.5f};
+    v.pos = {-1.0f, -1.0f, 0.0f};
+    mesh.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, 0.0f};
+    mesh.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, 0.0f};
+    mesh.vertices.push_back(v);
+    // zero tangents → no TBN perturbation; rasterize_phong falls back to vertex normals
+    mesh.tangents.resize(3, {0.0f, 0.0f, 0.0f});
+    Triangle tri{};
+    tri.v[0] = 0;
+    tri.v[1] = 1;
+    tri.v[2] = 2;
+    tri.material_idx = 0;
+    mesh.triangles.push_back(tri);
+    Material mat;
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mesh.materials.push_back(mat);
+
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Camera cam = make_test_camera();
+    vec3 ambient{0.5f, 0.5f, 0.5f};
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
+    if (!was_drawn(fb, 20, 10))
+        ASSERT_FAIL("phong zero tangents: centre pixel not drawn");
+}

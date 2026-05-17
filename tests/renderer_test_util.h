@@ -42,7 +42,6 @@ inline Mesh make_unit_triangle(bool flip_winding = false, bool double_sided = fa
     v.pos = {0.0f, 1.0f, 0.0f};
     m.vertices.push_back(v);
 
-    // Tangents required so Phong Phase 1 does not dereference an empty vector.
     m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
 
     Triangle tri{};
