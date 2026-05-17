@@ -1057,3 +1057,30 @@ TEST(ply_valid, face_color_mixed_valid_invalid_indices)
     ASSERT_EQ(m.vertices.size(), size_t{3});
     ASSERT_TRUE(m.has_vertex_colors);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE COLORS + UV COORDINATES
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, ascii_face_color_with_uv_coords)
+{
+    // PLY with per-face colors AND per-vertex s/t UV coordinates.
+    // The face-color expansion path builds a vertex pool that reads UVs into
+    // pool[i].uv when ub != nullptr (line 345 in mesh_ply.cpp).
+    TmpFile t(tmp_path("rast_fcol_uv.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "property float s\nproperty float t\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0 0.1 0.2\n"
+              "1 0 0 0.3 0.4\n"
+              "0 1 0 0.5 0.6\n"
+              "3 0 1 2 255 0 0\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_TRUE(m.has_vertex_colors);
+}
