@@ -6,7 +6,9 @@
 #pragma GCC diagnostic ignored "-Wfloat-conversion"
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+#if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wuseless-cast"
+#endif
 #elif defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4244 4245 4267)
