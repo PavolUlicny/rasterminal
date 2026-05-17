@@ -211,3 +211,45 @@ TEST(clip_near, two_inside_uv_interpolated_at_both_crossings)
     ASSERT_NEAR(out[1][2].uv.x, 0.95f, 1e-4f);
     ASSERT_NEAR(out[1][2].uv.y, 0.95f, 1e-4f);
 }
+
+// ─── varying near_w ───────────────────────────────────────────────────────────
+
+TEST(clip_near, alternate_near_w_clips_correctly)
+{
+    // near_w = 0.5: a inside (w=2.0), b/c outside (w=0.0).
+    // t = (0.5 - 2.0) / (0.0 - 2.0) = 0.75 → clipped w = 0.5.
+    const float NEAR2 = 0.5f;
+    ClipVert a = make_cv(2.0f), b = make_cv(0.0f), c = make_cv(0.0f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR2), 1);
+    ASSERT_NEAR(out[0][1].c.w, NEAR2, 1e-5f);
+    ASSERT_NEAR(out[0][2].c.w, NEAR2, 1e-5f);
+}
+
+// ─── grazing clip precision ───────────────────────────────────────────────────
+
+TEST(clip_near, grazing_clip_t_near_zero)
+{
+    // Inside vertex w = NEAR + 0.001 (just barely inside).
+    // t = (NEAR - w_in) / (0 - w_in) ≈ 0.0099 — very close to 0.
+    // Clipped vertices must still land at NEAR.
+    const float w_in = NEAR + 0.001f;
+    ClipVert a = make_cv(w_in), b = make_cv(0.0f), c = make_cv(0.0f);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 1);
+    ASSERT_NEAR(out[0][1].c.w, NEAR, 1e-5f);
+    ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f);
+}
+
+TEST(clip_near, grazing_clip_t_near_one)
+{
+    // Outside vertex w = NEAR - 0.001 (just barely outside).
+    // t = (NEAR - 2.0) / (w_out - 2.0) ≈ 0.9995 — very close to 1.
+    // Clipped vertices must still land at NEAR.
+    const float w_out = NEAR - 0.001f;
+    ClipVert a = make_cv(2.0f), b = make_cv(w_out), c = make_cv(w_out);
+    ClipVert out[2][3];
+    ASSERT_EQ(clip_near(a, b, c, out, NEAR), 1);
+    ASSERT_NEAR(out[0][1].c.w, NEAR, 1e-5f);
+    ASSERT_NEAR(out[0][2].c.w, NEAR, 1e-5f);
+}

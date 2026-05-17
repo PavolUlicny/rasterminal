@@ -820,3 +820,44 @@ TEST(util, to_radians_360)
 {
     ASSERT_NEAR(to_radians(360.0f), 2.0f * 3.14159265f, 1e-5f);
 }
+
+// ─── perspective() degenerate planes ─────────────────────────────────────────
+
+TEST(perspective, near_equals_far_produces_nonfinite)
+{
+    // (far - near) = 0 → divide by zero → non-finite m[2][2] and m[3][2].
+    // volatile prevents MSVC from constant-folding at compile time (C4723).
+    volatile float same = 1.0f;
+    mat4 P = perspective(to_radians(60.0f), 1.0f,
+                         static_cast<float>(same), static_cast<float>(same));
+    ASSERT_FALSE(std::isfinite(P.m[2][2]));
+}
+
+TEST(perspective, near_greater_than_far_produces_finite)
+{
+    // far < near: denominator (far - near) is negative but non-zero → finite result.
+    // Depth range is inverted but no singularity occurs.
+    mat4 P = perspective(to_radians(60.0f), 1.0f, 10.0f, 1.0f);
+    ASSERT_TRUE(std::isfinite(P.m[2][2]));
+    ASSERT_TRUE(std::isfinite(P.m[3][2]));
+}
+
+// ─── normalize(quat) 1e-8 threshold boundary ─────────────────────────────────
+
+TEST(quat, normalize_just_below_threshold_returns_identity)
+{
+    // len_sq = (sqrt(9.9e-9))^2 = 9.9e-9 < 1e-8 → guard fires → identity.
+    const float mag = std::sqrt(9.9e-9f);
+    quat n = normalize(quat{mag, 0.0f, 0.0f, 0.0f});
+    ASSERT_NEAR(n.w, 1.0f, 1e-6f);
+    ASSERT_NEAR(n.x, 0.0f, 1e-6f);
+}
+
+TEST(quat, normalize_just_above_threshold_normalizes)
+{
+    // len_sq = (sqrt(1.01e-8))^2 = 1.01e-8 > 1e-8 → guard does not fire → unit quat.
+    const float mag = std::sqrt(1.01e-8f);
+    quat n = normalize(quat{mag, 0.0f, 0.0f, 0.0f});
+    const float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
+}
