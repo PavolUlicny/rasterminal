@@ -602,3 +602,86 @@ TEST(shadow, alpha_cutout_uv_interpolated_partial_transparency)
     // Point behind transparent triangle B → lit.
     ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
 }
+
+// ─── in_shadow w=0 boundary ───────────────────────────────────────────────────
+
+TEST(shadow, in_shadow_w_zero_returns_lit)
+{
+    // m[3][3] = 0 → light_clip.w = 0 ≤ 0 → early-out returns 0 (lit).
+    // Distinguishes w=0 from w<0 (covered by pcf_negative_w_returns_lit) —
+    // confirms the guard is <= not <.
+    // All depths set to 0.0 so every PCF sample would be a hit if the guard were missing.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    sm.light_vp.m[3][3] = 0.0f;
+    std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+}
+
+// ─── in_shadow NDC z at boundary values ──────────────────────────────────────
+
+TEST(shadow, in_shadow_ndc_z_at_one_not_rejected)
+{
+    // ndc.z = +1.0 → bounds check ndc.z > 1.0f is false → passes through.
+    // All depths = 0.0 → ref = 0.999 > 0.0 → 9/9 hits → sf = 1.0.
+    // Contrast with in_shadow_ndc_z_above_one_returns_lit (ndc.z=1.5 → rejected → sf=0).
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 1.0f}), 1.0f, 1e-6f);
+}
+
+TEST(shadow, in_shadow_ndc_z_at_neg_one_not_rejected)
+{
+    // ndc.z = -1.0 → bounds check ndc.z < -1.0f is false → passes through.
+    // All depths = -2.0 → ref = -1.001 > -2.0 → 9/9 hits → sf = 1.0.
+    // Contrast with in_shadow_ndc_z_below_neg_one_returns_lit (ndc.z=-1.5 → rejected → sf=0).
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    std::fill(sm.depth.begin(), sm.depth.end(), -2.0f);
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -1.0f}), 1.0f, 1e-6f);
+}
+
+// ─── PCF top-right corner border clamping ─────────────────────────────────────
+
+TEST(shadow, pcf_top_right_corner_clamps_kernel_samples)
+{
+    // ndc = (1.0, 1.0, 0.5) → cx = cy = SIZE-1 → else-branch on both axes.
+    // dy,dx ∈ {-1,0,+1}: py clamps to {SIZE-2, SIZE-1, SIZE-1}; px likewise.
+    // Setting the 2×2 block at rows/cols (SIZE-2, SIZE-1) to 0.0 → all 9 kernel
+    // samples map into that block → sf = 1.0.
+    // Mirrors pcf_bottom_left_corner_clamps_kernel_samples at the opposite corner.
+    ShadowMap sm;
+    sm.clear();
+    sm.light_vp = mat4::identity();
+    constexpr int S = ShadowMap::SIZE;
+    for (int py = S - 2; py <= S - 1; py++)
+        for (int px = S - 2; px <= S - 1; px++)
+            sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+    ASSERT_NEAR(sm.in_shadow({1.0f, 1.0f, 0.5f}), 1.0f, 1e-6f);
+}
+
+// ─── build_shadow_map: vertices present, triangles empty ─────────────────────
+
+TEST(shadow, vertices_no_triangles_no_depth_written)
+{
+    // mesh.vertices.empty() guard does NOT fire (3 vertices present).
+    // mesh.triangles is empty → rasterisation loop body never entered.
+    // No depth written → buffer stays at 1.0 → probe reports lit.
+    Mesh m;
+    Vertex v{};
+    v.ao = 1.0f;
+    v.pos = {-1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {1.0f, -1.0f, 0.0f};
+    m.vertices.push_back(v);
+    v.pos = {0.0f, 1.0f, 0.0f};
+    m.vertices.push_back(v);
+    m.materials.push_back({});
+    // triangles intentionally empty
+    ShadowMap sm = build_shadow_map(m, make_light_z());
+    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+}
