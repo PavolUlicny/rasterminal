@@ -230,6 +230,11 @@ TEST(args, shading_compact_case_insensitive)
     ASSERT_EQ(run({"-sFLAT", "m.obj"}).args.shading, 1);
 }
 
+TEST(args, shading_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-sbad", "m.obj"}).ok);
+}
+
 // ─── --bg ─────────────────────────────────────────────────────────────────────
 
 TEST(args, bg_black)
@@ -273,6 +278,11 @@ TEST(args, bg_compact_case_insensitive)
 {
     ASSERT_EQ(run({"-bWHITE", "m.obj"}).args.bg, 2);
     ASSERT_EQ(run({"-bGrAy", "m.obj"}).args.bg, 1);
+}
+
+TEST(args, bg_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-bbad", "m.obj"}).ok);
 }
 
 TEST(args, bg_invalid_value_is_error)
@@ -320,6 +330,11 @@ TEST(args, lighting_compact_case_insensitive)
 {
     ASSERT_EQ(run({"-lSINGLE", "m.obj"}).args.lighting, 1);
     ASSERT_EQ(run({"-lFlAt", "m.obj"}).args.lighting, 2);
+}
+
+TEST(args, lighting_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-lbad", "m.obj"}).ok);
 }
 
 TEST(args, lighting_invalid_value_is_error)
@@ -492,6 +507,11 @@ TEST(args, wireframe_color_compact_case_insensitive)
 {
     ASSERT_EQ(run({"-wYELLOW", "m.obj"}).args.wireframe_color, 3);
     ASSERT_EQ(run({"-wCyAn", "m.obj"}).args.wireframe_color, 4);
+}
+
+TEST(args, wireframe_color_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-wbad", "m.obj"}).ok);
 }
 
 TEST(args, wireframe_color_equals_form)
@@ -698,6 +718,11 @@ TEST(args, cull_compact_case_insensitive)
     ASSERT_TRUE(run({"-cYES", "m.obj"}).args.cull);
 }
 
+TEST(args, cull_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-cbad", "m.obj"}).ok);
+}
+
 TEST(args, cull_equals_long_form)
 {
     ASSERT_FALSE(run({"--cull=off", "m.obj"}).args.cull);
@@ -767,6 +792,11 @@ TEST(args, texture_compact_case_insensitive)
 {
     ASSERT_FALSE(run({"-tOFF", "m.obj"}).args.texture);
     ASSERT_TRUE(run({"-tYES", "m.obj"}).args.texture);
+}
+
+TEST(args, texture_compact_invalid_value_is_error)
+{
+    ASSERT_FALSE(run({"-tbad", "m.obj"}).ok);
 }
 
 TEST(args, texture_equals_long_form)
