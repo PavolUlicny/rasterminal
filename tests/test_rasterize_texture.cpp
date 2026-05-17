@@ -399,6 +399,55 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
                     std::to_string(static_cast<int>(c.r)));
 }
 
+// ── Group D3: degenerate tangent — colour value validation ───────────────────
+
+// D3: Validates the pixel VALUE when tangent is degenerate (D2 checks no-crash only).
+// tan=(0,0,1) ∥ N=(0,0,1) → Gram-Schmidt yields T=B={0,0,0}.
+// nmap texel (128,128,255): nm≈(0,0,1) → normal_mapped = N*nm.z ≈ N.
+// Baseline: valid tangent (1,0,0) + nmap=nullptr — vertex normal used directly.
+// Both paths resolve to the same effective normal → pixel colours must match.
+TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 tan_valid{1.0f, 0.0f, 0.0f};
+    vec3 tan_degen{0.0f, 0.0f, 1.0f}; // parallel to normal → T=B=0 after Gram-Schmidt
+    vec3 eye{0.0f, 0.0f, 5.0f};
+    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+    Light light{};
+    light.direction = {0.0f, 0.0f, 1.0f};
+    light.color = {1.0f, 1.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+    Texture nmap_tex = make_tex_rgba(1, 1, {128, 128, 255, 255}); // nm≈(0,0,1)
+
+    auto rph = [&](Framebuffer &fb, const vec3 &tan, const Texture *nm)
+    {
+        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        uv, uv, uv,
+                        1.0f, 1.0f, 1.0f,
+                        white, white, white, false,
+                        eye, &light, 1, ambient, mat,
+                        nullptr, nm, nullptr, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb_base(40, 20, /*headless=*/true);
+    rph(fb_base, tan_valid, nullptr); // baseline: valid tan, no nmap → vertex normal N
+
+    Framebuffer fb_degen(40, 20, /*headless=*/true);
+    rph(fb_degen, tan_degen, &nmap_tex); // subject: degenerate tan + nmap(0,0,1) → normal ≈ N
+
+    ASSERT_TRUE(was_drawn(fb_base, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_degen, 20, 10));
+    // Degenerate TBN with nm≈(0,0,1) must produce the same colour as using N directly.
+    assert_pixel_near(fb_degen, 20, 10, fb_base.get_pixel(20, 10), 5);
+}
+
 // ── Group E: diffuse + specular texture simultaneously ────────────────────────
 
 // E1: tex and stex both non-null. The if(tex||stex) block must apply both:
@@ -459,4 +508,61 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
     if (both.b > 20)
         ASSERT_FAIL("both textures: green stex zeroes B specular, expected B≈0, got B=" +
                     std::to_string(static_cast<int>(both.b)));
+}
+
+// ── Group F: specular texture combined with alpha cutout ─────────────────────
+
+// F1: has_cutout=true (alpha_cutoff=0.5, opaque white diffuse tex) AND stex != nullptr.
+// When has_cutout=true the UV is computed in the cutout pre-pass; the post-depth
+// UV recompute block (`if (!has_cutout && ...)`) is skipped.  stex sampling uses
+// that pre-pass UV.  This is the only test exercising the stex+cutout code path.
+//
+// Setup: mat.diffuse=ambient=(0,0,0), specular=(1,1,1), shininess=32.
+//   eye=(0,0,5), light=(0,0,1), normal=(0,0,1) → H=N → peak specular on the no-stex run.
+//   diff_tex: white+opaque (alpha=255 ≥ 0.5*255) → cutout passes; cutout_rgb=(1,1,1).
+//   black_stex: (0,0,0) → mat_tex.specular*=(0,0,0)=(0,0,0) → R≈0.
+// Without stex: full specular → R≈255.  With black stex: R≈0.
+TEST(rasterize_phong, specular_tex_and_cutout_active)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{0.0f, 0.0f, 5.0f};
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Material mat{};
+    mat.diffuse = {0.0f, 0.0f, 0.0f};
+    mat.ambient = {0.0f, 0.0f, 0.0f};
+    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.shininess = 32.0f;
+    mat.alpha_cutoff = 0.5f;
+    Light light{};
+    light.direction = {0.0f, 0.0f, 1.0f};
+    light.color = {1.0f, 1.0f, 1.0f};
+    vec2 uv{0.5f, 0.5f};
+    Texture diff_tex = make_tex_rgba(1, 1, {255, 255, 255, 255}); // opaque white → passes cutout
+    Texture black_stex = make_tex_rgba(1, 1, {0, 0, 0, 255});     // zeroes specular
+
+    auto rph = [&](Framebuffer &fb, const Texture *stex)
+    {
+        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                        uv, uv, uv,
+                        1.0f, 1.0f, 1.0f,
+                        white, white, white, false,
+                        eye, &light, 1, ambient, mat,
+                        &diff_tex, nullptr, stex, nullptr,
+                        0, 19);
+    };
+
+    Framebuffer fb_nostex(40, 20, /*headless=*/true), fb_stex(40, 20, /*headless=*/true);
+    rph(fb_nostex, nullptr);
+    rph(fb_stex, &black_stex);
+
+    ASSERT_TRUE(was_drawn(fb_nostex, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_stex, 20, 10));
+    if (fb_nostex.get_pixel(20, 10).r < 240)
+        ASSERT_FAIL("cutout+no-stex: peak specular expected, got R=" +
+                    std::to_string(static_cast<int>(fb_nostex.get_pixel(20, 10).r)));
+    if (fb_stex.get_pixel(20, 10).r > 5)
+        ASSERT_FAIL("cutout+black-stex: specular should be zeroed, got R=" +
+                    std::to_string(static_cast<int>(fb_stex.get_pixel(20, 10).r)));
 }
