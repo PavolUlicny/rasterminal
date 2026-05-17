@@ -315,6 +315,23 @@ TEST(tangents, fallback_z_up_branch_for_non_z_normal)
     }
 }
 
+TEST(tangents, zero_normal_fallback_is_finite)
+{
+    // All vertices coincident → compute_normals leaves every normal at {0,0,0}.
+    // No UVs → tangent accumulation produces {0,0,0} → fallback branch fires.
+    // cross({0,0,0}, up) = {0,0,0} → normalize({0,0,0}) = {0,0,0} (linalg guard).
+    // Asserts the guard fires and no NaN escapes.
+    const std::string obj = "v 0 0 0\nv 0 0 0\nv 0 0 0\nf 1 2 3\n";
+    TmpFile f(tmp_path("rast_tan_zeronorm.obj"), obj);
+    Mesh m = load_ok(f.path);
+    for (const auto &t : m.tangents)
+    {
+        ASSERT_TRUE(std::isfinite(t.x));
+        ASSERT_TRUE(std::isfinite(t.y));
+        ASSERT_TRUE(std::isfinite(t.z));
+    }
+}
+
 // ─── compute_ao: missing branches ────────────────────────────────────────────
 
 TEST(ao, concave_vertex_darkened)
