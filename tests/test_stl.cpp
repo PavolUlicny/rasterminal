@@ -321,3 +321,29 @@ TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{1});
 }
+
+TEST(reject, stl_file_open_failure)
+{
+    // Non-existent .stl path → !f (fopen returns null) → load_stl returns false.
+    assert_rejects(tmp_path("rast_stl_no_such.stl"));
+}
+
+TEST(stl_valid, ascii_header_leading_tab_whitespace)
+{
+    // Leading tab before "solid": the `*h == '\t'` branch in the whitespace-skip
+    // loop advances h so strncmp("solid",...) matches, setting is_ascii=true.
+    // stl_reader::StlFileHasASCIIFormat uses find("solid") (finds it after the tab)
+    // and ReadStlFile_ASCII tokenizes with >> (skips tab), so parsing succeeds.
+    TmpFile t(tmp_path("rast_tab_hdr.stl"),
+              "\tsolid test\n"
+              "facet normal 0 0 1\n"
+              "  outer loop\n"
+              "    vertex 0 0 0\n"
+              "    vertex 1 0 0\n"
+              "    vertex 0 1 0\n"
+              "  endloop\n"
+              "endfacet\n"
+              "endsolid test\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+}
