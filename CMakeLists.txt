@@ -114,6 +114,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_texture.cpp
     tests/test_framebuffer.cpp
     tests/test_mesh_geometry.cpp
+    tests/test_mesh_vcache.cpp
     tests/test_args.cpp
     tests/test_shadow.cpp
     tests/test_rasterize.cpp
