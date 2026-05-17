@@ -214,8 +214,12 @@ void Renderer::worker_func(int t)
                         }
                         else
                         {
-                            vec3 col_a, col_b, col_c;    // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always overwritten in Flat/Gouraud branches below
-                            vec3 shad_a, shad_b, shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read when shadow_map != nullptr; written before that read
+                            vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always overwritten in Flat/Gouraud branches below
+                            vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read when shadow_map != nullptr; written before that read
+                            vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
                             if (smode == ShadingMode::Flat)
                             {

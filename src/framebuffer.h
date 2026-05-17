@@ -67,7 +67,7 @@ public:
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return {};
         const uint32_t v = m_color[pixel_idx(x, y)].load(std::memory_order_relaxed);
-        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16)};
+        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u)};
     }
 
     // Unchecked variant — caller guarantees 0 <= x < width, 0 <= y < height.
@@ -103,7 +103,7 @@ public:
 private:
     static uint32_t pack_color(Color c) noexcept
     {
-        return static_cast<uint32_t>(c.r) | (static_cast<uint32_t>(c.g) << 8) | (static_cast<uint32_t>(c.b) << 16);
+        return static_cast<uint32_t>(c.r) | (static_cast<uint32_t>(c.g) << 8u) | (static_cast<uint32_t>(c.b) << 16u);
     }
 
     // Fills every depth entry with infinity using relaxed atomic stores.

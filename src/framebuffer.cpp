@@ -1,8 +1,9 @@
 #include "framebuffer.h"
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
+#include <vector>
 
 namespace
 {
@@ -245,7 +246,7 @@ void Framebuffer::present()
 
     auto unpack = [](uint32_t v) -> Color
     {
-        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16)};
+        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u)};
     };
 
     if (m_force_redraw)
@@ -344,5 +345,5 @@ void Framebuffer::present()
 
     // Swap instead of copy: O(1) and leaves m_prev_color holding the frame
     // we just rendered — the correct reference for the next dirty comparison.
-    std::swap(m_color, m_prev_color);
+    m_color.swap(m_prev_color);
 }
