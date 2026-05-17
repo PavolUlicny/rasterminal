@@ -1,3 +1,4 @@
+#include "inline_bmp.h"
 #include "loader_util.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1165,4 +1166,67 @@ TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
     ASSERT_EQ(m.triangles[0].material_idx, 0u);
     ASSERT_EQ(m.materials.size(), static_cast<size_t>(1));
     ASSERT_NEAR(m.materials[0].diffuse.x, 1.0f, 1e-5f);
+}
+
+// ─── Group V: embedded texture load success ───────────────────────────────────
+
+TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
+{
+    // image[0] has bufferView=1 pointing to a valid 1×1 BMP embedded in the GLB
+    // binary buffer.  load_tex takes the buffer_view branch and load_from_memory
+    // succeeds → ok=true → lines 62-64 in mesh_gltf.cpp (store idx, push texture,
+    // return idx) are executed.  mat.diffuse_tex is set to a valid (≥0) index.
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin); // 36 bytes geometry at offset 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size);
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0},\"material\":0}]}],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+        "],"
+        "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_embed_tex.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].diffuse_tex >= 0);
+    ASSERT_FALSE(m.textures.empty());
+}
+
+// ─── Group W: primitive without POSITION attribute ────────────────────────────
+
+TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
+{
+    // Mesh has two primitives: primitive[0] has only NORMAL (no POSITION) so
+    // pos_acc stays null → the "if (!pos_acc) continue;" guard fires (line 139
+    // in mesh_gltf.cpp).  Primitive[1] has POSITION → 1 non-indexed triangle.
+    std::string bin;
+    emit_tri_verts(bin);
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":["
+        "{\"attributes\":{\"NORMAL\":0}},"  // no POSITION → skipped
+        "{\"attributes\":{\"POSITION\":0}}" // POSITION → 1 triangle
+        "]}],"
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+        "\"buffers\":[{\"byteLength\":36}]}";
+
+    TmpFile f(tmp_path("rast_nopos.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
 }
