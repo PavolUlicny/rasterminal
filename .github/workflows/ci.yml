@@ -153,6 +153,16 @@ jobs:
       - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
         run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}
 
+  # ── clang-format (Linux) ─────────────────────────────────────────────────────
+  clang-format:
+    name: clang-format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run clang-format
+        run: clang-format --dry-run --Werror src/*.cpp src/*.h tests/*.cpp tests/*.h
+
   # ── clang-tidy (Linux Clang, CMake Debug with compile_commands.json) ────────
   clang-tidy:
     name: clang-tidy
