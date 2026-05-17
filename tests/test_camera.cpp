@@ -485,6 +485,30 @@ TEST(camera, orbit_compound_nonzero_matches_formula)
 
 // ─── process_key() dt=0 ───────────────────────────────────────────────────────
 
+TEST(camera, eye_zero_distance_returns_target)
+{
+    Camera c;
+    c.target = {1.0f, 2.0f, 3.0f};
+    c.distance = 0.0f;
+    c.orientation = quat::identity();
+    vec3 e = c.eye();
+    ASSERT_NEAR(e.x, c.target.x, EPS);
+    ASSERT_NEAR(e.y, c.target.y, EPS);
+    ASSERT_NEAR(e.z, c.target.z, EPS);
+}
+
+TEST(camera, projection_near_equals_far_produces_nonfinite)
+{
+    // perspective() denominator is (far - near); near == far → divide by zero.
+    // No guard exists; documents that the result contains non-finite values.
+    Camera c;
+    c.fov = to_radians(60.0f);
+    c.near_plane = 1.0f;
+    c.far_plane = 1.0f;
+    mat4 P = c.projection(100, 100);
+    ASSERT_FALSE(std::isfinite(P.m[2][2]));
+}
+
 TEST(camera, process_key_dt_zero_is_noop)
 {
     // With dt=0 both orbit and zoom steps compute zero delta → state unchanged.
