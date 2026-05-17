@@ -501,10 +501,13 @@ TEST(camera, projection_near_equals_far_produces_nonfinite)
 {
     // perspective() denominator is (far - near); near == far → divide by zero.
     // No guard exists; documents that the result contains non-finite values.
+    // volatile prevents MSVC from constant-folding (far - near) to 0 at
+    // compile time and raising C4723 (potential divide by 0) as an error.
     Camera c;
     c.fov = to_radians(60.0f);
-    c.near_plane = 1.0f;
-    c.far_plane = 1.0f;
+    volatile float same = 1.0f;
+    c.near_plane = same;
+    c.far_plane = same;
     mat4 P = c.projection(100, 100);
     ASSERT_FALSE(std::isfinite(P.m[2][2]));
 }
