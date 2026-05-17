@@ -681,3 +681,43 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
     if (count_drawn_pixels(fb) == 0)
         ASSERT_FAIL("wireframe double-sided back-face drew no pixels — cull bypass missing");
 }
+
+TEST(renderer, wireframe_shadow_map_is_ignored)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Wireframe;
+    Mesh mesh = make_unit_triangle();
+    Camera cam = make_test_camera();
+
+    Framebuffer fb1(40, 20, /*headless=*/true);
+    fb1.clear();
+    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb1);
+    const int count1 = count_drawn_pixels(fb1);
+
+    ShadowMap sm; // empty depth vector — wireframe never calls in_shadow()
+    Framebuffer fb2(40, 20, /*headless=*/true);
+    fb2.clear();
+    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb2, &sm);
+    const int count2 = count_drawn_pixels(fb2);
+
+    ASSERT_EQ(count1, count2);
+}
+
+TEST(renderer, wireframe_show_texture_toggle_is_noop)
+{
+    Mesh mesh = make_unit_triangle();
+    Camera cam = make_test_camera();
+
+    auto draw = [&](bool show_tex)
+    {
+        Renderer r(1);
+        r.mode = ShadingMode::Wireframe;
+        r.show_texture = show_tex;
+        Framebuffer fb(40, 20, /*headless=*/true);
+        fb.clear();
+        r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+        return count_drawn_pixels(fb);
+    };
+
+    ASSERT_EQ(draw(true), draw(false));
+}

@@ -245,3 +245,18 @@ TEST(renderer, phong_zero_tangents_uses_vertex_normals)
     if (!was_drawn(fb, 20, 10))
         ASSERT_FAIL("phong zero tangents: centre pixel not drawn");
 }
+
+TEST(renderer, choose_phase1_chunk_zero_tris_no_crash)
+{
+    // Back-facing triangle (flipped winding) → all tris rejected by backface cull
+    // → total_tris = 0 at Phase 1 setup → choose_phase1_chunk(0, n) returns MIN_CHUNK=64.
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+    r.cull_backfaces = true;
+    Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    ASSERT_EQ(count_drawn_pixels(fb), 0);
+}
