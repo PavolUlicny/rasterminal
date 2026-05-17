@@ -382,3 +382,33 @@ TEST(texture_load, load_from_memory_success_updates_dimensions)
     ASSERT_EQ(t.height, 1);
     ASSERT_EQ(t.pixels.size(), size_t{4});
 }
+
+TEST(texture_load, load_empty_path_returns_false)
+{
+    Texture t;
+    ASSERT_FALSE(t.load(""));
+    ASSERT_FALSE(t.valid());
+}
+
+// ─── very large negative UV precision ────────────────────────────────────────
+// floor(-1000.75f) = -1001.0f exactly in float32; frac = 0.25f — wrapping must
+// produce the same result as u = 0.25f.
+
+TEST(texture, uv_wraps_very_large_negative_rgb)
+{
+    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    vec3 a = t.sample_rgb(0.25f, 0.5f);
+    vec3 b = t.sample_rgb(-1000.75f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-4f);
+    ASSERT_NEAR(a.z, b.z, 1e-4f);
+}
+
+TEST(texture, uv_wraps_very_large_negative_rgba)
+{
+    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    vec4 a = t.sample_rgba(0.25f, 0.5f);
+    vec4 b = t.sample_rgba(-1000.75f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-4f);
+    ASSERT_NEAR(a.z, b.z, 1e-4f);
+    ASSERT_NEAR(a.w, b.w, 1e-4f);
+}
