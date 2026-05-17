@@ -683,6 +683,18 @@ TEST(draw_line, steep_slope_dy_dominant)
     ASSERT_TRUE(was_drawn(fb, 5, 12)); // step 10
 }
 
+TEST(draw_line, negative_slope)
+{
+    // From (1,7) to (7,1): dx=+6, dy=−6, steps=6, sx=+1.0, sy=−1.0.
+    // Anti-diagonal: (1,7),(2,6),(3,5),(4,4),(5,3),(6,2),(7,1).
+    // First test with negative sy — all prior tests have sy ≥ 0.
+    Framebuffer fb(20, 10, /*headless=*/true);
+    draw_line(fb, {1.0f, 7.0f, 0.5f}, {7.0f, 1.0f, 0.5f}, Color{255, 255, 255});
+    for (int i = 0; i <= 6; ++i)
+        ASSERT_TRUE(was_drawn(fb, 1 + i, 7 - i));
+    ASSERT_FALSE(was_drawn(fb, 0, 8)); // before start
+}
+
 // ─── rasterize_phong additional edge cases ────────────────────────────────────
 
 // Minimal rasterize_phong helper: no lights, no textures, no shadows, AO=1.
@@ -737,6 +749,19 @@ TEST(rasterize_phong, entirely_off_screen_no_crash)
     for (int x = 0; x < fb.width(); ++x)
         for (int y = 0; y < fb.height(); ++y)
             ASSERT_FALSE(was_drawn(fb, x, y));
+}
+
+TEST(rasterize, bbox_clamps_all_four_edges)
+{
+    // Triangle extends past all four screen edges simultaneously:
+    //   x: ⌊-5⌋=−5 → clamps x0=0; ⌈25⌉=25 → clamps x1=19
+    //   y: ⌊-5⌋=−5 → clamps y0=0; ⌈25⌉=25 → clamps y1=19
+    // Pixel (10,5) lies inside the triangle (at y=5 the span is x≈[0,20]) and
+    // within the framebuffer — must be drawn without OOB write.
+    Framebuffer fb(20, 20, /*headless=*/true);
+    rast(fb, {-5.0f, -5.0f, 0.5f}, {25.0f, -5.0f, 0.5f}, {10.0f, 25.0f, 0.5f},
+         0, fb.height() - 1);
+    ASSERT_TRUE(was_drawn(fb, 10, 5));
 }
 
 TEST(rasterize_phong, no_lights_uses_ambient_only)
