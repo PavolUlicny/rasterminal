@@ -709,6 +709,33 @@ TEST(ply_valid, face_colors_with_file_normals_recomputes)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  FACE COLOR + NO UV PROPERTIES
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, face_color_path_no_uv_properties_zero_uvs)
+{
+    // No UV aliases present → uvs=nullptr; face-color path sets ub=nullptr and
+    // skips the UV read block, leaving vertices with default zero UVs.
+    TmpFile t(tmp_path("rast_fcol_nouv.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 1\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 2 255 0 0\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_NEAR(v.uv.x, 0.0f, 1e-6f);
+        ASSERT_NEAR(v.uv.y, 0.0f, 1e-6f);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  ipf < 3 REJECTION
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -994,4 +1021,39 @@ TEST(ply_valid, binary_le_face_colors_float64)
     ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f);
     ASSERT_NEAR(m.vertex_colors[0].y, 0.5f, 1e-5f);
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FILE-OPEN FAILURE
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(reject, ply_file_open_failure)
+{
+    // Non-existent .ply path → !ss.is_open() → load_ply returns false.
+    assert_rejects(tmp_path("rast_ply_no_such.ply"));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE-COLOR MIXED VALID / INVALID INDICES
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, face_color_mixed_valid_invalid_indices)
+{
+    // Two faces with face colors: face 1 valid (0,1,2), face 2 has OOB index (0,1,99).
+    // The continue in the face-color expansion skips face 2; face 1's triangle survives.
+    TmpFile t(tmp_path("rast_fcol_mixed.ply"),
+              "ply\nformat ascii 1.0\n"
+              "element vertex 3\n"
+              "property float x\nproperty float y\nproperty float z\n"
+              "element face 2\n"
+              "property list uchar int vertex_indices\n"
+              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+              "end_header\n"
+              "0 0 0\n1 0 0\n0 1 0\n"
+              "3 0 1 2 255 0 0\n"
+              "3 0 1 99 0 255 0\n");
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.vertices.size(), size_t{3});
+    ASSERT_TRUE(m.has_vertex_colors);
 }
