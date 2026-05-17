@@ -342,6 +342,52 @@ TEST(rasterize_phong, n_lights_one_fully_shadowed_gives_ambient_only)
         ASSERT_FAIL("n_lights=1 fully shadowed: sl=key+1 n_shadow=0 → ambient-only → near-black, got (" + std::to_string(static_cast<int>(c_shd.r)) + "," + std::to_string(static_cast<int>(c_shd.g)) + "," + std::to_string(static_cast<int>(c_shd.b)) + ")");
 }
 
+// S10: Phong partial shadow (0 < sf < 1) with n_lights=0 exercises the else-branch.
+// When n_lights=0: sl=lights=nullptr, n_shadow=0.  Both lit and shd calls reduce to
+// ambient-only, so lerp(lit,shd,sf)=lit.  Result must equal the no-shadow reference.
+TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
+{
+    // sm5: 5/9 PCF hits → sf≈5/9, strictly 0<sf<1 → else branch fires.
+    ShadowMap sm5 = make_manual_sm(5);
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+
+    // Inline draw (draw_phong_manual_sm hard-codes ambient=0; we need non-zero ambient
+    // so the pixel has a colour to compare against).
+    auto draw_inline = [&](Framebuffer &fb, const ShadowMap *sm)
+    {
+        vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+        vec3 wpos{0.0f, 0.0f, 0.5f};
+        vec3 normal{0.0f, 0.0f, 1.0f};
+        vec3 tan{1.0f, 0.0f, 0.0f};
+        vec3 white{1.0f, 1.0f, 1.0f};
+        vec3 eye{20.0f, 10.0f, -100.0f};
+        vec3 ambient{0.5f, 0.5f, 0.5f};
+        vec2 uv{0.5f, 0.5f};
+        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                        wpos, wpos, wpos,
+                        normal, normal, normal,
+                        tan, tan, tan,
+                        uv, uv, uv,
+                        1.0f, 1.0f, 1.0f,
+                        white, white, white, false,
+                        eye, nullptr, 0, ambient, mat,
+                        nullptr, nullptr, nullptr, sm,
+                        0, 19);
+    };
+
+    Framebuffer fb_nosm(40, 20, /*headless=*/true), fb_sm5(40, 20, /*headless=*/true);
+    draw_inline(fb_nosm, nullptr); // sf=0 → sf<=0 branch → ambient only
+    draw_inline(fb_sm5, &sm5);     // sf≈5/9 → else branch, n_lights=0 → also ambient only
+
+    ASSERT_TRUE(was_drawn(fb_nosm, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_sm5, 20, 10));
+    // n_lights=0 means lit==shd; lerp is a no-op → same colour as no shadow map.
+    assert_pixel_near(fb_sm5, 20, 10, fb_nosm.get_pixel(20, 10), 2);
+}
+
 // S9: rasterize() (Gouraud/Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
 // col=red, shad=blue; sf=5/9 ≈ 0.556. Result must be strictly between fully-lit (red)
 // and fully-shadowed (blue).
