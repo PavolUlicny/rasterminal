@@ -308,7 +308,7 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
 }
 
 // H3: rendering same mesh twice reuses same Renderer → second frame must match.
-// Catches: m_tri_cursor not reset → second render claims 0 work → empty fb2.
+// Catches: m_tri_cursor not reset before dispatch → second render claims 0 work → empty fb2.
 TEST(renderer, many_triangles_repeated_render_resets_cursor)
 {
     Renderer r(2);
@@ -333,8 +333,8 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
 }
 
 // H4: after rendering a full grid, rendering an empty mesh must produce nothing.
-// Catches: m_band_tris not cleared → Phase 2 iterates stale RasterTris from
-// the previous frame and draws the grid again.
+// Catches: stale framebuffer pixels not cleared between renders (fb.clear() must
+// be called by the test, and the empty mesh must not draw anything new).
 TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 {
     Renderer r(2);
@@ -355,7 +355,7 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
     int n = count_drawn_pixels(fb2);
     if (n != 0)
         ASSERT_FAIL("empty mesh after grid: " + std::to_string(n) +
-                    " stale pixels remain — m_band_tris may not be cleared between frames");
+                    " stale pixels remain — fb.clear() or tri-cursor reset may be broken");
 }
 
 // ─── AO mesh helpers ──────────────────────────────────────────────────────────

@@ -2,12 +2,12 @@
 
 // ─── Group N — renderer edge cases not covered elsewhere ─────────────────────
 
-// ─── N1: n_active capped to height/2 ─────────────────────────────────────────
+// ─── N1: small framebuffer still completes with many workers ─────────────────
 //
-// Renderer uses n_active = max(1, min(n_workers, height/2)) so that no band is
-// empty.  With 4 workers and height=4: n_active=2; workers t=2 and t=3 take
-// the fast-exit branch (t >= n) and decrement m_active without doing any work.
-// The render must still complete and the triangle must be visible.
+// Renderer dispatches all workers regardless of framebuffer height. With 4
+// workers and height=4, all workers participate (no fast-exit path). The CAS
+// depth test arbitrates concurrent pixel writes safely. The render must
+// complete and the triangle must be visible.
 //
 // make_large_triangle() (v0=(-4,-4,0), v1=(4,-4,0), v2=(0,4,0)) projects to
 // x=[18.4..21.6], y=[0.4..3.6] on a 40x4 buffer (aspect=10, fov=pi/2), so it
@@ -21,7 +21,7 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
     Camera cam = make_test_camera();
     Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
     vec3 ambient{0.2f, 0.2f, 0.2f};
-    // height=4 -> n_active = max(1,min(4, 4/2)) = 2; workers 2 and 3 fast-exit.
+    // height=4; all 4 workers participate (no n_active cap in single-pass design).
     Framebuffer fb(40, 4, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -29,13 +29,11 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
         ASSERT_FAIL("n_active cap: no pixels drawn with height=4 and 4 workers");
 }
 
-// ─── N2: m_band_tris resizes when n_active changes between frames ─────────────
+// ─── N2: render completes correctly when framebuffer height changes ───────────
 //
-// Frame 1 uses a 40x20 buffer -> n_active=4 (with 4 workers).
-// Frame 2 uses a 40x4  buffer -> n_active=2.
-// The renderer resizes m_band_tris[n_active][n_active] accordingly.
-// If the resize is skipped or bounds are wrong the second render produces
-// wrong output or an OOB access.
+// Frame 1 uses a 40x20 buffer, frame 2 uses a 40x4 buffer.
+// The single-pass design has no band buffers to resize; this test verifies
+// that the work-stealing cursor resets and both frames draw the triangle.
 
 TEST(renderer, band_tris_resize_across_frames)
 {
@@ -52,7 +50,7 @@ TEST(renderer, band_tris_resize_across_frames)
     if (count_drawn_pixels(fb1) == 0)
         ASSERT_FAIL("band_tris resize: frame 1 (40x20) drew nothing");
 
-    // Second render with smaller height -> n_active changes -> band_tris must resize.
+    // Second render with smaller height — m_tri_cursor resets, all workers re-run.
     Framebuffer fb2(40, 4, /*headless=*/true);
     fb2.clear();
     r.render(mesh, cam, &light, 1, ambient, fb2);

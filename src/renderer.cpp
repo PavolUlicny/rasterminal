@@ -83,6 +83,7 @@ Renderer::~Renderer()
 
 void Renderer::worker_func(int t)
 {
+    (void)t; // worker identity no longer drives band ownership
     int my_gen = 0;
     while (true)
     {
@@ -94,23 +95,16 @@ void Renderer::worker_func(int t)
             return;
 
         my_gen = m_generation;
-        const int n = m_n_active; // local copy — stable for this frame
         lk.unlock();
 
-        // Workers beyond the active cap for this frame go back to sleep.
-        if (t >= n)
+        // ── Single-pass: geometry + rasterize ────────────────────────────────
+        // Each worker steals triangle chunks and rasterizes directly into the
+        // framebuffer. The CAS-based depth test in Framebuffer ensures the
+        // closest triangle wins per pixel across all threads. A narrow race
+        // between a winning depth CAS and the following color write is
+        // accepted: at most one wrong-coloured pixel per collision per frame,
+        // invisible at interactive frame rates.
         {
-            if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
-            {
-                const std::lock_guard<std::mutex> done_lk(m_mutex);
-                m_cv_done.notify_one();
-            }
-            continue;
-        }
-
-        {
-            // ── Phase 1: geometry ─────────────────────────────────────────────
-            // Inputs are written once before dispatch — no lock needed to read.
             const Mesh *mesh = m_mesh;
             const mat4 &vp = m_vp;
             const vec3 &eye = m_eye;
@@ -124,6 +118,7 @@ void Renderer::worker_func(int t)
             const ShadingMode smode = m_smode;
             const bool do_cull = m_cull_backfaces;
             const bool show_tex = m_show_texture;
+            Framebuffer *fb = m_fb;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
@@ -131,20 +126,8 @@ void Renderer::worker_func(int t)
             const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
             const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
 
-            // Precompute band start rows so the per-triangle band scan avoids
-            // multiply+divide on every iteration. thread_local avoids per-frame
-            // heap allocation; the vector only resizes when n changes (rare).
-            thread_local std::vector<int> band_y;
-            if (static_cast<int>(band_y.size()) != n + 1)
-                band_y.resize(static_cast<size_t>(n) + 1);
-            for (int k = 0; k <= n; k++)
-                band_y[static_cast<size_t>(k)] = height * k / n;
-
-            // Dynamic work stealing: each worker atomically claims the next
-            // chunk of triangles. This balances load automatically regardless
-            // of how visible triangles are distributed across the mesh.
-            const int chunk = choose_phase1_chunk(total, n);
-            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted out of per-triangle loop; clip_near overwrites before read
+            const int chunk = choose_phase1_chunk(total, m_n_workers);
+            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near overwrites before read
             while (true)
             {
                 const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
@@ -208,72 +191,31 @@ void Renderer::worker_func(int t)
                         const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
                         const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
-                        // Bucket into every y-band this triangle overlaps.
-                        // Scan from the first band whose bottom edge reaches
-                        // tri_y0 down to the last band whose top edge is still
-                        // above tri_y1.  band_y is precomputed so each iteration
-                        // is a single array read.
-                        const int tri_y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-                        const int tri_y1 = std::min(height - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
-                        int b_lo = 0;
-                        while (b_lo < n - 1 && band_y[static_cast<size_t>(b_lo) + 1] - 1 < tri_y0)
-                            ++b_lo;
-                        int b_hi = n - 1;
-                        while (b_hi > b_lo && band_y[static_cast<size_t>(b_hi)] > tri_y1)
-                            --b_hi;
-
-                        auto fill_common = [&](auto &rt)
-                        {
-                            rt.sa = sa;
-                            rt.sb = sb;
-                            rt.sc = sc;
-                            rt.wa = a.c.w;
-                            rt.wb = b.c.w;
-                            rt.wc = c.c.w;
-                            rt.pa = a.pos;
-                            rt.pb = b.pos;
-                            rt.pc = c.pos;
-                            rt.uva = a.uv;
-                            rt.uvb = b.uv;
-                            rt.uvc = c.uv;
-                            rt.tex = tex;
-                            rt.shadow_map = shadow_map;
-                        };
-
                         if (smode == ShadingMode::Phong)
                         {
-                            RasterTriPh rt;
-                            fill_common(rt);
-                            rt.stex = show_tex ? mesh->tex_at(mat.specular_tex) : nullptr;
-                            rt.nmap = show_tex ? mesh->tex_at(mat.normal_tex) : nullptr;
-                            rt.na = a.normal;
-                            rt.nb = b.normal;
-                            rt.nc = c.normal;
-                            rt.tana = a.tangent;
-                            rt.tanb = b.tangent;
-                            rt.tanc = c.tangent;
-                            rt.aoa = a.ao;
-                            rt.aob = b.ao;
-                            rt.aoc = c.ao;
-                            rt.mat = &mat;
-                            if (mesh->has_vertex_colors)
-                            {
-                                rt.vcola = a.color;
-                                rt.vcolb = b.color;
-                                rt.vcolc = c.color;
-                            }
-                            else
-                            {
-                                rt.vcola = rt.vcolb = rt.vcolc = {1.0f, 1.0f, 1.0f};
-                            }
-                            for (int band = b_lo; band <= b_hi; band++)
-                                m_band_tris_ph[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
+                            // a.color/b.color/c.color already encode the has_vertex_colors
+                            // condition: they are {1,1,1} when p_vcols == nullptr (set at
+                            // ClipVert construction), so no ternary is needed here.
+                            rasterize_phong(*fb,
+                                            sa, sb, sc, a.c.w, b.c.w, c.c.w,
+                                            a.pos, b.pos, c.pos,
+                                            a.normal, b.normal, c.normal,
+                                            a.tangent, b.tangent, c.tangent,
+                                            a.uv, b.uv, c.uv,
+                                            a.ao, b.ao, c.ao,
+                                            a.color, b.color, c.color,
+                                            mesh->has_vertex_colors,
+                                            eye, lights, n_lights, ambient, mat,
+                                            tex,
+                                            show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                            show_tex ? mesh->tex_at(mat.specular_tex) : nullptr,
+                                            shadow_map,
+                                            0, height - 1);
                         }
                         else
                         {
-                            RasterTriFg rt;
-                            fill_common(rt);
-                            rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0.0f;
+                            vec3 col_a, col_b, col_c;    // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always overwritten in Flat/Gouraud branches below
+                            vec3 shad_a, shad_b, shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read when shadow_map != nullptr; written before that read
 
                             if (smode == ShadingMode::Flat)
                             {
@@ -295,15 +237,15 @@ void Renderer::worker_func(int t)
                                         flat_mat = &vcol_mat;
                                     }
                                 }
-                                rt.col_a = rt.col_b = rt.col_c =
+                                col_a = col_b = col_c =
                                     compute_lighting(assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
                                 if (shadow_map)
-                                    rt.shad_a = rt.shad_b = rt.shad_c =
+                                    shad_a = shad_b = shad_c =
                                         compute_lighting(assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
                             }
                             else // Gouraud
                             {
-                                if (mesh->has_vertex_colors)
+                                if (p_vcols)
                                 {
                                     Material gvcol_mat;
                                     auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
@@ -315,111 +257,42 @@ void Renderer::worker_func(int t)
                                         gvcol_mat.ambient = gvcol_mat.ambient * vcol;
                                         return gvcol_mat;
                                     };
-                                    rt.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
-                                    rt.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
-                                    rt.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
+                                    col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
+                                    col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
+                                    col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
                                     if (shadow_map)
                                     {
-                                        rt.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
-                                        rt.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
-                                        rt.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                        shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
+                                        shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
+                                        shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
                                     }
                                 }
                                 else
                                 {
-                                    rt.col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
-                                    rt.col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
-                                    rt.col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                                    col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
+                                    col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
+                                    col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
                                     if (shadow_map)
                                     {
-                                        rt.shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                                        rt.shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                                        rt.shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                        shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
+                                        shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
+                                        shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
                                     }
                                 }
                             }
-                            for (int band = b_lo; band <= b_hi; band++)
-                                m_band_tris_fg[static_cast<size_t>(t)][static_cast<size_t>(band)].push_back(rt);
+
+                            rasterize(*fb,
+                                      sa, sb, sc, a.c.w, b.c.w, c.c.w,
+                                      col_a, col_b, col_c,
+                                      shad_a, shad_b, shad_c,
+                                      a.pos, b.pos, c.pos,
+                                      a.uv, b.uv, c.uv,
+                                      tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                      shadow_map,
+                                      0, height - 1);
                         }
                     }
                 }
-            } // while (true) work-stealing loop
-        }
-
-        // ── Internal barrier: hybrid spin-then-park for Phase transition ─────
-        // fetch_add returns the value BEFORE the increment, so the last worker
-        // to arrive sees (n-1), releases m_phase2_ready, and wakes parked peers.
-        if (m_phase1_done.fetch_add(1, std::memory_order_acq_rel) == n - 1)
-        {
-            {
-                const std::lock_guard<std::mutex> phase_lk(m_phase_mutex);
-                m_phase2_ready.store(true, std::memory_order_release);
-            }
-            m_cv_phase2.notify_all();
-        }
-        else
-        {
-            // Short optimistic spin keeps the common low-jitter case scheduler-free.
-            // If one worker straggles, park on a CV so we do not burn CPU cycles.
-            constexpr int PHASE2_SPIN_ITERS = 512;
-            int spin = 0;
-            while (spin < PHASE2_SPIN_ITERS && !m_phase2_ready.load(std::memory_order_acquire))
-                ++spin;
-
-            if (!m_phase2_ready.load(std::memory_order_acquire))
-            {
-                std::unique_lock<std::mutex> phase_lk(m_phase_mutex);
-                m_cv_phase2.wait(phase_lk, [this]
-                                 { return m_phase2_ready.load(std::memory_order_acquire); });
-            }
-        }
-
-        // ── Phase 2: rasterize ────────────────────────────────────────────────
-        // Each worker owns band t — only triangles pre-bucketed into that band,
-        // so no wasted iterations over triangles from other parts of the screen.
-        {
-            const int y_min = m_height * t / n;
-            const int y_max = m_height * (t + 1) / n - 1;
-
-            // Per-frame Phong lighting constants — read from renderer state
-            // instead of duplicating into every RasterTri. Safe to read without
-            // a lock: m_* are written once under m_mutex before m_cv_work.notify_all()
-            // in render(), and no worker modifies them during the frame.
-            const vec3 &p2_eye = m_eye;
-            const Light *p2_lights = m_lights;
-            const int p2_n_lights = m_n_lights;
-            const vec3 &p2_ambient = m_ambient;
-            const bool p2_has_vcol = m_mesh->has_vertex_colors;
-
-            if (m_smode == ShadingMode::Phong)
-            {
-                for (int w = 0; w < n; w++)
-                    for (const RasterTriPh &rt : m_band_tris_ph[static_cast<size_t>(w)][static_cast<size_t>(t)])
-                        rasterize_phong(*m_fb,
-                                        rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                                        rt.pa, rt.pb, rt.pc,
-                                        rt.na, rt.nb, rt.nc,
-                                        rt.tana, rt.tanb, rt.tanc,
-                                        rt.uva, rt.uvb, rt.uvc,
-                                        rt.aoa, rt.aob, rt.aoc,
-                                        rt.vcola, rt.vcolb, rt.vcolc,
-                                        p2_has_vcol,
-                                        p2_eye, p2_lights, p2_n_lights, p2_ambient, *rt.mat,
-                                        rt.tex, rt.nmap, rt.stex, rt.shadow_map,
-                                        y_min, y_max);
-            }
-            else
-            {
-                for (int w = 0; w < n; w++)
-                    for (const RasterTriFg &rt : m_band_tris_fg[static_cast<size_t>(w)][static_cast<size_t>(t)])
-                        rasterize(*m_fb,
-                                  rt.sa, rt.sb, rt.sc, rt.wa, rt.wb, rt.wc,
-                                  rt.col_a, rt.col_b, rt.col_c,
-                                  rt.shad_a, rt.shad_b, rt.shad_c,
-                                  rt.pa, rt.pb, rt.pc,
-                                  rt.uva, rt.uvb, rt.uvc,
-                                  rt.tex, rt.alpha_cutoff, rt.shadow_map,
-                                  y_min, y_max);
             }
         }
 
@@ -492,35 +365,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         return;
     }
 
-    // ── Single dispatch: workers run Phase 1 + Phase 2 without returning ────
-    // Cap active workers to framebuffer height / 2 so no band is empty.
-    const int n_active = std::max(1, std::min(m_n_workers, height / 2));
-    if (static_cast<int>(m_band_tris_fg.size()) != n_active)
-        m_band_tris_fg.resize(static_cast<size_t>(n_active));
-    if (static_cast<int>(m_band_tris_ph.size()) != n_active)
-        m_band_tris_ph.resize(static_cast<size_t>(n_active));
-    for (auto &row : m_band_tris_fg)
-        if (static_cast<int>(row.size()) != n_active)
-            row.resize(static_cast<size_t>(n_active));
-    for (auto &row : m_band_tris_ph)
-        if (static_cast<int>(row.size()) != n_active)
-            row.resize(static_cast<size_t>(n_active));
-
-    // An internal hybrid barrier (brief spin, then CV park) separates the
-    // two phases. Reset barrier state before waking workers.
-    // Only clear the active vector — the inactive one is never read in Phase 2
-    // so stale data is harmless until that mode becomes active again.
-    if (mode == ShadingMode::Phong)
-        for (auto &row : m_band_tris_ph)
-            for (auto &v : row)
-                v.clear();
-    else
-        for (auto &row : m_band_tris_fg)
-            for (auto &v : row)
-                v.clear();
+    // ── Dispatch workers for single-pass geometry+rasterize ─────────────────
     m_tri_cursor.store(0, std::memory_order_relaxed);
-    m_phase1_done.store(0, std::memory_order_relaxed);
-    m_phase2_ready.store(false, std::memory_order_relaxed);
     {
         const std::lock_guard<std::mutex> lk(m_mutex);
         m_mesh = &mesh;
@@ -537,8 +383,7 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
         m_cull_backfaces = cull_backfaces;
         m_show_texture = show_texture;
         m_fb = &fb;
-        m_n_active = n_active;
-        m_active.store(m_n_workers, std::memory_order_release); // all workers must check in, active or not
+        m_active.store(m_n_workers, std::memory_order_release);
         ++m_generation;
     }
     m_cv_work.notify_all();

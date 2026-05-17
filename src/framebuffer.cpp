@@ -1,6 +1,5 @@
 #include "framebuffer.h"
 
-#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -82,9 +81,10 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
       m_height(pixel_height),
       m_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
       m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity()),
+      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
       m_headless(headless)
 {
+    fill_depth_infinity();
     if (!m_headless)
     {
         // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
@@ -110,9 +110,11 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
 {
     m_width = pixel_width;
     m_height = pixel_height;
-    m_color.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), Color{});
-    m_prev_color.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), Color{});
-    m_depth.assign(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), std::numeric_limits<float>::infinity());
+    const size_t npx = static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height);
+    m_color = std::vector<std::atomic<uint32_t>>(npx);
+    m_prev_color = std::vector<std::atomic<uint32_t>>(npx);
+    m_depth = std::vector<std::atomic<float>>(npx);
+    fill_depth_infinity();
     m_buf.clear();
     m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
     m_force_redraw = true;
@@ -124,8 +126,10 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
 
 void Framebuffer::clear(Color bg)
 {
-    std::fill(m_color.begin(), m_color.end(), bg);
-    std::fill(m_depth.begin(), m_depth.end(), std::numeric_limits<float>::infinity());
+    const uint32_t packed = pack_color(bg);
+    for (auto &c : m_color)
+        c.store(packed, std::memory_order_relaxed);
+    fill_depth_infinity();
 }
 
 void Framebuffer::present()
@@ -239,6 +243,11 @@ void Framebuffer::present()
         }
     };
 
+    auto unpack = [](uint32_t v) -> Color
+    {
+        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16)};
+    };
+
     if (m_force_redraw)
     {
         for (int row = 0; row < term_rows; row++)
@@ -251,8 +260,8 @@ void Framebuffer::present()
             const size_t bot_base = pixel_idx(0, prow + 1 < m_height ? prow + 1 : prow);
 
             for (int col = 0; col < m_width; col++)
-                emit_cell(m_color[top_base + static_cast<size_t>(col)],
-                          m_color[bot_base + static_cast<size_t>(col)]);
+                emit_cell(unpack(m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)),
+                          unpack(m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)));
         }
         m_force_redraw = false;
     }
@@ -268,16 +277,17 @@ void Framebuffer::present()
             int col = 0;
             while (col < m_width)
             {
-                if (m_color[top_base + static_cast<size_t>(col)] != m_prev_color[top_base + static_cast<size_t>(col)] ||
-                    m_color[bot_base + static_cast<size_t>(col)] != m_prev_color[bot_base + static_cast<size_t>(col)])
+                const uint32_t top_cur = m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed);
+                const uint32_t bot_cur = m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed);
+                if (top_cur != m_prev_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed) ||
+                    bot_cur != m_prev_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed))
                 {
                     if (!row_started)
                     {
                         append_cursor_pos(row + 1, col + 1);
                         row_started = true;
                     }
-                    emit_cell(m_color[top_base + static_cast<size_t>(col)],
-                              m_color[bot_base + static_cast<size_t>(col)]);
+                    emit_cell(unpack(top_cur), unpack(bot_cur));
                     col++;
                 }
                 else if (!row_started)
@@ -286,10 +296,11 @@ void Framebuffer::present()
                 }
                 else
                 {
-                    int skip = 0;
+                    // col+0 is already known unchanged (dirty check above); start at 1.
+                    int skip = 1;
                     while (col + skip < m_width &&
-                           m_color[top_base + static_cast<size_t>(col + skip)] == m_prev_color[top_base + static_cast<size_t>(col + skip)] &&
-                           m_color[bot_base + static_cast<size_t>(col + skip)] == m_prev_color[bot_base + static_cast<size_t>(col + skip)])
+                           m_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) == m_prev_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) &&
+                           m_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) == m_prev_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed))
                         skip++;
                     if (skip == 1)
                         m_buf.append("\033[C", 3);

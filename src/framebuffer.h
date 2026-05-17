@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <string>
@@ -39,14 +40,16 @@ public:
     void clear(Color bg = {0, 0, 0});
 
     // Returns true if depth test passes, and writes the new depth value.
+    // Single-threaded callers (draw_line, shadow map): plain load+store, no CAS.
     [[nodiscard]] bool test_and_set_depth(int x, int y, float depth)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return false;
-        float &d = m_depth[pixel_idx(x, y)];
-        if (depth < d)
+        auto &d = m_depth[pixel_idx(x, y)];
+        const float old = d.load(std::memory_order_relaxed);
+        if (depth < old)
         {
-            d = depth;
+            d.store(depth, std::memory_order_relaxed);
             return true;
         }
         return false;
@@ -56,32 +59,38 @@ public:
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return;
-        m_color[pixel_idx(x, y)] = color;
+        m_color[pixel_idx(x, y)].store(pack_color(color), std::memory_order_relaxed);
     }
 
     [[nodiscard]] Color get_pixel(int x, int y) const
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return {};
-        return m_color[pixel_idx(x, y)];
+        const uint32_t v = m_color[pixel_idx(x, y)].load(std::memory_order_relaxed);
+        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v >> 16)};
     }
 
-    // Unchecked variants — caller guarantees 0 <= x < width, 0 <= y < height.
+    // Unchecked variant — caller guarantees 0 <= x < width, 0 <= y < height.
     // Used by the rasterizer inner loop where setup_tri already clamps bounds.
+    // CAS loop: safe for concurrent writes from multiple worker threads.
+    // Depth-wins invariant (min depth wins) is preserved atomically; the color
+    // write that follows a successful CAS is a relaxed atomic store — no UB, but
+    // two CAS winners on the same pixel produce non-deterministic colour ordering.
     [[nodiscard]] bool unchecked_test_and_set_depth(int x, int y, float depth)
     {
-        float &d = m_depth[pixel_idx(x, y)];
-        if (depth < d)
-        {
-            d = depth;
-            return true;
-        }
+        auto &d = m_depth[pixel_idx(x, y)];
+        float old = d.load(std::memory_order_relaxed);
+        while (depth < old)
+            if (d.compare_exchange_weak(old, depth,
+                                        std::memory_order_relaxed,
+                                        std::memory_order_relaxed))
+                return true;
         return false;
     }
 
     void unchecked_set_pixel(int x, int y, Color color)
     {
-        m_color[pixel_idx(x, y)] = color;
+        m_color[pixel_idx(x, y)].store(pack_color(color), std::memory_order_relaxed);
     }
 
     // Set a one-line status string rendered below the pixel rows each frame.
@@ -92,15 +101,29 @@ public:
     void present();
 
 private:
+    static uint32_t pack_color(Color c) noexcept
+    {
+        return static_cast<uint32_t>(c.r) | (static_cast<uint32_t>(c.g) << 8) | (static_cast<uint32_t>(c.b) << 16);
+    }
+
+    // Fills every depth entry with infinity using relaxed atomic stores.
+    // Must be a loop — std::fill doesn't work on non-copyable atomic<float>.
+    void fill_depth_infinity() noexcept
+    {
+        const float inf = std::numeric_limits<float>::infinity();
+        for (auto &d : m_depth)
+            d.store(inf, std::memory_order_relaxed);
+    }
+
     [[nodiscard]] size_t pixel_idx(int x, int y) const noexcept
     {
         return static_cast<size_t>(y) * static_cast<size_t>(m_width) + static_cast<size_t>(x);
     }
 
     int m_width, m_height;
-    std::vector<Color> m_color;
-    std::vector<Color> m_prev_color;
-    std::vector<float> m_depth;
+    std::vector<std::atomic<uint32_t>> m_color;
+    std::vector<std::atomic<uint32_t>> m_prev_color;
+    std::vector<std::atomic<float>> m_depth;
     std::string m_buf; // reused output buffer, avoids per-frame allocation
     std::string m_hud; // status line written below pixel rows
     bool m_force_redraw = true;

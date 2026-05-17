@@ -2,7 +2,10 @@
 
 #include "camera.h"
 #include "framebuffer.h"
-#include "rasterize.h"
+#include "light.h"
+#include "linalg.h"
+#include "mesh.h"
+#include "shadow.h"
 
 #include <atomic>
 #include <condition_variable>
@@ -51,15 +54,13 @@ private:
     void worker_func(int t);
 
     int m_n_workers = 0; // total thread pool size, fixed at construction
-    int m_n_active = 0;  // workers used this frame: min(m_n_workers, height/2)
     std::vector<std::thread> m_threads;
     std::mutex m_mutex;
     std::condition_variable m_cv_work; // workers block here between frames
     std::condition_variable m_cv_done; // render() blocks here until all done
-    std::mutex m_phase_mutex;
-    std::condition_variable m_cv_phase2; // parked workers wait here for Phase 2
 
-    // Phase 1 (geometry) inputs:
+    // Frame inputs — written once under m_mutex before workers are woken,
+    // then read-only for the duration of the frame.
     const Mesh *m_mesh = nullptr;
     mat4 m_vp;
     vec3 m_eye;
@@ -72,21 +73,10 @@ private:
     ShadingMode m_smode = ShadingMode::Gouraud;
     bool m_cull_backfaces = true;
     bool m_show_texture = true;
-
-    // 2D staging: [worker][band]. Each worker writes its own row in Phase 1
-    // with no locks; Phase 2 worker t reads column t across all rows.
-    // Two separate vectors — only one is populated per frame depending on mode.
-    std::vector<std::vector<std::vector<RasterTriFg>>> m_band_tris_fg;
-    std::vector<std::vector<std::vector<RasterTriPh>>> m_band_tris_ph;
-
-    // Phase 2 (rasterize) inputs:
     Framebuffer *m_fb = nullptr;
 
-    std::atomic<int> m_tri_cursor{0};        // dynamic work cursor for Phase 1
-    std::atomic<int> m_phase1_done{0};       // counts workers that finished Phase 1
-    std::atomic<bool> m_phase2_ready{false}; // set when all Phase 1 workers are done
-
-    std::atomic<int> m_active{0}; // workers not yet done with the current frame
-    int m_generation = 0;         // bumped before each dispatch to wake workers
-    bool m_stop = false;          // set by destructor to terminate worker loops
+    std::atomic<int> m_tri_cursor{0}; // work-stealing cursor across all workers
+    std::atomic<int> m_active{0};     // workers not yet done with the current frame
+    int m_generation = 0;             // bumped before each dispatch to wake workers
+    bool m_stop = false;              // set by destructor to terminate worker loops
 };

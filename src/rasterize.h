@@ -23,46 +23,6 @@ struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
     vec3 color = {1.0f, 1.0f, 1.0f}; // vertex color (white = no tint); at end so existing aggregate inits keep working
 };
 
-// ─── RasterTriFg / RasterTriPh ───────────────────────────────────────────────
-// All data needed to rasterize one visible, clipped, backface-culled triangle.
-// Phase 1 workers fill these; Phase 2 workers consume them.
-//
-// Two separate structs — one per shading family — so Flat/Gouraud triangles
-// don't pay for the larger Phong payload. Both carry the same shared header;
-// mode-specific fields follow immediately with no union padding waste.
-
-struct RasterTriFg // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — all fields written by Phase 1 before Phase 2 reads them
-{
-    vec3 sa, sb, sc;
-    float wa, wb, wc;
-    vec3 pa, pb, pc;
-    vec2 uva, uvb, uvc;
-    const Texture *tex;
-    const ShadowMap *shadow_map;
-    float alpha_cutoff = 0.0f;
-    vec3 col_a, col_b, col_c;    // fully lit (all lights)
-    vec3 shad_a, shad_b, shad_c; // shadowed (key light excluded)
-    RasterTriFg() = default;     // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init,hicpp-member-init) — fields written by Phase 1 before Phase 2 reads them
-};
-
-struct RasterTriPh // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — all fields written by Phase 1 before Phase 2 reads them
-{
-    vec3 sa, sb, sc;
-    float wa, wb, wc;
-    vec3 pa, pb, pc;
-    vec2 uva, uvb, uvc;
-    const Texture *tex;
-    const ShadowMap *shadow_map;
-    vec3 na, nb, nc;
-    vec3 tana, tanb, tanc;
-    vec3 vcola, vcolb, vcolc; // vertex colors (white = no tint)
-    float aoa, aob, aoc;
-    const Material *mat;
-    const Texture *stex;
-    const Texture *nmap;
-    RasterTriPh() = default; // NOLINT(clang-analyzer-optin.cplusplus.UninitializedObject,cppcoreguidelines-pro-type-member-init,hicpp-member-init) — fields written by Phase 1 before Phase 2 reads them
-};
-
 // ─── Rasterization primitives ─────────────────────────────────────────────────
 
 // Clip triangle (a,b,c) against the near plane w = near_w.
