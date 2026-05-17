@@ -471,3 +471,19 @@ TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
 
     ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
 }
+
+// ─── non-headless ctor/dtor ───────────────────────────────────────────────────
+
+TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
+{
+    // headless=false triggers the alternate-screen enter (ctor) and exit (dtor)
+    // ANSI sequences, which are normally suppressed by headless=true in all other
+    // tests.  CaptureStdout captures both in one buffer.
+    CaptureStdout cap;
+    {
+        Framebuffer fb(1, 2, /*headless=*/false);
+    } // destructor runs here, emitting the exit sequence
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[?1049h") != std::string::npos); // enter alternate screen
+    ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos); // exit alternate screen
+}
