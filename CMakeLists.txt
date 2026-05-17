@@ -19,7 +19,7 @@ find_package(Threads REQUIRED)
 # ─── Vendored libraries ───────────────────────────────────────────────────────
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
-foreach(lib cgltf stb stl_reader tinyobjloader tinyply)
+foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src)
   target_include_directories(rasterminal_vendor SYSTEM INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/${lib})
 endforeach()
@@ -74,7 +74,8 @@ add_executable(rasterminal
   src/shadow.cpp
   src/rasterize.cpp
   src/renderer.cpp
-  src/texture.cpp)
+  src/texture.cpp
+  vendor/meshoptimizer/meshoptimizer_impl.cpp)
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -139,7 +140,8 @@ if(RASTERMINAL_BUILD_TESTS)
     src/camera.cpp
     src/rasterize.cpp
     src/framebuffer.cpp
-    src/shadow.cpp)
+    src/shadow.cpp
+    vendor/meshoptimizer/meshoptimizer_impl.cpp)
   target_link_libraries(rasterminal_tests PRIVATE
     rasterminal_vendor
     rasterminal_warnings

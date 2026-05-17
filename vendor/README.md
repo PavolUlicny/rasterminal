@@ -9,6 +9,7 @@ All libraries are single-header (or minimal) and vendored directly. Do not edit 
 | tinyply | 3.0 | `c9bb690dfe5e9105961e9e28120c48c9ae084bc6` | <https://github.com/ddiakopoulos/tinyply> | public domain |
 | tinyobjloader | v2.0.0rc13 | `2945a967c5303b2c8c14174117c45f3302591150` | <https://github.com/tinyobjloader/tinyobjloader> | MIT |
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
+| meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
 
 ## Refresh recipe
 
@@ -33,4 +34,20 @@ For stl_reader (header lives at `include/stl_reader/stl_reader.h` in the repo, b
 ```sh
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/include/stl_reader/stl_reader.h -o vendor/stl_reader/stl_reader.h
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/LICENSE -o vendor/stl_reader/LICENSE
+```
+
+For meshoptimizer (header lives in `src/`, compiled via unity shim `meshoptimizer_impl.cpp`):
+
+```sh
+BASE="https://raw.githubusercontent.com/zeux/meshoptimizer/<tag>"
+curl -sL "$BASE/src/meshoptimizer.h" -o vendor/meshoptimizer/src/meshoptimizer.h
+curl -sL "$BASE/LICENSE.md"          -o vendor/meshoptimizer/LICENSE.md
+for f in allocator clusterizer indexanalyzer indexcodec indexgenerator \
+          meshletcodec meshletutils opacitymap overdrawoptimizer partition \
+          quantization rasterizer simplifier spatialorder stripifier \
+          vcacheoptimizer vertexcodec vertexfilter vfetchoptimizer; do
+    curl -sL "$BASE/src/$f.cpp" -o "vendor/meshoptimizer/src/$f.cpp"
+done
+git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
+# Update the commit and version in this table, update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
 ```

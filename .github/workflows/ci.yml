@@ -204,6 +204,7 @@ jobs:
           --suppressions-list=cppcheck-suppressions.txt
           -I src/
           -I vendor/cgltf
+          -I vendor/meshoptimizer/src
           -I vendor/stb
           -I vendor/stl_reader
           -I vendor/tinyobjloader

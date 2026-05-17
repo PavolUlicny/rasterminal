@@ -1109,10 +1109,22 @@ TEST(gltf_valid, first_primitive_color0_second_has_no_color)
     TmpFile f(tmp_path("rast_vcol_fwd.glb"), make_glb(json, bin));
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.has_vertex_colors);
-    ASSERT_EQ(m.vertex_colors.size(), static_cast<size_t>(3));
-    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f); // red
-    ASSERT_NEAR(m.vertex_colors[1].y, 1.0f, 1e-5f); // green
-    ASSERT_NEAR(m.vertex_colors[2].z, 1.0f, 1e-5f); // blue
+    // optimize_vertex_cache pads partially-initialised vertex_colors to vertices.size()
+    // and then remaps, so size == vertices.size() and order may change.
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size());
+    bool found_red = false, found_green = false, found_blue = false;
+    for (const auto &c : m.vertex_colors)
+    {
+        if (c.x > 0.9f && c.y < 0.1f && c.z < 0.1f)
+            found_red = true;
+        if (c.x < 0.1f && c.y > 0.9f && c.z < 0.1f)
+            found_green = true;
+        if (c.x < 0.1f && c.y < 0.1f && c.z > 0.9f)
+            found_blue = true;
+    }
+    ASSERT_TRUE(found_red);
+    ASSERT_TRUE(found_green);
+    ASSERT_TRUE(found_blue);
 }
 
 // ─── Group U: null material pointer ──────────────────────────────────────────
