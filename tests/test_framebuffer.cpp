@@ -430,3 +430,44 @@ TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
     ASSERT_TRUE(first != std::string::npos);                    // emitted at least once
     ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for second cell
 }
+
+// ─── write_byte() LUT boundary values ────────────────────────────────────────
+
+TEST(framebuffer, write_byte_lut_boundary_values)
+{
+    // write_byte() has three ranges: [0-9] (1 digit), [10-99] (2 digits),
+    // [100-255] (3 digits).  Exercise the start and end of each range by using
+    // the value as the R channel of a pixel whose top != bot so that the fg SGR
+    // \033[38;2;R;G;Bm is emitted on the full-redraw present().
+    const uint8_t vals[] = {0, 9, 10, 99, 100, 255};
+    for (uint8_t v : vals)
+    {
+        Framebuffer fb(1, 2, /*headless=*/true);
+        CaptureStdout cap;
+        fb.set_pixel(0, 0, {v, 1, 2}); // top != bot (bot stays default black)
+        fb.present();
+        const std::string out = cap.read();
+        // When fg and bg both change, the code emits a combined sequence
+        // \033[38;2;R;G;B;48;2;...m — match the fg prefix up to the separator.
+        char expected[32];
+        std::snprintf(expected, sizeof(expected), "\033[38;2;%d;1;2;", static_cast<int>(v));
+        ASSERT_TRUE(out.find(expected) != std::string::npos);
+    }
+}
+
+// ─── all-cells-dirty incremental frame ───────────────────────────────────────
+
+TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
+{
+    // After the first full-redraw (m_prev_color = all-black), clearing to a
+    // non-black color makes every cell dirty on the second present().
+    // The incremental path runs but the skip branch is never entered.
+    Framebuffer fb(4, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.present(); // full-redraw; establishes m_prev_color = all-black
+
+    fb.clear({200, 100, 50}); // every cell now differs from m_prev_color
+    fb.present();             // incremental path; all cells dirty; skip never fires
+
+    ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
+}
