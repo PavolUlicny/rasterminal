@@ -1016,3 +1016,153 @@ TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
     ASSERT_NEAR(m.vertex_colors[4].y, 1.0f, 1e-5f); // green
     ASSERT_NEAR(m.vertex_colors[5].z, 1.0f, 1e-5f); // blue
 }
+
+// ─── Group Q: cgltf_parse_file failure ────────────────────────────────────────
+
+TEST(reject, gltf_corrupt_header_fails_parse)
+{
+    // Wrong magic bytes → cgltf_parse_file fails before load_buffers/validate.
+    TmpFile f(tmp_path("rast_corrupt.glb"), std::string(8, '\xFF'));
+    assert_rejects(f.path);
+}
+
+// ─── Group R: zero/degenerate normals ─────────────────────────────────────────
+
+TEST(gltf_valid, zero_normals_skip_normalise_and_load_succeeds)
+{
+    // NORMAL all {0,0,0}: len=0 <= 1e-6 → normalise skipped; normal stays {0,0,0}.
+    // has_normals=true so compute_normals() is not called.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"NORMAL\":1}}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+        "],"
+        "\"buffers\":[{\"byteLength\":72}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+    for (int i = 0; i < 9; i++)
+        emit_f32_le(bin, 0.0f); // 3 zero normals
+    TmpFile f(tmp_path("rast_zeronorm.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_NEAR(m.vertices[0].normal.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(m.vertices[0].normal.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(m.vertices[0].normal.z, 0.0f, 1e-6f);
+}
+
+// ─── Group S: rotation node transform ────────────────────────────────────────
+
+TEST(gltf_valid, rotation_transform_applied_to_positions_and_normals)
+{
+    // 90° CCW rotation around Z: quaternion [x,y,z,w]=[0,0,0.7071068,0.7071068].
+    // Vertex (-1,-1,0) → (1,-1,0); normal (1,0,0) → (0,1,0) after normalisation.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0,\"rotation\":[0.0,0.0,0.7071068,0.7071068]}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1}}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+        "],"
+        "\"buffers\":[{\"byteLength\":72}]}";
+    std::string bin;
+    emit_tri_verts(bin); // positions
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(bin, 1.0f);
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 0.0f);
+    } // normals all (1,0,0)
+    TmpFile f(tmp_path("rast_rotation.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_NEAR(m.vertices[0].pos.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].pos.y, -1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].normal.x, 0.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].normal.y, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertices[0].normal.z, 0.0f, 1e-4f);
+}
+
+// ─── Group T: first primitive COLOR_0, second has no color ───────────────────
+
+TEST(gltf_valid, first_primitive_color0_second_has_no_color)
+{
+    // Prim 0: COLOR_0 (red/green/blue). Prim 1: no COLOR_0.
+    // vertex_colors filled for prim 0 only (size=3); vertices.size()=6.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+        "{\"attributes\":{\"POSITION\":0,\"COLOR_0\":2}},"
+        "{\"attributes\":{\"POSITION\":1}}"
+        "]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
+        "],"
+        "\"buffers\":[{\"byteLength\":120}]}";
+    std::string bin;
+    emit_tri_verts(bin); // prim 0 positions
+    emit_tri_verts(bin); // prim 1 positions
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+    TmpFile f(tmp_path("rast_vcol_fwd.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), static_cast<size_t>(3));
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-5f); // red
+    ASSERT_NEAR(m.vertex_colors[1].y, 1.0f, 1e-5f); // green
+    ASSERT_NEAR(m.vertex_colors[2].z, 1.0f, 1e-5f); // blue
+}
+
+// ─── Group U: null material pointer ──────────────────────────────────────────
+
+TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
+{
+    // No "material" on primitive → prim.material == nullptr → mat_idx = 0.
+    // Only the default Material{} at index 0; no additional material pushed.
+    std::string bin;
+    emit_tri_verts(bin);
+    TmpFile f(tmp_path("rast_nullmat.glb"), make_glb(
+                                                "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                                                "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                                                "{\"POSITION\":0}}]}],"
+                                                "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                                                "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                                                "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                                                "\"buffers\":[{\"byteLength\":36}]}",
+                                                bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+    ASSERT_EQ(m.triangles[0].material_idx, 0u);
+    ASSERT_EQ(m.materials.size(), static_cast<size_t>(1));
+    ASSERT_NEAR(m.materials[0].diffuse.x, 1.0f, 1e-5f);
+}
