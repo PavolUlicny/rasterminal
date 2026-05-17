@@ -928,6 +928,12 @@ TEST(args, empty_value_after_equals_is_error)
     ASSERT_FALSE(run({"--shading=", "m.obj"}).ok);
     ASSERT_FALSE(run({"--bg=", "m.obj"}).ok);
     ASSERT_FALSE(run({"--threads=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--wireframe-color=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--cull=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--texture=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--lighting=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--fps=", "m.obj"}).ok);
+    ASSERT_FALSE(run({"--bench=", "m.obj"}).ok);
 }
 
 // ─── --bench-size / --bench-warmup ───────────────────────────────────────────
