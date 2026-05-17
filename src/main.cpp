@@ -26,8 +26,9 @@
 namespace
 {
 
-    volatile sig_atomic_t g_interrupted =
-        0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — written by signal handler
+    volatile sig_atomic_t
+        g_interrupted = // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — written by signal handler
+        0;
     void signal_handler(int /*signum*/)
     {
         g_interrupted = 1;
