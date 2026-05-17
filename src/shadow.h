@@ -4,6 +4,7 @@
 #include "linalg.h"
 #include "mesh.h"
 
+#include <atomic>
 #include <vector>
 
 // ─── ShadowMap ────────────────────────────────────────────────────────────────
@@ -16,12 +17,17 @@
 struct ShadowMap
 {
     static constexpr int SIZE = 2048;
-    std::vector<float> depth; // NDC z (slope-biased on write), initialised to 1.0
+    std::vector<std::atomic<float>> depth; // NDC z (slope-biased on write), initialised to 1.0
     mat4 light_vp;
 
     void clear()
     {
-        depth.assign(static_cast<size_t>(SIZE) * SIZE, 1.0f);
+        const size_t total = static_cast<size_t>(SIZE) * SIZE;
+        // atomic<float> is not assignable — resize only if needed, then loop-store.
+        if (depth.size() != total)
+            depth = std::vector<std::atomic<float>>(total);
+        for (auto &d : depth)
+            d.store(1.0f, std::memory_order_relaxed);
     }
 
     // Returns shadow factor in [0,1]: 0=fully lit, 1=fully shadowed.
@@ -32,4 +38,4 @@ struct ShadowMap
 // Build a shadow map for a directional light. Fits an orthographic frustum to
 // the mesh bounding sphere and depth-rasterizes all triangles with slope-scale
 // bias to prevent self-shadowing acne.
-[[nodiscard]] ShadowMap build_shadow_map(const Mesh &mesh, const Light &light);
+[[nodiscard]] ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads = 1);

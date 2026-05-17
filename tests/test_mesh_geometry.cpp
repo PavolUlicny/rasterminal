@@ -1,6 +1,8 @@
 #include "loader_util.h"
 #include "test.h"
 
+#include <string>
+
 // All three functions (compute_normals, compute_tangents, compute_ao) are private
 // and exercised indirectly through load_model with crafted OBJ strings.
 
@@ -510,4 +512,40 @@ TEST(mesh_accessors, tex_at_negative_and_oob_return_nullptr)
     ASSERT_TRUE(m.tex_at(-1) == nullptr);
     ASSERT_TRUE(m.tex_at(1) == nullptr);
     ASSERT_TRUE(m.tex_at(0) != nullptr);
+}
+
+// ─── compute_ao: multi-threaded path ─────────────────────────────────────────
+
+TEST(ao, mt_matches_single_threaded)
+{
+    // 33×33 grid OBJ: 1089 vertices (≥ AO_PARALLEL_THRESHOLD=1024) so the
+    // parallel AO path fires for n_threads=4.  optimize_vertex_cache always runs
+    // sequentially (no MT path), so vertex ordering after Pass 2 is identical for
+    // both thread counts — allowing direct index comparison of ao values.
+    constexpr int N = 33;
+    std::string obj;
+    obj.reserve(65536);
+    for (int r = 0; r < N; r++)
+        for (int c = 0; c < N; c++)
+            obj += "v " + std::to_string(c) + " " + std::to_string(r) + " 0\n";
+    for (int r = 0; r < N - 1; r++)
+        for (int c = 0; c < N - 1; c++)
+        {
+            const int bl = r * N + c + 1;
+            const int br = bl + 1;
+            const int tl = bl + N;
+            const int tr = tl + 1;
+            obj += "f " + std::to_string(bl) + " " + std::to_string(br) + " " + std::to_string(tl) + "\n";
+            obj += "f " + std::to_string(br) + " " + std::to_string(tr) + " " + std::to_string(tl) + "\n";
+        }
+
+    TmpFile f(tmp_path("rast_ao_mt.obj"), obj);
+    Mesh m1;
+    Mesh m4;
+    ASSERT_TRUE(m1.load_model(f.path, /*ao=*/true, /*n_threads=*/1));
+    ASSERT_TRUE(m4.load_model(f.path, /*ao=*/true, /*n_threads=*/4));
+
+    ASSERT_TRUE(m1.vertices.size() == m4.vertices.size());
+    for (size_t i = 0; i < m1.vertices.size(); i++)
+        ASSERT_NEAR(m1.vertices[i].ao, m4.vertices[i].ao, 1e-6f);
 }

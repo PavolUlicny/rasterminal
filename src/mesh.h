@@ -46,7 +46,7 @@ struct Mesh
 
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
-    [[nodiscard]] bool load_model(const std::string &path, bool ao = true);
+    [[nodiscard]] bool load_model(const std::string &path, bool ao = true, int n_threads = 1);
 
     // Clear all geometry, material, and texture data.
     void clear();
@@ -82,7 +82,7 @@ private:
     // Bake a per-vertex ambient occlusion factor from mesh curvature.
     // Concave areas (cavities, creases) receive lower AO; convex areas stay at 1.
     // Called by load_model() after compute_tangents(), unless ao=false was passed.
-    void compute_ao();
+    void compute_ao(int n_threads = 1);
 
     // Reorder triangles for vertex cache coherence (Tom Forsyth's algorithm) and
     // remap the vertex array to first-use order. Output is bit-identical to input;

@@ -664,6 +664,46 @@ TEST(shadow, pcf_top_right_corner_clamps_kernel_samples)
     ASSERT_NEAR(sm.in_shadow({1.0f, 1.0f, 0.5f}), 1.0f, 1e-6f);
 }
 
+// ─── Multi-threaded build_shadow_map ─────────────────────────────────────────
+
+TEST(shadow, mt_depth_buffer_matches_single_threaded)
+{
+    // 17×17 grid: 512 triangles (> parallel threshold of 256), light from +Z.
+    // CAS-min is order-independent: whichever thread writes a pixel last, the
+    // stored value is always the minimum depth.  The full depth buffer must be
+    // bit-identical between n_threads=1 and n_threads=4.
+    constexpr int N = 17;
+    Mesh m;
+    m.materials.push_back({});
+    Vertex v{};
+    v.ao = 1.0f;
+    for (int r = 0; r < N; r++)
+        for (int c = 0; c < N; c++)
+        {
+            v.pos = {static_cast<float>(c), static_cast<float>(r), 0.0f};
+            m.vertices.push_back(v);
+        }
+    for (int r = 0; r < N - 1; r++)
+        for (int c = 0; c < N - 1; c++)
+        {
+            const auto bl = static_cast<uint32_t>(r * N + c);
+            const uint32_t br = bl + 1;
+            const uint32_t tl = bl + static_cast<uint32_t>(N);
+            const uint32_t tr = tl + 1;
+            m.triangles.push_back({{bl, br, tl}});
+            m.triangles.push_back({{br, tr, tl}});
+        }
+
+    const Light light = make_light_z();
+    const ShadowMap sm1 = build_shadow_map(m, light, 1);
+    const ShadowMap sm4 = build_shadow_map(m, light, 4);
+
+    ASSERT_TRUE(sm1.depth.size() == sm4.depth.size());
+    for (size_t i = 0; i < sm1.depth.size(); i++)
+        ASSERT_TRUE(sm1.depth[i].load(std::memory_order_relaxed) ==
+                    sm4.depth[i].load(std::memory_order_relaxed));
+}
+
 // ─── build_shadow_map: vertices present, triangles empty ─────────────────────
 
 TEST(shadow, vertices_no_triangles_no_depth_written)

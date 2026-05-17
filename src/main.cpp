@@ -29,6 +29,17 @@ namespace
     volatile sig_atomic_t g_interrupted = 0; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — written by signal handler
     void signal_handler(int /*signum*/) { g_interrupted = 1; }
 
+    // Resolve -1 (auto), 0 (all cores), or N (explicit) to a positive thread count.
+    int resolve_thread_count(int requested) noexcept
+    {
+        const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+        if (requested == 0)
+            return hw;
+        if (requested < 0)
+            return std::min(hw, 4);
+        return requested;
+    }
+
     constexpr Color BG_BLACK = {0, 0, 0};
     constexpr Color BG_GRAY = {128, 128, 128};
     constexpr Color BG_WHITE = {240, 240, 240};
@@ -102,6 +113,8 @@ namespace
     {
         using clock = std::chrono::steady_clock;
 
+        const int n_threads = resolve_thread_count(args.n_threads);
+
         Camera camera = auto_fit_camera(mesh);
         Light lights[2];
         vec3 ambient;
@@ -112,7 +125,7 @@ namespace
         if (args.shadow)
         {
             auto ts = clock::now();
-            shadow_map = build_shadow_map(mesh, lights[0]);
+            shadow_map = build_shadow_map(mesh, lights[0], n_threads);
             auto te = clock::now();
             shadow_ms = std::chrono::duration<double, std::milli>(te - ts).count();
         }
@@ -178,13 +191,8 @@ namespace
         const double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
         const double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
 
-        const int hw = static_cast<int>(std::thread::hardware_concurrency());
-        const int threads = args.n_threads == 0  ? hw
-                            : args.n_threads < 0 ? std::min(hw, 4)
-                                                 : args.n_threads;
-
         std::fprintf(stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n",
-                     n_measure, args.bench_width, args.bench_height, threads, shading_mode_name(renderer.mode), total_ms);
+                     n_measure, args.bench_width, args.bench_height, n_threads, shading_mode_name(renderer.mode), total_ms);
         std::fprintf(stderr, "mesh:    %zu tris  %zu verts\n",
                      mesh.triangles.size(), mesh.vertices.size());
         if (shadow_ms)
@@ -203,8 +211,10 @@ int main(int argc, char *argv[])
         return parsed.exit_code;
     const ParsedArgs &args = parsed.args;
 
+    const int n_threads = resolve_thread_count(args.n_threads);
+
     Mesh mesh;
-    if (!mesh.load_model(args.model_path, args.ao))
+    if (!mesh.load_model(args.model_path, args.ao, n_threads))
     {
         std::fprintf(stderr, "Error: failed to load '%s'\n"
                              "       Supported formats: .obj, .ply, .stl, .gltf, .glb\n",
@@ -256,7 +266,7 @@ int main(int argc, char *argv[])
     // so the map never changes regardless of camera movement or spin.
     std::optional<ShadowMap> shadow_map;
     if (args.shadow)
-        shadow_map = build_shadow_map(mesh, lights[0]);
+        shadow_map = build_shadow_map(mesh, lights[0], n_threads);
 
     Renderer renderer(args.n_threads);
     renderer.mode = static_cast<ShadingMode>(args.shading);
