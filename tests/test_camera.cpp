@@ -14,7 +14,7 @@ static constexpr float EPS = 1e-4f;
 TEST(camera, eye_identity_orientation_puts_eye_on_plus_z)
 {
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     c.orientation = quat::identity();
     vec3 e = c.eye();
@@ -26,7 +26,7 @@ TEST(camera, eye_identity_orientation_puts_eye_on_plus_z)
 TEST(camera, eye_relative_to_target_offset)
 {
     Camera c;
-    c.target = {10.0f, 20.0f, 30.0f};
+    c.target = { 10.0f, 20.0f, 30.0f };
     c.distance = 4.0f;
     c.orientation = quat::identity();
     vec3 e = c.eye();
@@ -39,10 +39,12 @@ TEST(camera, eye_on_unit_sphere_scaled_by_distance)
 {
     // For any orientation, |eye - target| must equal distance.
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 7.5f;
-    c.orientation = normalize(quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(37.0f)) *
-                              quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(21.0f)));
+    c.orientation = normalize(
+        quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(37.0f)) *
+        quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(21.0f))
+    );
     vec3 e = c.eye();
     float r = (e - c.target).length();
     ASSERT_NEAR(r, 7.5f, EPS);
@@ -53,13 +55,15 @@ TEST(camera, eye_on_unit_sphere_scaled_by_distance)
 TEST(camera, view_transforms_eye_to_origin)
 {
     Camera c;
-    c.target = {1.0f, 2.0f, 3.0f};
+    c.target = { 1.0f, 2.0f, 3.0f };
     c.distance = 5.0f;
-    c.orientation = normalize(quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(40.0f)) *
-                              quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(15.0f)));
+    c.orientation = normalize(
+        quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(40.0f)) *
+        quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(15.0f))
+    );
     mat4 V = c.view();
     vec3 e = c.eye();
-    vec4 r = V * vec4{e.x, e.y, e.z, 1.0f};
+    vec4 r = V * vec4{ e.x, e.y, e.z, 1.0f };
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -70,12 +74,14 @@ TEST(camera, view_puts_target_on_negative_z_at_distance)
     // look_at makes forward (eye → target) the -Z axis in view space,
     // so the target in view space is (0, 0, -distance).
     Camera c;
-    c.target = {-3.0f, 4.0f, 2.0f};
+    c.target = { -3.0f, 4.0f, 2.0f };
     c.distance = 6.0f;
-    c.orientation = normalize(quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(20.0f)) *
-                              quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(-10.0f)));
+    c.orientation = normalize(
+        quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(20.0f)) *
+        quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(-10.0f))
+    );
     mat4 V = c.view();
-    vec4 r = V * vec4{c.target.x, c.target.y, c.target.z, 1.0f};
+    vec4 r = V * vec4{ c.target.x, c.target.y, c.target.z, 1.0f };
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, -6.0f, EPS);
@@ -93,7 +99,7 @@ TEST(camera, projection_square_aspect)
 
     // A point at z = -near on the axis should map to clip z = -near after
     // perspective divide (z_ndc = -1).
-    vec4 clip = P * vec4{0, 0, -1, 1};
+    vec4 clip = P * vec4{ 0, 0, -1, 1 };
     vec3 ndc = clip.perspective_divide();
     ASSERT_NEAR(ndc.z, -1.0f, 1e-5f);
 }
@@ -109,8 +115,8 @@ TEST(camera, projection_wider_aspect_scales_x_less)
     mat4 P_sq = c.projection(100, 100);
     mat4 P_wide = c.projection(200, 100);
 
-    vec4 csq = P_sq * vec4{0.5f, 0, -2, 1};
-    vec4 cwide = P_wide * vec4{0.5f, 0, -2, 1};
+    vec4 csq = P_sq * vec4{ 0.5f, 0, -2, 1 };
+    vec4 cwide = P_wide * vec4{ 0.5f, 0, -2, 1 };
     vec3 nsq = csq.perspective_divide();
     vec3 nwide = cwide.perspective_divide();
     ASSERT_TRUE(std::fabs(nwide.x) < std::fabs(nsq.x));
@@ -282,7 +288,7 @@ TEST(camera, orbit_keeps_eye_on_sphere)
 {
     // After arbitrary sequence of orbits, eye must remain at `distance` from target.
     Camera c;
-    c.target = {1.0f, 2.0f, 3.0f};
+    c.target = { 1.0f, 2.0f, 3.0f };
     c.distance = 6.0f;
     c.orientation = quat::identity();
     c.orbit(0.7f, 0.3f);
@@ -317,7 +323,7 @@ TEST(camera, orbit_does_not_gimbal_lock)
     // Drive many full pitch revolutions via small increments. The view matrix
     // must stay finite and the upper 3×3 rotation rows must stay unit-length.
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     c.orientation = quat::identity();
 
@@ -332,7 +338,7 @@ TEST(camera, orbit_does_not_gimbal_lock)
 
     for (int r = 0; r < 3; r++)
     {
-        vec3 row{v.m[0][r], v.m[1][r], v.m[2][r]};
+        vec3 row{ v.m[0][r], v.m[1][r], v.m[2][r] };
         ASSERT_NEAR(row.length(), 1.0f, 1e-3f);
     }
 }
@@ -343,10 +349,10 @@ TEST(camera, spin_world_y_rotates_around_world_up)
 {
     // Spinning around world Y must not change the Y component of (eye - target).
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     // Start with some arbitrary pitch so the eye is not already on the XZ plane.
-    c.orientation = quat::from_axis_angle({1.0f, 0.0f, 0.0f}, to_radians(-30.0f));
+    c.orientation = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(-30.0f));
     float y_before = c.eye().y;
 
     c.spin_world_y(to_radians(90.0f));
@@ -360,7 +366,7 @@ TEST(camera, spin_world_y_rotates_xz_correctly)
     // Identity orientation → eye on +Z. A +90° world-Y spin rotates +Z toward +X
     // (right-hand rule around +Y: +Z → +X). Both distance and Y must be unchanged.
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     c.orientation = quat::identity();
     c.spin_world_y(to_radians(90.0f));
@@ -373,9 +379,9 @@ TEST(camera, spin_world_y_rotates_xz_correctly)
 TEST(camera, spin_world_y_zero_is_noop)
 {
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
-    c.orientation = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(37.0f));
+    c.orientation = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(37.0f));
     vec3 e_before = c.eye();
     c.spin_world_y(0.0f);
     vec3 e_after = c.eye();
@@ -420,12 +426,12 @@ TEST(camera, view_explicit_eye_pos_maps_to_origin)
     // The two-arg overload must use the supplied position, not recompute eye().
     // We pass a position offset from the normal eye() — it must still map to origin.
     Camera c;
-    c.target = {2.0f, 3.0f, 4.0f};
+    c.target = { 2.0f, 3.0f, 4.0f };
     c.distance = 5.0f;
-    c.orientation = normalize(quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(50.0f)));
-    const vec3 custom_eye = c.target + vec3{0.0f, 2.0f, 6.0f};
+    c.orientation = normalize(quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(50.0f)));
+    const vec3 custom_eye = c.target + vec3{ 0.0f, 2.0f, 6.0f };
     mat4 V = c.view(custom_eye);
-    vec4 r = V * vec4{custom_eye.x, custom_eye.y, custom_eye.z, 1.0f};
+    vec4 r = V * vec4{ custom_eye.x, custom_eye.y, custom_eye.z, 1.0f };
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -436,7 +442,7 @@ TEST(camera, view_eye_at_target_does_not_crash)
     // eye == target → look_at forward vector is zero → normalize(zero) → NaN.
     // No guard; test documents the call completes without aborting.
     Camera c;
-    c.target = {1.0f, 2.0f, 3.0f};
+    c.target = { 1.0f, 2.0f, 3.0f };
     mat4 V = c.view(c.target);
     (void)V;
 }
@@ -446,9 +452,9 @@ TEST(camera, view_eye_at_target_does_not_crash)
 TEST(camera, orbit_zero_is_noop)
 {
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
-    c.orientation = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, to_radians(20.0f));
+    c.orientation = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(20.0f));
     vec3 e_before = c.eye();
     c.orbit(0.0f, 0.0f);
     vec3 e_after = c.eye();
@@ -462,16 +468,16 @@ TEST(camera, orbit_compound_nonzero_matches_formula)
     // Single orbit(dx, dy) with both non-zero: local_right is from the original orientation,
     // composition order is normalize(yaw * pitch * orientation).
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     c.orientation = quat::identity();
 
     const float dx = 0.5f, dy = 0.3f;
-    const vec3 local_right = c.orientation.rotate({1.0f, 0.0f, 0.0f});
-    const quat yaw = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, -dx);
+    const vec3 local_right = c.orientation.rotate({ 1.0f, 0.0f, 0.0f });
+    const quat yaw = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, -dx);
     const quat pitch = quat::from_axis_angle(local_right, dy);
     Camera c_exp;
-    c_exp.target = {0.0f, 0.0f, 0.0f};
+    c_exp.target = { 0.0f, 0.0f, 0.0f };
     c_exp.distance = 5.0f;
     c_exp.orientation = normalize(yaw * pitch * c.orientation);
     const vec3 exp = c_exp.eye();
@@ -488,7 +494,7 @@ TEST(camera, orbit_compound_nonzero_matches_formula)
 TEST(camera, eye_zero_distance_returns_target)
 {
     Camera c;
-    c.target = {1.0f, 2.0f, 3.0f};
+    c.target = { 1.0f, 2.0f, 3.0f };
     c.distance = 0.0f;
     c.orientation = quat::identity();
     vec3 e = c.eye();
@@ -520,8 +526,8 @@ TEST(camera, process_key_dt_zero_is_noop)
     c.orientation = quat::identity();
     const vec3 e_before = c.eye();
     const float d_before = c.distance;
-    for (auto key : {platform::KEY_A, platform::KEY_D, platform::KEY_W, platform::KEY_S,
-                     platform::KEY_PLUS, platform::KEY_MINUS})
+    for (auto key : { platform::KEY_A, platform::KEY_D, platform::KEY_W, platform::KEY_S, platform::KEY_PLUS,
+                      platform::KEY_MINUS })
         c.process_key(key, 0.0f);
     ASSERT_NEAR(c.distance, d_before, EPS);
     vec3 e_after = c.eye();

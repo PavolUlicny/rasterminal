@@ -13,7 +13,7 @@
 // After perspective divide these would give NDC = (x/w, y/w, z/w).
 static vec4 clip_v(float x, float y, float z, float w)
 {
-    return {x, y, z, w};
+    return { x, y, z, w };
 }
 
 // ─── inside the frustum ──────────────────────────────────────────────────────

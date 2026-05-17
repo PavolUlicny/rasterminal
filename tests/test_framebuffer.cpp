@@ -36,10 +36,10 @@ TEST(framebuffer, set_pixel_oob_silently_ignored)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
     // OOB writes must not corrupt adjacent in-bounds pixels.
-    fb.set_pixel(-1, 0, {1, 2, 3});
-    fb.set_pixel(fb.width(), 0, {1, 2, 3});
-    fb.set_pixel(0, -1, {1, 2, 3});
-    fb.set_pixel(0, fb.height(), {1, 2, 3});
+    fb.set_pixel(-1, 0, { 1, 2, 3 });
+    fb.set_pixel(fb.width(), 0, { 1, 2, 3 });
+    fb.set_pixel(0, -1, { 1, 2, 3 });
+    fb.set_pixel(0, fb.height(), { 1, 2, 3 });
 
     // In-bounds pixels should still be default (black).
     Color c = fb.get_pixel(0, 0);
@@ -59,7 +59,7 @@ TEST(framebuffer, set_pixel_oob_silently_ignored)
 TEST(framebuffer, clear_fills_all_pixels_with_bg)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    fb.clear({10, 20, 30});
+    fb.clear({ 10, 20, 30 });
     for (int y = 0; y < fb.height(); ++y)
     {
         for (int x = 0; x < fb.width(); ++x)
@@ -100,7 +100,7 @@ TEST(framebuffer, resize_to_same_size_is_idempotent)
     Framebuffer fb(6, 6, /*headless=*/true);
     fb.resize(6, 6);
     // Basic operations must still work after a no-op resize.
-    fb.set_pixel(3, 3, {77, 88, 99});
+    fb.set_pixel(3, 3, { 77, 88, 99 });
     Color c = fb.get_pixel(3, 3);
     ASSERT_EQ(static_cast<int>(c.r), 77);
     ASSERT_EQ(static_cast<int>(c.g), 88);
@@ -114,7 +114,7 @@ TEST(framebuffer, resize_sequence_clears_each_time)
     Framebuffer fb(10, 10, /*headless=*/true);
 
     // Write something into the initial 10×10.
-    fb.set_pixel(5, 5, {1, 2, 3});
+    fb.set_pixel(5, 5, { 1, 2, 3 });
     ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.1f));
 
     // Grow to 20×20: pixels should be default, depth +inf.
@@ -124,7 +124,7 @@ TEST(framebuffer, resize_sequence_clears_each_time)
     ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.8f));
 
     // Write again.
-    fb.set_pixel(3, 3, {9, 8, 7});
+    fb.set_pixel(3, 3, { 9, 8, 7 });
     ASSERT_TRUE(fb.test_and_set_depth(3, 3, 0.2f));
 
     // Shrink to 5×5: pixels default, depth +inf.
@@ -143,8 +143,8 @@ TEST(framebuffer, zero_size_construction_present_does_not_crash)
     ASSERT_EQ(fb.width(), 0);
     ASSERT_EQ(fb.height(), 0);
     fb.clear();
-    fb.set_pixel(0, 0, {1, 2, 3}); // OOB — silently ignored
-    fb.present();                  // must not crash on empty buffer
+    fb.set_pixel(0, 0, { 1, 2, 3 }); // OOB — silently ignored
+    fb.present();                    // must not crash on empty buffer
 }
 
 TEST(framebuffer, odd_height_present_does_not_crash)
@@ -156,8 +156,8 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     Framebuffer fb(2, 3, /*headless=*/true);
     ASSERT_EQ(fb.width(), 2);
     ASSERT_EQ(fb.height(), 3);
-    fb.set_pixel(0, 2, {100, 150, 200}); // row 2 — the lone odd row
-    fb.present();                        // must not crash
+    fb.set_pixel(0, 2, { 100, 150, 200 }); // row 2 — the lone odd row
+    fb.present();                          // must not crash
 }
 
 // ─── headless mode ───────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ TEST(framebuffer, headless_dimensions_correct)
 TEST(framebuffer, headless_pixel_ops_work)
 {
     Framebuffer fb(6, 6, /*headless=*/true);
-    fb.set_pixel(2, 3, {11, 22, 33});
+    fb.set_pixel(2, 3, { 11, 22, 33 });
     Color c = fb.get_pixel(2, 3);
     ASSERT_EQ(static_cast<int>(c.r), 11);
     ASSERT_EQ(static_cast<int>(c.g), 22);
@@ -183,8 +183,8 @@ TEST(framebuffer, headless_pixel_ops_work)
 TEST(framebuffer, headless_clear_fills_pixels)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    fb.set_pixel(1, 1, {99, 99, 99});
-    fb.clear({7, 8, 9});
+    fb.set_pixel(1, 1, { 99, 99, 99 });
+    fb.clear({ 7, 8, 9 });
     Color c = fb.get_pixel(1, 1);
     ASSERT_EQ(static_cast<int>(c.r), 7);
     ASSERT_EQ(static_cast<int>(c.g), 8);
@@ -215,11 +215,11 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
     // with most cells clean.  Verifies the dirty path doesn't crash or corrupt.
     FdRedirect rd;
     Framebuffer fb(4, 4, /*headless=*/true);
-    fb.set_pixel(0, 0, {255, 0, 0});
+    fb.set_pixel(0, 0, { 255, 0, 0 });
     fb.present(); // full-redraw path; swaps m_color ↔ m_prev_color
 
     fb.clear();
-    fb.set_pixel(2, 2, {0, 255, 0}); // only one cell dirty vs previous frame
+    fb.set_pixel(2, 2, { 0, 255, 0 }); // only one cell dirty vs previous frame
 
     // Pixel is readable before present().
     Color c = fb.get_pixel(2, 2);
@@ -326,9 +326,9 @@ TEST(framebuffer, incremental_single_skip_emits_cursor_advance)
     fb.present(); // full-redraw — establishes m_prev_color = all black
 
     fb.clear();
-    fb.set_pixel(0, 0, {100, 0, 0}); // col 0 dirty
-    fb.set_pixel(2, 0, {0, 100, 0}); // col 2 dirty; col 1 unchanged → skip=1
-    fb.present();                    // incremental path fires skip=1 branch
+    fb.set_pixel(0, 0, { 100, 0, 0 }); // col 0 dirty
+    fb.set_pixel(2, 0, { 0, 100, 0 }); // col 2 dirty; col 1 unchanged → skip=1
+    fb.present();                      // incremental path fires skip=1 branch
 
     ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
 }
@@ -342,8 +342,8 @@ TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
     fb.present(); // full-redraw
 
     fb.clear();
-    fb.set_pixel(0, 0, {100, 0, 0}); // col 0 dirty; cols 1-4 unchanged → skip=4
-    fb.present();                    // incremental path fires skip>1 branch
+    fb.set_pixel(0, 0, { 100, 0, 0 }); // col 0 dirty; cols 1-4 unchanged → skip=4
+    fb.present();                      // incremental path fires skip>1 branch
 
     ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
 }
@@ -377,8 +377,8 @@ TEST(framebuffer, present_incremental_dirty_at_last_column)
     fb.present(); // full-redraw
     cap.read();   // drain
 
-    fb.set_pixel(3, 0, {200, 0, 0}); // only last column dirty
-    fb.present();                    // must not crash
+    fb.set_pixel(3, 0, { 200, 0, 0 }); // only last column dirty
+    fb.present();                      // must not crash
 
     const std::string out = cap.read();
     ASSERT_TRUE(out.find("\033[1;4H") != std::string::npos); // cursor jumped to last col
@@ -392,7 +392,7 @@ TEST(framebuffer, present_height_1_does_not_crash)
     // code for any height, but this degenerate size must still produce a valid call.
     FdRedirect rd;
     Framebuffer fb(4, 1, /*headless=*/true);
-    fb.set_pixel(0, 0, {50, 50, 50});
+    fb.set_pixel(0, 0, { 50, 50, 50 });
     fb.present(); // must not crash
 }
 
@@ -421,7 +421,7 @@ TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
     Framebuffer fb(2, 2, /*headless=*/true);
     CaptureStdout cap;
 
-    fb.clear({100, 150, 200});
+    fb.clear({ 100, 150, 200 });
     fb.present(); // full-redraw; both cells have top==bot=={100,150,200}
 
     const std::string out = cap.read();
@@ -439,12 +439,12 @@ TEST(framebuffer, write_byte_lut_boundary_values)
     // [100-255] (3 digits).  Exercise the start and end of each range by using
     // the value as the R channel of a pixel whose top != bot so that the fg SGR
     // \033[38;2;R;G;Bm is emitted on the full-redraw present().
-    const uint8_t vals[] = {0, 9, 10, 99, 100, 255};
+    const uint8_t vals[] = { 0, 9, 10, 99, 100, 255 };
     for (uint8_t v : vals)
     {
         Framebuffer fb(1, 2, /*headless=*/true);
         CaptureStdout cap;
-        fb.set_pixel(0, 0, {v, 1, 2}); // top != bot (bot stays default black)
+        fb.set_pixel(0, 0, { v, 1, 2 }); // top != bot (bot stays default black)
         fb.present();
         const std::string out = cap.read();
         // When fg and bg both change, the code emits a combined sequence
@@ -466,8 +466,8 @@ TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
     CaptureStdout cap;
     fb.present(); // full-redraw; establishes m_prev_color = all-black
 
-    fb.clear({200, 100, 50}); // every cell now differs from m_prev_color
-    fb.present();             // incremental path; all cells dirty; skip never fires
+    fb.clear({ 200, 100, 50 }); // every cell now differs from m_prev_color
+    fb.present();               // incremental path; all cells dirty; skip never fires
 
     ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
 }

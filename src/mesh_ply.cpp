@@ -125,8 +125,7 @@ bool Mesh::load_ply(const std::string &path)
     {
         const auto data_start = ss.tellg();
         ss.seekg(0, std::ios::end);
-        const uint64_t data_bytes =
-            static_cast<uint64_t>(ss.tellg()) - static_cast<uint64_t>(data_start);
+        const uint64_t data_bytes = static_cast<uint64_t>(ss.tellg()) - static_cast<uint64_t>(data_start);
         ss.seekg(data_start);
         for (const auto &el : file.get_elements())
             if (el.size > 0 && static_cast<uint64_t>(el.size) > data_bytes)
@@ -142,7 +141,7 @@ bool Mesh::load_ply(const std::string &path)
 
     try
     {
-        positions = file.request_properties_from_element("vertex", {"x", "y", "z"});
+        positions = file.request_properties_from_element("vertex", { "x", "y", "z" });
     }
     catch (...)
     {
@@ -151,7 +150,7 @@ bool Mesh::load_ply(const std::string &path)
 
     try
     {
-        normals = file.request_properties_from_element("vertex", {"nx", "ny", "nz"});
+        normals = file.request_properties_from_element("vertex", { "nx", "ny", "nz" });
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -161,7 +160,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!uvs)
         try
         {
-            uvs = file.request_properties_from_element("vertex", {"u", "v"});
+            uvs = file.request_properties_from_element("vertex", { "u", "v" });
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -169,7 +168,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!uvs)
         try
         {
-            uvs = file.request_properties_from_element("vertex", {"s", "t"});
+            uvs = file.request_properties_from_element("vertex", { "s", "t" });
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -177,7 +176,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!uvs)
         try
         {
-            uvs = file.request_properties_from_element("vertex", {"texture_u", "texture_v"});
+            uvs = file.request_properties_from_element("vertex", { "texture_u", "texture_v" });
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -186,7 +185,7 @@ bool Mesh::load_ply(const std::string &path)
     // Vertex colors: red/green/blue first, then r/g/b.
     try
     {
-        vcolors = file.request_properties_from_element("vertex", {"red", "green", "blue"});
+        vcolors = file.request_properties_from_element("vertex", { "red", "green", "blue" });
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -194,7 +193,7 @@ bool Mesh::load_ply(const std::string &path)
     if (!vcolors)
         try
         {
-            vcolors = file.request_properties_from_element("vertex", {"r", "g", "b"});
+            vcolors = file.request_properties_from_element("vertex", { "r", "g", "b" });
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -203,13 +202,13 @@ bool Mesh::load_ply(const std::string &path)
     // Face indices (try both common property names).
     try
     {
-        faces = file.request_properties_from_element("face", {"vertex_indices"});
+        faces = file.request_properties_from_element("face", { "vertex_indices" });
     }
     catch (...)
     {
         try
         {
-            faces = file.request_properties_from_element("face", {"vertex_index"});
+            faces = file.request_properties_from_element("face", { "vertex_index" });
         }
         catch (...)
         {
@@ -222,7 +221,7 @@ bool Mesh::load_ply(const std::string &path)
     {
         try
         {
-            fcolors = file.request_properties_from_element("face", {"red", "green", "blue"});
+            fcolors = file.request_properties_from_element("face", { "red", "green", "blue" });
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
@@ -230,7 +229,7 @@ bool Mesh::load_ply(const std::string &path)
         if (!fcolors)
             try
             {
-                fcolors = file.request_properties_from_element("face", {"r", "g", "b"});
+                fcolors = file.request_properties_from_element("face", { "r", "g", "b" });
             }
             catch (...) // NOLINT(bugprone-empty-catch)
             {
@@ -273,16 +272,13 @@ bool Mesh::load_ply(const std::string &path)
         for (size_t i = 0; i < n_verts; i++)
         {
             Vertex v{};
-            v.pos = {rd_f(pb, positions->t, i * 3),
-                     rd_f(pb, positions->t, i * 3 + 1),
-                     rd_f(pb, positions->t, i * 3 + 2)};
+            v.pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
+                      rd_f(pb, positions->t, i * 3 + 2) };
             if (nb)
-                v.normal = {rd_f(nb, normals->t, i * 3),
-                            rd_f(nb, normals->t, i * 3 + 1),
-                            rd_f(nb, normals->t, i * 3 + 2)};
+                v.normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
+                             rd_f(nb, normals->t, i * 3 + 2) };
             if (ub)
-                v.uv = {rd_f(ub, uvs->t, i * 2),
-                        rd_f(ub, uvs->t, i * 2 + 1)};
+                v.uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
             v.ao = 1.0f;
             vertices.push_back(v);
         }
@@ -292,9 +288,8 @@ bool Mesh::load_ply(const std::string &path)
             const uint8_t *cb = vcolors->buffer.get();
             vertex_colors.resize(n_verts);
             for (size_t i = 0; i < n_verts; i++)
-                vertex_colors[i] = {rd_col(cb, vcolors->t, i * 3),
-                                    rd_col(cb, vcolors->t, i * 3 + 1),
-                                    rd_col(cb, vcolors->t, i * 3 + 2)};
+                vertex_colors[i] = { rd_col(cb, vcolors->t, i * 3), rd_col(cb, vcolors->t, i * 3 + 1),
+                                     rd_col(cb, vcolors->t, i * 3 + 2) };
             has_vertex_colors = true;
         }
 
@@ -334,15 +329,13 @@ bool Mesh::load_ply(const std::string &path)
         const uint8_t *ub = uvs ? uvs->buffer.get() : nullptr;
         for (size_t i = 0; i < n_verts; i++)
         {
-            pool[i].pos = {rd_f(pb, positions->t, i * 3),
-                           rd_f(pb, positions->t, i * 3 + 1),
-                           rd_f(pb, positions->t, i * 3 + 2)};
+            pool[i].pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
+                            rd_f(pb, positions->t, i * 3 + 2) };
             if (nb)
-                pool[i].normal = {rd_f(nb, normals->t, i * 3),
-                                  rd_f(nb, normals->t, i * 3 + 1),
-                                  rd_f(nb, normals->t, i * 3 + 2)};
+                pool[i].normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
+                                   rd_f(nb, normals->t, i * 3 + 2) };
             if (ub)
-                pool[i].uv = {rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1)};
+                pool[i].uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
         }
 
         const uint8_t *fb = faces->buffer.get();
@@ -353,9 +346,8 @@ bool Mesh::load_ply(const std::string &path)
 
         for (size_t f = 0; f < n_faces; f++)
         {
-            const vec3 col = {rd_col(fcb, fcolors->t, f * 3),
-                              rd_col(fcb, fcolors->t, f * 3 + 1),
-                              rd_col(fcb, fcolors->t, f * 3 + 2)};
+            const vec3 col = { rd_col(fcb, fcolors->t, f * 3), rd_col(fcb, fcolors->t, f * 3 + 1),
+                               rd_col(fcb, fcolors->t, f * 3 + 2) };
 
             const uint32_t i0 = rd_idx(fb, faces->t, f * ipf);
             for (size_t v = 1; v + 1 < ipf; v++)
@@ -366,7 +358,7 @@ bool Mesh::load_ply(const std::string &path)
                     continue;
 
                 const auto base = static_cast<uint32_t>(vertices.size());
-                for (const uint32_t pi : {i0, iv, iw})
+                for (const uint32_t pi : { i0, iv, iw })
                 {
                     Vertex vert{};
                     vert.pos = pool[pi].pos;

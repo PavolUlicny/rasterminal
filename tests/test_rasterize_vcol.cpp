@@ -24,28 +24,20 @@ static Texture make_vcol_tex(int w, int h, std::initializer_list<int> rgba)
 //   Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 framebuffer
 //
 // Caller supplies: vcol per vertex, has_vcol flag, w per vertex, mat, optional tex.
-static void rast_phong_vcol(Framebuffer &fb,
-                            vec3 vcola, vec3 vcolb, vec3 vcolc,
-                            bool has_vcol,
-                            float wa, float wb, float wc,
-                            const Material &mat,
-                            const Texture *tex)
+static void rast_phong_vcol(
+    Framebuffer &fb, vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, float wa, float wb, float wc,
+    const Material &mat, const Texture *tex
+)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{1.0f, 1.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
-    rasterize_phong(fb, sa, sb, sc, wa, wb, wc,
-                    zero, zero, zero,
-                    normal, normal, normal,
-                    tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    vcola, vcolb, vcolc, has_vcol,
-                    eye, nullptr, 0, ambient, mat,
-                    tex, nullptr, nullptr, nullptr,
-                    0, 19);
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    rasterize_phong(
+        fb, sa, sb, sc, wa, wb, wc, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f, 1.0f,
+        1.0f, vcola, vcolb, vcolc, has_vcol, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, 0, 19
+    );
 }
 
 // ─── vertex-color in rasterize_phong() ───────────────────────────────────────
@@ -62,16 +54,19 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    vec3 red{1.0f, 0.0f, 0.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f };
     rast_phong_vcol(fb, red, red, red, false, 1.0f, 1.0f, 1.0f, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 250 || c.g < 250 || c.b < 250)
-        ASSERT_FAIL("has_vcol=false: expected white, got (" + std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+        ASSERT_FAIL(
+            "has_vcol=false: expected white, got (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
 }
 
 // V2: has_vcol=true: red vcol on all vertices must produce a red pixel.
@@ -80,10 +75,10 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    vec3 red{1.0f, 0.0f, 0.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f };
     rast_phong_vcol(fb, red, red, red, true, 1.0f, 1.0f, 1.0f, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -100,10 +95,10 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
 TEST(rasterize_phong, white_vcol_matches_no_vcol)
 {
     Material mat{};
-    mat.ambient = {0.7f, 0.5f, 0.3f};
-    mat.diffuse = {0.7f, 0.5f, 0.3f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    vec3 white{1.0f, 1.0f, 1.0f};
+    mat.ambient = { 0.7f, 0.5f, 0.3f };
+    mat.diffuse = { 0.7f, 0.5f, 0.3f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
 
     Framebuffer fb_off(40, 20, /*headless=*/true), fb_on(40, 20, /*headless=*/true);
     rast_phong_vcol(fb_off, white, white, white, false, 1.0f, 1.0f, 1.0f, mat, nullptr);
@@ -122,14 +117,14 @@ TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    vec3 red{1.0f, 0.0f, 0.0f}, green{0.0f, 1.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f }, green{ 0.0f, 1.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
     rast_phong_vcol(fb, red, green, blue, true, 1.0f, 1.0f, 1.0f, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color expected{56, 64, 135};
+    Color expected{ 56, 64, 135 };
     assert_pixel_near(fb, 20, 10, expected, 5);
 }
 
@@ -141,18 +136,23 @@ TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
     rast_phong_vcol(fb, red, red, blue, true, 10.0f, 10.0f, 1.0f, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 12, 10));
     Color c = fb.get_pixel(12, 10);
     if (c.b < 200)
-        ASSERT_FAIL("B too low (" + std::to_string(static_cast<int>(c.b)) + "): perspective-correct vcol should bias hard toward blue");
+        ASSERT_FAIL(
+            "B too low (" + std::to_string(static_cast<int>(c.b)) +
+            "): perspective-correct vcol should bias hard toward blue"
+        );
     if (c.r > 60)
-        ASSERT_FAIL("R too high (" + std::to_string(static_cast<int>(c.r)) + "): far red vertices should contribute little");
+        ASSERT_FAIL(
+            "R too high (" + std::to_string(static_cast<int>(c.r)) + "): far red vertices should contribute little"
+        );
 }
 
 // V6: red vcol × green diffuse texture → black.
@@ -164,15 +164,18 @@ TEST(rasterize_phong, vcol_combined_with_diffuse_texture)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Material mat{};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
-    Texture green_tex = make_vcol_tex(1, 1, {0, 255, 0, 255});
-    vec3 red{1.0f, 0.0f, 0.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    Texture green_tex = make_vcol_tex(1, 1, { 0, 255, 0, 255 });
+    vec3 red{ 1.0f, 0.0f, 0.0f };
     rast_phong_vcol(fb, red, red, red, true, 1.0f, 1.0f, 1.0f, mat, &green_tex);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5 || c.g > 5 || c.b > 5)
-        ASSERT_FAIL("expected black (red vcol * green tex = 0 per channel), got (" + std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+        ASSERT_FAIL(
+            "expected black (red vcol * green tex = 0 per channel), got (" + std::to_string(static_cast<int>(c.r)) +
+            "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
 }

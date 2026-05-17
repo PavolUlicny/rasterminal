@@ -18,10 +18,9 @@ namespace
 
     constexpr Color vec3_to_color(vec3 c) noexcept
     {
-        return {
-            static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
-            static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
-            static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f)};
+        return { static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+                 static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+                 static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
     }
 
     // Precomputed barycentric rasterization setup for one triangle.
@@ -37,15 +36,13 @@ namespace
     // Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
     // width is the framebuffer width; y_min/y_max are the thread's row band.
     // Returns false if the triangle is degenerate or misses the band entirely.
-    bool setup_tri(vec3 sa, vec3 sb, vec3 sc,
-                   float wa, float wb, float wc,
-                   int width, int y_min, int y_max,
-                   TriSetup &s)
+    bool
+    setup_tri(vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, int width, int y_min, int y_max, TriSetup &s)
     {
-        s.x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-        s.x1 = std::min(width - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
-        s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-        s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+        s.x0 = std::max(0, static_cast<int>(std::floor(std::min({ sa.x, sb.x, sc.x }))));
+        s.x1 = std::min(width - 1, static_cast<int>(std::ceil(std::max({ sa.x, sb.x, sc.x }))));
+        s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({ sa.y, sb.y, sc.y }))));
+        s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({ sa.y, sb.y, sc.y }))));
         if (s.y0 > s.y1 || s.x0 > s.x1)
             return false;
 
@@ -82,8 +79,7 @@ namespace
 // Too small a value produces off-screen NDC coordinates whose magnitude
 // overwhelms float precision in the barycentric computation.
 
-int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
-              ClipVert out[2][3], float near_w)
+int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert out[2][3], float near_w)
 {
     const float NEAR_W = near_w;
 
@@ -112,13 +108,13 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c,
     auto cross_edge = [&](const ClipVert &v0, const ClipVert &v1) -> ClipVert
     {
         const float t = (NEAR_W - v0.c.w) / (v1.c.w - v0.c.w);
-        return {v0.c + (v1.c - v0.c) * t,
-                v0.pos + (v1.pos - v0.pos) * t,
-                v0.normal + (v1.normal - v0.normal) * t,
-                v0.tangent + (v1.tangent - v0.tangent) * t,
-                v0.uv + (v1.uv - v0.uv) * t,
-                v0.ao + (v1.ao - v0.ao) * t,
-                v0.color + (v1.color - v0.color) * t};
+        return { v0.c + (v1.c - v0.c) * t,
+                 v0.pos + (v1.pos - v0.pos) * t,
+                 v0.normal + (v1.normal - v0.normal) * t,
+                 v0.tangent + (v1.tangent - v0.tangent) * t,
+                 v0.uv + (v1.uv - v0.uv) * t,
+                 v0.ao + (v1.ao - v0.ao) * t,
+                 v0.color + (v1.color - v0.color) * t };
     };
 
     if (n == 1)
@@ -225,20 +221,15 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // tex may be nullptr if no diffuse texture is active.
 // shadow_map may be nullptr if shadows are disabled.
 
-void rasterize(Framebuffer &fb,
-               vec3 sa, vec3 sb, vec3 sc,
-               float wa, float wb, float wc,
-               vec3 col_a, vec3 col_b, vec3 col_c,
-               vec3 shad_a, vec3 shad_b, vec3 shad_c,
-               vec3 pa, vec3 pb, vec3 pc,
-               vec2 uva, vec2 uvb, vec2 uvc,
-               const Texture *tex,
-               float alpha_cutoff,
-               const ShadowMap *shadow_map,
-               int y_min, int y_max)
+void rasterize(
+    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 col_a, vec3 col_b, vec3 col_c,
+    vec3 shad_a, vec3 shad_b, vec3 shad_c, vec3 pa, vec3 pb, vec3 pc, vec2 uva, vec2 uvb, vec2 uvc, const Texture *tex,
+    float alpha_cutoff, const ShadowMap *shadow_map, int y_min, int y_max
+)
 {
     const int width = fb.width();
-    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before they are read
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
+                // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
@@ -300,7 +291,7 @@ void rasterize(Framebuffer &fb,
                     bb += bb_dx;
                     continue;
                 }
-                cutout_rgb = {ta.x, ta.y, ta.z};
+                cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
             if (!fb.unchecked_test_and_set_depth(x, y, depth))
@@ -368,28 +359,17 @@ void rasterize(Framebuffer &fb,
 // tex may be nullptr if no diffuse texture is active; when present its RGB is
 // multiplied into mat.diffuse before the lighting calculation.
 
-void rasterize_phong(Framebuffer &fb,
-                     vec3 sa, vec3 sb, vec3 sc,
-                     float wa, float wb, float wc,
-                     vec3 pa, vec3 pb, vec3 pc,
-                     vec3 na, vec3 nb, vec3 nc,
-                     vec3 tana, vec3 tanb, vec3 tanc,
-                     vec2 uva, vec2 uvb, vec2 uvc,
-                     float aoa, float aob, float aoc,
-                     vec3 vcola, vec3 vcolb, vec3 vcolc,
-                     bool has_vcol,
-                     const vec3 &eye,
-                     const Light *lights, int n_lights,
-                     const vec3 &ambient,
-                     const Material &mat,
-                     const Texture *tex,
-                     const Texture *nmap,
-                     const Texture *stex,
-                     const ShadowMap *shadow_map,
-                     int y_min, int y_max)
+void rasterize_phong(
+    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 pa, vec3 pb, vec3 pc, vec3 na,
+    vec3 nb, vec3 nc, vec3 tana, vec3 tanb, vec3 tanc, vec2 uva, vec2 uvb, vec2 uvc, float aoa, float aob, float aoc,
+    vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, const vec3 &eye, const Light *lights, int n_lights,
+    const vec3 &ambient, const Material &mat, const Texture *tex, const Texture *nmap, const Texture *stex,
+    const ShadowMap *shadow_map, int y_min, int y_max
+)
 {
     const int width = fb.width();
-    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before they are read
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
+                // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
         return;
 
@@ -449,7 +429,7 @@ void rasterize_phong(Framebuffer &fb,
                     bb += bb_dx;
                     continue;
                 }
-                cutout_rgb = {ta.x, ta.y, ta.z};
+                cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
             if (!fb.unchecked_test_and_set_depth(x, y, depth))
@@ -481,7 +461,7 @@ void rasterize_phong(Framebuffer &fb,
                 const vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
-                const vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{1.0f, 1.0f, 1.0f};
+                const vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
 
                 // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
                 // then derive B so TBN is a proper orthonormal basis.

@@ -29,7 +29,7 @@ enum class ShadingMode : std::uint8_t
 struct Renderer
 {
     ShadingMode mode = ShadingMode::Gouraud;
-    Color wireframe_color = {200, 200, 200};
+    Color wireframe_color = { 200, 200, 200 };
     bool cull_backfaces = true;
     bool show_texture = true;
 
@@ -46,11 +46,12 @@ struct Renderer
 
     // shadow_map: pre-built shadow map from build_shadow_map(). Pass nullptr to
     // disable shadows, or a valid pointer to reuse a cached map every frame.
-    void render(const Mesh &mesh, const Camera &camera,
-                const Light *lights, int n_lights, const vec3 &ambient,
-                Framebuffer &fb, const ShadowMap *shadow_map = nullptr);
+    void render(
+        const Mesh &mesh, const Camera &camera, const Light *lights, int n_lights, const vec3 &ambient, Framebuffer &fb,
+        const ShadowMap *shadow_map = nullptr
+    );
 
-private:
+  private:
     void worker_func(int t);
 
     int m_n_workers = 0; // total thread pool size, fixed at construction
@@ -75,8 +76,8 @@ private:
     bool m_show_texture = true;
     Framebuffer *m_fb = nullptr;
 
-    std::atomic<int> m_tri_cursor{0}; // work-stealing cursor across all workers
-    std::atomic<int> m_active{0};     // workers not yet done with the current frame
-    int m_generation = 0;             // bumped before each dispatch to wake workers
-    bool m_stop = false;              // set by destructor to terminate worker loops
+    std::atomic<int> m_tri_cursor{ 0 }; // work-stealing cursor across all workers
+    std::atomic<int> m_active{ 0 };     // workers not yet done with the current frame
+    int m_generation = 0;               // bumped before each dispatch to wake workers
+    bool m_stop = false;                // set by destructor to terminate worker loops
 };

@@ -6,18 +6,19 @@
 
 TEST(stl_valid, ascii_single_facet)
 {
-    TmpFile t(tmp_path("rasterminal_test_min.stl"),
-              "solid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "    vertex 0 1 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_min.stl"), "solid test\n"
+                                              "facet normal 0 0 1\n"
+                                              "  outer loop\n"
+                                              "    vertex 0 0 0\n"
+                                              "    vertex 1 0 0\n"
+                                              "    vertex 0 1 0\n"
+                                              "  endloop\n"
+                                              "endfacet\n"
+                                              "endsolid test\n"
+    );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 TEST(stl_valid, binary_single_triangle)
@@ -40,7 +41,7 @@ TEST(stl_valid, binary_single_triangle)
 
     TmpFile t(tmp_path("rasterminal_test_bin.stl"), s);
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
@@ -67,7 +68,7 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
 
     TmpFile t(tmp_path("rasterminal_test_solidbin.stl"), s);
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -149,24 +150,26 @@ TEST(reject, stl_binary_zero_triangles)
 
 TEST(reject, stl_ascii_no_facets)
 {
-    TmpFile t(tmp_path("rasterminal_test_nofacet.stl"),
-              "solid empty\n"
-              "endsolid empty\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_nofacet.stl"), "solid empty\n"
+                                                  "endsolid empty\n"
+    );
     assert_rejects(t.path);
 }
 
 TEST(reject, stl_ascii_missing_third_vertex)
 {
     // outer loop with only two vertex lines — stl_reader fails to parse the facet.
-    TmpFile t(tmp_path("rasterminal_test_2v.stl"),
-              "solid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_2v.stl"), "solid test\n"
+                                             "facet normal 0 0 1\n"
+                                             "  outer loop\n"
+                                             "    vertex 0 0 0\n"
+                                             "    vertex 1 0 0\n"
+                                             "  endloop\n"
+                                             "endfacet\n"
+                                             "endsolid test\n"
+    );
     assert_rejects(t.path);
 }
 
@@ -178,21 +181,22 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
 {
     // Verify actual coordinate values, per-vertex ao, material index, and mesh
     // defaults — the count-only tests above don't exercise any of this.
-    TmpFile t(tmp_path("rasterminal_test_pos.stl"),
-              "solid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 1 2 3\n"
-              "    vertex 4 5 6\n"
-              "    vertex 7 8 9\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_pos.stl"), "solid test\n"
+                                              "facet normal 0 0 1\n"
+                                              "  outer loop\n"
+                                              "    vertex 1 2 3\n"
+                                              "    vertex 4 5 6\n"
+                                              "    vertex 7 8 9\n"
+                                              "  endloop\n"
+                                              "endfacet\n"
+                                              "endsolid test\n"
+    );
     Mesh m = load_ok(t.path);
 
-    ASSERT_EQ(m.triangles.size(), size_t{1});
-    ASSERT_EQ(m.vertices.size(), size_t{3});
-    ASSERT_EQ(m.materials.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    ASSERT_EQ(m.materials.size(), size_t{ 1 });
     ASSERT_EQ(m.triangles[0].material_idx, 0u);
     ASSERT_FALSE(m.has_vertex_colors);
 
@@ -216,16 +220,17 @@ TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
     //
     // Geometry: (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal = (0,0,+1).
     // File says normal 0 0 -1.  Loaded vertex normals must have z > 0.
-    TmpFile t(tmp_path("rasterminal_test_wrongnorm.stl"),
-              "solid test\n"
-              "facet normal 0 0 -1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "    vertex 0 1 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_wrongnorm.stl"), "solid test\n"
+                                                    "facet normal 0 0 -1\n"
+                                                    "  outer loop\n"
+                                                    "    vertex 0 0 0\n"
+                                                    "    vertex 1 0 0\n"
+                                                    "    vertex 0 1 0\n"
+                                                    "  endloop\n"
+                                                    "endfacet\n"
+                                                    "endsolid test\n"
+    );
     Mesh m = load_ok(t.path);
     for (const Vertex &v : m.vertices)
         ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
@@ -257,8 +262,8 @@ TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
     TmpFile t(tmp_path("rasterminal_test_2tri.stl"), s);
     Mesh m = load_ok(t.path);
 
-    ASSERT_EQ(m.vertices.size(), size_t{6});
-    ASSERT_EQ(m.triangles.size(), size_t{2});
+    ASSERT_EQ(m.vertices.size(), size_t{ 6 });
+    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
     // Second triangle's indices must be offset by vert_base=3.
     ASSERT_EQ(m.triangles[0].v[0], 0u);
     ASSERT_EQ(m.triangles[0].v[1], 1u);
@@ -282,18 +287,19 @@ TEST(stl_valid, ascii_header_leading_whitespace)
     // Header starts with a space before "solid" — the whitespace-skip loop must
     // advance h past the space before strncmp fires, otherwise is_ascii stays
     // false and the binary-size check rejects the (non-binary) file.
-    TmpFile t(tmp_path("rasterminal_test_wsp.stl"),
-              " solid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "    vertex 0 1 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rasterminal_test_wsp.stl"), " solid test\n"
+                                              "facet normal 0 0 1\n"
+                                              "  outer loop\n"
+                                              "    vertex 0 0 0\n"
+                                              "    vertex 1 0 0\n"
+                                              "    vertex 0 1 0\n"
+                                              "  endloop\n"
+                                              "endfacet\n"
+                                              "endsolid test\n"
+    );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
@@ -319,7 +325,7 @@ TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
     s.append(20, '\xFF'); // 20 surplus trailing bytes
     TmpFile t(tmp_path("rasterminal_test_surplus.stl"), s);
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 TEST(reject, stl_file_open_failure)
@@ -334,16 +340,17 @@ TEST(stl_valid, ascii_header_leading_tab_whitespace)
     // loop advances h so strncmp("solid",...) matches, setting is_ascii=true.
     // stl_reader::StlFileHasASCIIFormat uses find("solid") (finds it after the tab)
     // and ReadStlFile_ASCII tokenizes with >> (skips tab), so parsing succeeds.
-    TmpFile t(tmp_path("rast_tab_hdr.stl"),
-              "\tsolid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "    vertex 0 1 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile t(
+        tmp_path("rast_tab_hdr.stl"), "\tsolid test\n"
+                                      "facet normal 0 0 1\n"
+                                      "  outer loop\n"
+                                      "    vertex 0 0 0\n"
+                                      "    vertex 1 0 0\n"
+                                      "    vertex 0 1 0\n"
+                                      "  endloop\n"
+                                      "endfacet\n"
+                                      "endsolid test\n"
+    );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.triangles.size(), size_t{1});
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }

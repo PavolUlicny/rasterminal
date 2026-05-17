@@ -12,13 +12,13 @@ static Mesh make_flat_triangle()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-10.0f, -10.0f, 0.0f};
+    v.pos = { -10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, 0.0f};
+    v.pos = { 10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, 0.0f};
+    v.pos = { 0.0f, 10.0f, 0.0f };
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     return m;
 }
@@ -27,8 +27,8 @@ static Mesh make_flat_triangle()
 static Light make_light_z()
 {
     Light l{};
-    l.direction = {0.0f, 0.0f, 1.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
+    l.direction = { 0.0f, 0.0f, 1.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
     return l;
 }
 
@@ -49,8 +49,8 @@ TEST(shadow, empty_mesh_nothing_in_shadow)
     Mesh m;
     ShadowMap shadow_map = build_shadow_map(m, make_light_z());
     // No triangles rasterized → depth stays at 1.0 everywhere → nothing in shadow.
-    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
-    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 0.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }
 
 TEST(shadow, lit_point_not_in_shadow)
@@ -58,7 +58,7 @@ TEST(shadow, lit_point_not_in_shadow)
     // Triangle at z=0, light from +Z. A point at z=+5 sits between the light
     // and the triangle — it is closer to the light and cannot be occluded.
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
-    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, 5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 0.0f, 0.0f, 5.0f }), 0.0f, 1e-6f);
 }
 
 TEST(shadow, occluded_point_is_in_shadow)
@@ -66,7 +66,7 @@ TEST(shadow, occluded_point_is_in_shadow)
     // A point at z=−5 is on the far side of the triangle from the light, so
     // the triangle lies directly between it and the light source → in shadow.
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
-    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 TEST(shadow, point_outside_frustum_is_lit)
@@ -74,7 +74,7 @@ TEST(shadow, point_outside_frustum_is_lit)
     // in_shadow() returns false for points whose NDC coordinates land outside
     // [−1,1] in any axis — they are outside the light's shadow volume.
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
-    ASSERT_NEAR(shadow_map.in_shadow({1000.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 1000.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
 }
 
 TEST(shadow, coincident_vertices_radius_clamped)
@@ -84,14 +84,14 @@ TEST(shadow, coincident_vertices_radius_clamped)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {1.0f, 1.0f, 1.0f};
+    v.pos = { 1.0f, 1.0f, 1.0f };
     m.vertices.push_back(v);
     m.vertices.push_back(v);
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     ShadowMap shadow_map = build_shadow_map(m, make_light_z());
-    float sf = shadow_map.in_shadow({1.0f, 1.0f, 0.0f});
+    float sf = shadow_map.in_shadow({ 1.0f, 1.0f, 0.0f });
     ASSERT_TRUE(sf >= 0.0f && sf <= 1.0f);
 }
 
@@ -100,10 +100,10 @@ TEST(shadow, light_pointing_up_uses_x_axis_fallback)
     // |dir.y| = 1.0 >= 0.9 → world_up falls back to {1,0,0}.
     // look_at must remain valid (forward not parallel to up in this fallback).
     Light light{};
-    light.direction = {0.0f, 1.0f, 0.0f};
-    light.color = {1.0f, 1.0f, 1.0f};
+    light.direction = { 0.0f, 1.0f, 0.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), light);
-    float sf = shadow_map.in_shadow({0.0f, 0.0f, 0.0f});
+    float sf = shadow_map.in_shadow({ 0.0f, 0.0f, 0.0f });
     ASSERT_TRUE(sf >= 0.0f && sf <= 1.0f);
 }
 
@@ -114,7 +114,7 @@ TEST(shadow, surface_point_not_self_shadowed_by_slope_bias)
     // so the surface cannot occlude itself.
     // Catches: slope bias removed or too small → acne on every surface.
     ShadowMap shadow_map = build_shadow_map(make_flat_triangle(), make_light_z());
-    ASSERT_NEAR(shadow_map.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(shadow_map.in_shadow({ 0.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
 }
 
 // ─── Alpha cutout in shadow map ───────────────────────────────────────────────
@@ -125,7 +125,7 @@ static Texture make_shadow_tex(uint8_t a)
     Texture t;
     t.width = 1;
     t.height = 1;
-    t.pixels = {255, 255, 255, a};
+    t.pixels = { 255, 255, 255, a };
     return t;
 }
 
@@ -138,14 +138,14 @@ static Mesh make_cutout_triangle(float alpha_cutoff, uint8_t tex_alpha)
     Vertex v{};
     v.ao = 1.0f;
 
-    v.pos = {-10.0f, -10.0f, 0.0f};
-    v.uv = {0.0f, 0.0f};
+    v.pos = { -10.0f, -10.0f, 0.0f };
+    v.uv = { 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, 0.0f};
-    v.uv = {1.0f, 0.0f};
+    v.pos = { 10.0f, -10.0f, 0.0f };
+    v.uv = { 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, 0.0f};
-    v.uv = {0.5f, 1.0f};
+    v.pos = { 0.0f, 10.0f, 0.0f };
+    v.uv = { 0.5f, 1.0f };
     m.vertices.push_back(v);
 
     m.materials.push_back({});
@@ -172,7 +172,7 @@ TEST(shadow, alpha_cutoff_zero_casts_full_shadow)
 {
     Mesh m = make_cutout_triangle(0.0f, 0); // transparent texture, cutoff disabled
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 // alpha_cutoff=0.5 with an all-opaque texture must behave exactly like no cutout
@@ -181,7 +181,7 @@ TEST(shadow, opaque_texture_with_cutoff_casts_shadow)
 {
     Mesh m = make_cutout_triangle(0.5f, 255); // fully opaque texture
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 // alpha_cutoff=0.5 with an all-transparent texture: no depth should be written,
@@ -190,7 +190,7 @@ TEST(shadow, transparent_texture_with_cutoff_casts_no_shadow)
 {
     Mesh m = make_cutout_triangle(0.5f, 0); // fully transparent (alpha=0)
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }
 
 // diffuse_tex=-1 with alpha_cutoff>0: no texture means has_cutout=false;
@@ -201,7 +201,7 @@ TEST(shadow, no_texture_with_cutoff_casts_shadow)
     // ...but now clear diffuse_tex to simulate "cutoff set but no texture"
     m.materials[1].diffuse_tex = -1;
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 // Mixed-material mesh: one opaque triangle (no cutout) and one fully-transparent
@@ -215,25 +215,25 @@ TEST(shadow, mixed_material_opaque_casts_shadow_transparent_does_not)
     v.ao = 1.0f;
 
     // Triangle A (x < 0): opaque, material 0 (default, no cutout).
-    v.pos = {-10.0f, -5.0f, 0.0f};
-    v.uv = {0.0f, 0.0f};
+    v.pos = { -10.0f, -5.0f, 0.0f };
+    v.uv = { 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-0.5f, -5.0f, 0.0f};
-    v.uv = {1.0f, 0.0f};
+    v.pos = { -0.5f, -5.0f, 0.0f };
+    v.uv = { 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-5.0f, 5.0f, 0.0f};
-    v.uv = {0.5f, 1.0f};
+    v.pos = { -5.0f, 5.0f, 0.0f };
+    v.uv = { 0.5f, 1.0f };
     m.vertices.push_back(v);
 
     // Triangle B (x > 0): cutout, transparent texture.
-    v.pos = {0.5f, -5.0f, 0.0f};
-    v.uv = {0.0f, 0.0f};
+    v.pos = { 0.5f, -5.0f, 0.0f };
+    v.uv = { 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -5.0f, 0.0f};
-    v.uv = {1.0f, 0.0f};
+    v.pos = { 10.0f, -5.0f, 0.0f };
+    v.uv = { 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {5.0f, 5.0f, 0.0f};
-    v.uv = {0.5f, 1.0f};
+    v.pos = { 5.0f, 5.0f, 0.0f };
+    v.uv = { 0.5f, 1.0f };
     m.vertices.push_back(v);
 
     m.materials.push_back({});
@@ -260,9 +260,9 @@ TEST(shadow, mixed_material_opaque_casts_shadow_transparent_does_not)
     ShadowMap sm = build_shadow_map(m, make_light_z());
 
     // Point behind the opaque triangle → in shadow.
-    ASSERT_NEAR(sm.in_shadow({-5.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ -5.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
     // Point behind the transparent cutout triangle → NOT in shadow.
-    ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 5.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }
 
 // ─── PCF kernel ───────────────────────────────────────────────────────────────
@@ -286,7 +286,7 @@ TEST(shadow, pcf_partial_occlusion_returns_fraction)
             sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = 0.0f;
             cnt++;
         }
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.5f}), 4.0f / 9.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 4.0f / 9.0f, 1e-6f);
 }
 
 TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
@@ -300,7 +300,7 @@ TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
     for (int dy = -1; dy <= 1; dy++)
         for (int dx = -1; dx <= 1; dx++)
             sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = ref;
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.5f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 0.0f, 1e-6f);
 }
 
 TEST(shadow, pcf_border_clamps_kernel_samples)
@@ -314,7 +314,7 @@ TEST(shadow, pcf_border_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     for (int py = 1023; py <= 1025; py++)
         sm.depth[static_cast<size_t>(py * ShadowMap::SIZE + 0)] = 0.0f;
-    ASSERT_NEAR(sm.in_shadow({-1.0f, 0.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ -1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
 TEST(shadow, pcf_negative_w_returns_lit)
@@ -324,7 +324,7 @@ TEST(shadow, pcf_negative_w_returns_lit)
     sm.clear();
     sm.light_vp = mat4::identity();
     sm.light_vp.m[3][3] = -1.0f;
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
 }
 
 // ─── Alpha cutout boundary ────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ TEST(shadow, alpha_exactly_at_cutoff_casts_shadow)
     constexpr float cutoff = 128.0f * (1.0f / 255.0f);
     Mesh m = make_cutout_triangle(cutoff, 128);
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 // ─── in_shadow NDC z bounds ───────────────────────────────────────────────────
@@ -350,7 +350,7 @@ TEST(shadow, in_shadow_ndc_z_above_one_returns_lit)
     sm.clear();
     sm.light_vp = mat4::identity();
     std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 1.5f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 1.5f }), 0.0f, 1e-6f);
 }
 
 // ─── Depth min-test ───────────────────────────────────────────────────────────
@@ -365,23 +365,23 @@ TEST(shadow, depth_min_test_closer_triangle_wins)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-10.0f, -10.0f, 5.0f};
+    v.pos = { -10.0f, -10.0f, 5.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, 5.0f};
+    v.pos = { 10.0f, -10.0f, 5.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, 5.0f};
+    v.pos = { 0.0f, 10.0f, 5.0f };
     m.vertices.push_back(v);
-    v.pos = {-10.0f, -10.0f, -5.0f};
+    v.pos = { -10.0f, -10.0f, -5.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, -5.0f};
+    v.pos = { 10.0f, -10.0f, -5.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, -5.0f};
+    v.pos = { 0.0f, 10.0f, -5.0f };
     m.vertices.push_back(v);
     m.materials.push_back({});
-    m.triangles.push_back({{0, 1, 2}}); // closer first
-    m.triangles.push_back({{3, 4, 5}}); // farther second
+    m.triangles.push_back({ { 0, 1, 2 } }); // closer first
+    m.triangles.push_back({ { 3, 4, 5 } }); // farther second
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.0f }), 1.0f, 1e-6f);
 }
 
 // ─── Slope-bias clamp path ────────────────────────────────────────────────────
@@ -396,16 +396,16 @@ TEST(shadow, back_facing_triangle_not_self_shadowed)
     Vertex v{};
     v.ao = 1.0f;
     // Reversed winding vs make_flat_triangle() → normal points −Z (away from +Z light).
-    v.pos = {-10.0f, -10.0f, 0.0f};
+    v.pos = { -10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, 0.0f};
+    v.pos = { 0.0f, 10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, 0.0f};
+    v.pos = { 10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
 }
 
 // ─── PCF right-edge and corner border clamping ────────────────────────────────
@@ -422,7 +422,7 @@ TEST(shadow, pcf_right_border_clamps_kernel_samples)
     constexpr int S = ShadowMap::SIZE;
     for (int py = 1023; py <= 1025; py++)
         sm.depth[static_cast<size_t>(py) * S + (S - 1)] = 0.0f;
-    ASSERT_NEAR(sm.in_shadow({1.0f, 0.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
 TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
@@ -438,7 +438,7 @@ TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
     for (int py = 0; py <= 1; py++)
         for (int px = 0; px <= 1; px++)
             sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
-    ASSERT_NEAR(sm.in_shadow({-1.0f, -1.0f, 0.5f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ -1.0f, -1.0f, 0.5f }), 1.0f, 1e-6f);
 }
 
 TEST(shadow, pcf_top_border_clamps_y_kernel_samples)
@@ -453,7 +453,7 @@ TEST(shadow, pcf_top_border_clamps_y_kernel_samples)
     sm.light_vp = mat4::identity();
     for (int px = 1023; px <= 1025; px++)
         sm.depth[static_cast<size_t>(px)] = 0.0f; // row 0
-    ASSERT_NEAR(sm.in_shadow({0.0f, -1.0f, 0.5f}), 6.0f / 9.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, -1.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
 // ─── in_shadow NDC z below −1 ─────────────────────────────────────────────────
@@ -467,7 +467,7 @@ TEST(shadow, in_shadow_ndc_z_below_neg_one_returns_lit)
     sm.clear();
     sm.light_vp = mat4::identity();
     std::fill(sm.depth.begin(), sm.depth.end(), -2.0f);
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -1.5f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -1.5f }), 0.0f, 1e-6f);
 }
 
 // ─── Degenerate triangle in build ─────────────────────────────────────────────
@@ -480,17 +480,17 @@ TEST(shadow, degenerate_triangle_skipped_no_depth_written)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {0.0f, 0.0f, 0.0f};
+    v.pos = { 0.0f, 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, 0.0f, 0.0f};
+    v.pos = { 1.0f, 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {2.0f, 0.0f, 0.0f}; // collinear
+    v.pos = { 2.0f, 0.0f, 0.0f }; // collinear
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     ShadowMap sm = build_shadow_map(m, make_light_z());
     // No depth written → stored = 1.0; ref for any in-frustum point ≤ 0.999 < 1.0 → lit.
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }
 
 // ─── Slope-bias boundary (n_dot_l near 0.01) ──────────────────────────────────
@@ -503,17 +503,17 @@ TEST(shadow, slope_bias_formula_branch_near_threshold)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-10.0f, 0.0f, -10.0f};
+    v.pos = { -10.0f, 0.0f, -10.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, 0.0f, -10.0f};
+    v.pos = { 10.0f, 0.0f, -10.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 0.22f, 10.0f};
+    v.pos = { 0.0f, 0.22f, 10.0f };
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     ShadowMap sm = build_shadow_map(m, make_light_z());
     // Triangle centroid is on the surface — must not self-shadow.
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.073f, -3.33f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.073f, -3.33f }), 0.0f, 1e-6f);
 }
 
 TEST(shadow, slope_bias_clamp_branch_near_threshold)
@@ -525,16 +525,16 @@ TEST(shadow, slope_bias_clamp_branch_near_threshold)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-10.0f, 0.0f, -10.0f};
+    v.pos = { -10.0f, 0.0f, -10.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, 0.0f, -10.0f};
+    v.pos = { 10.0f, 0.0f, -10.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 0.18f, 10.0f};
+    v.pos = { 0.0f, 0.18f, 10.0f };
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.06f, -3.33f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.06f, -3.33f }), 0.0f, 1e-6f);
 }
 
 // ─── Alpha cutout: UV-interpolated partial transparency ────────────────────────
@@ -547,32 +547,32 @@ TEST(shadow, alpha_cutout_uv_interpolated_partial_transparency)
     Texture tex;
     tex.width = 2;
     tex.height = 1;
-    tex.pixels = {255, 255, 255, 255, // pixel 0: fully opaque
-                  255, 255, 255, 0};  // pixel 1: fully transparent
+    tex.pixels = { 255, 255, 255, 255, // pixel 0: fully opaque
+                   255, 255, 255, 0 }; // pixel 1: fully transparent
 
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
 
     // Triangle A (x < 0): UVs u ∈ [0, 0.5] → opaque region → casts shadow.
-    v.pos = {-10.0f, -5.0f, 0.0f};
-    v.uv = {0.0f, 0.0f};
+    v.pos = { -10.0f, -5.0f, 0.0f };
+    v.uv = { 0.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-0.5f, -5.0f, 0.0f};
-    v.uv = {0.5f, 0.0f};
+    v.pos = { -0.5f, -5.0f, 0.0f };
+    v.uv = { 0.5f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-5.0f, 5.0f, 0.0f};
-    v.uv = {0.25f, 1.0f};
+    v.pos = { -5.0f, 5.0f, 0.0f };
+    v.uv = { 0.25f, 1.0f };
     m.vertices.push_back(v);
     // Triangle B (x > 0): UVs u ∈ [0.5, 1] → transparent region → no shadow.
-    v.pos = {0.5f, -5.0f, 0.0f};
-    v.uv = {0.5f, 0.0f};
+    v.pos = { 0.5f, -5.0f, 0.0f };
+    v.uv = { 0.5f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -5.0f, 0.0f};
-    v.uv = {1.0f, 0.0f};
+    v.pos = { 10.0f, -5.0f, 0.0f };
+    v.uv = { 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {5.0f, 5.0f, 0.0f};
-    v.uv = {0.75f, 1.0f};
+    v.pos = { 5.0f, 5.0f, 0.0f };
+    v.uv = { 0.75f, 1.0f };
     m.vertices.push_back(v);
 
     m.materials.push_back({}); // material 0: no cutout
@@ -598,9 +598,9 @@ TEST(shadow, alpha_cutout_uv_interpolated_partial_transparency)
 
     ShadowMap sm = build_shadow_map(m, make_light_z());
     // Point behind opaque triangle A → in shadow.
-    ASSERT_NEAR(sm.in_shadow({-5.0f, 0.0f, -5.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ -5.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
     // Point behind transparent triangle B → lit.
-    ASSERT_NEAR(sm.in_shadow({5.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 5.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }
 
 // ─── in_shadow w=0 boundary ───────────────────────────────────────────────────
@@ -616,7 +616,7 @@ TEST(shadow, in_shadow_w_zero_returns_lit)
     sm.light_vp = mat4::identity();
     sm.light_vp.m[3][3] = 0.0f;
     std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 0.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.0f }), 0.0f, 1e-6f);
 }
 
 // ─── in_shadow NDC z at boundary values ──────────────────────────────────────
@@ -630,7 +630,7 @@ TEST(shadow, in_shadow_ndc_z_at_one_not_rejected)
     sm.clear();
     sm.light_vp = mat4::identity();
     std::fill(sm.depth.begin(), sm.depth.end(), 0.0f);
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, 1.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 1.0f }), 1.0f, 1e-6f);
 }
 
 TEST(shadow, in_shadow_ndc_z_at_neg_one_not_rejected)
@@ -642,7 +642,7 @@ TEST(shadow, in_shadow_ndc_z_at_neg_one_not_rejected)
     sm.clear();
     sm.light_vp = mat4::identity();
     std::fill(sm.depth.begin(), sm.depth.end(), -2.0f);
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -1.0f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -1.0f }), 1.0f, 1e-6f);
 }
 
 // ─── PCF top-right corner border clamping ─────────────────────────────────────
@@ -661,7 +661,7 @@ TEST(shadow, pcf_top_right_corner_clamps_kernel_samples)
     for (int py = S - 2; py <= S - 1; py++)
         for (int px = S - 2; px <= S - 1; px++)
             sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
-    ASSERT_NEAR(sm.in_shadow({1.0f, 1.0f, 0.5f}), 1.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 1.0f, 1.0f, 0.5f }), 1.0f, 1e-6f);
 }
 
 // ─── Multi-threaded build_shadow_map ─────────────────────────────────────────
@@ -680,7 +680,7 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
     for (int r = 0; r < N; r++)
         for (int c = 0; c < N; c++)
         {
-            v.pos = {static_cast<float>(c), static_cast<float>(r), 0.0f};
+            v.pos = { static_cast<float>(c), static_cast<float>(r), 0.0f };
             m.vertices.push_back(v);
         }
     for (int r = 0; r < N - 1; r++)
@@ -690,8 +690,8 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
             const uint32_t br = bl + 1;
             const uint32_t tl = bl + static_cast<uint32_t>(N);
             const uint32_t tr = tl + 1;
-            m.triangles.push_back({{bl, br, tl}});
-            m.triangles.push_back({{br, tr, tl}});
+            m.triangles.push_back({ { bl, br, tl } });
+            m.triangles.push_back({ { br, tr, tl } });
         }
 
     const Light light = make_light_z();
@@ -700,8 +700,7 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
 
     ASSERT_TRUE(sm1.depth.size() == sm4.depth.size());
     for (size_t i = 0; i < sm1.depth.size(); i++)
-        ASSERT_TRUE(sm1.depth[i].load(std::memory_order_relaxed) ==
-                    sm4.depth[i].load(std::memory_order_relaxed));
+        ASSERT_TRUE(sm1.depth[i].load(std::memory_order_relaxed) == sm4.depth[i].load(std::memory_order_relaxed));
 }
 
 // ─── build_shadow_map: vertices present, triangles empty ─────────────────────
@@ -714,14 +713,14 @@ TEST(shadow, vertices_no_triangles_no_depth_written)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
     m.materials.push_back({});
     // triangles intentionally empty
     ShadowMap sm = build_shadow_map(m, make_light_z());
-    ASSERT_NEAR(sm.in_shadow({0.0f, 0.0f, -5.0f}), 0.0f, 1e-6f);
+    ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
 }

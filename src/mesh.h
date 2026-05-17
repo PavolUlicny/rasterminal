@@ -39,9 +39,7 @@ struct Mesh
 
     [[nodiscard]] const Texture *tex_at(int idx) const
     {
-        return (idx >= 0 && idx < static_cast<int>(textures.size()))
-                   ? &textures[static_cast<size_t>(idx)]
-                   : nullptr;
+        return (idx >= 0 && idx < static_cast<int>(textures.size())) ? &textures[static_cast<size_t>(idx)] : nullptr;
     }
 
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
@@ -70,7 +68,7 @@ struct Mesh
     // and node transforms. Returns false on failure.
     bool load_gltf(const std::string &path);
 
-private:
+  private:
     // Average adjacent face normals to produce smooth per-vertex normals.
     // Called by each loader when the file provides no normal data.
     void compute_normals();

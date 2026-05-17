@@ -50,9 +50,11 @@ struct Texture
 
         auto get = [&](int x, int y) -> vec3
         {
-            const uint8_t *p = pixels.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
+            const uint8_t *p =
+                pixels.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
             constexpr float inv255 = 1.0f / 255.0f;
-            return {static_cast<float>(p[0]) * inv255, static_cast<float>(p[1]) * inv255, static_cast<float>(p[2]) * inv255};
+            return { static_cast<float>(p[0]) * inv255, static_cast<float>(p[1]) * inv255,
+                     static_cast<float>(p[2]) * inv255 };
         };
 
         const vec3 top = get(x0, y0) * (1.0f - tx) + get(x1, y0) * tx;
@@ -88,10 +90,14 @@ struct Texture
         const uint8_t *p01 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x0)) * 4;
         const uint8_t *p11 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x1)) * 4;
 
-        const vec4 c00 = {static_cast<float>(p00[0]) * inv255, static_cast<float>(p00[1]) * inv255, static_cast<float>(p00[2]) * inv255, static_cast<float>(p00[3]) * inv255};
-        const vec4 c10 = {static_cast<float>(p10[0]) * inv255, static_cast<float>(p10[1]) * inv255, static_cast<float>(p10[2]) * inv255, static_cast<float>(p10[3]) * inv255};
-        const vec4 c01 = {static_cast<float>(p01[0]) * inv255, static_cast<float>(p01[1]) * inv255, static_cast<float>(p01[2]) * inv255, static_cast<float>(p01[3]) * inv255};
-        const vec4 c11 = {static_cast<float>(p11[0]) * inv255, static_cast<float>(p11[1]) * inv255, static_cast<float>(p11[2]) * inv255, static_cast<float>(p11[3]) * inv255};
+        const vec4 c00 = { static_cast<float>(p00[0]) * inv255, static_cast<float>(p00[1]) * inv255,
+                           static_cast<float>(p00[2]) * inv255, static_cast<float>(p00[3]) * inv255 };
+        const vec4 c10 = { static_cast<float>(p10[0]) * inv255, static_cast<float>(p10[1]) * inv255,
+                           static_cast<float>(p10[2]) * inv255, static_cast<float>(p10[3]) * inv255 };
+        const vec4 c01 = { static_cast<float>(p01[0]) * inv255, static_cast<float>(p01[1]) * inv255,
+                           static_cast<float>(p01[2]) * inv255, static_cast<float>(p01[3]) * inv255 };
+        const vec4 c11 = { static_cast<float>(p11[0]) * inv255, static_cast<float>(p11[1]) * inv255,
+                           static_cast<float>(p11[2]) * inv255, static_cast<float>(p11[3]) * inv255 };
 
         const vec4 top = c00 * (1.0f - tx) + c10 * tx;
         const vec4 bottom = c01 * (1.0f - tx) + c11 * tx;

@@ -38,10 +38,8 @@ bool Mesh::load_stl(const std::string &path)
     uint8_t tcb[4];
     const bool have_tri_count = (std::fread(tcb, 1, 4, f.get()) == 4);
     const uint32_t tri_count = have_tri_count
-                                   ? (static_cast<uint32_t>(tcb[0]) |
-                                      (static_cast<uint32_t>(tcb[1]) << 8U) |
-                                      (static_cast<uint32_t>(tcb[2]) << 16U) |
-                                      (static_cast<uint32_t>(tcb[3]) << 24U))
+                                   ? (static_cast<uint32_t>(tcb[0]) | (static_cast<uint32_t>(tcb[1]) << 8U) |
+                                      (static_cast<uint32_t>(tcb[2]) << 16U) | (static_cast<uint32_t>(tcb[3]) << 24U))
                                    : 0u;
 
     long file_size = -1;
@@ -52,15 +50,13 @@ bool Mesh::load_stl(const std::string &path)
 
     // A binary STL whose header happens to start with "solid" must be
     // disambiguated by exact file size.
-    if (is_ascii && have_tri_count && file_size >= 0 &&
-        static_cast<uint64_t>(file_size) == expected_binary)
+    if (is_ascii && have_tri_count && file_size >= 0 && static_cast<uint64_t>(file_size) == expected_binary)
         is_ascii = false;
 
     // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes.
     if (!is_ascii)
     {
-        if (!have_tri_count || file_size < 0 ||
-            static_cast<uint64_t>(file_size) < expected_binary)
+        if (!have_tri_count || file_size < 0 || static_cast<uint64_t>(file_size) < expected_binary)
             return false;
     }
 
@@ -95,7 +91,8 @@ bool Mesh::load_stl(const std::string &path)
         {
             const unsigned int vi = tris[3 * i + static_cast<size_t>(j)];
             Vertex v{};
-            v.pos = {coords[3 * static_cast<size_t>(vi)], coords[3 * static_cast<size_t>(vi) + 1], coords[3 * static_cast<size_t>(vi) + 2]};
+            v.pos = { coords[3 * static_cast<size_t>(vi)], coords[3 * static_cast<size_t>(vi) + 1],
+                      coords[3 * static_cast<size_t>(vi) + 2] };
             v.ao = 1.0f;
             vertices.push_back(v);
         }

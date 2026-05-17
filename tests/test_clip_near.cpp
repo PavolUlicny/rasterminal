@@ -1,13 +1,13 @@
 #include "test.h"
 #include "../src/rasterize.h"
 
-static ClipVert make_cv(float w, float u = 0.0f, float v_coord = 0.0f,
-                        float px = 0.0f, float py = 0.0f, float pz = 0.0f)
+static ClipVert
+make_cv(float w, float u = 0.0f, float v_coord = 0.0f, float px = 0.0f, float py = 0.0f, float pz = 0.0f)
 {
     ClipVert r{};
-    r.c = {0.0f, 0.0f, 0.0f, w};
-    r.uv = {u, v_coord};
-    r.pos = {px, py, pz};
+    r.c = { 0.0f, 0.0f, 0.0f, w };
+    r.uv = { u, v_coord };
+    r.pos = { px, py, pz };
     return r;
 }
 

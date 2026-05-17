@@ -42,8 +42,7 @@ float ShadowMap::in_shadow(vec3 world_pos) const
     if (light_clip.w <= 0.0f)
         return 0.0f;
     const vec3 ndc = light_clip.perspective_divide();
-    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f ||
-        ndc.z < -1.0f || ndc.z > 1.0f)
+    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < -1.0f || ndc.z > 1.0f)
         return 0.0f;
     const float u = (ndc.x + 1.0f) * 0.5f;
     const float v = (ndc.y + 1.0f) * 0.5f;
@@ -57,7 +56,9 @@ float ShadowMap::in_shadow(vec3 world_pos) const
     {
         for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)
-                if (ref > depth[static_cast<size_t>(cy + dy) * SIZE + static_cast<size_t>(cx + dx)].load(std::memory_order_relaxed))
+                if (ref > depth[static_cast<size_t>(cy + dy) * SIZE + static_cast<size_t>(cx + dx)].load(
+                              std::memory_order_relaxed
+                          ))
                     hits++;
     }
     else
@@ -68,7 +69,8 @@ float ShadowMap::in_shadow(vec3 world_pos) const
             for (int dx = -1; dx <= 1; dx++)
             {
                 const int px = std::clamp(cx + dx, 0, SIZE - 1);
-                if (ref > depth[static_cast<size_t>(py) * SIZE + static_cast<size_t>(px)].load(std::memory_order_relaxed))
+                if (ref >
+                    depth[static_cast<size_t>(py) * SIZE + static_cast<size_t>(px)].load(std::memory_order_relaxed))
                     hits++;
             }
         }
@@ -98,7 +100,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
     // light.direction is "toward the light", so eye is in that direction.
     const vec3 dir = normalize(light.direction);
     const vec3 eye_pos = center + dir * (radius * 3.0f);
-    const vec3 world_up = (std::abs(dir.y) < 0.9f) ? vec3{0.0f, 1.0f, 0.0f} : vec3{1.0f, 0.0f, 0.0f};
+    const vec3 world_up = (std::abs(dir.y) < 0.9f) ? vec3{ 0.0f, 1.0f, 0.0f } : vec3{ 1.0f, 0.0f, 0.0f };
     const mat4 light_view = look_at(eye_pos, center, world_up);
 
     const float ext = radius * 1.2f;
@@ -107,9 +109,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
 
     const int S = ShadowMap::SIZE;
     const int nt = static_cast<int>(mesh.triangles.size());
-    const int eff_threads = (n_threads <= 1 || nt < 256)
-                                ? 1
-                                : std::min(n_threads, nt);
+    const int eff_threads = (n_threads <= 1 || nt < 256) ? 1 : std::min(n_threads, nt);
 
     // Depth-only rasterization into the shadow map.
     // Multi-threaded path uses atomic CAS-min; single-threaded uses plain load/store
@@ -125,9 +125,8 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
             const vec3 &pc = mesh.vertices[tri.v[2]].pos;
 
             const Material &mat = mesh.mat_at(tri.material_idx);
-            const Texture *atex = (mat.alpha_cutoff > 0.0f && mat.diffuse_tex >= 0)
-                                      ? mesh.tex_at(mat.diffuse_tex)
-                                      : nullptr;
+            const Texture *atex =
+                (mat.alpha_cutoff > 0.0f && mat.diffuse_tex >= 0) ? mesh.tex_at(mat.diffuse_tex) : nullptr;
             vec2 uva{};
             vec2 uvb{};
             vec2 uvc{};
@@ -163,19 +162,15 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
 
             // Use (ndc + 1) / 2 * S consistently for both write and read.
             auto to_spx = [&](vec3 ndc) -> vec3
-            {
-                return {(ndc.x + 1.0f) * 0.5f * S,
-                        (ndc.y + 1.0f) * 0.5f * S,
-                        ndc.z};
-            };
+            { return { (ndc.x + 1.0f) * 0.5f * S, (ndc.y + 1.0f) * 0.5f * S, ndc.z }; };
             const vec3 sa = to_spx(ndc_a);
             const vec3 sb = to_spx(ndc_b);
             const vec3 sc = to_spx(ndc_c);
 
-            const int x0 = std::max(0, static_cast<int>(std::floor(std::min({sa.x, sb.x, sc.x}))));
-            const int x1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({sa.x, sb.x, sc.x}))));
-            const int y0 = std::max(0, static_cast<int>(std::floor(std::min({sa.y, sb.y, sc.y}))));
-            const int y1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({sa.y, sb.y, sc.y}))));
+            const int x0 = std::max(0, static_cast<int>(std::floor(std::min({ sa.x, sb.x, sc.x }))));
+            const int x1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({ sa.x, sb.x, sc.x }))));
+            const int y0 = std::max(0, static_cast<int>(std::floor(std::min({ sa.y, sb.y, sc.y }))));
+            const int y1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({ sa.y, sb.y, sc.y }))));
 
             const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
             if (std::abs(denom) < 1e-6f)
@@ -218,8 +213,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
                         {
                             float old = stored.load(std::memory_order_relaxed);
                             while (d < old)
-                                if (stored.compare_exchange_weak(old, d, std::memory_order_relaxed,
-                                                                 std::memory_order_relaxed))
+                                if (stored.compare_exchange_weak(
+                                        old, d, std::memory_order_relaxed, std::memory_order_relaxed
+                                    ))
                                     break;
                         }
                         else

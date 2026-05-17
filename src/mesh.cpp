@@ -54,9 +54,8 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
         return false;
     }
 
-    has_double_sided = std::any_of(materials.begin(), materials.end(),
-                                   [](const Material &m)
-                                   { return m.double_sided; });
+    has_double_sided =
+        std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.double_sided; });
 
     compute_tangents();
     if (ao && ext != "stl")
@@ -139,8 +138,7 @@ void Mesh::compute_tangents()
         if (t.length_sq() < 1e-12f)
         {
             // No UV contribution — pick an arbitrary vector perpendicular to n.
-            const vec3 up = (std::abs(n.z) < 0.9f) ? vec3{0.0f, 0.0f, 1.0f}
-                                                   : vec3{1.0f, 0.0f, 0.0f};
+            const vec3 up = (std::abs(n.z) < 0.9f) ? vec3{ 0.0f, 0.0f, 1.0f } : vec3{ 1.0f, 0.0f, 0.0f };
             t = normalize(cross(n, up));
         }
         else
@@ -363,7 +361,8 @@ namespace
                 const int v = sim_cache[static_cast<size_t>(k)];
                 if (v < 0)
                     break;
-                vscore[static_cast<size_t>(v)] = forsyth_pos_score(k) + forsyth_val_score(remaining[static_cast<size_t>(v)]);
+                vscore[static_cast<size_t>(v)] =
+                    forsyth_pos_score(k) + forsyth_val_score(remaining[static_cast<size_t>(v)]);
                 for (int ai = adj_start[static_cast<size_t>(v)]; ai < adj_start[static_cast<size_t>(v) + 1]; ai++)
                 {
                     const int ti = adj_list[static_cast<size_t>(ai)];

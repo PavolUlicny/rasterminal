@@ -38,15 +38,16 @@ TEST(vcache, early_exit_fully_unshared_stl)
 {
     // STL always produces unshared vertices → nv == nt*3 (6 == 2*3) → second
     // guard fires before any Forsyth allocation.
-    TmpFile f(tmp_path("rast_vc_stl.stl"),
-              "solid s\n"
-              "facet normal 0 0 1\n outer loop\n"
-              "  vertex 0 0 0\n  vertex 1 0 0\n  vertex 0 1 0\n"
-              " endloop\nendfacet\n"
-              "facet normal 0 0 1\n outer loop\n"
-              "  vertex 2 0 0\n  vertex 3 0 0\n  vertex 2 1 0\n"
-              " endloop\nendfacet\n"
-              "endsolid s\n");
+    TmpFile f(
+        tmp_path("rast_vc_stl.stl"), "solid s\n"
+                                     "facet normal 0 0 1\n outer loop\n"
+                                     "  vertex 0 0 0\n  vertex 1 0 0\n  vertex 0 1 0\n"
+                                     " endloop\nendfacet\n"
+                                     "facet normal 0 0 1\n outer loop\n"
+                                     "  vertex 2 0 0\n  vertex 3 0 0\n  vertex 2 1 0\n"
+                                     " endloop\nendfacet\n"
+                                     "endsolid s\n"
+    );
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.triangles.size() == 2u);
     ASSERT_TRUE(m.vertices.size() == 6u);
@@ -60,18 +61,17 @@ TEST(vcache, early_exit_max_adj_lt_2)
     // vertex 6 is unreferenced (pos 99,99,99).
     // nv=7 ≠ nt*3=6 so the nv==nt*3 guard passes; adj_count for every vertex is
     // at most 1 → max_adj=1 < 2 → third guard fires; no remap occurs.
-    const std::string ply =
-        "ply\nformat ascii 1.0\n"
-        "element vertex 7\n"
-        "property float x\nproperty float y\nproperty float z\n"
-        "element face 2\n"
-        "property list uchar int vertex_indices\n"
-        "end_header\n"
-        "0 0 0\n1 0 0\n0 1 0\n"
-        "2 0 0\n3 0 0\n2 1 0\n"
-        "99 99 99\n"
-        "3 0 1 2\n"
-        "3 3 4 5\n";
+    const std::string ply = "ply\nformat ascii 1.0\n"
+                            "element vertex 7\n"
+                            "property float x\nproperty float y\nproperty float z\n"
+                            "element face 2\n"
+                            "property list uchar int vertex_indices\n"
+                            "end_header\n"
+                            "0 0 0\n1 0 0\n0 1 0\n"
+                            "2 0 0\n3 0 0\n2 1 0\n"
+                            "99 99 99\n"
+                            "3 0 1 2\n"
+                            "3 3 4 5\n";
     TmpFile f(tmp_path("rast_vc_maxadj.ply"), ply);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.vertices.size() == 7u);
@@ -87,23 +87,23 @@ TEST(vcache, early_exit_max_adj_lt_2)
 // shared by 2. Enough iterations to exercise both the initial linear-scan
 // path (best=-1 on first iteration) and the cache-hit re-score path.
 
-static const std::string k_fan_obj =
-    "v  0     0     0\n"
-    "v  1     0     0\n"
-    "v  0.5   0.87  0\n"
-    "v -0.5   0.87  0\n"
-    "v -1     0     0\n"
-    "v -0.5  -0.87  0\n"
-    "v  0.5  -0.87  0\n"
-    "f 1 2 3\nf 1 3 4\nf 1 4 5\nf 1 5 6\nf 1 6 7\nf 1 7 2\n";
+static const std::string k_fan_obj = "v  0     0     0\n"
+                                     "v  1     0     0\n"
+                                     "v  0.5   0.87  0\n"
+                                     "v -0.5   0.87  0\n"
+                                     "v -1     0     0\n"
+                                     "v -0.5  -0.87  0\n"
+                                     "v  0.5  -0.87  0\n"
+                                     "f 1 2 3\nf 1 3 4\nf 1 4 5\nf 1 5 6\nf 1 6 7\nf 1 7 2\n";
 
 TEST(vcache, geometry_all_positions_preserved)
 {
     TmpFile f(tmp_path("rast_vc_fan_pos.obj"), k_fan_obj);
     Mesh m = load_ok(f.path);
     // Every one of the 7 input positions must appear somewhere in the output.
-    const std::vector<std::pair<float, float>> expected_xy = {
-        {0.0f, 0.0f}, {1.0f, 0.0f}, {0.5f, 0.87f}, {-0.5f, 0.87f}, {-1.0f, 0.0f}, {-0.5f, -0.87f}, {0.5f, -0.87f}};
+    const std::vector<std::pair<float, float>> expected_xy = { { 0.0f, 0.0f },   { 1.0f, 0.0f },  { 0.5f, 0.87f },
+                                                               { -0.5f, 0.87f }, { -1.0f, 0.0f }, { -0.5f, -0.87f },
+                                                               { 0.5f, -0.87f } };
     for (auto [ex, ey] : expected_xy)
     {
         bool found = false;
@@ -165,20 +165,19 @@ TEST(vcache, vertex_colors_remapped_correctly)
     // v0 and v2 are each shared by both triangles (adj_count=2).
     // After Pass 2 remap, vertex_colors[i] must match the color that belongs
     // to the position stored at vertices[i].pos.
-    const std::string ply =
-        "ply\nformat ascii 1.0\n"
-        "element vertex 4\n"
-        "property float x\nproperty float y\nproperty float z\n"
-        "property uchar red\nproperty uchar green\nproperty uchar blue\n"
-        "element face 2\n"
-        "property list uchar int vertex_indices\n"
-        "end_header\n"
-        "0 0 0 255   0   0\n"
-        "1 0 0   0 255   0\n"
-        "1 1 0   0   0 255\n"
-        "0 1 0 255 255   0\n"
-        "3 0 1 2\n"
-        "3 0 2 3\n";
+    const std::string ply = "ply\nformat ascii 1.0\n"
+                            "element vertex 4\n"
+                            "property float x\nproperty float y\nproperty float z\n"
+                            "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+                            "element face 2\n"
+                            "property list uchar int vertex_indices\n"
+                            "end_header\n"
+                            "0 0 0 255   0   0\n"
+                            "1 0 0   0 255   0\n"
+                            "1 1 0   0   0 255\n"
+                            "0 1 0 255 255   0\n"
+                            "3 0 1 2\n"
+                            "3 0 2 3\n";
     TmpFile f(tmp_path("rast_vc_vcol.ply"), ply);
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/false));
@@ -246,18 +245,17 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
     // After Pass 1 tri1 is emitted first; Pass 2 remaps its vertices to indices
     // 0,1,2. Their positions are (3,0,0),(4,0,0),(3,1,0) — all at x≥3.
     // Sum of x-coordinates of the first triangle's vertices = 3+4+3 = 10.
-    const std::string obj =
-        "v  0 0 0\n" // shared (tri0, tri2); adj_count=2
-        "v  1 0 0\n" // only tri0
-        "v  0 1 0\n" // only tri0
-        "v  3 0 0\n" // only tri1
-        "v  4 0 0\n" // only tri1
-        "v  3 1 0\n" // only tri1
-        "v  0 0 1\n" // only tri2
-        "v  1 0 1\n" // only tri2
-        "f 1 2 3\n"  // tri0: tscore ≈ 5.414
-        "f 4 5 6\n"  // tri1: tscore  = 6.0 → emitted first
-        "f 1 7 8\n"; // tri2: tscore ≈ 5.414
+    const std::string obj = "v  0 0 0\n" // shared (tri0, tri2); adj_count=2
+                            "v  1 0 0\n" // only tri0
+                            "v  0 1 0\n" // only tri0
+                            "v  3 0 0\n" // only tri1
+                            "v  4 0 0\n" // only tri1
+                            "v  3 1 0\n" // only tri1
+                            "v  0 0 1\n" // only tri2
+                            "v  1 0 1\n" // only tri2
+                            "f 1 2 3\n"  // tri0: tscore ≈ 5.414
+                            "f 4 5 6\n"  // tri1: tscore  = 6.0 → emitted first
+                            "f 1 7 8\n"; // tri2: tscore ≈ 5.414
     TmpFile f(tmp_path("rast_vc_order.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.triangles.size() == 3u);
@@ -285,14 +283,13 @@ TEST(vcache, cache_update_cur_zero)
     // Both triangles have equal initial tscore (≈5.414); forward linear scan
     // selects tri_A (index 0) first.  Cache after tri_A: [2,1,0,−1,…].
     // tri_B's first vertex v=2 is found at cur=0.
-    const std::string obj =
-        "v 0 0 0\n"  // shared (pos 1)
-        "v 1 0 0\n"  // only tri_A (pos 2)
-        "v 2 0 0\n"  // only tri_A (pos 3)
-        "v 3 0 0\n"  // only tri_B (pos 4)
-        "v 4 0 0\n"  // only tri_B (pos 5)
-        "f 2 3 1\n"  // tri_A: shared vertex is tri.v[2]
-        "f 1 4 5\n"; // tri_B: shared vertex is tri.v[0] → cur=0 when processing it
+    const std::string obj = "v 0 0 0\n"  // shared (pos 1)
+                            "v 1 0 0\n"  // only tri_A (pos 2)
+                            "v 2 0 0\n"  // only tri_A (pos 3)
+                            "v 3 0 0\n"  // only tri_B (pos 4)
+                            "v 4 0 0\n"  // only tri_B (pos 5)
+                            "f 2 3 1\n"  // tri_A: shared vertex is tri.v[2]
+                            "f 1 4 5\n"; // tri_B: shared vertex is tri.v[0] → cur=0 when processing it
     TmpFile f(tmp_path("rast_vc_cur0.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.triangles.size() == 2u);

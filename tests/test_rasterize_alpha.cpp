@@ -22,41 +22,36 @@ static Texture make_tex(int w, int h, std::initializer_list<int> rgba)
 // The interior pixel (20,10) is reliably inside it.
 static void rast(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_min = 0, int y_max = 19)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 zero{};
-    vec3 white{1.0f, 1.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
-    rasterize(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-              white, white, white, zero, zero, zero,
-              zero, zero, zero,
-              uv, uv, uv,
-              tex, alpha_cutoff, nullptr,
-              y_min, y_max);
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    rasterize(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv, tex,
+        alpha_cutoff, nullptr, y_min, y_max
+    );
 }
 
 static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_min = 0, int y_max = 19)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 zero{};
-    vec3 white{1.0f, 1.0f, 1.0f};
-    vec3 normal{0.0f, 0.0f, 1.0f};
-    vec3 tan{1.0f, 0.0f, 0.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{1.0f, 1.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec3 normal{ 0.0f, 0.0f, 1.0f };
+    vec3 tan{ 1.0f, 0.0f, 0.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     mat.alpha_cutoff = alpha_cutoff;
-    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    white, white, white, false,
-                    eye, nullptr, 0, ambient, mat,
-                    tex, nullptr, nullptr, nullptr,
-                    y_min, y_max);
+    rasterize_phong(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, y_min,
+        y_max
+    );
 }
 
 // ─── Group A: alpha_cutoff = 0 (disabled) is bit-identical to no cutoff ──────
@@ -65,7 +60,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
 // Verifies the sentinel path doesn't silently branch differently.
 TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_gouraud)
 {
-    Texture tex = make_tex(1, 1, {200, 100, 50, 255});
+    Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     Framebuffer fb_a(40, 20, /*headless=*/true), fb_b(40, 20, /*headless=*/true);
     rast(fb_a, &tex, 0.0f);
     rast(fb_b, &tex, 0.0f);
@@ -80,7 +75,7 @@ TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_gouraud)
 // (both should produce the same texture tint when there's no lighting variation).
 TEST(rasterize_alpha, cutoff_zero_gouraud_and_phong_both_draw)
 {
-    Texture tex = make_tex(1, 1, {255, 255, 255, 255});
+    Texture tex = make_tex(1, 1, { 255, 255, 255, 255 });
     Framebuffer fb_g(40, 20, /*headless=*/true), fb_p(40, 20, /*headless=*/true);
     rast(fb_g, &tex, 0.0f);
     rast_phong(fb_p, &tex, 0.0f);
@@ -95,7 +90,7 @@ TEST(rasterize_alpha, cutoff_zero_gouraud_and_phong_both_draw)
 TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_gouraud)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    Texture tex = make_tex(1, 1, {255, 0, 0, 0}); // red but alpha=0
+    Texture tex = make_tex(1, 1, { 255, 0, 0, 0 }); // red but alpha=0
     rast(fb, &tex, 0.5f);
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
@@ -104,7 +99,7 @@ TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_gouraud)
 TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    Texture tex = make_tex(1, 1, {255, 0, 0, 0});
+    Texture tex = make_tex(1, 1, { 255, 0, 0, 0 });
     rast_phong(fb, &tex, 0.5f);
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
@@ -113,7 +108,7 @@ TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_phong)
 TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_gouraud)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    Texture tex = make_tex(1, 1, {200, 100, 50, 255});
+    Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     rast(fb, &tex, 0.5f);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
@@ -122,7 +117,7 @@ TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_gouraud)
 TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    Texture tex = make_tex(1, 1, {200, 100, 50, 255});
+    Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     rast_phong(fb, &tex, 0.5f);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
@@ -131,7 +126,7 @@ TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_phong)
 // The cutout path must still multiply the texture RGB correctly for passing pixels.
 TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_gouraud)
 {
-    Texture tex = make_tex(1, 1, {200, 100, 50, 255});
+    Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     Framebuffer fb_base(40, 20, /*headless=*/true), fb_cut(40, 20, /*headless=*/true);
     rast(fb_base, &tex, 0.0f);
     rast(fb_cut, &tex, 0.5f);
@@ -145,7 +140,7 @@ TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_gouraud)
 // B6: opaque texture + cutoff active → drawn pixel colour matches baseline (Phong).
 TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_phong)
 {
-    Texture tex = make_tex(1, 1, {200, 100, 50, 255});
+    Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     Framebuffer fb_base(40, 20, /*headless=*/true), fb_cut(40, 20, /*headless=*/true);
     rast_phong(fb_base, &tex, 0.0f);
     rast_phong(fb_cut, &tex, 0.5f);
@@ -166,15 +161,14 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
     Framebuffer fb(40, 20, /*headless=*/true);
     // Rear triangle: white, no texture, drawn first.
     {
-        vec3 sa{4.0f, 2.0f, 0.8f}, sb{36.0f, 2.0f, 0.8f}, sc{20.0f, 18.0f, 0.8f};
+        vec3 sa{ 4.0f, 2.0f, 0.8f }, sb{ 36.0f, 2.0f, 0.8f }, sc{ 20.0f, 18.0f, 0.8f };
         vec3 zero{};
-        vec3 white{1.0f, 1.0f, 1.0f};
-        vec2 uv{0.0f, 0.0f};
-        rasterize(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                  white, white, white, zero, zero, zero,
-                  zero, zero, zero,
-                  uv, uv, uv,
-                  nullptr, 0.0f, nullptr, 0, 19);
+        vec3 white{ 1.0f, 1.0f, 1.0f };
+        vec2 uv{ 0.0f, 0.0f };
+        rasterize(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
+            nullptr, 0.0f, nullptr, 0, 19
+        );
     }
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 
@@ -184,35 +178,36 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
 
     // Rear triangle first (depth=0.8, white).
     {
-        vec3 sa{4.0f, 2.0f, 0.8f}, sb{36.0f, 2.0f, 0.8f}, sc{20.0f, 18.0f, 0.8f};
+        vec3 sa{ 4.0f, 2.0f, 0.8f }, sb{ 36.0f, 2.0f, 0.8f }, sc{ 20.0f, 18.0f, 0.8f };
         vec3 zero{};
-        vec3 white{1.0f, 1.0f, 1.0f};
-        vec2 uv{0.0f, 0.0f};
-        rasterize(fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                  white, white, white, zero, zero, zero,
-                  zero, zero, zero,
-                  uv, uv, uv,
-                  nullptr, 0.0f, nullptr, 0, 19);
+        vec3 white{ 1.0f, 1.0f, 1.0f };
+        vec2 uv{ 0.0f, 0.0f };
+        rasterize(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
+            nullptr, 0.0f, nullptr, 0, 19
+        );
     }
 
     // Front triangle (depth=0.3, fully transparent at cutoff=0.5).
-    Texture tex_transparent = make_tex(1, 1, {255, 0, 0, 0});
+    Texture tex_transparent = make_tex(1, 1, { 255, 0, 0, 0 });
     {
-        vec3 sa{4.0f, 2.0f, 0.3f}, sb{36.0f, 2.0f, 0.3f}, sc{20.0f, 18.0f, 0.3f};
+        vec3 sa{ 4.0f, 2.0f, 0.3f }, sb{ 36.0f, 2.0f, 0.3f }, sc{ 20.0f, 18.0f, 0.3f };
         vec3 zero{};
-        vec3 white{1.0f, 1.0f, 1.0f};
-        vec2 uv{0.5f, 0.5f};
-        rasterize(fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                  white, white, white, zero, zero, zero,
-                  zero, zero, zero,
-                  uv, uv, uv,
-                  &tex_transparent, 0.5f, nullptr, 0, 19);
+        vec3 white{ 1.0f, 1.0f, 1.0f };
+        vec2 uv{ 0.5f, 0.5f };
+        rasterize(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
+            &tex_transparent, 0.5f, nullptr, 0, 19
+        );
     }
 
     // Pixel (20,10) should still show the white rear triangle, not be occluded.
     Color c = fb2.get_pixel(20, 10);
     if (c.r < 200 || c.g < 200 || c.b < 200)
-        ASSERT_FAIL("transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+        ASSERT_FAIL(
+            "transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
 }
 
 // C2: same depth-non-pollution test for Phong path.
@@ -220,47 +215,46 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
 
-    vec3 sa_rear{4.0f, 2.0f, 0.8f}, sb_rear{36.0f, 2.0f, 0.8f}, sc_rear{20.0f, 18.0f, 0.8f};
-    vec3 sa_front{4.0f, 2.0f, 0.3f}, sb_front{36.0f, 2.0f, 0.3f}, sc_front{20.0f, 18.0f, 0.3f};
+    vec3 sa_rear{ 4.0f, 2.0f, 0.8f }, sb_rear{ 36.0f, 2.0f, 0.8f }, sc_rear{ 20.0f, 18.0f, 0.8f };
+    vec3 sa_front{ 4.0f, 2.0f, 0.3f }, sb_front{ 36.0f, 2.0f, 0.3f }, sc_front{ 20.0f, 18.0f, 0.3f };
     vec3 zero{};
-    vec3 white{1.0f, 1.0f, 1.0f};
-    vec3 normal{0.0f, 0.0f, 1.0f};
-    vec3 tan{1.0f, 0.0f, 0.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{1.0f, 1.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec3 normal{ 0.0f, 0.0f, 1.0f };
+    vec3 tan{ 1.0f, 0.0f, 0.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
 
     Material mat_opaque{};
-    mat_opaque.diffuse = {1.0f, 1.0f, 1.0f};
-    mat_opaque.ambient = {1.0f, 1.0f, 1.0f};
-    mat_opaque.specular = {0.0f, 0.0f, 0.0f};
+    mat_opaque.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat_opaque.ambient = { 1.0f, 1.0f, 1.0f };
+    mat_opaque.specular = { 0.0f, 0.0f, 0.0f };
     mat_opaque.alpha_cutoff = 0.0f;
 
     Material mat_cutout = mat_opaque;
     mat_cutout.alpha_cutoff = 0.5f;
 
     // Draw rear opaque triangle.
-    rasterize_phong(fb, sa_rear, sb_rear, sc_rear, 1.0f, 1.0f, 1.0f,
-                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    white, white, white, false,
-                    eye, nullptr, 0, ambient, mat_opaque,
-                    nullptr, nullptr, nullptr, nullptr, 0, 19);
+    rasterize_phong(
+        fb, sa_rear, sb_rear, sc_rear, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv,
+        uv, uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat_opaque, nullptr, nullptr,
+        nullptr, nullptr, 0, 19
+    );
 
     // Draw front fully-transparent triangle.
-    Texture tex_transparent = make_tex(1, 1, {255, 0, 0, 0});
-    rasterize_phong(fb, sa_front, sb_front, sc_front, 1.0f, 1.0f, 1.0f,
-                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    white, white, white, false,
-                    eye, nullptr, 0, ambient, mat_cutout,
-                    &tex_transparent, nullptr, nullptr, nullptr, 0, 19);
+    Texture tex_transparent = make_tex(1, 1, { 255, 0, 0, 0 });
+    rasterize_phong(
+        fb, sa_front, sb_front, sc_front, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv,
+        uv, uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat_cutout, &tex_transparent,
+        nullptr, nullptr, nullptr, 0, 19
+    );
 
     Color c = fb.get_pixel(20, 10);
     if (c.r < 200 || c.g < 200 || c.b < 200)
-        ASSERT_FAIL("transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+        ASSERT_FAIL(
+            "transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
 }
 
 // ─── Group D: no overhead on non-cutout path ─────────────────────────────────
@@ -270,7 +264,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 // alpha is 1 everywhere.
 TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_gouraud)
 {
-    Texture tex = make_tex(1, 1, {150, 80, 40, 255});
+    Texture tex = make_tex(1, 1, { 150, 80, 40, 255 });
     Framebuffer fb_no(40, 20, /*headless=*/true), fb_with(40, 20, /*headless=*/true);
     rast(fb_no, &tex, 0.0f);
     rast(fb_with, &tex, 0.5f);
@@ -284,7 +278,7 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_gouraud)
 // D2: same equivalence test for Phong.
 TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
 {
-    Texture tex = make_tex(1, 1, {150, 80, 40, 255});
+    Texture tex = make_tex(1, 1, { 150, 80, 40, 255 });
     Framebuffer fb_no(40, 20, /*headless=*/true), fb_with(40, 20, /*headless=*/true);
     rast_phong(fb_no, &tex, 0.0f);
     rast_phong(fb_with, &tex, 0.5f);
@@ -304,7 +298,7 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_gouraud)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     constexpr float cutoff = 128.0f * (1.0f / 255.0f);
-    Texture tex = make_tex(1, 1, {255, 255, 255, 128});
+    Texture tex = make_tex(1, 1, { 255, 255, 255, 128 });
     rast(fb, &tex, cutoff);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
@@ -313,7 +307,7 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     constexpr float cutoff = 128.0f * (1.0f / 255.0f);
-    Texture tex = make_tex(1, 1, {255, 255, 255, 128});
+    Texture tex = make_tex(1, 1, { 255, 255, 255, 128 });
     rast_phong(fb, &tex, cutoff);
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
@@ -327,32 +321,29 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
 // alpha=255 ≥ cutoff=0.5 → pixel passes the cutout test.
 TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
-    vec3 eye{0.0f, 0.0f, 5.0f};
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f };
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {0.0f, 0.0f, 0.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     mat.alpha_cutoff = 0.5f;
     Light light{};
-    light.direction = {1.0f, 0.0f, 0.0f};
-    light.color = {1.0f, 0.0f, 0.0f};
-    vec2 uv{0.5f, 0.5f};
-    Texture diffuse_tex = make_tex(1, 1, {255, 255, 255, 255}); // opaque white → passes cutout
-    Texture nmap_tex = make_tex(1, 1, {255, 128, 128, 255});    // nm≈(1,0,0) → redirects normal to +x
+    light.direction = { 1.0f, 0.0f, 0.0f };
+    light.color = { 1.0f, 0.0f, 0.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    Texture diffuse_tex = make_tex(1, 1, { 255, 255, 255, 255 }); // opaque white → passes cutout
+    Texture nmap_tex = make_tex(1, 1, { 255, 128, 128, 255 });    // nm≈(1,0,0) → redirects normal to +x
 
     auto rph = [&](Framebuffer &fb, const Texture *nm)
     {
-        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                        zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                        uv, uv, uv,
-                        1.0f, 1.0f, 1.0f,
-                        white, white, white, false,
-                        eye, &light, 1, ambient, mat,
-                        &diffuse_tex, nm, nullptr, nullptr,
-                        0, 19);
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &diffuse_tex, nm, nullptr, nullptr, 0,
+            19
+        );
     };
 
     Framebuffer fb_nonmap(40, 20, /*headless=*/true), fb_nmap(40, 20, /*headless=*/true);
@@ -365,8 +356,10 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
         ASSERT_FAIL("without nmap+cutout: R too high, normal perpendicular to light");
     Color c_nmap = fb_nmap.get_pixel(20, 10);
     if (c_nmap.r < 230)
-        ASSERT_FAIL("with nmap+cutout: R too low, expected bright red from redirected normal, got R=" +
-                    std::to_string(static_cast<int>(c_nmap.r)));
+        ASSERT_FAIL(
+            "with nmap+cutout: R too low, expected bright red from redirected normal, got R=" +
+            std::to_string(static_cast<int>(c_nmap.r))
+        );
 }
 
 // ─── Group G: has_vcol + alpha_cutoff combined ────────────────────────────────
@@ -377,36 +370,33 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
 TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{1.0f, 1.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     mat.alpha_cutoff = 0.5f;
-    Texture opaque_tex = make_tex(1, 1, {255, 255, 255, 255}); // white, alpha=255
-    vec3 red{1.0f, 0.0f, 0.0f};
+    Texture opaque_tex = make_tex(1, 1, { 255, 255, 255, 255 }); // white, alpha=255
+    vec3 red{ 1.0f, 0.0f, 0.0f };
 
-    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    red, red, red, true,
-                    eye, nullptr, 0, ambient, mat,
-                    &opaque_tex, nullptr, nullptr, nullptr,
-                    0, 19);
+    rasterize_phong(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+        1.0f, 1.0f, red, red, red, true, eye, nullptr, 0, ambient, mat, &opaque_tex, nullptr, nullptr, nullptr, 0, 19
+    );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 230)
-        ASSERT_FAIL("has_vcol+cutout: R too low, expected red tint, got R=" +
-                    std::to_string(static_cast<int>(c.r)));
+        ASSERT_FAIL("has_vcol+cutout: R too low, expected red tint, got R=" + std::to_string(static_cast<int>(c.r)));
     if (c.g > 20 || c.b > 20)
-        ASSERT_FAIL("has_vcol+cutout: G/B too high, expected near-zero from red vcol, got (" +
-                    std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
+        ASSERT_FAIL(
+            "has_vcol+cutout: G/B too high, expected near-zero from red vcol, got (" +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
 }
 
 // ─── Group H: cutout-only path (no nmap, no stex) — UV lifecycle ─────────────
@@ -421,38 +411,32 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 // to vec2{} the pixel would be red, not blue.
 TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{1.0f, 1.0f, 1.0f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 1.0f, 1.0f, 1.0f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     mat.alpha_cutoff = 0.5f;
     // 2×1: left=red, right=blue; both fully opaque.
     // Sampler: fx = u*(width-1) = u*1.  At u=0.99: tx=0.99 → R≈3, B≈252.
     // If UV defaulted to zero: tx=0 → pure red (R=255) — distinguishes the paths.
-    Texture tex = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
-    vec2 uv{0.99f, 0.5f}; // deep in the blue half; opaque alpha passes cutout
+    Texture tex = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    vec2 uv{ 0.99f, 0.5f }; // deep in the blue half; opaque alpha passes cutout
 
     Framebuffer fb(40, 20, /*headless=*/true);
-    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    white, white, white, false,
-                    eye, nullptr, 0, ambient, mat,
-                    &tex, nullptr, nullptr, nullptr,
-                    0, 19);
+    rasterize_phong(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, &tex, nullptr, nullptr, nullptr, 0, 19
+    );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     // ambient*(1,1,1)*blue_texel=(0,0,1) → R≈0, B≈255
     if (c.r > 10)
-        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (R≈0), got R=" +
-                    std::to_string(static_cast<int>(c.r)));
+        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (R≈0), got R=" + std::to_string(static_cast<int>(c.r)));
     if (c.b < 200)
-        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (B≈255), got B=" +
-                    std::to_string(static_cast<int>(c.b)));
+        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (B≈255), got B=" + std::to_string(static_cast<int>(c.b)));
 }

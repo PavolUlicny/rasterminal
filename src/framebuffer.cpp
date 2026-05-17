@@ -78,12 +78,10 @@ namespace
 } // namespace
 
 Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
-    : m_width(pixel_width),
-      m_height(pixel_height),
+    : m_width(pixel_width), m_height(pixel_height),
       m_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
       m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_headless(headless)
+      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)), m_headless(headless)
 {
     fill_depth_infinity();
     if (!m_headless)
@@ -245,9 +243,7 @@ void Framebuffer::present()
     };
 
     auto unpack = [](uint32_t v) -> Color
-    {
-        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u)};
-    };
+    { return { static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u) }; };
 
     if (m_force_redraw)
     {
@@ -261,8 +257,10 @@ void Framebuffer::present()
             const size_t bot_base = pixel_idx(0, prow + 1 < m_height ? prow + 1 : prow);
 
             for (int col = 0; col < m_width; col++)
-                emit_cell(unpack(m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)),
-                          unpack(m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)));
+                emit_cell(
+                    unpack(m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)),
+                    unpack(m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed))
+                );
         }
         m_force_redraw = false;
     }
@@ -300,8 +298,11 @@ void Framebuffer::present()
                     // col+0 is already known unchanged (dirty check above); start at 1.
                     int skip = 1;
                     while (col + skip < m_width &&
-                           m_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) == m_prev_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) &&
-                           m_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) == m_prev_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed))
+                           m_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) ==
+                               m_prev_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed
+                               ) &&
+                           m_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) ==
+                               m_prev_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed))
                         skip++;
                     if (skip == 1)
                         m_buf.append("\033[C", 3);

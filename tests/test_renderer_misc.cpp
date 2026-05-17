@@ -19,8 +19,8 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     // height=4; all 4 workers participate (no n_active cap in single-pass design).
     Framebuffer fb(40, 4, /*headless=*/true);
     fb.clear();
@@ -41,8 +41,8 @@ TEST(renderer, band_tris_resize_across_frames)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
 
     Framebuffer fb1(40, 20, /*headless=*/true);
     fb1.clear();
@@ -81,8 +81,8 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
 
     r.show_texture = true;
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -112,8 +112,8 @@ TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
 
     r.show_texture = false; // disables both tex and alpha_cutoff
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -139,15 +139,15 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_mt)
     Mesh mesh;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
-    v.pos = {50.0f, -1.0f, 0.0f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
+    v.pos = { 50.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {51.0f, -1.0f, 0.0f};
+    v.pos = { 51.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {50.5f, 1.0f, 0.0f};
+    v.pos = { 50.5f, 1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    mesh.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    mesh.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
     Triangle tri{};
     tri.v[0] = 0;
     tri.v[1] = 1;
@@ -157,8 +157,8 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_mt)
     mesh.materials.push_back(Material{});
 
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -176,15 +176,15 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
     Mesh mesh;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
-    v.pos = {50.0f, -1.0f, 0.0f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
+    v.pos = { 50.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {51.0f, -1.0f, 0.0f};
+    v.pos = { 51.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {50.5f, 1.0f, 0.0f};
+    v.pos = { 50.5f, 1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    mesh.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    mesh.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
     Triangle tri{};
     tri.v[0] = 0;
     tri.v[1] = 1;
@@ -196,7 +196,7 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) != 0)
         ASSERT_FAIL("clip_reject wireframe: off-screen triangle must produce no pixels");
 }
@@ -213,16 +213,16 @@ TEST(renderer, phong_zero_tangents_uses_vertex_normals)
     Mesh mesh;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
+    v.pos = { -1.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     mesh.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     mesh.vertices.push_back(v);
     // zero tangents → no TBN perturbation; rasterize_phong falls back to vertex normals
-    mesh.tangents.resize(3, {0.0f, 0.0f, 0.0f});
+    mesh.tangents.resize(3, { 0.0f, 0.0f, 0.0f });
     Triangle tri{};
     tri.v[0] = 0;
     tri.v[1] = 1;
@@ -230,13 +230,13 @@ TEST(renderer, phong_zero_tangents_uses_vertex_normals)
     tri.material_idx = 0;
     mesh.triangles.push_back(tri);
     Material mat;
-    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
     mesh.materials.push_back(mat);
 
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Camera cam = make_test_camera();
-    vec3 ambient{0.5f, 0.5f, 0.5f};
+    vec3 ambient{ 0.5f, 0.5f, 0.5f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -255,6 +255,6 @@ TEST(renderer, choose_phase1_chunk_zero_tris_no_crash)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_EQ(count_drawn_pixels(fb), 0);
 }

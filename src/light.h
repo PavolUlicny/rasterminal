@@ -33,9 +33,9 @@ inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
-    vec3 diffuse = {1.0f, 1.0f, 1.0f};
-    vec3 ambient = {1.0f, 1.0f, 1.0f}; // Ka; defaults to Kd when Ka absent in MTL
-    vec3 specular = {0.4f, 0.4f, 0.4f};
+    vec3 diffuse = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient = { 1.0f, 1.0f, 1.0f }; // Ka; defaults to Kd when Ka absent in MTL
+    vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
     int diffuse_tex = -1;  // index into Mesh::textures, or -1 if none
     int specular_tex = -1; // index into Mesh::textures, or -1 if none
@@ -47,8 +47,8 @@ struct Material
 struct Light
 {
     // Direction toward the light source (world space, unit vector).
-    vec3 direction = {0.408f, 0.816f, 0.408f};
-    vec3 color = {1.0f, 1.0f, 1.0f};
+    vec3 direction = { 0.408f, 0.816f, 0.408f };
+    vec3 color = { 1.0f, 1.0f, 1.0f };
 };
 
 // Tag for callers that guarantee the normal is already unit-length.
@@ -59,8 +59,7 @@ struct assume_unit_t
 inline constexpr assume_unit_t assume_unit{};
 
 // Half-vector normalize skipped: ndh² = (n·h)² / (h·h), saves one sqrt per light.
-inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v,
-                        const Light &light, const Material &mat) noexcept
+inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v, const Light &light, const Material &mat) noexcept
 {
     const float diff = dot(n, light.direction);
     if (diff >= 0.0f)
@@ -82,11 +81,10 @@ inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v,
 // ambient is a scene-level term added once (not per light).
 // v must be the unit view vector (normalize(eye - pos)) — precomputed by caller.
 // Returns RGB in [0, ~1+]; caller is responsible for clamping before display.
-inline vec3 compute_lighting(vec3 normal, const vec3 &v,
-                             const Light *lights, int n_lights,
-                             const vec3 &ambient,
-                             const Material &mat = {},
-                             float ao = 1.0f) noexcept
+inline vec3 compute_lighting(
+    vec3 normal, const vec3 &v, const Light *lights, int n_lights, const vec3 &ambient, const Material &mat = {},
+    float ao = 1.0f
+) noexcept
 {
     const vec3 n = normalize(normal);
     vec3 result = ambient * mat.ambient * ao;
@@ -97,25 +95,21 @@ inline vec3 compute_lighting(vec3 normal, const vec3 &v,
 
 // Convenience overload: derives v from pos and eye_pos.
 // Used by Flat/Gouraud paths where v is not precomputed.
-inline vec3 compute_lighting(vec3 pos, vec3 normal,
-                             const vec3 &eye_pos,
-                             const Light *lights, int n_lights,
-                             const vec3 &ambient,
-                             const Material &mat = {},
-                             float ao = 1.0f) noexcept
+inline vec3 compute_lighting(
+    vec3 pos, vec3 normal, const vec3 &eye_pos, const Light *lights, int n_lights, const vec3 &ambient,
+    const Material &mat = {}, float ao = 1.0f
+) noexcept
 {
-    return compute_lighting(normal, normalize(eye_pos - pos),
-                            lights, n_lights, ambient, mat, ao);
+    return compute_lighting(normal, normalize(eye_pos - pos), lights, n_lights, ambient, mat, ao);
 }
 
 // assume_unit overloads: caller guarantees normal is already unit-length.
 // Flat face normals and Gouraud vertex normals are always unit after load;
 // skipping normalize() saves one sqrt per Flat triangle and per Gouraud vertex.
-inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, const vec3 &n, const vec3 &v,
-                             const Light *lights, int n_lights,
-                             const vec3 &ambient,
-                             const Material &mat = {},
-                             float ao = 1.0f) noexcept
+inline vec3 compute_lighting(
+    [[maybe_unused]] assume_unit_t tag, const vec3 &n, const vec3 &v, const Light *lights, int n_lights,
+    const vec3 &ambient, const Material &mat = {}, float ao = 1.0f
+) noexcept
 {
     vec3 result = ambient * mat.ambient * ao;
     for (int i = 0; i < n_lights; i++)
@@ -123,13 +117,10 @@ inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, const vec3 &n, 
     return result;
 }
 
-inline vec3 compute_lighting([[maybe_unused]] assume_unit_t tag, vec3 pos, const vec3 &normal,
-                             const vec3 &eye_pos,
-                             const Light *lights, int n_lights,
-                             const vec3 &ambient,
-                             const Material &mat = {},
-                             float ao = 1.0f) noexcept
+inline vec3 compute_lighting(
+    [[maybe_unused]] assume_unit_t tag, vec3 pos, const vec3 &normal, const vec3 &eye_pos, const Light *lights,
+    int n_lights, const vec3 &ambient, const Material &mat = {}, float ao = 1.0f
+) noexcept
 {
-    return compute_lighting(assume_unit, normal, normalize(eye_pos - pos),
-                            lights, n_lights, ambient, mat, ao);
+    return compute_lighting(assume_unit, normal, normalize(eye_pos - pos), lights, n_lights, ambient, mat, ao);
 }

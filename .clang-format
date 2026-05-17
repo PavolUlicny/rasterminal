@@ -1,0 +1,30 @@
+---
+BasedOnStyle: LLVM
+Language: Cpp
+
+# Allman: opening brace on its own line for functions, structs, namespaces
+BreakBeforeBraces: Allman
+
+# Indentation
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+NamespaceIndentation: All
+
+# Column limit — code regularly reaches ~115 chars
+ColumnLimit: 120
+
+# Pointer/reference attached to the variable name (const vec3 &o, not const vec3& o)
+PointerAlignment: Right
+
+# Braced init lists: elements on separate lines, block-indented, closing brace on its own line
+AlignAfterOpenBracket: BlockIndent
+Cpp11BracedListStyle: false
+
+# Short member functions stay on one line; free functions do not
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Include order is maintained manually (main header → project headers → system headers)
+SortIncludes: false

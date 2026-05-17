@@ -22,7 +22,7 @@ static Texture make_tex(int w, int h, std::vector<uint8_t> rgba)
 // 1×1 texture of a single solid colour.
 static Texture solid(uint8_t r, uint8_t g, uint8_t b)
 {
-    return make_tex(1, 1, {r, g, b, 255});
+    return make_tex(1, 1, { r, g, b, 255 });
 }
 
 // ─── valid() ──────────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ TEST(texture, solid_1x1_is_invariant_to_uv_coords)
 TEST(texture, uv_wraps_very_large_positive)
 {
     // u=1000.5 should wrap identically to u=0.5 via floor().
-    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 a = t.sample_rgb(0.25f, 0.5f);
     vec3 b = t.sample_rgb(1000.25f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-4f);
@@ -76,7 +76,7 @@ TEST(texture, uv_wraps_at_integer_boundary)
 {
     // 2×1: left pixel = red, right pixel = blue.
     // u=0.25 and u=1.25 must produce the same sample.
-    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 a = t.sample_rgb(0.25f, 0.5f);
     vec3 b = t.sample_rgb(1.25f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-5f);
@@ -86,7 +86,7 @@ TEST(texture, uv_wraps_at_integer_boundary)
 TEST(texture, uv_wraps_for_negative_coords)
 {
     // u=-0.75 wraps to 0.25 (−0.75 − floor(−0.75) = −0.75 − (−1) = 0.25).
-    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 a = t.sample_rgb(0.25f, 0.5f);
     vec3 b = t.sample_rgb(-0.75f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-5f);
@@ -99,7 +99,7 @@ TEST(texture, bilinear_midpoint_averages_horizontal_neighbors)
 {
     // 2×1: left=red (1,0,0), right=blue (0,0,1).
     // u=0.5 → fx=0.5, tx=0.5 → result = (0.5, 0, 0.5).
-    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 c = t.sample_rgb(0.5f, 0.5f);
     ASSERT_NEAR(c.x, 0.5f, 1e-4f);
     ASSERT_NEAR(c.y, 0.0f, 1e-4f);
@@ -110,7 +110,7 @@ TEST(texture, bilinear_midpoint_averages_vertical_neighbors)
 {
     // 1×2: row0 (top image) = red, row1 (bottom image) = blue.
     // v=0.5 (OBJ mid) → after flip: 0.5 → fy=0.5 → lerp(red,blue,0.5) = (0.5,0,0.5).
-    Texture t = make_tex(1, 2, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(1, 2, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 c = t.sample_rgb(0.0f, 0.5f);
     ASSERT_NEAR(c.x, 0.5f, 1e-4f);
     ASSERT_NEAR(c.z, 0.5f, 1e-4f);
@@ -123,7 +123,7 @@ TEST(texture, v_zero_maps_to_bottom_image_row)
 {
     // 1×2: image row0=red (top), row1=blue (bottom).
     // OBJ v=0 (texture bottom) → flip → v=1.0 → fy=1.0 → image row 1 = blue.
-    Texture t = make_tex(1, 2, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(1, 2, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 c = t.sample_rgb(0.0f, 0.0f);
     ASSERT_NEAR(c.x, 0.0f, 1e-4f); // low red
     ASSERT_NEAR(c.z, 1.0f, 1e-4f); // full blue
@@ -132,7 +132,7 @@ TEST(texture, v_zero_maps_to_bottom_image_row)
 TEST(texture, v_near_one_maps_toward_top_image_row)
 {
     // OBJ v→1 (texture top) → flip → v→0 → fy→0 → image row 0 = red.
-    Texture t = make_tex(1, 2, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(1, 2, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 c = t.sample_rgb(0.0f, 0.999f);
     ASSERT_TRUE(c.x > 0.9f); // mostly red
     ASSERT_TRUE(c.z < 0.1f); // little blue
@@ -157,7 +157,7 @@ TEST(texture_load, load_from_memory_null_returns_false)
 TEST(texture_load, load_from_memory_zero_size_returns_false)
 {
     Texture t;
-    const uint8_t data[] = {1, 2, 3};
+    const uint8_t data[] = { 1, 2, 3 };
     ASSERT_FALSE(t.load_from_memory(data, 0));
     ASSERT_FALSE(t.valid());
 }
@@ -165,7 +165,7 @@ TEST(texture_load, load_from_memory_zero_size_returns_false)
 TEST(texture_load, load_from_memory_garbage_returns_false)
 {
     Texture t;
-    const uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF};
+    const uint8_t garbage[] = { 0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF };
     ASSERT_FALSE(t.load_from_memory(garbage, sizeof(garbage)));
     ASSERT_FALSE(t.valid());
 }
@@ -186,24 +186,19 @@ TEST(texture, bilinear_2x2_center_averages_all_four_corners)
     //   top    = lerp(red, green, 0.5) = (0.5, 0.5, 0)
     //   bottom = lerp(blue, white,0.5) = (0.5, 0.5, 1)
     //   result = lerp(top, bottom, 0.5) = (0.5, 0.5, 0.5)
-    Texture t = make_tex(2, 2, {
-                                   255,
-                                   0,
-                                   0,
-                                   255, // [0,0] red
-                                   0,
-                                   255,
-                                   0,
-                                   255, // [1,0] green
-                                   0,
-                                   0,
-                                   255,
-                                   255, // [0,1] blue
-                                   255,
-                                   255,
-                                   255,
-                                   255, // [1,1] white
-                               });
+    Texture t = make_tex(
+        2, 2,
+        {
+            255, 0, 0,
+            255, // [0,0] red
+            0, 255, 0,
+            255, // [1,0] green
+            0, 0, 255,
+            255, // [0,1] blue
+            255, 255, 255,
+            255, // [1,1] white
+        }
+    );
     vec3 c = t.sample_rgb(0.5f, 0.5f);
     ASSERT_NEAR(c.x, 0.5f, 1e-4f);
     ASSERT_NEAR(c.y, 0.5f, 1e-4f);
@@ -212,24 +207,27 @@ TEST(texture, bilinear_2x2_center_averages_all_four_corners)
 
 TEST(texture, sample_rgba_2x2_center_averages_all_four_corners)
 {
-    Texture t = make_tex(2, 2, {
-                                   255,
-                                   0,
-                                   0,
-                                   0,
-                                   0,
-                                   255,
-                                   0,
-                                   64,
-                                   0,
-                                   0,
-                                   255,
-                                   128,
-                                   255,
-                                   255,
-                                   255,
-                                   255,
-                               });
+    Texture t = make_tex(
+        2, 2,
+        {
+            255,
+            0,
+            0,
+            0,
+            0,
+            255,
+            0,
+            64,
+            0,
+            0,
+            255,
+            128,
+            255,
+            255,
+            255,
+            255,
+        }
+    );
     vec4 c = t.sample_rgba(0.5f, 0.5f);
     ASSERT_NEAR(c.x, 0.5f, 1e-4f);
     ASSERT_NEAR(c.y, 0.5f, 1e-4f);
@@ -244,7 +242,7 @@ TEST(texture, sample_rgba_2x2_center_averages_all_four_corners)
 TEST(texture, sample_rgba_wraps_positive_coords)
 {
     // 2×1: left=(255,0,0,200), right=(0,0,255,100). u=0.25 and u=1.25 must agree.
-    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 a = t.sample_rgba(0.25f, 0.5f);
     vec4 b = t.sample_rgba(1.25f, 0.5f);
     vec4 c = t.sample_rgba(1000.25f, 0.5f);
@@ -259,7 +257,7 @@ TEST(texture, sample_rgba_wraps_positive_coords)
 TEST(texture, sample_rgba_wraps_negative_coords)
 {
     // u=−0.75 → floor(−0.75)=−1 → −0.75−(−1)=0.25 — same as u=0.25.
-    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 a = t.sample_rgba(0.25f, 0.5f);
     vec4 b = t.sample_rgba(-0.75f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-5f);
@@ -272,7 +270,7 @@ TEST(texture, sample_rgba_flips_v_axis)
 {
     // 1×2: image row0 (top)=(255,0,0,200), row1 (bottom)=(0,0,255,100).
     // OBJ v=0 (texture bottom) → flip → samples image row1 → alpha=100/255.
-    Texture t = make_tex(1, 2, {255, 0, 0, 200, 0, 0, 255, 100});
+    Texture t = make_tex(1, 2, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 c = t.sample_rgba(0.0f, 0.0f);
     ASSERT_NEAR(c.w, 100.0f / 255.0f, 1e-4f);
     ASSERT_NEAR(c.z, 1.0f, 1e-4f); // blue channel confirms row1 was sampled
@@ -299,7 +297,7 @@ TEST(texture_load, load_from_memory_failure_preserves_previous_data)
     const int old_h = t.height;
     const std::vector<uint8_t> old_pixels = t.pixels;
 
-    const uint8_t garbage[] = {0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF};
+    const uint8_t garbage[] = { 0x00, 0x01, 0x02, 0x03, 0xDE, 0xAD, 0xBE, 0xEF };
     ASSERT_FALSE(t.load_from_memory(garbage, sizeof(garbage)));
     ASSERT_EQ(t.width, old_w);
     ASSERT_EQ(t.height, old_h);
@@ -317,10 +315,10 @@ TEST(texture_load, load_from_memory_valid_image_populates_texture)
     ASSERT_TRUE(t.valid());
     ASSERT_EQ(t.width, 1);
     ASSERT_EQ(t.height, 1);
-    ASSERT_EQ(t.pixels.size(), size_t{4});
-    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R
-    ASSERT_EQ(t.pixels[1], uint8_t{0});   // G
-    ASSERT_EQ(t.pixels[2], uint8_t{0});   // B
+    ASSERT_EQ(t.pixels.size(), size_t{ 4 });
+    ASSERT_EQ(t.pixels[0], uint8_t{ 255 }); // R
+    ASSERT_EQ(t.pixels[1], uint8_t{ 0 });   // G
+    ASSERT_EQ(t.pixels[2], uint8_t{ 0 });   // B
 }
 
 TEST(texture_load, load_valid_file_populates_texture)
@@ -332,8 +330,8 @@ TEST(texture_load, load_valid_file_populates_texture)
     ASSERT_TRUE(t.valid());
     ASSERT_EQ(t.width, 1);
     ASSERT_EQ(t.height, 1);
-    ASSERT_EQ(t.pixels.size(), size_t{4});
-    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R
+    ASSERT_EQ(t.pixels.size(), size_t{ 4 });
+    ASSERT_EQ(t.pixels[0], uint8_t{ 255 }); // R
     // Verify sampling works on the loaded data.
     vec3 c = t.sample_rgb(0.5f, 0.5f);
     ASSERT_NEAR(c.x, 1.0f, 1e-4f);
@@ -347,8 +345,8 @@ TEST(texture_load, load_from_memory_success_overwrites_previous)
     // load must replace the existing texture, not leave the old data in place.
     Texture t = solid(0, 255, 0); // green
     ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
-    ASSERT_EQ(t.pixels[0], uint8_t{255}); // R now 255 (was 0)
-    ASSERT_EQ(t.pixels[1], uint8_t{0});   // G now 0 (was 255)
+    ASSERT_EQ(t.pixels[0], uint8_t{ 255 }); // R now 255 (was 0)
+    ASSERT_EQ(t.pixels[1], uint8_t{ 0 });   // G now 0 (was 255)
 }
 
 TEST(texture_load, load_from_memory_oversized_returns_false)
@@ -365,7 +363,7 @@ TEST(texture, sample_rgba_v_near_one_maps_to_top_image_row)
 {
     // 1×2: image row0 (top) = red/alpha=200, row1 (bottom) = blue/alpha=100.
     // v=0.999 → wrap→0.999 → flip→0.001 → fy≈0 → mostly image row0.
-    Texture t = make_tex(1, 2, {255, 0, 0, 200, 0, 0, 255, 100});
+    Texture t = make_tex(1, 2, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 c = t.sample_rgba(0.0f, 0.999f);
     ASSERT_TRUE(c.x > 0.9f);                   // mostly red (row0)
     ASSERT_TRUE(c.z < 0.1f);                   // little blue
@@ -376,11 +374,11 @@ TEST(texture_load, load_from_memory_success_updates_dimensions)
 {
     // Previous overwrite test uses same-size textures; here we verify width/height
     // are actually reassigned when the new image has different dimensions.
-    Texture t = make_tex(2, 2, {0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255});
+    Texture t = make_tex(2, 2, { 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255 });
     ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
     ASSERT_EQ(t.width, 1);
     ASSERT_EQ(t.height, 1);
-    ASSERT_EQ(t.pixels.size(), size_t{4});
+    ASSERT_EQ(t.pixels.size(), size_t{ 4 });
 }
 
 TEST(texture_load, load_empty_path_returns_false)
@@ -396,7 +394,7 @@ TEST(texture_load, load_empty_path_returns_false)
 
 TEST(texture, uv_wraps_very_large_negative_rgb)
 {
-    Texture t = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 a = t.sample_rgb(0.25f, 0.5f);
     vec3 b = t.sample_rgb(-1000.75f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-4f);
@@ -405,7 +403,7 @@ TEST(texture, uv_wraps_very_large_negative_rgb)
 
 TEST(texture, uv_wraps_very_large_negative_rgba)
 {
-    Texture t = make_tex(2, 1, {255, 0, 0, 200, 0, 0, 255, 100});
+    Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 a = t.sample_rgba(0.25f, 0.5f);
     vec4 b = t.sample_rgba(-1000.75f, 0.5f);
     ASSERT_NEAR(a.x, b.x, 1e-4f);

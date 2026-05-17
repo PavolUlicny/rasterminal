@@ -38,14 +38,8 @@ static void write_str(const std::string &path, const std::string &s)
 struct TmpFile
 {
     std::string path;
-    TmpFile(const std::string &p, const std::string &contents) : path(p)
-    {
-        write_str(path, contents);
-    }
-    TmpFile(const std::string &p, const void *data, size_t n) : path(p)
-    {
-        write_bytes(path, data, n);
-    }
+    TmpFile(const std::string &p, const std::string &contents) : path(p) { write_str(path, contents); }
+    TmpFile(const std::string &p, const void *data, size_t n) : path(p) { write_bytes(path, data, n); }
     ~TmpFile() { std::remove(path.c_str()); }
     TmpFile(const TmpFile &) = delete;
     TmpFile &operator=(const TmpFile &) = delete;

@@ -12,7 +12,7 @@
 inline Camera make_test_camera()
 {
     Camera c;
-    c.target = {0.0f, 0.0f, 0.0f};
+    c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
     c.orientation = quat::identity();
     c.fov = 3.14159265f / 2.0f;
@@ -32,17 +32,17 @@ inline Mesh make_unit_triangle(bool flip_winding = false, bool double_sided = fa
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     if (flip_winding)
@@ -78,17 +78,17 @@ inline Mesh make_large_triangle()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-4.0f, -4.0f, 0.0f};
+    v.pos = { -4.0f, -4.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {4.0f, -4.0f, 0.0f};
+    v.pos = { 4.0f, -4.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 4.0f, 0.0f};
+    v.pos = { 0.0f, 4.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -100,10 +100,10 @@ inline Mesh make_large_triangle()
     return m;
 }
 
-inline Light make_key_light_z(vec3 color = {1.0f, 0.0f, 0.0f})
+inline Light make_key_light_z(vec3 color = { 1.0f, 0.0f, 0.0f })
 {
     Light l{};
-    l.direction = {0.0f, 0.0f, 1.0f};
+    l.direction = { 0.0f, 0.0f, 1.0f };
     l.color = color;
     return l;
 }

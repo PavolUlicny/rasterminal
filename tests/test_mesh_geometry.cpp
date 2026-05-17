@@ -13,9 +13,8 @@ TEST(normals, flat_xy_triangle_normal_points_along_z)
 {
     // CCW triangle in the XY plane → face normal = cross((1,0,0),(0,1,0)) = (0,0,1).
     // All three vertices should get (0,0,1) after area-weighted averaging.
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "f 1 2 3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "f 1 2 3\n";
     TmpFile f(tmp_path("rast_norm_flat.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &v : m.vertices)
@@ -28,9 +27,8 @@ TEST(normals, flat_xy_triangle_normal_points_along_z)
 
 TEST(normals, all_normals_have_unit_length)
 {
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "f 1 2 3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "f 1 2 3\n";
     TmpFile f(tmp_path("rast_norm_unit.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &v : m.vertices)
@@ -42,10 +40,9 @@ TEST(normals, two_coplanar_triangles_normal_consistent)
     // Two CCW triangles in the XY plane sharing an edge.
     // All face normals point along +Z, so every vertex normal — regardless of
     // whether the loader deduplicates — should also point along +Z.
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
-        "f 1 2 3\n"
-        "f 1 3 4\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
+                            "f 1 2 3\n"
+                            "f 1 3 4\n";
     TmpFile f(tmp_path("rast_norm_coplanar.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &v : m.vertices)
@@ -61,10 +58,9 @@ TEST(normals, two_coplanar_triangles_normal_consistent)
 
 TEST(tangents, all_tangents_have_unit_length)
 {
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "vt 0 0\nvt 1 0\nvt 0 1\n"
-        "f 1/1 2/2 3/3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\n"
+                            "f 1/1 2/2 3/3\n";
     TmpFile f(tmp_path("rast_tan_unit.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &t : m.tangents)
@@ -74,10 +70,9 @@ TEST(tangents, all_tangents_have_unit_length)
 TEST(tangents, tangents_are_orthogonal_to_normals)
 {
     // Gram-Schmidt guarantees dot(T', N) == 0.
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "vt 0 0\nvt 1 0\nvt 0 1\n"
-        "f 1/1 2/2 3/3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\n"
+                            "f 1/1 2/2 3/3\n";
     TmpFile f(tmp_path("rast_tan_orth.obj"), obj);
     Mesh m = load_ok(f.path);
     for (size_t i = 0; i < m.vertices.size(); i++)
@@ -90,10 +85,9 @@ TEST(tangents, tangent_aligns_with_uv_u_gradient)
     // v0=(0,0,0) uv=(0,0), v1=(1,0,0) uv=(1,0), v2=(0,1,0) uv=(0,1).
     // T = (dp1*dv2 − dp2*dv1)/det = ((1,0,0)·1 − (0,1,0)·0)/1 = (1,0,0).
     // After Gram-Schmidt against normal (0,0,1): tangent = (1,0,0).
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "vt 0 0\nvt 1 0\nvt 0 1\n"
-        "f 1/1 2/2 3/3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\n"
+                            "f 1/1 2/2 3/3\n";
     TmpFile f(tmp_path("rast_tan_dir.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &t : m.tangents)
@@ -106,42 +100,40 @@ TEST(tangents, tangent_aligns_with_uv_u_gradient)
 
 TEST(tangents, missing_uvs_use_safe_perpendicular_fallback)
 {
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 1 0 0\n"
-        "v 0 1 0\n"
-        "vn 0 0 1\n"
-        "vn 0 0 1\n"
-        "vn 0 0 1\n"
-        "f 1//1 2//2 3//3\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "vn 0 0 1\n"
+                            "vn 0 0 1\n"
+                            "vn 0 0 1\n"
+                            "f 1//1 2//2 3//3\n";
     TmpFile f(tmp_path("rast_tan_fallback.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &t : m.tangents)
     {
         ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
-        ASSERT_NEAR(dot(t, vec3{0.0f, 0.0f, 1.0f}), 0.0f, 1e-5f);
+        ASSERT_NEAR(dot(t, vec3{ 0.0f, 0.0f, 1.0f }), 0.0f, 1e-5f);
     }
 }
 
 TEST(tangents, collapsed_uvs_use_safe_perpendicular_fallback)
 {
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 1 0 0\n"
-        "v 0 1 0\n"
-        "vn 0 0 1\n"
-        "vn 0 0 1\n"
-        "vn 0 0 1\n"
-        "vt 0.5 0.5\n"
-        "vt 0.5 0.5\n"
-        "vt 0.5 0.5\n"
-        "f 1/1/1 2/2/2 3/3/3\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "vn 0 0 1\n"
+                            "vn 0 0 1\n"
+                            "vn 0 0 1\n"
+                            "vt 0.5 0.5\n"
+                            "vt 0.5 0.5\n"
+                            "vt 0.5 0.5\n"
+                            "f 1/1/1 2/2/2 3/3/3\n";
     TmpFile f(tmp_path("rast_tan_collapse.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &t : m.tangents)
     {
         ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
-        ASSERT_NEAR(dot(t, vec3{0.0f, 0.0f, 1.0f}), 0.0f, 1e-5f);
+        ASSERT_NEAR(dot(t, vec3{ 0.0f, 0.0f, 1.0f }), 0.0f, 1e-5f);
     }
 }
 
@@ -150,9 +142,8 @@ TEST(tangents, collapsed_uvs_use_safe_perpendicular_fallback)
 TEST(ao, all_values_in_unit_range)
 {
     // ao is clamped to [1 − 0.15, 1] in the current implementation; verify [0,1].
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "f 1 2 3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "f 1 2 3\n";
     TmpFile f(tmp_path("rast_ao_range.obj"), obj);
     Mesh m;
     bool ok = m.load_model(f.path, /*ao=*/true);
@@ -168,9 +159,8 @@ TEST(ao, flat_triangle_vertices_are_one)
 {
     // For a single flat triangle each vertex's centroid-to-normal projection is 0
     // (centroid lies in the same plane) → curvature = 0 → ao = 1.0.
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "f 1 2 3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "f 1 2 3\n";
     TmpFile f(tmp_path("rast_ao_flat.obj"), obj);
     Mesh m;
     bool ok = m.load_model(f.path, /*ao=*/true);
@@ -183,21 +173,20 @@ TEST(ao, isolated_vertex_is_one_and_finite)
 {
     // Create a mesh with an isolated fourth vertex (not referenced by any face).
     // The isolated vertex should get ao = 1.0 and remain finite.
-    const std::string ply =
-        "ply\n"
-        "format ascii 1.0\n"
-        "element vertex 4\n"
-        "property float x\n"
-        "property float y\n"
-        "property float z\n"
-        "element face 1\n"
-        "property list uchar int vertex_indices\n"
-        "end_header\n"
-        "0 0 0\n"
-        "1 0 0\n"
-        "0 1 0\n"
-        "10 10 10\n"
-        "3 0 1 2\n";
+    const std::string ply = "ply\n"
+                            "format ascii 1.0\n"
+                            "element vertex 4\n"
+                            "property float x\n"
+                            "property float y\n"
+                            "property float z\n"
+                            "element face 1\n"
+                            "property list uchar int vertex_indices\n"
+                            "end_header\n"
+                            "0 0 0\n"
+                            "1 0 0\n"
+                            "0 1 0\n"
+                            "10 10 10\n"
+                            "3 0 1 2\n";
     TmpFile f(tmp_path("rast_ao_isolated.ply"), ply);
     Mesh m;
     bool ok = m.load_model(f.path, /*ao=*/true);
@@ -210,9 +199,8 @@ TEST(ao, isolated_vertex_is_one_and_finite)
 
 TEST(mesh_clear, empties_all_containers)
 {
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
-        "f 1 2 3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "f 1 2 3\n";
     TmpFile f(tmp_path("rast_clear.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_FALSE(m.vertices.empty());
@@ -284,14 +272,13 @@ TEST(normals, area_weighted_averaging)
     //   large XY triangle: face_normal magnitude ~100
     //   small XZ triangle: face_normal magnitude ~0.01
     // The accumulated normal is dominated by the large triangle → z > 0.99.
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 10 0 0\n"
-        "v 0 10 0\n"
-        "v 0.1 0 0\n"
-        "v 0 0 0.1\n"
-        "f 1 2 3\n"
-        "f 1 4 5\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 10 0 0\n"
+                            "v 0 10 0\n"
+                            "v 0.1 0 0\n"
+                            "v 0 0 0.1\n"
+                            "f 1 2 3\n"
+                            "f 1 4 5\n";
     TmpFile f(tmp_path("rast_norm_awt.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.vertices[0].normal.z > 0.99f);
@@ -304,10 +291,9 @@ TEST(tangents, fallback_z_up_branch_for_non_z_normal)
     // Normal along +Y: abs(n.z)=0 < 0.9 → up={0,0,1} → t=normalize(cross({0,1,0},{0,0,1}))={1,0,0}.
     // Existing fallback tests use n=(0,0,1) which hits the X-up branch (abs(n.z)>=0.9);
     // this covers the complementary Z-up branch.
-    const std::string obj =
-        "v 0 0 0\nv 1 0 0\nv 0 0 1\n"
-        "vn 0 1 0\nvn 0 1 0\nvn 0 1 0\n"
-        "f 1//1 2//2 3//3\n";
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 0 1\n"
+                            "vn 0 1 0\nvn 0 1 0\nvn 0 1 0\n"
+                            "f 1//1 2//2 3//3\n";
     TmpFile f(tmp_path("rast_tan_yfb.obj"), obj);
     Mesh m = load_ok(f.path);
     for (size_t i = 0; i < m.tangents.size(); i++)
@@ -341,16 +327,15 @@ TEST(ao, concave_vertex_darkened)
     // Pyramid pit: vertex 0 at origin, 4 rim vertices at z=1.
     // Centroid of vertex 0's neighbors = (0,0,1); normal = (0,0,1);
     // curvature = 1.0 → ao = 1 − clamp(0.5, 0, 0.15) = 0.85.
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 1 0 1\n"
-        "v 0 1 1\n"
-        "v -1 0 1\n"
-        "v 0 -1 1\n"
-        "f 1 2 3\n"
-        "f 1 3 4\n"
-        "f 1 4 5\n"
-        "f 1 5 2\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 1\n"
+                            "v 0 1 1\n"
+                            "v -1 0 1\n"
+                            "v 0 -1 1\n"
+                            "f 1 2 3\n"
+                            "f 1 3 4\n"
+                            "f 1 4 5\n"
+                            "f 1 5 2\n";
     TmpFile f(tmp_path("rast_ao_concave.obj"), obj);
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
@@ -375,16 +360,15 @@ TEST(ao, disabled_skips_computation)
 {
     // Concave geometry that gives ao=0.85 with ao=true, but ao=false bypasses
     // compute_ao entirely → all vertices keep the loader's default ao=1.0.
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 1 0 1\n"
-        "v 0 1 1\n"
-        "v -1 0 1\n"
-        "v 0 -1 1\n"
-        "f 1 2 3\n"
-        "f 1 3 4\n"
-        "f 1 4 5\n"
-        "f 1 5 2\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 1\n"
+                            "v 0 1 1\n"
+                            "v -1 0 1\n"
+                            "v 0 -1 1\n"
+                            "f 1 2 3\n"
+                            "f 1 3 4\n"
+                            "f 1 4 5\n"
+                            "f 1 5 2\n";
     TmpFile f(tmp_path("rast_ao_off.obj"), obj);
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/false));
@@ -396,16 +380,17 @@ TEST(ao, stl_load_skips_compute_ao)
 {
     // STL uses unshared vertices so compute_ao is explicitly skipped (ext=="stl" guard).
     // All vertex ao values must stay at the loader default of 1.0.
-    TmpFile f(tmp_path("rast_ao_stl.stl"),
-              "solid test\n"
-              "facet normal 0 0 1\n"
-              "  outer loop\n"
-              "    vertex 0 0 0\n"
-              "    vertex 1 0 0\n"
-              "    vertex 0 1 0\n"
-              "  endloop\n"
-              "endfacet\n"
-              "endsolid test\n");
+    TmpFile f(
+        tmp_path("rast_ao_stl.stl"), "solid test\n"
+                                     "facet normal 0 0 1\n"
+                                     "  outer loop\n"
+                                     "    vertex 0 0 0\n"
+                                     "    vertex 1 0 0\n"
+                                     "    vertex 0 1 0\n"
+                                     "  endloop\n"
+                                     "endfacet\n"
+                                     "endsolid test\n"
+    );
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
     for (const auto &v : m.vertices)
@@ -416,25 +401,24 @@ TEST(ao, ply_load_runs_compute_ao)
 {
     // PLY + ao=true must run compute_ao() (unlike STL where ext=="stl" skips it).
     // Same concave-pit geometry as ao/concave_vertex_darkened: vertex 0 → ao = 0.85.
-    const std::string ply =
-        "ply\n"
-        "format ascii 1.0\n"
-        "element vertex 5\n"
-        "property float x\n"
-        "property float y\n"
-        "property float z\n"
-        "element face 4\n"
-        "property list uchar int vertex_indices\n"
-        "end_header\n"
-        "0 0 0\n"
-        "1 0 1\n"
-        "0 1 1\n"
-        "-1 0 1\n"
-        "0 -1 1\n"
-        "3 0 1 2\n"
-        "3 0 2 3\n"
-        "3 0 3 4\n"
-        "3 0 4 1\n";
+    const std::string ply = "ply\n"
+                            "format ascii 1.0\n"
+                            "element vertex 5\n"
+                            "property float x\n"
+                            "property float y\n"
+                            "property float z\n"
+                            "element face 4\n"
+                            "property list uchar int vertex_indices\n"
+                            "end_header\n"
+                            "0 0 0\n"
+                            "1 0 1\n"
+                            "0 1 1\n"
+                            "-1 0 1\n"
+                            "0 -1 1\n"
+                            "3 0 1 2\n"
+                            "3 0 2 3\n"
+                            "3 0 3 4\n"
+                            "3 0 4 1\n";
     TmpFile f(tmp_path("rast_ao_ply_concave.ply"), ply);
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
@@ -446,16 +430,15 @@ TEST(ao, convex_vertex_stays_at_one)
     // Spike tip at origin, 4 base verts at z=-1.
     // Tip normal = (0,0,1); centroid of neighbors = (0,0,-1);
     // curvature = dot((0,0,-1),(0,0,1)) = -1 (convex) → clamp(-0.5,0,0.15)=0 → ao=1.0.
-    const std::string obj =
-        "v 0 0 0\n"
-        "v 1 0 -1\n"
-        "v 0 1 -1\n"
-        "v -1 0 -1\n"
-        "v 0 -1 -1\n"
-        "f 1 2 3\n"
-        "f 1 3 4\n"
-        "f 1 4 5\n"
-        "f 1 5 2\n";
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 -1\n"
+                            "v 0 1 -1\n"
+                            "v -1 0 -1\n"
+                            "v 0 -1 -1\n"
+                            "f 1 2 3\n"
+                            "f 1 3 4\n"
+                            "f 1 4 5\n"
+                            "f 1 5 2\n";
     TmpFile f(tmp_path("rast_ao_convex.obj"), obj);
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
@@ -495,7 +478,7 @@ TEST(mesh_accessors, mat_at_oob_returns_first_material)
 {
     Mesh m;
     Material mat{};
-    mat.diffuse = {0.3f, 0.5f, 0.7f};
+    mat.diffuse = { 0.3f, 0.5f, 0.7f };
     m.materials.push_back(mat);
 
     const Material &r = m.mat_at(5u);

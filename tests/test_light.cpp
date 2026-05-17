@@ -13,12 +13,12 @@ static constexpr float EPS = 1e-5f;
 TEST(light, no_lights_returns_ambient_times_diffuse)
 {
     Material mat;
-    mat.diffuse = {0.5f, 0.5f, 0.5f};
-    mat.ambient = {0.5f, 0.5f, 0.5f}; // Ka == Kd (the common case when Ka is absent in MTL)
-    vec3 ambient{0.2f, 0.2f, 0.2f};
-    vec3 v{0, 0, 1};
+    mat.diffuse = { 0.5f, 0.5f, 0.5f };
+    mat.ambient = { 0.5f, 0.5f, 0.5f }; // Ka == Kd (the common case when Ka is absent in MTL)
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
+    vec3 v{ 0, 0, 1 };
 
-    vec3 r = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 1.0f);
+    vec3 r = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 1.0f);
     ASSERT_NEAR(r.x, 0.1f, EPS); // 0.2 * 0.5 * 1.0
     ASSERT_NEAR(r.y, 0.1f, EPS);
     ASSERT_NEAR(r.z, 0.1f, EPS);
@@ -27,11 +27,11 @@ TEST(light, no_lights_returns_ambient_times_diffuse)
 TEST(light, ao_scales_ambient)
 {
     Material mat;
-    vec3 ambient{0.4f, 0.4f, 0.4f};
-    vec3 v{0, 0, 1};
+    vec3 ambient{ 0.4f, 0.4f, 0.4f };
+    vec3 v{ 0, 0, 1 };
 
-    vec3 full = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 1.0f);
-    vec3 half = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 0.5f);
+    vec3 full = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 1.0f);
+    vec3 half = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 0.5f);
 
     ASSERT_NEAR(half.x, full.x * 0.5f, EPS);
     ASSERT_NEAR(half.y, full.y * 0.5f, EPS);
@@ -43,14 +43,14 @@ TEST(light, ao_does_not_affect_direct_diffuse)
     // A light aligned with the normal: diffuse contribution = 1.0.
     // AO is ambient-only, so changing AO must leave the direct term unchanged.
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0}; // isolate diffuse
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 }; // isolate diffuse
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0}; // kill ambient to expose direct only
-    vec3 v{0, 0, 1};
-    vec3 n{0, 1, 0};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 }; // kill ambient to expose direct only
+    vec3 v{ 0, 0, 1 };
+    vec3 n{ 0, 1, 0 };
 
     vec3 full = compute_lighting(n, v, &l, 1, ambient, mat, 1.0f);
     vec3 zero_ao = compute_lighting(n, v, &l, 1, ambient, mat, 0.0f);
@@ -66,14 +66,14 @@ TEST(light, ao_does_not_affect_direct_diffuse)
 TEST(light, perpendicular_light_gives_max_diffuse)
 {
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 };
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 1, 0}; // view along same direction → no specular peak issues
-    vec3 n{0, 1, 0}; // aligned with light → dot=1
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 1, 0 }; // view along same direction → no specular peak issues
+    vec3 n{ 0, 1, 0 }; // aligned with light → dot=1
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     // Diffuse = diffuse_color * light_color * dot = 1*1*1 = 1 per channel,
@@ -86,14 +86,14 @@ TEST(light, perpendicular_light_gives_max_diffuse)
 TEST(light, back_facing_light_contributes_no_diffuse)
 {
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 };
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 0, 1};
-    vec3 n{0, -1, 0}; // faces away from light → dot = -1
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 0, 1 };
+    vec3 n{ 0, -1, 0 }; // faces away from light → dot = -1
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_NEAR(r.x, 0.0f, EPS);
@@ -104,14 +104,14 @@ TEST(light, back_facing_light_contributes_no_diffuse)
 TEST(light, tangential_light_contributes_no_diffuse)
 {
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 };
     Light l;
-    l.direction = {1, 0, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 0, 1};
-    vec3 n{0, 1, 0}; // perpendicular to light → dot = 0, no contribution
+    l.direction = { 1, 0, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 0, 1 };
+    vec3 n{ 0, 1, 0 }; // perpendicular to light → dot = 0, no contribution
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_NEAR(r.x, 0.0f, EPS);
@@ -120,14 +120,14 @@ TEST(light, tangential_light_contributes_no_diffuse)
 TEST(light, light_color_tints_diffuse)
 {
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 };
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 0, 0}; // pure red
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 1, 0};
-    vec3 n{0, 1, 0};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 0, 0 }; // pure red
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 1, 0 };
+    vec3 n{ 0, 1, 0 };
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_NEAR(r.x, 1.0f, EPS);
@@ -142,15 +142,15 @@ TEST(light, specular_peaks_when_half_vector_equals_normal)
     // If view direction == light direction, then half-vector == light == normal,
     // so dot(n, h) = 1 and specular term = mat.specular * 1 ^ shininess.
     Material mat;
-    mat.diffuse = {0, 0, 0}; // isolate specular
-    mat.specular = {1, 1, 1};
+    mat.diffuse = { 0, 0, 0 }; // isolate specular
+    mat.specular = { 1, 1, 1 };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 1, 0};
-    vec3 n{0, 1, 0};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 1, 0 };
+    vec3 n{ 0, 1, 0 };
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_NEAR(r.x, 1.0f, EPS);
@@ -161,19 +161,19 @@ TEST(light, specular_peaks_when_half_vector_equals_normal)
 TEST(light, specular_is_strictly_smaller_off_peak)
 {
     Material mat;
-    mat.diffuse = {0, 0, 0};
-    mat.specular = {1, 1, 1};
+    mat.diffuse = { 0, 0, 0 };
+    mat.specular = { 1, 1, 1 };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 n{0, 1, 0};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 n{ 0, 1, 0 };
 
-    vec3 peak = compute_lighting(n, vec3{0, 1, 0}, &l, 1, ambient, mat);
+    vec3 peak = compute_lighting(n, vec3{ 0, 1, 0 }, &l, 1, ambient, mat);
     // View rotated 45° away from the light — half-vector no longer aligns
     // with the normal, so specular contribution drops.
-    vec3 off = compute_lighting(n, normalize(vec3{1, 1, 0}), &l, 1, ambient, mat);
+    vec3 off = compute_lighting(n, normalize(vec3{ 1, 1, 0 }), &l, 1, ambient, mat);
     ASSERT_TRUE(off.x < peak.x);
     ASSERT_TRUE(off.x >= 0.0f);
 }
@@ -183,16 +183,16 @@ TEST(light, specular_is_strictly_smaller_off_peak)
 TEST(light, multiple_lights_sum_their_contributions)
 {
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {0, 0, 0};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 0, 0, 0 };
     Light ls[2];
-    ls[0].direction = {0, 1, 0};
-    ls[0].color = {0.3f, 0, 0};
-    ls[1].direction = {0, 1, 0};
-    ls[1].color = {0, 0.5f, 0};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 1, 0};
-    vec3 n{0, 1, 0};
+    ls[0].direction = { 0, 1, 0 };
+    ls[0].color = { 0.3f, 0, 0 };
+    ls[1].direction = { 0, 1, 0 };
+    ls[1].color = { 0, 0.5f, 0 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 1, 0 };
+    vec3 n{ 0, 1, 0 };
 
     vec3 r = compute_lighting(n, v, ls, 2, ambient, mat);
     ASSERT_NEAR(r.x, 0.3f, EPS);
@@ -255,16 +255,16 @@ TEST(light, overload_derives_view_vector)
     // The pos/eye_pos overload must produce the same result as the precomputed-v
     // overload when v = normalize(eye_pos - pos).
     Material mat;
-    mat.diffuse = {0.8f, 0.6f, 0.4f};
-    mat.specular = {0.5f, 0.5f, 0.5f};
+    mat.diffuse = { 0.8f, 0.6f, 0.4f };
+    mat.specular = { 0.5f, 0.5f, 0.5f };
     mat.shininess = 16.0f;
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0.1f, 0.1f, 0.1f};
-    vec3 n{0, 1, 0};
-    vec3 pos{0, 0, 0};
-    vec3 eye_pos{0, 0, 5};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
+    vec3 n{ 0, 1, 0 };
+    vec3 pos{ 0, 0, 0 };
+    vec3 eye_pos{ 0, 0, 5 };
 
     vec3 v = normalize(eye_pos - pos);
     vec3 r1 = compute_lighting(n, v, &l, 1, ambient, mat);
@@ -280,16 +280,16 @@ TEST(light, normal_is_normalized_internally)
     // Passing a non-unit normal (scaled by 5) must give identical results to
     // the pre-normalized form since compute_lighting normalizes internally.
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {1, 1, 1};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 1, 1, 1 };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0, 1, 0};
-    l.color = {1, 1, 1};
-    vec3 ambient{0.2f, 0.2f, 0.2f};
-    vec3 v{0, 1, 0};
-    vec3 n_unit{0, 1, 0};
-    vec3 n_scaled{0, 5, 0};
+    l.direction = { 0, 1, 0 };
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
+    vec3 v{ 0, 1, 0 };
+    vec3 n_unit{ 0, 1, 0 };
+    vec3 n_scaled{ 0, 5, 0 };
 
     vec3 r_unit = compute_lighting(n_unit, v, &l, 1, ambient, mat);
     vec3 r_scaled = compute_lighting(n_scaled, v, &l, 1, ambient, mat);
@@ -304,17 +304,17 @@ TEST(light, multiple_lights_sum_specular)
     // Two lights, specular isolated (diffuse = 0), distinct colors.
     // Result must equal the per-light sum.
     Material mat;
-    mat.diffuse = {0, 0, 0};
-    mat.specular = {1, 1, 1};
+    mat.diffuse = { 0, 0, 0 };
+    mat.specular = { 1, 1, 1 };
     mat.shininess = 32.0f;
     Light ls[2];
-    ls[0].direction = {0, 1, 0};
-    ls[0].color = {0.4f, 0, 0};
-    ls[1].direction = {0, 1, 0};
-    ls[1].color = {0, 0.6f, 0};
-    vec3 ambient{0, 0, 0};
-    vec3 v{0, 1, 0}; // half-vector == normal → ndh = 1 for both lights
-    vec3 n{0, 1, 0};
+    ls[0].direction = { 0, 1, 0 };
+    ls[0].color = { 0.4f, 0, 0 };
+    ls[1].direction = { 0, 1, 0 };
+    ls[1].color = { 0, 0.6f, 0 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 v{ 0, 1, 0 }; // half-vector == normal → ndh = 1 for both lights
+    vec3 n{ 0, 1, 0 };
 
     // Individual contributions
     vec3 r0 = compute_lighting(n, v, &ls[0], 1, ambient, mat);
@@ -332,10 +332,10 @@ TEST(light, ao_zero_zeroes_ambient)
 {
     // ao=0 must zero the ambient term even when ambient and mat.ambient are non-zero.
     Material mat;
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    vec3 ambient{0.5f, 0.5f, 0.5f};
-    vec3 v{0, 0, 1};
-    vec3 r = compute_lighting(vec3{0, 1, 0}, v, nullptr, 0, ambient, mat, 0.0f);
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient{ 0.5f, 0.5f, 0.5f };
+    vec3 v{ 0, 0, 1 };
+    vec3 r = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 0.0f);
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -346,16 +346,16 @@ TEST(light, ndh_zero_gates_specular)
     // v = -l → h = l + v = {0,0,0}: ndh_raw = 0, gate fires before hh division.
     // Without the gate, hh = 0 → 0/0 = NaN. Gate must suppress specular cleanly.
     Material mat;
-    mat.diffuse = {0.0f, 0.0f, 0.0f};
-    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.diffuse = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 1.0f, 1.0f, 1.0f };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0.0f, 1.0f, 0.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
-    vec3 ambient{0, 0, 0};
-    vec3 n{0.0f, 1.0f, 0.0f};
+    l.direction = { 0.0f, 1.0f, 0.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 n{ 0.0f, 1.0f, 0.0f };
 
-    vec3 r = compute_lighting(n, vec3{0.0f, -1.0f, 0.0f}, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, vec3{ 0.0f, -1.0f, 0.0f }, &l, 1, ambient, mat);
 
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
@@ -368,15 +368,15 @@ TEST(light, specular_independent_of_diffuse_branch)
     // not entered. v=normalize({-1,1,0}): h=normalize(l+v) has h.y≈0.924>0 so
     // the specular branch still fires. Proves the two branches are independent.
     Material mat;
-    mat.diffuse = {1, 1, 1};
-    mat.specular = {1, 1, 1};
+    mat.diffuse = { 1, 1, 1 };
+    mat.specular = { 1, 1, 1 };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {1, 0, 0}; // tangential to n={0,1,0}: diff = 0, branch skipped
-    l.color = {1, 1, 1};
-    vec3 ambient{0, 0, 0};
-    vec3 n{0, 1, 0};
-    vec3 v = normalize(vec3{-1, 1, 0}); // half-vector tilted toward n → ndh > 0
+    l.direction = { 1, 0, 0 }; // tangential to n={0,1,0}: diff = 0, branch skipped
+    l.color = { 1, 1, 1 };
+    vec3 ambient{ 0, 0, 0 };
+    vec3 n{ 0, 1, 0 };
+    vec3 v = normalize(vec3{ -1, 1, 0 }); // half-vector tilted toward n → ndh > 0
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_TRUE(r.x > 0.0f);
@@ -389,15 +389,15 @@ TEST(light, negative_ndh_suppresses_specular)
     // diff=1 (enter outer if); v={0,-3,0} → h={0,-2,0} → ndh_raw=-2 < 0 → inner
     // if skipped. Result must be diffuse-only; specular={1,1,1} would inflate it.
     Material mat;
-    mat.diffuse = {0.8f, 0.6f, 0.4f};
-    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.diffuse = { 0.8f, 0.6f, 0.4f };
+    mat.specular = { 1.0f, 1.0f, 1.0f };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0.0f, 1.0f, 0.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
-    vec3 ambient{0.0f, 0.0f, 0.0f};
-    vec3 n{0.0f, 1.0f, 0.0f};
-    vec3 v{0.0f, -3.0f, 0.0f}; // h = l+v = {0,-2,0}, ndh_raw = -2
+    l.direction = { 0.0f, 1.0f, 0.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    vec3 n{ 0.0f, 1.0f, 0.0f };
+    vec3 v{ 0.0f, -3.0f, 0.0f }; // h = l+v = {0,-2,0}, ndh_raw = -2
 
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_NEAR(r.x, 0.8f, EPS);
@@ -425,15 +425,15 @@ TEST(light, assume_unit_precomputed_v_matches_regular)
 {
     // Both overloads must produce identical output for a unit normal.
     Material mat;
-    mat.diffuse = {0.8f, 0.6f, 0.4f};
-    mat.specular = {0.3f, 0.3f, 0.3f};
+    mat.diffuse = { 0.8f, 0.6f, 0.4f };
+    mat.specular = { 0.3f, 0.3f, 0.3f };
     mat.shininess = 16.0f;
     Light l;
-    l.direction = {0.0f, 1.0f, 0.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
-    vec3 ambient{0.1f, 0.1f, 0.1f};
-    vec3 n{0.0f, 1.0f, 0.0f};
-    vec3 v = normalize(vec3{0.0f, 1.0f, 1.0f});
+    l.direction = { 0.0f, 1.0f, 0.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
+    vec3 n{ 0.0f, 1.0f, 0.0f };
+    vec3 v = normalize(vec3{ 0.0f, 1.0f, 1.0f });
 
     vec3 r_reg = compute_lighting(n, v, &l, 1, ambient, mat);
     vec3 r_au = compute_lighting(assume_unit, n, v, &l, 1, ambient, mat);
@@ -447,17 +447,17 @@ TEST(light, assume_unit_pos_eye_derives_v_correctly)
 {
     // The pos/eye_pos assume_unit overload must match the regular pos/eye_pos overload.
     Material mat;
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.5f, 0.5f, 0.5f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.5f, 0.5f, 0.5f };
     mat.shininess = 32.0f;
     Light l;
-    l.direction = {0.0f, 1.0f, 0.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    l.direction = { 0.0f, 1.0f, 0.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     const float ao = 0.7f;
-    vec3 normal{0.0f, 1.0f, 0.0f};
-    vec3 pos{0.0f, 0.0f, 0.0f};
-    vec3 eye_pos{0.0f, 2.0f, 3.0f};
+    vec3 normal{ 0.0f, 1.0f, 0.0f };
+    vec3 pos{ 0.0f, 0.0f, 0.0f };
+    vec3 eye_pos{ 0.0f, 2.0f, 3.0f };
 
     vec3 r_reg = compute_lighting(pos, normal, eye_pos, &l, 1, ambient, mat, ao);
     vec3 r_au = compute_lighting(assume_unit, pos, normal, eye_pos, &l, 1, ambient, mat, ao);

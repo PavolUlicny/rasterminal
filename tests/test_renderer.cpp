@@ -40,7 +40,7 @@ TEST(renderer, wireframe_visible_triangle_drawn)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
 }
 
@@ -54,7 +54,7 @@ TEST(renderer, wireframe_backface_culled)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
@@ -68,7 +68,7 @@ TEST(renderer, wireframe_culling_disabled_renders_backface)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
 }
 
@@ -77,12 +77,12 @@ TEST(renderer, wireframe_uses_wireframe_color)
 {
     Renderer r(1);
     r.mode = ShadingMode::Wireframe;
-    r.wireframe_color = {255, 0, 0}; // red
+    r.wireframe_color = { 255, 0, 0 }; // red
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
 
     int drawn = 0;
     int wrong = 0;
@@ -94,8 +94,7 @@ TEST(renderer, wireframe_uses_wireframe_color)
             if (c.r > 0 || c.g > 0 || c.b > 0)
             {
                 drawn++;
-                if (std::abs(static_cast<int>(c.r) - 255) > 2 ||
-                    c.g > 2 || c.b > 2)
+                if (std::abs(static_cast<int>(c.r) - 255) > 2 || c.g > 2 || c.b > 2)
                     wrong++;
             }
         }
@@ -118,8 +117,8 @@ TEST(renderer, flat_shading_renders_lit_pixel)
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -140,8 +139,8 @@ TEST(renderer, gouraud_shading_renders_lit_pixel)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -162,8 +161,8 @@ TEST(renderer, phong_shading_renders_lit_pixel)
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -188,7 +187,7 @@ TEST(renderer, mt_backface_culled)
     Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
     Camera cam = make_test_camera();
     Light light = make_key_light_z();
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -205,7 +204,7 @@ TEST(renderer, mt_double_sided_renders_backface)
     Mesh mesh = make_unit_triangle(/*flip_winding=*/true, /*double_sided=*/true);
     Camera cam = make_test_camera();
     // Ambient-only so color is non-zero even with flip_normals darkening diffuse.
-    vec3 ambient{0.5f, 0.5f, 0.5f};
+    vec3 ambient{ 0.5f, 0.5f, 0.5f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -225,7 +224,7 @@ TEST(renderer, empty_mesh_completes)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
@@ -236,8 +235,8 @@ TEST(renderer, repeated_render_deterministic)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
 
     Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
@@ -261,8 +260,8 @@ TEST(renderer, large_triangle_spans_all_bands)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.2f, 0.2f, 0.2f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.2f, 0.2f, 0.2f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -287,7 +286,7 @@ TEST(renderer, zero_lights_renders_ambient_only)
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     // Pure red ambient so we can distinguish it from black.
-    vec3 ambient{0.5f, 0.0f, 0.0f};
+    vec3 ambient{ 0.5f, 0.0f, 0.0f };
 
     // Build a dummy shadow map (not used when n_lights=0).
     ShadowMap sm;
@@ -319,13 +318,13 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // solid green
     mesh.materials[0].diffuse_tex = 0;
-    mesh.materials[0].diffuse = {1.0f, 1.0f, 1.0f};
-    mesh.materials[0].ambient = {1.0f, 1.0f, 1.0f};
-    mesh.materials[0].specular = {0.0f, 0.0f, 0.0f};
+    mesh.materials[0].diffuse = { 1.0f, 1.0f, 1.0f };
+    mesh.materials[0].ambient = { 1.0f, 1.0f, 1.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
 
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f}); // white light
-    vec3 ambient{0.0f, 0.0f, 0.0f};                     // no ambient so tex colour is clear
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f }); // white light
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };                     // no ambient so tex colour is clear
 
     // Render with texture enabled.
     Framebuffer fb_tex(40, 20, /*headless=*/true);
@@ -365,13 +364,13 @@ TEST(renderer, show_texture_toggle_changes_pixel)
 TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
 {
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     // specular_tex → solid black (zeroes specular if sampled).
     // normal_tex  → flat neutral (128,128,255 = straight-up tangent normal).
     Mesh mesh = make_unit_triangle();
-    mesh.materials[0].specular = {1.0f, 1.0f, 1.0f};
+    mesh.materials[0].specular = { 1.0f, 1.0f, 1.0f };
     mesh.materials[0].shininess = 32.0f;
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 0));       // idx 0: black stex
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 128, 128, 255)); // idx 1: flat nmap
@@ -380,7 +379,7 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
 
     // Baseline: same material, specular_tex/normal_tex at default -1.
     Mesh base = make_unit_triangle();
-    base.materials[0].specular = {1.0f, 1.0f, 1.0f};
+    base.materials[0].specular = { 1.0f, 1.0f, 1.0f };
     base.materials[0].shininess = 32.0f;
 
     Renderer r(1);
@@ -400,10 +399,14 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
 
     Color cw = fb_with.get_pixel(20, 10);
     Color cb = fb_base.get_pixel(20, 10);
-    auto diff = [](uint8_t a, uint8_t b)
-    { return a > b ? a - b : b - a; };
+    auto diff = [](uint8_t a, uint8_t b) { return a > b ? a - b : b - a; };
     if (diff(cw.r, cb.r) > 2 || diff(cw.g, cb.g) > 2 || diff(cw.b, cb.b) > 2)
-        ASSERT_FAIL("show_tex=false: stex/nmap not suppressed — output differs from baseline (" + std::to_string(static_cast<int>(cw.r)) + "," + std::to_string(static_cast<int>(cw.g)) + "," + std::to_string(static_cast<int>(cw.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," + std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")");
+        ASSERT_FAIL(
+            "show_tex=false: stex/nmap not suppressed — output differs from baseline (" +
+            std::to_string(static_cast<int>(cw.r)) + "," + std::to_string(static_cast<int>(cw.g)) + "," +
+            std::to_string(static_cast<int>(cw.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," +
+            std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")"
+        );
 }
 
 // ─── Group J: double-sided lighting correctness ───────────────────────────────
@@ -420,17 +423,17 @@ static Mesh make_back_facing_double_sided_triangle()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, -1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, -1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -464,24 +467,24 @@ static Mesh make_two_back_face_mixed_mesh()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, -1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, -1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-3.0f, -1.0f, 0.0f};
+    v.pos = { -3.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-2.0f, 1.0f, 0.0f};
+    v.pos = { -2.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {-1.0f, -1.0f, 0.0f};
-    m.vertices.push_back(v);
-
-    v.pos = {1.0f, -1.0f, 0.0f};
-    m.vertices.push_back(v);
-    v.pos = {2.0f, 1.0f, 0.0f};
-    m.vertices.push_back(v);
-    v.pos = {3.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(6, {1.0f, 0.0f, 0.0f});
+    v.pos = { 1.0f, -1.0f, 0.0f };
+    m.vertices.push_back(v);
+    v.pos = { 2.0f, 1.0f, 0.0f };
+    m.vertices.push_back(v);
+    v.pos = { 3.0f, -1.0f, 0.0f };
+    m.vertices.push_back(v);
+
+    m.tangents.resize(6, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -511,8 +514,8 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -524,7 +527,10 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
-        ASSERT_FAIL("Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — normal flip not applied");
+        ASSERT_FAIL(
+            "Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
+            ") — normal flip not applied"
+        );
 }
 
 // J2: Gouraud — same scene.
@@ -532,8 +538,8 @@ TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Gouraud;
@@ -545,7 +551,10 @@ TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
-        ASSERT_FAIL("Gouraud double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — normal flip not applied");
+        ASSERT_FAIL(
+            "Gouraud double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
+            ") — normal flip not applied"
+        );
 }
 
 // J3: Flat — same scene; covers the separate face-normal negation branch.
@@ -553,8 +562,8 @@ TEST(renderer, flat_double_sided_back_face_lit_correctly)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Flat;
@@ -566,7 +575,10 @@ TEST(renderer, flat_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
-        ASSERT_FAIL("Flat double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) + ") — face normal flip not applied");
+        ASSERT_FAIL(
+            "Flat double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
+            ") — face normal flip not applied"
+        );
 }
 
 // J4: cull off, single-sided back-face → drawn but dark.
@@ -576,8 +588,8 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
 {
     Mesh mesh = make_back_facing_single_sided_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -589,7 +601,10 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
-        ASSERT_FAIL("cull-off single-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) + ") — flip applied when it should not be");
+        ASSERT_FAIL(
+            "cull-off single-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
+            ") — flip applied when it should not be"
+        );
 }
 
 // J5: cull off, double-sided back-face → also drawn but dark.
@@ -598,8 +613,8 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -611,7 +626,10 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
-        ASSERT_FAIL("cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) + ") — flip applied when cull is off");
+        ASSERT_FAIL(
+            "cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
+            ") — flip applied when cull is off"
+        );
 }
 
 // J6: front-facing double-sided triangle — flip must NOT fire.
@@ -621,8 +639,8 @@ TEST(renderer, double_sided_front_face_lit_normally)
 {
     Mesh mesh = make_unit_triangle(false, true);
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -634,7 +652,10 @@ TEST(renderer, double_sided_front_face_lit_normally)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
-        ASSERT_FAIL("front-facing double-sided R too low (" + std::to_string(static_cast<int>(c.r)) + ") — flip incorrectly applied to front face");
+        ASSERT_FAIL(
+            "front-facing double-sided R too low (" + std::to_string(static_cast<int>(c.r)) +
+            ") — flip incorrectly applied to front face"
+        );
 }
 
 // J7: mixed mesh — only the double-sided back-face triangle is drawn.
@@ -644,7 +665,7 @@ TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
 {
     Mesh mesh = make_two_back_face_mixed_mesh();
     Camera cam = make_test_camera();
-    vec3 ambient{0.5f, 0.0f, 0.0f};
+    vec3 ambient{ 0.5f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -657,7 +678,9 @@ TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
     ASSERT_TRUE(was_drawn(fb, 16, 10));
     Color c_ds = fb.get_pixel(16, 10);
     if (c_ds.r < 80)
-        ASSERT_FAIL("double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + ") — may have been culled");
+        ASSERT_FAIL(
+            "double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + ") — may have been culled"
+        );
 
     // Single-sided triangle must be culled — pixel stays undrawn.
     if (was_drawn(fb, 24, 10))
@@ -669,7 +692,7 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
-    vec3 ambient{0.5f, 0.5f, 0.5f};
+    vec3 ambient{ 0.5f, 0.5f, 0.5f };
 
     Renderer r;
     r.mode = ShadingMode::Wireframe;
@@ -691,13 +714,13 @@ TEST(renderer, wireframe_shadow_map_is_ignored)
 
     Framebuffer fb1(40, 20, /*headless=*/true);
     fb1.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb1);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb1);
     const int count1 = count_drawn_pixels(fb1);
 
     ShadowMap sm; // empty depth vector — wireframe never calls in_shadow()
     Framebuffer fb2(40, 20, /*headless=*/true);
     fb2.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb2, &sm);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb2, &sm);
     const int count2 = count_drawn_pixels(fb2);
 
     ASSERT_EQ(count1, count2);
@@ -715,7 +738,7 @@ TEST(renderer, wireframe_show_texture_toggle_is_noop)
         r.show_texture = show_tex;
         Framebuffer fb(40, 20, /*headless=*/true);
         fb.clear();
-        r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+        r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
         return count_drawn_pixels(fb);
     };
 

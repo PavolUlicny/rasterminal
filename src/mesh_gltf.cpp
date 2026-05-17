@@ -71,12 +71,10 @@ bool Mesh::load_gltf(const std::string &path)
         if (!m)
             return mat;
         const cgltf_pbr_metallic_roughness &pbr = m->pbr_metallic_roughness;
-        mat.diffuse = {pbr.base_color_factor[0],
-                       pbr.base_color_factor[1],
-                       pbr.base_color_factor[2]};
+        mat.diffuse = { pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2] };
         mat.ambient = mat.diffuse;
         const float mf = pbr.metallic_factor;
-        mat.specular = {mf, mf, mf};
+        mat.specular = { mf, mf, mf };
         mat.shininess = (1.0f - pbr.roughness_factor) * 126.0f + 2.0f;
         if (pbr.base_color_texture.texture)
             mat.diffuse_tex = load_tex(pbr.base_color_texture.texture->image);
@@ -168,7 +166,7 @@ bool Mesh::load_gltf(const std::string &path)
                     {
                         float uv[2];
                         cgltf_accessor_read_float(uv_acc, i, uv, 2);
-                        v.uv = {uv[0], 1.0f - uv[1]};
+                        v.uv = { uv[0], 1.0f - uv[1] };
                     }
 
                     v.ao = 1.0f;
@@ -180,12 +178,12 @@ bool Mesh::load_gltf(const std::string &path)
 
                 if (color_acc)
                 {
-                    vertex_colors.resize(vert_base + n_verts, {1.0f, 1.0f, 1.0f});
+                    vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
                     for (size_t i = 0; i < n_verts; i++)
                     {
                         float c[4];
                         cgltf_accessor_read_float(color_acc, i, c, 4);
-                        vertex_colors[vert_base + i] = {c[0], c[1], c[2]};
+                        vertex_colors[vert_base + i] = { c[0], c[1], c[2] };
                     }
                     has_vertex_colors = true;
                 }
@@ -226,8 +224,7 @@ bool Mesh::load_gltf(const std::string &path)
             visit(node->children[i]);
     };
 
-    const cgltf_scene *scene = data->scene ? data->scene
-                                           : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
+    const cgltf_scene *scene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (scene)
         for (size_t i = 0; i < scene->nodes_count; i++)
             visit(scene->nodes[i]);

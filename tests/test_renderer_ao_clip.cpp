@@ -16,17 +16,17 @@ static Mesh make_straddling_triangle_one_behind()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-2.0f, -2.0f, 0.0f};
+    v.pos = { -2.0f, -2.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {2.0f, -2.0f, 0.0f};
+    v.pos = { 2.0f, -2.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 0.0f, 4.95f};
+    v.pos = { 0.0f, 0.0f, 4.95f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -47,17 +47,17 @@ static Mesh make_straddling_triangle_two_behind()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {0.0f, -2.0f, 0.0f};
+    v.pos = { 0.0f, -2.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.09f, 0.0f, 4.95f};
+    v.pos = { 0.09f, 0.0f, 4.95f };
     m.vertices.push_back(v);
-    v.pos = {-0.09f, 0.0f, 4.95f};
+    v.pos = { -0.09f, 0.0f, 4.95f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -77,17 +77,17 @@ static Mesh make_fully_behind_triangle()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
-    v.pos = {-1.0f, -1.0f, 4.95f};
+    v.pos = { -1.0f, -1.0f, 4.95f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 4.95f};
+    v.pos = { 1.0f, -1.0f, 4.95f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 4.95f};
+    v.pos = { 0.0f, 1.0f, 4.95f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -114,8 +114,8 @@ TEST(renderer, near_clip_one_vertex_behind_renders)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_straddling_triangle_one_behind();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -131,8 +131,8 @@ TEST(renderer, near_clip_two_vertices_behind_renders)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_straddling_triangle_two_behind();
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -149,7 +149,7 @@ TEST(renderer, near_clip_fully_behind_draws_nothing)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.1f, 0.1f, 0.1f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.1f, 0.1f, 0.1f }, fb);
     if (count_drawn_pixels(fb) != 0)
         ASSERT_FAIL("fully-behind triangle must not produce any pixels");
 }
@@ -164,7 +164,7 @@ TEST(renderer, near_clip_wireframe_straddling_renders)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) == 0)
         ASSERT_FAIL("wireframe: straddling triangle must draw clipped edges");
 }
@@ -178,7 +178,7 @@ TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, {0.0f, 0.0f, 0.0f}, fb);
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) != 0)
         ASSERT_FAIL("wireframe: fully-behind triangle must produce no pixels");
 }
@@ -193,8 +193,8 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
     Mesh mesh = make_unit_triangle(); // all vertices at z=0, clip w=5
     Camera cam = make_test_camera();
     cam.near_plane = 10.0f; // all w=5 < 10 → clip_near returns 0 for every tri
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -217,18 +217,16 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
 
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
     for (int j = 0; j <= grid_h; j++)
         for (int i = 0; i <= grid_w; i++)
         {
-            v.pos = {-half + static_cast<float>(i) * dx,
-                     -half + static_cast<float>(j) * dy,
-                     0.0f};
+            v.pos = { -half + static_cast<float>(i) * dx, -half + static_cast<float>(j) * dy, 0.0f };
             m.vertices.push_back(v);
         }
 
-    m.tangents.resize(m.vertices.size(), {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(m.vertices.size(), { 1.0f, 0.0f, 0.0f });
 
     for (int j = 0; j < grid_h; j++)
         for (int i = 0; i < grid_w; i++)
@@ -267,8 +265,8 @@ TEST(renderer, many_triangles_grid_renders_expected_coverage)
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
@@ -283,8 +281,8 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
 {
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
 
     Framebuffer fb1(40, 20, /*headless=*/true), fb4(40, 20, /*headless=*/true);
     fb1.clear();
@@ -303,8 +301,9 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
     int n1 = count_drawn_pixels(fb1);
     int n4 = count_drawn_pixels(fb4);
     if (n1 != n4)
-        ASSERT_FAIL("1-worker drew " + std::to_string(n1) + " px, 4-worker drew " +
-                    std::to_string(n4) + " px: must match");
+        ASSERT_FAIL(
+            "1-worker drew " + std::to_string(n1) + " px, 4-worker drew " + std::to_string(n4) + " px: must match"
+        );
 }
 
 // H3: rendering same mesh twice reuses same Renderer → second frame must match.
@@ -315,8 +314,8 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
 
     Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
@@ -327,8 +326,10 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     int n1 = count_drawn_pixels(fb1);
     int n2 = count_drawn_pixels(fb2);
     if (n1 != n2)
-        ASSERT_FAIL("second render drew " + std::to_string(n2) + " px vs first " +
-                    std::to_string(n1) + ": m_tri_cursor may not have been reset");
+        ASSERT_FAIL(
+            "second render drew " + std::to_string(n2) + " px vs first " + std::to_string(n1) +
+            ": m_tri_cursor may not have been reset"
+        );
     assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
 }
 
@@ -343,8 +344,8 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
     Mesh empty;
     empty.materials.push_back(Material{});
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.1f, 0.1f, 0.1f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
 
     Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     fb1.clear();
@@ -354,8 +355,10 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 
     int n = count_drawn_pixels(fb2);
     if (n != 0)
-        ASSERT_FAIL("empty mesh after grid: " + std::to_string(n) +
-                    " stale pixels remain — fb.clear() or tri-cursor reset may be broken");
+        ASSERT_FAIL(
+            "empty mesh after grid: " + std::to_string(n) +
+            " stale pixels remain — fb.clear() or tri-cursor reset may be broken"
+        );
 }
 
 // ─── AO mesh helpers ──────────────────────────────────────────────────────────
@@ -366,20 +369,20 @@ static Mesh make_unit_triangle_ao(float ao_a, float ao_b, float ao_c)
 {
     Mesh m;
     Vertex v{};
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
     v.ao = ao_a;
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
     v.ao = ao_b;
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
     v.ao = ao_c;
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -398,20 +401,20 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
 {
     Mesh m;
     Vertex v{};
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
     v.ao = ao_a;
-    v.pos = {-4.0f, -4.0f, 0.0f};
+    v.pos = { -4.0f, -4.0f, 0.0f };
     m.vertices.push_back(v);
     v.ao = ao_b;
-    v.pos = {4.0f, -4.0f, 0.0f};
+    v.pos = { 4.0f, -4.0f, 0.0f };
     m.vertices.push_back(v);
     v.ao = ao_c;
-    v.pos = {0.0f, 4.0f, 0.0f};
+    v.pos = { 0.0f, 4.0f, 0.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(3, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(3, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -439,7 +442,7 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -458,7 +461,7 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(1.0f, 1.0f, 1.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -476,7 +479,7 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     r.mode = ShadingMode::Flat;
     Mesh mesh = make_unit_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -484,8 +487,7 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     Color c = fb.get_pixel(20, 10);
     // face_ao = (1+0+0)/3 ≈ 0.333 → R = 0.8*0.333*255 ≈ 68; allow [50,90].
     if (c.r < 50 || c.r > 90)
-        ASSERT_FAIL("flat ao avg: R=" + std::to_string(static_cast<int>(c.r)) +
-                    " expected 50-90 (face_ao≈1/3)");
+        ASSERT_FAIL("flat ao avg: R=" + std::to_string(static_cast<int>(c.r)) + " expected 50-90 (face_ao≈1/3)");
 }
 
 // I3: Gouraud — all ao=0 → all compute_lighting calls yield 0 ambient → black.
@@ -496,7 +498,7 @@ TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -515,7 +517,7 @@ TEST(renderer, gouraud_ao_interpolates_across_triangle)
     r.mode = ShadingMode::Gouraud;
     Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -540,7 +542,7 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -558,7 +560,7 @@ TEST(renderer, phong_ao_interpolates_per_pixel)
     r.mode = ShadingMode::Phong;
     Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
     Camera cam = make_test_camera();
-    vec3 ambient{0.8f, 0.0f, 0.0f};
+    vec3 ambient{ 0.8f, 0.0f, 0.0f };
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
@@ -584,8 +586,8 @@ TEST(renderer, ao_does_not_affect_direct_diffuse)
     Renderer r(1);
     r.mode = ShadingMode::Phong;
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({0.5f, 0.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    Light light = make_key_light_z({ 0.5f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
     fb0.clear();

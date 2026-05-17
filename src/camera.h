@@ -5,7 +5,7 @@
 
 struct Camera
 {
-    vec3 target = {0.0f, 0.0f, 0.0f};
+    vec3 target = { 0.0f, 0.0f, 0.0f };
     float distance = 3.0f;
     quat orientation = quat::identity(); // camera's current rotation
     float fov = 1.0472f;                 // radians, 60 degrees

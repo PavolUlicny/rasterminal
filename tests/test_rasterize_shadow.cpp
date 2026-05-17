@@ -12,13 +12,13 @@ static Mesh make_occluder_z0()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.pos = {-10.0f, -10.0f, 0.0f};
+    v.pos = { -10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {10.0f, -10.0f, 0.0f};
+    v.pos = { 10.0f, -10.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 10.0f, 0.0f};
+    v.pos = { 0.0f, 10.0f, 0.0f };
     m.vertices.push_back(v);
-    m.triangles.push_back({{0, 1, 2}});
+    m.triangles.push_back({ { 0, 1, 2 } });
     m.materials.push_back({});
     return m;
 }
@@ -27,54 +27,42 @@ static Mesh make_occluder_z0()
 static Light make_light_z_shadow()
 {
     Light l{};
-    l.direction = {0.0f, 0.0f, 1.0f};
-    l.color = {1.0f, 1.0f, 1.0f};
+    l.direction = { 0.0f, 0.0f, 1.0f };
+    l.color = { 1.0f, 1.0f, 1.0f };
     return l;
 }
 
 // rasterize() wrapper: canonical screen triangle, caller-supplied world positions,
 // lit and shadowed colors, and shadow map.
 // Screen triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 fb.
-static void rast_shadow(Framebuffer &fb,
-                        vec3 pa, vec3 pb, vec3 pc,
-                        vec3 col, vec3 shad,
-                        const ShadowMap *sm)
+static void rast_shadow(Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, vec3 col, vec3 shad, const ShadowMap *sm)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec2 uv{0.5f, 0.5f};
-    rasterize(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-              col, col, col,
-              shad, shad, shad,
-              pa, pb, pc,
-              uv, uv, uv,
-              nullptr, 0.0f, sm, 0, 19);
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec2 uv{ 0.5f, 0.5f };
+    rasterize(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, col, col, col, shad, shad, shad, pa, pb, pc, uv, uv, uv, nullptr, 0.0f, sm, 0,
+        19
+    );
 }
 
 // rasterize_phong() wrapper: canonical triangle, caller-supplied world positions,
 // lights, material, and shadow map. ambient=(0,0,0) so ambient terms don't mask
 // whether the key light is included or excluded.
-static void rast_phong_shadow(Framebuffer &fb,
-                              vec3 pa, vec3 pb, vec3 pc,
-                              const Light *lights, int n_lights,
-                              const Material &mat,
-                              const ShadowMap *sm)
+static void rast_phong_shadow(
+    Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, const Light *lights, int n_lights, const Material &mat,
+    const ShadowMap *sm
+)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f};
-    vec3 white{1.0f, 1.0f, 1.0f};
-    vec3 eye{20.0f, 10.0f, -100.0f};
-    vec3 ambient{0.0f, 0.0f, 0.0f};
-    vec2 uv{0.5f, 0.5f};
-    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                    pa, pb, pc,
-                    normal, normal, normal,
-                    tan, tan, tan,
-                    uv, uv, uv,
-                    1.0f, 1.0f, 1.0f,
-                    white, white, white, false,
-                    eye, lights, n_lights, ambient, mat,
-                    nullptr, nullptr, nullptr, sm,
-                    0, 19);
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 20.0f, 10.0f, -100.0f };
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    rasterize_phong(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, pa, pb, pc, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f, 1.0f,
+        1.0f, white, white, white, false, eye, lights, n_lights, ambient, mat, nullptr, nullptr, nullptr, sm, 0, 19
+    );
 }
 
 // ─── rasterizer shadow integration ───────────────────────────────────────────
@@ -93,8 +81,8 @@ TEST(rasterize, shadow_lit_position_matches_nullptr)
 {
     Light light = make_light_z_shadow();
     ShadowMap sm = build_shadow_map(make_occluder_z0(), light);
-    vec3 above{0.0f, 0.0f, 10.0f};
-    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    vec3 above{ 0.0f, 0.0f, 10.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
 
     Framebuffer fb_null(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_shadow(fb_null, above, above, above, red, blue, nullptr);
@@ -112,8 +100,8 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
 {
     Light light = make_light_z_shadow();
     ShadowMap sm = build_shadow_map(make_occluder_z0(), light);
-    vec3 below{0.0f, 0.0f, -5.0f};
-    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
+    vec3 below{ 0.0f, 0.0f, -5.0f };
+    vec3 red{ 1.0f, 0.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
 
     Framebuffer fb(40, 20, /*headless=*/true);
     rast_shadow(fb, below, below, below, red, blue, &sm);
@@ -121,9 +109,14 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.b < 250)
-        ASSERT_FAIL("B too low (" + std::to_string(static_cast<int>(c.b)) + "): occluded position should use shadowed color (blue)");
+        ASSERT_FAIL(
+            "B too low (" + std::to_string(static_cast<int>(c.b)) +
+            "): occluded position should use shadowed color (blue)"
+        );
     if (c.r > 5)
-        ASSERT_FAIL("R too high (" + std::to_string(static_cast<int>(c.r)) + "): lit color (red) must not appear in shadow");
+        ASSERT_FAIL(
+            "R too high (" + std::to_string(static_cast<int>(c.r)) + "): lit color (red) must not appear in shadow"
+        );
 }
 
 // ── Group B: rasterize_phong() ────────────────────────────────────────────────
@@ -134,14 +127,14 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
 TEST(rasterize_phong, shadow_lit_position_matches_nullptr)
 {
     Light key{};
-    key.direction = {0.0f, 0.0f, 1.0f};
-    key.color = {1.0f, 0.0f, 0.0f};
+    key.direction = { 0.0f, 0.0f, 1.0f };
+    key.color = { 1.0f, 0.0f, 0.0f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {0.0f, 0.0f, 0.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     ShadowMap sm = build_shadow_map(make_occluder_z0(), make_light_z_shadow());
-    vec3 above{0.0f, 0.0f, 10.0f};
+    vec3 above{ 0.0f, 0.0f, 10.0f };
 
     Framebuffer fb_null(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_phong_shadow(fb_null, above, above, above, &key, 1, mat, nullptr);
@@ -162,16 +155,16 @@ TEST(rasterize_phong, shadow_lit_position_matches_nullptr)
 TEST(rasterize_phong, shadow_occluded_position_excludes_key_light)
 {
     Light lights[2];
-    lights[0].direction = {0.0f, 0.0f, 1.0f};
-    lights[0].color = {1.0f, 0.0f, 0.0f};
-    lights[1].direction = {1.0f, 0.0f, 0.0f};
-    lights[1].color = {0.0f, 1.0f, 0.0f};
+    lights[0].direction = { 0.0f, 0.0f, 1.0f };
+    lights[0].color = { 1.0f, 0.0f, 0.0f };
+    lights[1].direction = { 1.0f, 0.0f, 0.0f };
+    lights[1].color = { 0.0f, 1.0f, 0.0f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {0.0f, 0.0f, 0.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
     ShadowMap sm = build_shadow_map(make_occluder_z0(), make_light_z_shadow());
-    vec3 below{0.0f, 0.0f, -5.0f};
+    vec3 below{ 0.0f, 0.0f, -5.0f };
 
     Framebuffer fb_nosm(40, 20, /*headless=*/true), fb_sm(40, 20, /*headless=*/true);
     rast_phong_shadow(fb_nosm, below, below, below, lights, 2, mat, nullptr);
@@ -183,9 +176,15 @@ TEST(rasterize_phong, shadow_occluded_position_excludes_key_light)
         ASSERT_FAIL("without shadow: R too low, key light should give strong red diffuse");
     Color c = fb_sm.get_pixel(20, 10);
     if (c.r > 30)
-        ASSERT_FAIL("with shadow: R too high (" + std::to_string(static_cast<int>(c.r)) + "): key light must be excluded when fully occluded");
+        ASSERT_FAIL(
+            "with shadow: R too high (" + std::to_string(static_cast<int>(c.r)) +
+            "): key light must be excluded when fully occluded"
+        );
     if (c.g > 30)
-        ASSERT_FAIL("with shadow: G too high (" + std::to_string(static_cast<int>(c.g)) + "): fill light dir is tangential to normal, should give no diffuse");
+        ASSERT_FAIL(
+            "with shadow: G too high (" + std::to_string(static_cast<int>(c.g)) +
+            "): fill light dir is tangential to normal, should give no diffuse"
+        );
 }
 
 // ── Group C: rasterize_phong() manual shadow map ──────────────────────────────
@@ -224,27 +223,22 @@ namespace
         return sm;
     }
 
-    void draw_phong_manual_sm(Framebuffer &fb, const Light *lights, int n_lights,
-                              const Material &mat, const ShadowMap *sm)
+    void
+    draw_phong_manual_sm(Framebuffer &fb, const Light *lights, int n_lights, const Material &mat, const ShadowMap *sm)
     {
-        vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-        vec3 wpos{0.0f, 0.0f, 0.5f}; // maps to cx=cy=1024 with identity light_vp
-        vec3 normal{0.0f, 0.0f, 1.0f};
-        vec3 tan{1.0f, 0.0f, 0.0f};
-        vec3 white{1.0f, 1.0f, 1.0f};
-        vec3 eye{20.0f, 10.0f, -100.0f};
-        vec3 ambient{0.0f, 0.0f, 0.0f};
-        vec2 uv{0.5f, 0.5f};
-        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                        wpos, wpos, wpos,
-                        normal, normal, normal,
-                        tan, tan, tan,
-                        uv, uv, uv,
-                        1.0f, 1.0f, 1.0f,
-                        white, white, white, false,
-                        eye, lights, n_lights, ambient, mat,
-                        nullptr, nullptr, nullptr, sm,
-                        0, 19);
+        vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+        vec3 wpos{ 0.0f, 0.0f, 0.5f }; // maps to cx=cy=1024 with identity light_vp
+        vec3 normal{ 0.0f, 0.0f, 1.0f };
+        vec3 tan{ 1.0f, 0.0f, 0.0f };
+        vec3 white{ 1.0f, 1.0f, 1.0f };
+        vec3 eye{ 20.0f, 10.0f, -100.0f };
+        vec3 ambient{ 0.0f, 0.0f, 0.0f };
+        vec2 uv{ 0.5f, 0.5f };
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, wpos, wpos, wpos, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, lights, n_lights, ambient, mat, nullptr, nullptr, nullptr, sm,
+            0, 19
+        );
     }
 } // namespace
 
@@ -254,12 +248,12 @@ namespace
 TEST(rasterize_phong, partial_shadow_lerps_between_lit_and_shadowed)
 {
     Light key{};
-    key.direction = {0.0f, 0.0f, 1.0f}; // aligned with normal → maximum diffuse
-    key.color = {1.0f, 0.0f, 0.0f};     // red key — only R channel varies
+    key.direction = { 0.0f, 0.0f, 1.0f }; // aligned with normal → maximum diffuse
+    key.color = { 1.0f, 0.0f, 0.0f };     // red key — only R channel varies
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {0.0f, 0.0f, 0.0f}; // no ambient so shadow = black
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f }; // no ambient so shadow = black
+    mat.specular = { 0.0f, 0.0f, 0.0f };
 
     ShadowMap sm0 = make_manual_sm(0); // sf=0  → sf<=0  branch (fully lit)
     ShadowMap sm9 = make_manual_sm(9); // sf=1  → sf>=1  branch (fully shadowed)
@@ -280,11 +274,18 @@ TEST(rasterize_phong, partial_shadow_lerps_between_lit_and_shadowed)
     const int r_par = static_cast<int>(fb_par.get_pixel(20, 10).r);
 
     if (r_lit <= r_shd)
-        ASSERT_FAIL("lit must be brighter than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd));
+        ASSERT_FAIL(
+            "lit must be brighter than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd)
+        );
     if (r_par <= r_shd)
-        ASSERT_FAIL("partial must be brighter than fully shadowed: par=" + std::to_string(r_par) + " shd=" + std::to_string(r_shd));
+        ASSERT_FAIL(
+            "partial must be brighter than fully shadowed: par=" + std::to_string(r_par) +
+            " shd=" + std::to_string(r_shd)
+        );
     if (r_par >= r_lit)
-        ASSERT_FAIL("partial must be darker than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit));
+        ASSERT_FAIL(
+            "partial must be darker than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit)
+        );
 }
 
 // S7: n_lights=0 with shadow_map != nullptr. The shadow factor may be non-zero but
@@ -294,9 +295,9 @@ TEST(rasterize_phong, partial_shadow_lerps_between_lit_and_shadowed)
 TEST(rasterize_phong, n_lights_zero_with_shadow_map_matches_no_shadow)
 {
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
 
     ShadowMap sm9 = make_manual_sm(9); // sf=1 for wpos=(0,0,0.5)
 
@@ -317,12 +318,12 @@ TEST(rasterize_phong, n_lights_zero_with_shadow_map_matches_no_shadow)
 TEST(rasterize_phong, n_lights_one_fully_shadowed_gives_ambient_only)
 {
     Light key{};
-    key.direction = {0.0f, 0.0f, 1.0f};
-    key.color = {1.0f, 0.0f, 0.0f};
+    key.direction = { 0.0f, 0.0f, 1.0f };
+    key.color = { 1.0f, 0.0f, 0.0f };
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {0.0f, 0.0f, 0.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
 
     ShadowMap sm9 = make_manual_sm(9); // sf=1
 
@@ -339,7 +340,11 @@ TEST(rasterize_phong, n_lights_one_fully_shadowed_gives_ambient_only)
     if (r_lit < 200)
         ASSERT_FAIL("unoccluded with key light must be bright: R=" + std::to_string(r_lit));
     if (c_shd.r > 5 || c_shd.g > 5 || c_shd.b > 5)
-        ASSERT_FAIL("n_lights=1 fully shadowed: sl=key+1 n_shadow=0 → ambient-only → near-black, got (" + std::to_string(static_cast<int>(c_shd.r)) + "," + std::to_string(static_cast<int>(c_shd.g)) + "," + std::to_string(static_cast<int>(c_shd.b)) + ")");
+        ASSERT_FAIL(
+            "n_lights=1 fully shadowed: sl=key+1 n_shadow=0 → ambient-only → near-black, got (" +
+            std::to_string(static_cast<int>(c_shd.r)) + "," + std::to_string(static_cast<int>(c_shd.g)) + "," +
+            std::to_string(static_cast<int>(c_shd.b)) + ")"
+        );
 }
 
 // S10: Phong partial shadow (0 < sf < 1) with n_lights=0 exercises the else-branch.
@@ -350,32 +355,26 @@ TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
     // sm5: 5/9 PCF hits → sf≈5/9, strictly 0<sf<1 → else branch fires.
     ShadowMap sm5 = make_manual_sm(5);
     Material mat{};
-    mat.diffuse = {1.0f, 1.0f, 1.0f};
-    mat.ambient = {1.0f, 1.0f, 1.0f};
-    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 1.0f, 1.0f, 1.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
 
     // Inline draw (draw_phong_manual_sm hard-codes ambient=0; we need non-zero ambient
     // so the pixel has a colour to compare against).
     auto draw_inline = [&](Framebuffer &fb, const ShadowMap *sm)
     {
-        vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-        vec3 wpos{0.0f, 0.0f, 0.5f};
-        vec3 normal{0.0f, 0.0f, 1.0f};
-        vec3 tan{1.0f, 0.0f, 0.0f};
-        vec3 white{1.0f, 1.0f, 1.0f};
-        vec3 eye{20.0f, 10.0f, -100.0f};
-        vec3 ambient{0.5f, 0.5f, 0.5f};
-        vec2 uv{0.5f, 0.5f};
-        rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                        wpos, wpos, wpos,
-                        normal, normal, normal,
-                        tan, tan, tan,
-                        uv, uv, uv,
-                        1.0f, 1.0f, 1.0f,
-                        white, white, white, false,
-                        eye, nullptr, 0, ambient, mat,
-                        nullptr, nullptr, nullptr, sm,
-                        0, 19);
+        vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+        vec3 wpos{ 0.0f, 0.0f, 0.5f };
+        vec3 normal{ 0.0f, 0.0f, 1.0f };
+        vec3 tan{ 1.0f, 0.0f, 0.0f };
+        vec3 white{ 1.0f, 1.0f, 1.0f };
+        vec3 eye{ 20.0f, 10.0f, -100.0f };
+        vec3 ambient{ 0.5f, 0.5f, 0.5f };
+        vec2 uv{ 0.5f, 0.5f };
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, wpos, wpos, wpos, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, sm, 0, 19
+        );
     };
 
     Framebuffer fb_nosm(40, 20, /*headless=*/true), fb_sm5(40, 20, /*headless=*/true);
@@ -393,20 +392,17 @@ TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
 // and fully-shadowed (blue).
 TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
 {
-    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
-    vec3 wpos{0.0f, 0.0f, 0.5f}; // maps to cx=cy=1024 with identity light_vp
-    vec3 red{1.0f, 0.0f, 0.0f}, blue{0.0f, 0.0f, 1.0f};
-    vec2 uv{0.5f, 0.5f};
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 wpos{ 0.0f, 0.0f, 0.5f }; // maps to cx=cy=1024 with identity light_vp
+    vec3 red{ 1.0f, 0.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
 
     auto draw = [&](Framebuffer &fb, const ShadowMap *sm)
     {
-        rasterize(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
-                  red, red, red,
-                  blue, blue, blue,
-                  wpos, wpos, wpos,
-                  uv, uv, uv,
-                  nullptr, 0.0f, sm,
-                  0, 19);
+        rasterize(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, red, red, blue, blue, blue, wpos, wpos, wpos, uv, uv, uv, nullptr,
+            0.0f, sm, 0, 19
+        );
     };
 
     ShadowMap sm0 = make_manual_sm(0); // sf=0   → if(sf>0) false → col (red)
@@ -430,7 +426,11 @@ TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
     if (r_lit <= r_shd)
         ASSERT_FAIL("lit must be redder than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd));
     if (r_par <= r_shd)
-        ASSERT_FAIL("partial must be redder than fully shadowed: par=" + std::to_string(r_par) + " shd=" + std::to_string(r_shd));
+        ASSERT_FAIL(
+            "partial must be redder than fully shadowed: par=" + std::to_string(r_par) + " shd=" + std::to_string(r_shd)
+        );
     if (r_par >= r_lit)
-        ASSERT_FAIL("partial must be less red than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit));
+        ASSERT_FAIL(
+            "partial must be less red than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit)
+        );
 }

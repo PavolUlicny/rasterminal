@@ -13,12 +13,18 @@ struct Color
     constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) noexcept : r(r_), g(g_), b(b_) {}
 };
 
-constexpr bool operator==(Color a, Color b) noexcept { return a.r == b.r && a.g == b.g && a.b == b.b; }
-constexpr bool operator!=(Color a, Color b) noexcept { return !(a == b); }
+constexpr bool operator==(Color a, Color b) noexcept
+{
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+constexpr bool operator!=(Color a, Color b) noexcept
+{
+    return !(a == b);
+}
 
 class Framebuffer
 {
-public:
+  public:
     // pixel_width  = terminal columns
     // pixel_height = terminal rows * 2  (two pixels per cell via ▀)
     // headless     = true skips all terminal I/O (ANSI escapes, buffer reserve)
@@ -37,7 +43,7 @@ public:
     // \033[2J so any leftover content from the old (larger) size is wiped.
     void resize(int pixel_width, int pixel_height);
 
-    void clear(Color bg = {0, 0, 0});
+    void clear(Color bg = { 0, 0, 0 });
 
     // Returns true if depth test passes, and writes the new depth value.
     // Single-threaded callers (draw_line, shadow map): plain load+store, no CAS.
@@ -67,7 +73,7 @@ public:
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
             return {};
         const uint32_t v = m_color[pixel_idx(x, y)].load(std::memory_order_relaxed);
-        return {static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u)};
+        return { static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u) };
     }
 
     // Unchecked variant — caller guarantees 0 <= x < width, 0 <= y < height.
@@ -81,9 +87,7 @@ public:
         auto &d = m_depth[pixel_idx(x, y)];
         float old = d.load(std::memory_order_relaxed);
         while (depth < old)
-            if (d.compare_exchange_weak(old, depth,
-                                        std::memory_order_relaxed,
-                                        std::memory_order_relaxed))
+            if (d.compare_exchange_weak(old, depth, std::memory_order_relaxed, std::memory_order_relaxed))
                 return true;
         return false;
     }
@@ -100,7 +104,7 @@ public:
     // Flush the pixel buffer to the terminal as a single write.
     void present();
 
-private:
+  private:
     static uint32_t pack_color(Color c) noexcept
     {
         return static_cast<uint32_t>(c.r) | (static_cast<uint32_t>(c.g) << 8u) | (static_cast<uint32_t>(c.b) << 16u);

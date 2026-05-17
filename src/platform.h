@@ -234,8 +234,7 @@ namespace platform
             return ev;
         // On Windows with ENABLE_VIRTUAL_TERMINAL_INPUT, mouse events arrive as
         // VT escape sequences readable via _getch() byte-by-byte.
-        auto rb = []() -> char
-        { return static_cast<char>(_getch()); };
+        auto rb = []() -> char { return static_cast<char>(_getch()); };
         // Wait up to `ms` ms for the next byte of an escape sequence.
         // Returns 0 on timeout so callers can treat it as bare ESC.
         auto rb_timeout = [](int ms) -> char
@@ -248,7 +247,7 @@ namespace platform
         char c = rb();
 #else
         {
-            struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             if (poll(&pfd, 1, 0) <= 0)
                 return ev;
         }
@@ -264,7 +263,7 @@ namespace platform
         // fragmented sequence that will never complete.
         auto rb_timeout = [](int ms) -> char
         {
-            struct pollfd pfd = {STDIN_FILENO, POLLIN, 0};
+            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             if (poll(&pfd, 1, ms) <= 0)
                 return 0;
             char b = 0;

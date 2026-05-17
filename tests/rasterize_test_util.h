@@ -43,11 +43,11 @@ static inline bool was_drawn(Framebuffer &fb, int x, int y)
 static inline void assert_depth_near(Framebuffer &fb, int x, int y, float D, float eps)
 {
     if (fb.test_and_set_depth(x, y, D + eps))
-        ASSERT_FAIL("depth > " + std::to_string(D + eps) + " at (" +
-                    std::to_string(x) + "," + std::to_string(y) + ")");
+        ASSERT_FAIL("depth > " + std::to_string(D + eps) + " at (" + std::to_string(x) + "," + std::to_string(y) + ")");
     if (!fb.test_and_set_depth(x, y, D - eps))
-        ASSERT_FAIL("depth <= " + std::to_string(D - eps) + " at (" +
-                    std::to_string(x) + "," + std::to_string(y) + ")");
+        ASSERT_FAIL(
+            "depth <= " + std::to_string(D - eps) + " at (" + std::to_string(x) + "," + std::to_string(y) + ")"
+        );
 }
 
 // Assert pixel (x,y) is channel-wise within ±tol of expected.
@@ -58,15 +58,18 @@ static inline void assert_pixel_near(Framebuffer &fb, int x, int y, Color expect
     int dg = std::abs(static_cast<int>(got.g) - static_cast<int>(expected.g));
     int db = std::abs(static_cast<int>(got.b) - static_cast<int>(expected.b));
     if (dr > tol || dg > tol || db > tol)
-        ASSERT_FAIL("pixel(" + std::to_string(x) + "," + std::to_string(y) + ")"
-                                                                             " expected~(" +
-                    std::to_string(static_cast<int>(expected.r)) + "," +
-                    std::to_string(static_cast<int>(expected.g)) + "," +
-                    std::to_string(static_cast<int>(expected.b)) + ")"
-                                                                   " got(" +
-                    std::to_string(static_cast<int>(got.r)) + "," +
-                    std::to_string(static_cast<int>(got.g)) + "," +
-                    std::to_string(static_cast<int>(got.b)) + ")"
-                                                              " tol=" +
-                    std::to_string(tol));
+        ASSERT_FAIL(
+            "pixel(" + std::to_string(x) + "," + std::to_string(y) +
+            ")"
+            " expected~(" +
+            std::to_string(static_cast<int>(expected.r)) + "," + std::to_string(static_cast<int>(expected.g)) + "," +
+            std::to_string(static_cast<int>(expected.b)) +
+            ")"
+            " got(" +
+            std::to_string(static_cast<int>(got.r)) + "," + std::to_string(static_cast<int>(got.g)) + "," +
+            std::to_string(static_cast<int>(got.b)) +
+            ")"
+            " tol=" +
+            std::to_string(tol)
+        );
 }

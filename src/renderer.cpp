@@ -27,10 +27,8 @@ namespace
     // z is kept as NDC depth for the z-buffer.
     constexpr vec3 ndc_to_screen(vec3 ndc, int width, int height) noexcept
     {
-        return {
-            (ndc.x + 1.0f) * 0.5f * static_cast<float>(width),
-            (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
-            ndc.z};
+        return { (ndc.x + 1.0f) * 0.5f * static_cast<float>(width), (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
+                 ndc.z };
     }
 
     // Choose a conservative dynamic chunk size for Phase 1 work stealing.
@@ -59,8 +57,7 @@ Renderer::Renderer(int n_threads)
     // -1 = auto (default): min(hw, 4)
     //  0 = all hardware threads
     //  N = exactly N, clamped to [1, hw]
-    const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw
-                                                                         : n_threads;
+    const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
@@ -89,8 +86,7 @@ void Renderer::worker_func(int t)
     {
         // Sleep until a new frame is dispatched or the renderer is destroyed.
         std::unique_lock<std::mutex> lk(m_mutex);
-        m_cv_work.wait(lk, [this, my_gen]
-                       { return m_generation != my_gen || m_stop; });
+        m_cv_work.wait(lk, [this, my_gen] { return m_generation != my_gen || m_stop; });
         if (m_stop)
             return;
 
@@ -127,7 +123,8 @@ void Renderer::worker_func(int t)
             const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
 
             const int chunk = choose_phase1_chunk(total, m_n_workers);
-            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near overwrites before read
+            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+                                    // clip_near overwrites before read
             while (true)
             {
                 const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
@@ -160,15 +157,15 @@ void Renderer::worker_func(int t)
                     const Material &mat = mesh->mat_at(tri.material_idx);
                     const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_tex) : nullptr;
 
-                    const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{0.0f, 0.0f, 0.0f};
-                    const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{0.0f, 0.0f, 0.0f};
-                    const vec3 tc = p_tans ? p_tans[tri.v[2]] : vec3{0.0f, 0.0f, 0.0f};
-                    const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{1.0f, 1.0f, 1.0f};
-                    const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{1.0f, 1.0f, 1.0f};
-                    const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{1.0f, 1.0f, 1.0f};
-                    ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca};
-                    ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb};
-                    ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc};
+                    const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{ 0.0f, 0.0f, 0.0f };
+                    const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{ 0.0f, 0.0f, 0.0f };
+                    const vec3 tc = p_tans ? p_tans[tri.v[2]] : vec3{ 0.0f, 0.0f, 0.0f };
+                    const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{ 1.0f, 1.0f, 1.0f };
+                    const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{ 1.0f, 1.0f, 1.0f };
+                    const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{ 1.0f, 1.0f, 1.0f };
+                    ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca };
+                    ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb };
+                    ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc };
                     if (flip_normals)
                     {
                         cva.normal = cva.normal * -1.0f;
@@ -196,28 +193,22 @@ void Renderer::worker_func(int t)
                             // a.color/b.color/c.color already encode the has_vertex_colors
                             // condition: they are {1,1,1} when p_vcols == nullptr (set at
                             // ClipVert construction), so no ternary is needed here.
-                            rasterize_phong(*fb,
-                                            sa, sb, sc, a.c.w, b.c.w, c.c.w,
-                                            a.pos, b.pos, c.pos,
-                                            a.normal, b.normal, c.normal,
-                                            a.tangent, b.tangent, c.tangent,
-                                            a.uv, b.uv, c.uv,
-                                            a.ao, b.ao, c.ao,
-                                            a.color, b.color, c.color,
-                                            mesh->has_vertex_colors,
-                                            eye, lights, n_lights, ambient, mat,
-                                            tex,
-                                            show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                            show_tex ? mesh->tex_at(mat.specular_tex) : nullptr,
-                                            shadow_map,
-                                            0, height - 1);
+                            rasterize_phong(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
+                                a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
+                                c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
+                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1
+                            );
                         }
                         else
                         {
-                            vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always overwritten in Flat/Gouraud branches below
-                            vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read when shadow_map != nullptr; written before that read
+                            vec3 col_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
+                                        // overwritten in Flat/Gouraud branches below
+                            vec3 col_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
+                                         // when shadow_map != nullptr; written before that read
                             vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                             vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
@@ -241,11 +232,14 @@ void Renderer::worker_func(int t)
                                         flat_mat = &vcol_mat;
                                     }
                                 }
-                                col_a = col_b = col_c =
-                                    compute_lighting(assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao);
+                                col_a = col_b = col_c = compute_lighting(
+                                    assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
+                                );
                                 if (shadow_map)
-                                    shad_a = shad_b = shad_c =
-                                        compute_lighting(assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat, face_ao);
+                                    shad_a = shad_b = shad_c = compute_lighting(
+                                        assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient,
+                                        *flat_mat, face_ao
+                                    );
                             }
                             else // Gouraud
                             {
@@ -261,39 +255,68 @@ void Renderer::worker_func(int t)
                                         gvcol_mat.ambient = gvcol_mat.ambient * vcol;
                                         return gvcol_mat;
                                     };
-                                    col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color), a.ao);
-                                    col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color), b.ao);
-                                    col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color), c.ao);
+                                    col_a = compute_lighting(
+                                        assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient,
+                                        gouraud_mat(a.color), a.ao
+                                    );
+                                    col_b = compute_lighting(
+                                        assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient,
+                                        gouraud_mat(b.color), b.ao
+                                    );
+                                    col_c = compute_lighting(
+                                        assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient,
+                                        gouraud_mat(c.color), c.ao
+                                    );
                                     if (shadow_map)
                                     {
-                                        shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(a.color), a.ao);
-                                        shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(b.color), b.ao);
-                                        shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, gouraud_mat(c.color), c.ao);
+                                        shad_a = compute_lighting(
+                                            assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            gouraud_mat(a.color), a.ao
+                                        );
+                                        shad_b = compute_lighting(
+                                            assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            gouraud_mat(b.color), b.ao
+                                        );
+                                        shad_c = compute_lighting(
+                                            assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            gouraud_mat(c.color), c.ao
+                                        );
                                     }
                                 }
                                 else
                                 {
-                                    col_a = compute_lighting(assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao);
-                                    col_b = compute_lighting(assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao);
-                                    col_c = compute_lighting(assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao);
+                                    col_a = compute_lighting(
+                                        assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao
+                                    );
+                                    col_b = compute_lighting(
+                                        assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao
+                                    );
+                                    col_c = compute_lighting(
+                                        assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao
+                                    );
                                     if (shadow_map)
                                     {
-                                        shad_a = compute_lighting(assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, a.ao);
-                                        shad_b = compute_lighting(assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, b.ao);
-                                        shad_c = compute_lighting(assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat, c.ao);
+                                        shad_a = compute_lighting(
+                                            assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            mat, a.ao
+                                        );
+                                        shad_b = compute_lighting(
+                                            assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            mat, b.ao
+                                        );
+                                        shad_c = compute_lighting(
+                                            assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
+                                            mat, c.ao
+                                        );
                                     }
                                 }
                             }
 
-                            rasterize(*fb,
-                                      sa, sb, sc, a.c.w, b.c.w, c.c.w,
-                                      col_a, col_b, col_c,
-                                      shad_a, shad_b, shad_c,
-                                      a.pos, b.pos, c.pos,
-                                      a.uv, b.uv, c.uv,
-                                      tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                      shadow_map,
-                                      0, height - 1);
+                            rasterize(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                shadow_map, 0, height - 1
+                            );
                         }
                     }
                 }
@@ -311,9 +334,10 @@ void Renderer::worker_func(int t)
 
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
-void Renderer::render(const Mesh &mesh, const Camera &camera,
-                      const Light *lights, int n_lights, const vec3 &ambient,
-                      Framebuffer &fb, const ShadowMap *shadow_map)
+void Renderer::render(
+    const Mesh &mesh, const Camera &camera, const Light *lights, int n_lights, const vec3 &ambient, Framebuffer &fb,
+    const ShadowMap *shadow_map
+)
 {
     const vec3 eye = camera.eye();
     const mat4 view = camera.view(eye);
@@ -326,7 +350,8 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     // ── Wireframe: single-threaded (draw_line writes to framebuffer directly) ─
     if (mode == ShadingMode::Wireframe)
     {
-        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near overwrites before read
+        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near
+                                // overwrites before read
         for (const Triangle &tri : mesh.triangles)
         {
             const Vertex &va = mesh.vertices[tri.v[0]];
@@ -341,9 +366,9 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
                     continue;
             }
 
-            const ClipVert cva = {vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao};
-            const ClipVert cvb = {vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao};
-            const ClipVert cvc = {vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao};
+            const ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao };
+            const ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao };
+            const ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao };
 
             const int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
 
@@ -393,7 +418,6 @@ void Renderer::render(const Mesh &mesh, const Camera &camera,
     m_cv_work.notify_all();
     {
         std::unique_lock<std::mutex> lk(m_mutex);
-        m_cv_done.wait(lk, [this]
-                       { return m_active.load(std::memory_order_acquire) == 0; });
+        m_cv_done.wait(lk, [this] { return m_active.load(std::memory_order_acquire) == 0; });
     }
 }

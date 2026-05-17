@@ -20,11 +20,11 @@
 //   Shadowed R ≈ 0.1 → ~25               (threshold: R ≤ 60)
 //   Fill green G ≈ 0.707 → ~180           (threshold: G ≥ 150)
 
-static Light make_diagonal_key_light(vec3 color = {1.0f, 0.0f, 0.0f})
+static Light make_diagonal_key_light(vec3 color = { 1.0f, 0.0f, 0.0f })
 {
     constexpr float inv_sqrt2 = 0.70710678f;
     Light l{};
-    l.direction = {inv_sqrt2, 0.0f, inv_sqrt2};
+    l.direction = { inv_sqrt2, 0.0f, inv_sqrt2 };
     l.color = color;
     return l;
 }
@@ -48,25 +48,25 @@ static Mesh make_shadow_scene()
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.uv = {0.5f, 0.5f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.uv = { 0.5f, 0.5f };
 
     // receiver
-    v.pos = {-1.0f, -1.0f, 0.0f};
+    v.pos = { -1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 0.0f};
+    v.pos = { 1.0f, -1.0f, 0.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 0.0f};
+    v.pos = { 0.0f, 1.0f, 0.0f };
     m.vertices.push_back(v);
     // occluder
-    v.pos = {0.7f, -0.3f, 1.0f};
+    v.pos = { 0.7f, -0.3f, 1.0f };
     m.vertices.push_back(v);
-    v.pos = {1.3f, -0.3f, 1.0f};
+    v.pos = { 1.3f, -0.3f, 1.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, 0.3f, 1.0f};
+    v.pos = { 1.0f, 0.3f, 1.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(6, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(6, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri{};
     tri.v[0] = 0;
@@ -89,7 +89,7 @@ TEST(renderer, phong_shadow_map_darkens_occluded_pixel)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -111,7 +111,9 @@ TEST(renderer, phong_shadow_map_darkens_occluded_pixel)
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
     Color c_shadow = fb_shadow.get_pixel(20, 10);
     if (c_shadow.r > 60)
-        ASSERT_FAIL("Phong shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ") — shadow_map not applied");
+        ASSERT_FAIL(
+            "Phong shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ") — shadow_map not applied"
+        );
 }
 
 // K2: Flat — shadow map darkens occluded pixel; exercises rt.fg.shad_* precomputation.
@@ -120,7 +122,7 @@ TEST(renderer, flat_shadow_map_darkens_occluded_pixel)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Flat;
@@ -140,7 +142,9 @@ TEST(renderer, flat_shadow_map_darkens_occluded_pixel)
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
     Color c_shadow = fb_shadow.get_pixel(20, 10);
     if (c_shadow.r > 60)
-        ASSERT_FAIL("Flat shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ") — shadow_map not applied");
+        ASSERT_FAIL(
+            "Flat shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ") — shadow_map not applied"
+        );
 }
 
 // K3: Gouraud — same check, per-vertex shad_* path.
@@ -149,7 +153,7 @@ TEST(renderer, gouraud_shadow_map_darkens_occluded_pixel)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Gouraud;
@@ -169,7 +173,10 @@ TEST(renderer, gouraud_shadow_map_darkens_occluded_pixel)
     ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
     Color c_shadow = fb_shadow.get_pixel(20, 10);
     if (c_shadow.r > 60)
-        ASSERT_FAIL("Gouraud shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ") — shadow_map not applied");
+        ASSERT_FAIL(
+            "Gouraud shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) +
+            ") — shadow_map not applied"
+        );
 }
 
 // K4: Shadow map built from receiver alone — slope bias must prevent self-shadow.
@@ -178,7 +185,7 @@ TEST(renderer, shadow_map_no_occluder_no_false_darkening)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Phong;
@@ -190,7 +197,10 @@ TEST(renderer, shadow_map_no_occluder_no_false_darkening)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
-        ASSERT_FAIL("no-occluder self-shadow map darkened pixel (R=" + std::to_string(static_cast<int>(c.r)) + ") — false positive shadow");
+        ASSERT_FAIL(
+            "no-occluder self-shadow map darkened pixel (R=" + std::to_string(static_cast<int>(c.r)) +
+            ") — false positive shadow"
+        );
 }
 
 // K5: n_lights=0 must discard the shadow_map (renderer.cpp:406).
@@ -201,7 +211,7 @@ TEST(renderer, n_lights_zero_discards_shadow_map)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
 
@@ -233,9 +243,9 @@ TEST(renderer, phong_multi_light_only_key_shadowed)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light lights[2];
-    lights[0] = make_diagonal_key_light({1.0f, 0.0f, 0.0f}); // key: red
-    lights[1] = make_diagonal_key_light({0.0f, 1.0f, 0.0f}); // fill: green
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    lights[0] = make_diagonal_key_light({ 1.0f, 0.0f, 0.0f }); // key: red
+    lights[1] = make_diagonal_key_light({ 0.0f, 1.0f, 0.0f }); // fill: green
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     ShadowMap sm = build_shadow_map(make_shadow_scene(), lights[0]);
 
@@ -254,7 +264,7 @@ TEST(renderer, phong_multi_light_only_key_shadowed)
 }
 
 // Receiver triangle with uniform vertex colors — same geometry as make_receiver_only().
-static Mesh make_vcol_receiver(vec3 color = {1.0f, 0.0f, 0.0f})
+static Mesh make_vcol_receiver(vec3 color = { 1.0f, 0.0f, 0.0f })
 {
     Mesh m = make_receiver_only();
     m.vertex_colors.resize(3, color);
@@ -269,9 +279,9 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
     Light lights[2];
-    lights[0] = make_diagonal_key_light({1.0f, 0.0f, 0.0f});
-    lights[1] = make_diagonal_key_light({0.0f, 1.0f, 0.0f});
-    vec3 ambient{0.0f, 0.0f, 0.0f};
+    lights[0] = make_diagonal_key_light({ 1.0f, 0.0f, 0.0f });
+    lights[1] = make_diagonal_key_light({ 0.0f, 1.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
     ShadowMap sm = build_shadow_map(make_shadow_scene(), lights[0]);
 
@@ -286,7 +296,9 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
     if (c.r > 60)
         ASSERT_FAIL("Gouraud multi-light: key (red) not shadowed, R=" + std::to_string(static_cast<int>(c.r)));
     if (c.g < 150)
-        ASSERT_FAIL("Gouraud multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g)));
+        ASSERT_FAIL(
+            "Gouraud multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g))
+        );
 }
 
 // ─── Group L: depth-buffer ordering ──────────────────────────────────────────
@@ -308,26 +320,26 @@ static Mesh make_two_z_triangles(bool closer_first)
     Mesh m;
     Vertex v{};
     v.ao = 1.0f;
-    v.uv = {0.5f, 0.5f};
+    v.uv = { 0.5f, 0.5f };
 
     // Closer (z=+1): vertices share z=+1, normal +z.
-    v.normal = {0.0f, 0.0f, 1.0f};
-    v.pos = {-1.0f, -1.0f, 1.0f};
+    v.normal = { 0.0f, 0.0f, 1.0f };
+    v.pos = { -1.0f, -1.0f, 1.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, 1.0f};
+    v.pos = { 1.0f, -1.0f, 1.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, 1.0f};
+    v.pos = { 0.0f, 1.0f, 1.0f };
     m.vertices.push_back(v);
 
     // Farther (z=-1): same XY, shifted back.
-    v.pos = {-1.0f, -1.0f, -1.0f};
+    v.pos = { -1.0f, -1.0f, -1.0f };
     m.vertices.push_back(v);
-    v.pos = {1.0f, -1.0f, -1.0f};
+    v.pos = { 1.0f, -1.0f, -1.0f };
     m.vertices.push_back(v);
-    v.pos = {0.0f, 1.0f, -1.0f};
+    v.pos = { 0.0f, 1.0f, -1.0f };
     m.vertices.push_back(v);
 
-    m.tangents.resize(6, {1.0f, 0.0f, 0.0f});
+    m.tangents.resize(6, { 1.0f, 0.0f, 0.0f });
 
     Triangle tri_close{}, tri_far{};
     tri_close.v[0] = 0;
@@ -351,14 +363,14 @@ static Mesh make_two_z_triangles(bool closer_first)
     }
 
     Material mat_close;
-    mat_close.diffuse = {1.0f, 0.0f, 0.0f};
-    mat_close.ambient = {1.0f, 0.0f, 0.0f};
-    mat_close.specular = {0.0f, 0.0f, 0.0f};
+    mat_close.diffuse = { 1.0f, 0.0f, 0.0f };
+    mat_close.ambient = { 1.0f, 0.0f, 0.0f };
+    mat_close.specular = { 0.0f, 0.0f, 0.0f };
 
     Material mat_far;
-    mat_far.diffuse = {0.0f, 0.0f, 1.0f};
-    mat_far.ambient = {0.0f, 0.0f, 1.0f};
-    mat_far.specular = {0.0f, 0.0f, 0.0f};
+    mat_far.diffuse = { 0.0f, 0.0f, 1.0f };
+    mat_far.ambient = { 0.0f, 0.0f, 1.0f };
+    mat_far.specular = { 0.0f, 0.0f, 0.0f };
 
     m.materials.push_back(mat_close);
     m.materials.push_back(mat_far);
@@ -369,8 +381,8 @@ static Mesh make_two_z_triangles(bool closer_first)
 TEST(renderer, phong_depth_order_independent)
 {
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
 
     Renderer r(1);
     r.mode = ShadingMode::Phong;
@@ -398,7 +410,9 @@ TEST(renderer, phong_depth_order_independent)
     if (c_ff.r < 200)
         ASSERT_FAIL("Phong farther-first: red (closer) not dominant, R=" + std::to_string(static_cast<int>(c_ff.r)));
     if (c_ff.b > 30)
-        ASSERT_FAIL("Phong farther-first: blue (farther) leaked through, B=" + std::to_string(static_cast<int>(c_ff.b)));
+        ASSERT_FAIL(
+            "Phong farther-first: blue (farther) leaked through, B=" + std::to_string(static_cast<int>(c_ff.b))
+        );
     if (c_cf.r != c_ff.r || c_cf.g != c_ff.g || c_cf.b != c_ff.b)
         ASSERT_FAIL("Phong depth result differs between submission orders");
 }
@@ -407,8 +421,8 @@ TEST(renderer, phong_depth_order_independent)
 TEST(renderer, gouraud_depth_order_independent)
 {
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
 
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
@@ -445,8 +459,8 @@ TEST(renderer, gouraud_depth_order_independent)
 TEST(renderer, flat_depth_order_independent)
 {
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
 
     Renderer r(1);
     r.mode = ShadingMode::Flat;
@@ -487,8 +501,8 @@ TEST(renderer, flat_depth_order_independent)
 TEST(renderer, depth_value_matches_closer_triangle)
 {
     Camera cam = make_test_camera();
-    Light light = make_key_light_z({1.0f, 1.0f, 1.0f});
-    vec3 ambient{0.05f, 0.05f, 0.05f};
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.05f, 0.05f, 0.05f };
 
     Renderer r(1);
     r.mode = ShadingMode::Phong;
@@ -521,7 +535,7 @@ TEST(renderer, flat_shadow_vcol_darkens_occluded_pixel)
     Mesh receiver = make_vcol_receiver();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Flat;
@@ -550,7 +564,7 @@ TEST(renderer, gouraud_shadow_vcol_darkens_occluded_pixel)
     Mesh receiver = make_vcol_receiver();
     Camera cam = make_test_camera();
     Light light = make_diagonal_key_light();
-    vec3 ambient{0.1f, 0.0f, 0.0f};
+    vec3 ambient{ 0.1f, 0.0f, 0.0f };
 
     Renderer r;
     r.mode = ShadingMode::Gouraud;

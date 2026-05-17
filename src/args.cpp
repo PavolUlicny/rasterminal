@@ -40,9 +40,7 @@ ParseResult parse_args(int argc, char *argv[])
         const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v <= 0 || v > INT_MAX || errno == ERANGE)
         {
-            std::fprintf(stderr,
-                         "Error: %s requires a positive integer, got '%s'\n",
-                         flag, val);
+            std::fprintf(stderr, "Error: %s requires a positive integer, got '%s'\n", flag, val);
             return false;
         }
         out = static_cast<int>(v);
@@ -56,9 +54,7 @@ ParseResult parse_args(int argc, char *argv[])
         const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
         {
-            std::fprintf(stderr,
-                         "Error: %s requires a non-negative integer, got '%s'\n",
-                         flag, val);
+            std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
             return false;
         }
         out = static_cast<int>(v);
@@ -69,9 +65,7 @@ ParseResult parse_args(int argc, char *argv[])
     {
         auto err = [flag, val]() -> bool
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n",
-                         flag, val);
+            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n", flag, val);
             return false;
         };
         const char *sep = std::strchr(val, 'x');
@@ -108,9 +102,9 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_shading = [](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
         if (v == "wireframe" || v == "1")
             out = 0;
         else if (v == "flat" || v == "2")
@@ -121,10 +115,12 @@ ParseResult parse_args(int argc, char *argv[])
             out = 3;
         else
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s'"
-                         " (expected wireframe|flat|gouraud|phong or 1-4)\n",
-                         flag, val);
+            std::fprintf(
+                stderr,
+                "Error: %s: invalid value '%s'"
+                " (expected wireframe|flat|gouraud|phong or 1-4)\n",
+                flag, val
+            );
             return false;
         }
         return true;
@@ -133,9 +129,9 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_bg = [](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
         if (v == "black" || v == "1")
             out = 0;
         else if (v == "gray" || v == "grey" || v == "2")
@@ -144,10 +140,12 @@ ParseResult parse_args(int argc, char *argv[])
             out = 2;
         else
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s'"
-                         " (expected black|gray|white or 1-3)\n",
-                         flag, val);
+            std::fprintf(
+                stderr,
+                "Error: %s: invalid value '%s'"
+                " (expected black|gray|white or 1-3)\n",
+                flag, val
+            );
             return false;
         }
         return true;
@@ -156,9 +154,9 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_lighting = [](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
         if (v == "dual" || v == "1")
             out = 0;
         else if (v == "single" || v == "2")
@@ -167,10 +165,12 @@ ParseResult parse_args(int argc, char *argv[])
             out = 2;
         else
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s'"
-                         " (expected dual|single|flat or 1-3)\n",
-                         flag, val);
+            std::fprintf(
+                stderr,
+                "Error: %s: invalid value '%s'"
+                " (expected dual|single|flat or 1-3)\n",
+                flag, val
+            );
             return false;
         }
         return true;
@@ -179,19 +179,21 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_bool = [](const char *flag, const char *val, bool &out) -> bool
     {
         std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
         if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
             out = true;
         else if (v == "off" || v == "0" || v == "false" || v == "no" || v == "n")
             out = false;
         else
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s'"
-                         " (expected on|off, 1|0, true|false, yes|no, y|n)\n",
-                         flag, val);
+            std::fprintf(
+                stderr,
+                "Error: %s: invalid value '%s'"
+                " (expected on|off, 1|0, true|false, yes|no, y|n)\n",
+                flag, val
+            );
             return false;
         }
         return true;
@@ -200,9 +202,9 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_wireframe_color = [](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
-        std::transform(v.begin(), v.end(), v.begin(),
-                       [](unsigned char c)
-                       { return static_cast<char>(std::tolower(c)); });
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
         if (v == "white" || v == "1")
             out = 0;
         else if (v == "red" || v == "2")
@@ -217,10 +219,12 @@ ParseResult parse_args(int argc, char *argv[])
             out = 5;
         else
         {
-            std::fprintf(stderr,
-                         "Error: %s: invalid value '%s'"
-                         " (expected white|red|green|yellow|cyan|magenta or 1-6)\n",
-                         flag, val);
+            std::fprintf(
+                stderr,
+                "Error: %s: invalid value '%s'"
+                " (expected white|red|green|yellow|cyan|magenta or 1-6)\n",
+                flag, val
+            );
             return false;
         }
         return true;
@@ -266,8 +270,7 @@ ParseResult parse_args(int argc, char *argv[])
                     return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-j", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-j", argv[i] + 2, args.n_threads))
                 return fail(1);
@@ -284,8 +287,7 @@ ParseResult parse_args(int argc, char *argv[])
                     return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-f", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-f", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-f", argv[i] + 2, args.fps))
                 return fail(1);
@@ -302,8 +304,7 @@ ParseResult parse_args(int argc, char *argv[])
                     return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-B", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-B", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-B", argv[i] + 2, args.bench))
                 return fail(1);
@@ -328,8 +329,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_shading(flag, val, args.shading))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-s", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-s", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_shading("-s", argv[i] + 2, args.shading))
                 return fail(1);
@@ -340,8 +340,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_bg(flag, val, args.bg))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-b", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-b", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bg("-b", argv[i] + 2, args.bg))
                 return fail(1);
@@ -352,8 +351,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_lighting(flag, val, args.lighting))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-l", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-l", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_lighting("-l", argv[i] + 2, args.lighting))
                 return fail(1);
@@ -391,9 +389,11 @@ ParseResult parse_args(int argc, char *argv[])
                 "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
                 "                                  on|off, 1|0, true|false, yes|no, y|n\n"
                 "  -S,     --spin                 Start with auto-rotation enabled\n"
-                "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: min(hw,4))\n"
+                "  -j [N], --threads [N]          Worker threads: bare -j/--threads uses all, -j N uses N (default: "
+                "min(hw,4))\n"
                 "  -f [N], --fps [N]              Frame cap: bare -f/--fps uncapped, -f N caps at N fps (default: 60)\n"
-                "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200), prints timing + fps + throughput to stderr\n"
+                "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200), prints timing + fps + "
+                "throughput to stderr\n"
                 "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
                 "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
                 "          --no-shadow            Disable shadow map\n"
@@ -408,7 +408,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "  +/-          Zoom                   C       Cycle wireframe color\n"
                 "  Mouse drag   Orbit                  K       Toggle backface culling\n"
                 "  Scroll       Zoom                   T       Toggle textures\n"
-                "  Q/Escape     Quit\n");
+                "  Q/Escape     Quit\n"
+            );
             return fail(0);
         }
         else if (arg == "-S" || arg == "--spin")
@@ -453,8 +454,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_bool(flag, val, args.cull))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-c", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-c", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bool("-c", argv[i] + 2, args.cull))
                 return fail(1);
@@ -465,8 +465,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_bool(flag, val, args.texture))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-t", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-t", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bool("-t", argv[i] + 2, args.texture))
                 return fail(1);
@@ -477,8 +476,7 @@ ParseResult parse_args(int argc, char *argv[])
             if (!val || !parse_wireframe_color(flag, val, args.wireframe_color))
                 return fail(1);
         }
-        else if (std::strncmp(argv[i], "-w", 2) == 0 &&
-                 argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        else if (std::strncmp(argv[i], "-w", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_wireframe_color("-w", argv[i] + 2, args.wireframe_color))
                 return fail(1);
@@ -510,10 +508,11 @@ ParseResult parse_args(int argc, char *argv[])
 
     if (args.model_path.empty())
     {
-        std::fprintf(stderr,
-                     "Error: no model specified\n"
-                     "       Usage: rasterminal [options] <model>\n"
-                     "       Run 'rasterminal --help' for more information.\n");
+        std::fprintf(
+            stderr, "Error: no model specified\n"
+                    "       Usage: rasterminal [options] <model>\n"
+                    "       Run 'rasterminal --help' for more information.\n"
+        );
         return fail(1);
     }
 

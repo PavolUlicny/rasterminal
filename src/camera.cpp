@@ -6,33 +6,38 @@
 
 vec3 Camera::eye() const
 {
-    return target + orientation.rotate({0.0f, 0.0f, 1.0f}) * distance;
+    return target + orientation.rotate({ 0.0f, 0.0f, 1.0f }) * distance;
 }
 
 mat4 Camera::view(const vec3 &eye_pos) const
 {
-    return look_at(eye_pos, target, orientation.rotate({0.0f, 1.0f, 0.0f}));
+    return look_at(eye_pos, target, orientation.rotate({ 0.0f, 1.0f, 0.0f }));
 }
 
-mat4 Camera::view() const { return view(eye()); }
+mat4 Camera::view() const
+{
+    return view(eye());
+}
 
 mat4 Camera::projection(int pixel_width, int pixel_height) const
 {
-    const float aspect = (pixel_width > 0 && pixel_height > 0) ? static_cast<float>(pixel_width) / static_cast<float>(pixel_height) : 1.0f;
+    const float aspect = (pixel_width > 0 && pixel_height > 0)
+                             ? static_cast<float>(pixel_width) / static_cast<float>(pixel_height)
+                             : 1.0f;
     return perspective(fov, aspect, near_plane, far_plane);
 }
 
 void Camera::orbit(float dx, float dy)
 {
-    const vec3 local_right = orientation.rotate({1.0f, 0.0f, 0.0f});
-    const quat yaw = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, -dx);
+    const vec3 local_right = orientation.rotate({ 1.0f, 0.0f, 0.0f });
+    const quat yaw = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, -dx);
     const quat pitch = quat::from_axis_angle(local_right, dy);
     orientation = normalize(yaw * pitch * orientation);
 }
 
 void Camera::spin_world_y(float radians)
 {
-    const quat r = quat::from_axis_angle({0.0f, 1.0f, 0.0f}, radians);
+    const quat r = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, radians);
     orientation = normalize(r * orientation);
 }
 

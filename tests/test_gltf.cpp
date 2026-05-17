@@ -12,16 +12,15 @@ TEST(gltf_valid, pbr_material_mapping)
     //   ambient  = diffuse
     //   specular = {metallicFactor, …} = {0.3, 0.3, 0.3}
     //   shininess = (1 - roughnessFactor) * 126 + 2 = 0.6*126+2 = 77.6
-    std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"pbrMetallicRoughness\":"
-        "{\"baseColorFactor\":[0.5,0.2,0.8,1.0],\"metallicFactor\":0.3,"
-        "\"roughnessFactor\":0.4}}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                       "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                       "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"pbrMetallicRoughness\":"
+                       "{\"baseColorFactor\":[0.5,0.2,0.8,1.0],\"metallicFactor\":0.3,"
+                       "\"roughnessFactor\":0.4}}],"
+                       "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                       "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                       "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                       "\"buffers\":[{\"byteLength\":36}]}";
     while (json.size() % 4 != 0)
         json += ' ';
     const uint32_t jlen = static_cast<uint32_t>(json.size());
@@ -64,14 +63,13 @@ TEST(gltf_valid, pbr_material_mapping)
 TEST(gltf_valid, double_sided_flag_set)
 {
     // Minimal GLB: one triangle, material with doubleSided:true.
-    std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"doubleSided\":true}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                       "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                       "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"doubleSided\":true}],"
+                       "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                       "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                       "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                       "\"buffers\":[{\"byteLength\":36}]}";
     while (json.size() % 4 != 0)
         json += ' ';
     const uint32_t jlen = static_cast<uint32_t>(json.size());
@@ -287,14 +285,13 @@ static void emit_tri_verts(std::string &bin)
 TEST(reject, gltf_points_only_mesh)
 {
     // mode:0 = POINTS — skipped by the loader, no triangles emitted → reject.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"mode\":0}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"mode\":0}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_points.glb"), make_glb(json, bin));
@@ -304,14 +301,13 @@ TEST(reject, gltf_points_only_mesh)
 TEST(reject, gltf_lines_only_mesh)
 {
     // mode:1 = LINES — skipped by the loader → reject.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"mode\":1}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"mode\":1}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_lines.glb"), make_glb(json, bin));
@@ -321,14 +317,13 @@ TEST(reject, gltf_lines_only_mesh)
 TEST(reject, gltf_triangle_strip_only_mesh)
 {
     // mode:5 = TRIANGLE_STRIP — not tessellated by loader, skipped → reject.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"mode\":5}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"mode\":5}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_tristrip.glb"), make_glb(json, bin));
@@ -338,14 +333,13 @@ TEST(reject, gltf_triangle_strip_only_mesh)
 TEST(reject, gltf_triangle_fan_only_mesh)
 {
     // mode:6 = TRIANGLE_FAN — not tessellated by loader, skipped → reject.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"mode\":6}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"mode\":6}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_trifan.glb"), make_glb(json, bin));
@@ -355,14 +349,13 @@ TEST(reject, gltf_triangle_fan_only_mesh)
 TEST(gltf_valid, default_mode_is_triangles)
 {
     // No "mode" field → cgltf defaults to TRIANGLES. Non-indexed, 3 verts → 1 tri.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_defmode.glb"), make_glb(json, bin));
@@ -378,23 +371,22 @@ TEST(gltf_valid, mixed_mesh_triangles_and_points_only_loads_triangles)
     // One mesh, two primitives: TRIANGLES (3 verts) + POINTS (5 verts).
     // POINTS primitive is entirely skipped (including its vertex push).
     // Expected: 1 triangle, 3 vertices.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
-        "{\"attributes\":{\"POSITION\":0}},"
-        "{\"attributes\":{\"POSITION\":1},\"mode\":0}"
-        "]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":5,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":60,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":96}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0}},"
+                             "{\"attributes\":{\"POSITION\":1},\"mode\":0}"
+                             "]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":5,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":60,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":96}]}";
 
     std::string bin;
     emit_tri_verts(bin);        // accessor 0: 3 verts (36 bytes)
@@ -417,14 +409,13 @@ TEST(gltf_valid, non_indexed_triangles_loaded)
 {
     // 6 vertices, no indices accessor → non-indexed branch → 2 triangles.
     // Triangle 0: verts 0,1,2 — triangle 1: verts 3,4,5.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":6,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":72}],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":6,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":72}],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
 
     std::string bin;
     emit_tri_verts(bin); // verts 0,1,2
@@ -454,14 +445,13 @@ TEST(gltf_valid, non_indexed_partial_triangle_truncated)
 {
     // 4 vertices, no indices → i+2<4 passes only for i=0 → 1 triangle,
     // 4th vertex still pushed into vertices[] but no triangle references it.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":4,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":48}],"
-        "\"buffers\":[{\"byteLength\":48}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":4,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":48}],"
+                             "\"buffers\":[{\"byteLength\":48}]}";
 
     std::string bin;
     emit_tri_verts(bin); // verts 0,1,2
@@ -481,20 +471,19 @@ TEST(gltf_valid, indexed_partial_triangle_truncated)
 {
     // 6 vertices, 4 indices [0,1,2,3]. i+2<4 passes only for i=0 → 1 triangle.
     // Index 3 is silently dropped.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"indices\":1}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5123,\"count\":4,\"type\":\"SCALAR\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":72,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":8,\"byteOffset\":72}"
-        "],"
-        "\"buffers\":[{\"byteLength\":80}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"indices\":1}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":6,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5123,\"count\":4,\"type\":\"SCALAR\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":72,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":8,\"byteOffset\":72}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":80}]}";
 
     std::string bin;
     emit_tri_verts(bin); // verts 0,1,2 (36 bytes)
@@ -526,20 +515,19 @@ TEST(gltf_valid, uv_v_coordinate_flipped)
 {
     // TEXCOORD_0 V=0.3 in file → loaded as 1.0-0.3=0.7.
     // glTF V=0 is top-left; pre-flipping avoids a double-flip in the renderer.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0,\"TEXCOORD_0\":1}}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":24,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":60}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0,\"TEXCOORD_0\":1}}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":24,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":60}]}";
     std::string bin;
     emit_tri_verts(bin); // 36 bytes
     for (int i = 0; i < 3; ++i)
@@ -556,14 +544,13 @@ TEST(gltf_valid, uv_v_coordinate_flipped)
 TEST(gltf_valid, no_uv_accessor_uv_stays_zero)
 {
     // uv_acc == nullptr -> Vertex{} zero-init leaves uv at {0,0}.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_nouv.glb"), make_glb(json, bin));
@@ -579,20 +566,19 @@ TEST(gltf_valid, normals_loaded_from_accessor_not_recomputed)
     // NORMAL accessor carries {1,0,0} on all vertices.  Face normal is (0,0,1),
     // so if compute_normals() ran the x-component would be 0.
     // has_normals=true after the loop -> compute_normals() is skipped.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0,\"NORMAL\":1}}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0,\"NORMAL\":1}}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
     std::string bin;
     emit_tri_verts(bin); // 36 bytes positions
     for (int i = 0; i < 3; ++i)
@@ -614,14 +600,13 @@ TEST(gltf_valid, node_translation_applied_to_positions)
 {
     // translation:[2,0,0] shifts world x by +2:
     //   vertex (-1,-1,0) -> (1,-1,0), vertex (1,-1,0) -> (3,-1,0), (0,1,0) -> (2,1,0).
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0,\"translation\":[2.0,0.0,0.0]}],"
-        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0,\"translation\":[2.0,0.0,0.0]}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_translate.glb"), make_glb(json, bin));
@@ -636,14 +621,13 @@ TEST(gltf_valid, child_node_mesh_visited_recursively)
 {
     // Root node (0) has no mesh but references child node (1) which has one.
     // visit() must recurse into node->children.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"children\":[1]},{\"mesh\":0}],"
-        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"children\":[1]},{\"mesh\":0}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_child.glb"), make_glb(json, bin));
@@ -658,20 +642,19 @@ TEST(gltf_valid, color0_sets_has_vertex_colors_and_loads_rgb)
 {
     // COLOR_0 VEC4 float: red/green/blue per vertex.
     // has_vertex_colors=true; alpha channel discarded, only RGB stored.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0,\"COLOR_0\":1}}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":48,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":84}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0,\"COLOR_0\":1}}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":48,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":84}]}";
     std::string bin;
     emit_tri_verts(bin);
     // vertex 0: red, vertex 1: green, vertex 2: blue  (alpha=1 discarded)
@@ -703,15 +686,14 @@ TEST(gltf_valid, alpha_mode_blend_leaves_alpha_cutoff_zero)
 {
     // alphaMode:BLEND is not supported (rendered as opaque); only MASK triggers
     // a non-zero alpha_cutoff.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],"
-        "\"materials\":[{\"alphaMode\":\"BLEND\"}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"alphaMode\":\"BLEND\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_blend.glb"), make_glb(json, bin));
@@ -723,15 +705,14 @@ TEST(gltf_valid, alpha_mode_blend_leaves_alpha_cutoff_zero)
 TEST(gltf_valid, alpha_mode_opaque_leaves_alpha_cutoff_zero)
 {
     // alphaMode:OPAQUE is the default; only MASK sets a non-zero cutoff.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],"
-        "\"materials\":[{\"alphaMode\":\"OPAQUE\"}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"alphaMode\":\"OPAQUE\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
     TmpFile f(tmp_path("rast_opaque.glb"), make_glb(json, bin));
@@ -747,27 +728,26 @@ TEST(gltf_valid, multi_primitive_correct_material_indices)
     // Two primitives with different materials -> mat indices assigned in order
     // after the default white material at index 0.
     // triangles[0].material_idx=1 (red), triangles[1].material_idx=2 (green).
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
-        "{\"attributes\":{\"POSITION\":0},\"material\":0},"
-        "{\"attributes\":{\"POSITION\":1},\"material\":1}"
-        "]}],"
-        "\"materials\":["
-        "{\"pbrMetallicRoughness\":{\"baseColorFactor\":[1.0,0.0,0.0,1.0]}},"
-        "{\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.0,1.0,0.0,1.0]}}"
-        "],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":1},\"material\":1}"
+                             "]}],"
+                             "\"materials\":["
+                             "{\"pbrMetallicRoughness\":{\"baseColorFactor\":[1.0,0.0,0.0,1.0]}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorFactor\":[0.0,1.0,0.0,1.0]}}"
+                             "],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
     std::string bin;
     emit_tri_verts(bin);
     emit_tri_verts(bin);
@@ -786,20 +766,19 @@ TEST(gltf_valid, multi_primitive_correct_material_indices)
 TEST(gltf_valid, uint32_index_accessor_loaded)
 {
     // componentType 5125 = UNSIGNED_INT (32-bit) indices [0,1,2].
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"indices\":1}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5125,\"count\":3,\"type\":\"SCALAR\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":12,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":48}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"indices\":1}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5125,\"count\":3,\"type\":\"SCALAR\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":12,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":48}]}";
     std::string bin;
     emit_tri_verts(bin);
     emit_u32_le(bin, 0u);
@@ -819,24 +798,23 @@ TEST(gltf_valid, two_nodes_merged_with_correct_vertex_base)
 {
     // Two scene-root nodes each pointing to a different mesh (3 verts each).
     // Second mesh's triangle indices must be offset by vert_base=3.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0,1]}],"
-        "\"nodes\":[{\"mesh\":0},{\"mesh\":1}],"
-        "\"meshes\":["
-        "{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]},"
-        "{\"primitives\":[{\"attributes\":{\"POSITION\":1}}]}"
-        "],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0,1]}],"
+                             "\"nodes\":[{\"mesh\":0},{\"mesh\":1}],"
+                             "\"meshes\":["
+                             "{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]},"
+                             "{\"primitives\":[{\"attributes\":{\"POSITION\":1}}]}"
+                             "],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
     std::string bin;
     emit_tri_verts(bin);
     emit_tri_verts(bin);
@@ -856,8 +834,7 @@ TEST(reject, gltf_no_scenes_array_rejects)
 {
     // No "scene" or "scenes" -> data->scene=nullptr, scenes_count=0 ->
     // visit() never called -> vertices empty -> load returns false.
-    TmpFile f(tmp_path("rast_noscenes.gltf"),
-              "{\"asset\":{\"version\":\"2.0\"}}");
+    TmpFile f(tmp_path("rast_noscenes.gltf"), "{\"asset\":{\"version\":\"2.0\"}}");
     assert_rejects(f.path);
 }
 
@@ -870,20 +847,19 @@ TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
     // on the garbage data → load_tex returns -1 → mat.normal_tex = -1.
     // Covers both the buffer_view branch in load_tex AND the mat.normal_tex
     // assignment in map_mat.  Mesh geometry still loads.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],"
-        "\"materials\":[{\"normalTexture\":{\"index\":0}}],"
-        "\"textures\":[{\"source\":0}],"
-        "\"images\":[{\"bufferView\":1}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4}"
-        "],"
-        "\"buffers\":[{\"byteLength\":40}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"normalTexture\":{\"index\":0}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":40}]}";
     std::string bin;
     emit_tri_verts(bin); // 36 bytes geometry
     bin.push_back(0);
@@ -904,17 +880,16 @@ TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
     // load_tex takes the URI branch; tex.load(dir + uri) fails because the file
     // does not exist → load_tex returns -1 → mat.diffuse_tex = -1.
     // Covers the if(img->uri) branch in load_tex.  Mesh geometry still loads.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],"
-        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
-        "\"textures\":[{\"source\":0}],"
-        "\"images\":[{\"uri\":\"does_not_exist.tga\"}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"uri\":\"does_not_exist.tga\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin;
     emit_tri_verts(bin);
 
@@ -932,14 +907,15 @@ TEST(reject, gltf_missing_external_buffer_fails_load_buffers)
     // .gltf file (not GLB) referencing an external buffer "missing_buf.bin" that
     // is never created.  cgltf_parse_file succeeds; cgltf_load_buffers fails trying
     // to open the missing file → load_gltf returns false.
-    TmpFile f(tmp_path("rast_missingbuf.gltf"),
-              "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-              "{\"POSITION\":0}}]}],"
-              "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-              "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-              "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-              "\"buffers\":[{\"byteLength\":36,\"uri\":\"missing_buf.bin\"}]}");
+    TmpFile f(
+        tmp_path("rast_missingbuf.gltf"), "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                                          "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                                          "{\"POSITION\":0}}]}],"
+                                          "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                                          "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                                          "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                                          "\"buffers\":[{\"byteLength\":36,\"uri\":\"missing_buf.bin\"}]}"
+    );
     assert_rejects(f.path);
 }
 
@@ -948,10 +924,9 @@ TEST(reject, gltf_oversized_buffer_view_fails_validate)
     // GLB whose buffer_view claims byteLength=1000 but the buffer is only 36 bytes.
     // cgltf_parse_file succeeds; cgltf_load_buffers succeeds (BIN chunk embedded);
     // cgltf_validate fails: bv->offset + bv->size (1000) > buffer->size (36).
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},"
-        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":1000}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":1000}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
     std::string bin(36, '\0');
     TmpFile f(tmp_path("rast_bigbv.glb"), make_glb(json, bin));
     assert_rejects(f.path);
@@ -966,25 +941,24 @@ TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
     // vertex_colors.resize(6, {1,1,1}) fills indices 0-5 with white then the
     // loop overwrites [3..5] with actual colors.
     // Covers the vert_base>0 resize path in the color_acc block.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
-        "{\"attributes\":{\"POSITION\":0}},"
-        "{\"attributes\":{\"POSITION\":1,\"COLOR_0\":2}}"
-        "]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
-        "],"
-        "\"buffers\":[{\"byteLength\":120}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0}},"
+                             "{\"attributes\":{\"POSITION\":1,\"COLOR_0\":2}}"
+                             "]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":120}]}";
 
     std::string bin;
     emit_tri_verts(bin); // prim 0 positions (36 bytes)
@@ -1033,20 +1007,19 @@ TEST(gltf_valid, zero_normals_skip_normalise_and_load_succeeds)
 {
     // NORMAL all {0,0,0}: len=0 <= 1e-6 → normalise skipped; normal stays {0,0,0}.
     // has_normals=true so compute_normals() is not called.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0,\"NORMAL\":1}}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0,\"NORMAL\":1}}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
     std::string bin;
     emit_tri_verts(bin);
     for (int i = 0; i < 9; i++)
@@ -1064,20 +1037,19 @@ TEST(gltf_valid, rotation_transform_applied_to_positions_and_normals)
 {
     // 90° CCW rotation around Z: quaternion [x,y,z,w]=[0,0,0.7071068,0.7071068].
     // Vertex (-1,-1,0) → (1,-1,0); normal (1,0,0) → (0,1,0) after normalisation.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0,\"rotation\":[0.0,0.0,0.7071068,0.7071068]}],"
-        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1}}]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
-        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
-        "],"
-        "\"buffers\":[{\"byteLength\":72}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0,\"rotation\":[0.0,0.0,0.7071068,0.7071068]}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1}}]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+                             "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":72}]}";
     std::string bin;
     emit_tri_verts(bin); // positions
     for (int i = 0; i < 3; i++)
@@ -1101,25 +1073,24 @@ TEST(gltf_valid, first_primitive_color0_second_has_no_color)
 {
     // Prim 0: COLOR_0 (red/green/blue). Prim 1: no COLOR_0.
     // vertex_colors filled for prim 0 only (size=3); vertices.size()=6.
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
-        "{\"attributes\":{\"POSITION\":0,\"COLOR_0\":2}},"
-        "{\"attributes\":{\"POSITION\":1}}"
-        "]}],"
-        "\"accessors\":["
-        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
-        "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
-        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
-        "],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
-        "],"
-        "\"buffers\":[{\"byteLength\":120}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0,\"COLOR_0\":2}},"
+                             "{\"attributes\":{\"POSITION\":1}}"
+                             "]}],"
+                             "\"accessors\":["
+                             "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+                             "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+                             "],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":72,\"byteLength\":48}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":120}]}";
     std::string bin;
     emit_tri_verts(bin); // prim 0 positions
     emit_tri_verts(bin); // prim 1 positions
@@ -1152,15 +1123,18 @@ TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
     // Only the default Material{} at index 0; no additional material pushed.
     std::string bin;
     emit_tri_verts(bin);
-    TmpFile f(tmp_path("rast_nullmat.glb"), make_glb(
-                                                "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-                                                "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-                                                "{\"POSITION\":0}}]}],"
-                                                "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-                                                "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-                                                "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-                                                "\"buffers\":[{\"byteLength\":36}]}",
-                                                bin));
+    TmpFile f(
+        tmp_path("rast_nullmat.glb"), make_glb(
+                                          "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                                          "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                                          "{\"POSITION\":0}}]}],"
+                                          "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                                          "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                                          "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                                          "\"buffers\":[{\"byteLength\":36}]}",
+                                          bin
+                                      )
+    );
     Mesh m = load_ok(f.path);
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
     ASSERT_EQ(m.triangles[0].material_idx, 0u);
@@ -1181,20 +1155,19 @@ TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
     emit_tri_verts(bin); // 36 bytes geometry at offset 0
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size);
 
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
-        "{\"POSITION\":0},\"material\":0}]}],"
-        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
-        "\"textures\":[{\"source\":0}],"
-        "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":["
-        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
-        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
-        "],"
-        "\"buffers\":[{\"byteLength\":94}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
 
     TmpFile f(tmp_path("rast_embed_tex.glb"), make_glb(json, bin));
     Mesh m = load_ok(f.path);
@@ -1214,17 +1187,16 @@ TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
     std::string bin;
     emit_tri_verts(bin);
 
-    const std::string json =
-        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
-        "\"nodes\":[{\"mesh\":0}],"
-        "\"meshes\":[{\"primitives\":["
-        "{\"attributes\":{\"NORMAL\":0}},"  // no POSITION → skipped
-        "{\"attributes\":{\"POSITION\":0}}" // POSITION → 1 triangle
-        "]}],"
-        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
-        "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
-        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
-        "\"buffers\":[{\"byteLength\":36}]}";
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],"
+                             "\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"NORMAL\":0}},"  // no POSITION → skipped
+                             "{\"attributes\":{\"POSITION\":0}}" // POSITION → 1 triangle
+                             "]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
 
     TmpFile f(tmp_path("rast_nopos.glb"), make_glb(json, bin));
     Mesh m = load_ok(f.path);
