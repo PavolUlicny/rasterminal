@@ -146,3 +146,13 @@ TEST(clip_reject, third_vertex_w_zero_rejects)
     vec4 c = clip_v(0, 0.5f, 0, 0); // w = 0
     ASSERT_TRUE(clip_reject(a, b, c));
 }
+
+TEST(clip_reject, all_outside_multiple_planes_simultaneously_rejects)
+{
+    // All 3 vertices outside both the right plane (x > w) and top plane (y > w).
+    // clip_reject catches this on the first failing plane check (right plane).
+    vec4 a = clip_v(3.0f, 3.0f, 0, 1);
+    vec4 b = clip_v(4.0f, 4.0f, 0, 1);
+    vec4 c = clip_v(5.0f, 5.0f, 0, 1);
+    ASSERT_TRUE(clip_reject(a, b, c));
+}
