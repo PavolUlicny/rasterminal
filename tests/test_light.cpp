@@ -381,3 +381,88 @@ TEST(light, specular_independent_of_diffuse_branch)
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
     ASSERT_TRUE(r.x > 0.0f);
 }
+
+// ─── apply_light negative ndh_raw ────────────────────────────────────────────
+
+TEST(light, negative_ndh_suppresses_specular)
+{
+    // diff=1 (enter outer if); v={0,-3,0} → h={0,-2,0} → ndh_raw=-2 < 0 → inner
+    // if skipped. Result must be diffuse-only; specular={1,1,1} would inflate it.
+    Material mat;
+    mat.diffuse = {0.8f, 0.6f, 0.4f};
+    mat.specular = {1.0f, 1.0f, 1.0f};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0.0f, 1.0f, 0.0f};
+    l.color = {1.0f, 1.0f, 1.0f};
+    vec3 ambient{0.0f, 0.0f, 0.0f};
+    vec3 n{0.0f, 1.0f, 0.0f};
+    vec3 v{0.0f, -3.0f, 0.0f}; // h = l+v = {0,-2,0}, ndh_raw = -2
+
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    ASSERT_NEAR(r.x, 0.8f, EPS);
+    ASSERT_NEAR(r.y, 0.6f, EPS);
+    ASSERT_NEAR(r.z, 0.4f, EPS);
+}
+
+// ─── specular_pow_sq intermediate shininess ───────────────────────────────────
+
+TEST(specular_pow_sq, shininess_4_matches_power)
+{
+    const float x = 0.75f;
+    ASSERT_NEAR(specular_pow_sq(x * x, 4.0f), std::pow(x, 4.0f), 1e-5f);
+}
+
+TEST(specular_pow_sq, shininess_12_matches_power)
+{
+    const float x = 0.9f;
+    ASSERT_NEAR(specular_pow_sq(x * x, 12.0f), std::pow(x, 12.0f), 1e-5f);
+}
+
+// ─── assume_unit overloads ────────────────────────────────────────────────────
+
+TEST(light, assume_unit_precomputed_v_matches_regular)
+{
+    // Both overloads must produce identical output for a unit normal.
+    Material mat;
+    mat.diffuse = {0.8f, 0.6f, 0.4f};
+    mat.specular = {0.3f, 0.3f, 0.3f};
+    mat.shininess = 16.0f;
+    Light l;
+    l.direction = {0.0f, 1.0f, 0.0f};
+    l.color = {1.0f, 1.0f, 1.0f};
+    vec3 ambient{0.1f, 0.1f, 0.1f};
+    vec3 n{0.0f, 1.0f, 0.0f};
+    vec3 v = normalize(vec3{0.0f, 1.0f, 1.0f});
+
+    vec3 r_reg = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r_au = compute_lighting(assume_unit, n, v, &l, 1, ambient, mat);
+
+    ASSERT_NEAR(r_au.x, r_reg.x, EPS);
+    ASSERT_NEAR(r_au.y, r_reg.y, EPS);
+    ASSERT_NEAR(r_au.z, r_reg.z, EPS);
+}
+
+TEST(light, assume_unit_pos_eye_derives_v_correctly)
+{
+    // The pos/eye_pos assume_unit overload must match the regular pos/eye_pos overload.
+    Material mat;
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.5f, 0.5f, 0.5f};
+    mat.shininess = 32.0f;
+    Light l;
+    l.direction = {0.0f, 1.0f, 0.0f};
+    l.color = {1.0f, 1.0f, 1.0f};
+    vec3 ambient{0.2f, 0.2f, 0.2f};
+    const float ao = 0.7f;
+    vec3 normal{0.0f, 1.0f, 0.0f};
+    vec3 pos{0.0f, 0.0f, 0.0f};
+    vec3 eye_pos{0.0f, 2.0f, 3.0f};
+
+    vec3 r_reg = compute_lighting(pos, normal, eye_pos, &l, 1, ambient, mat, ao);
+    vec3 r_au = compute_lighting(assume_unit, pos, normal, eye_pos, &l, 1, ambient, mat, ao);
+
+    ASSERT_NEAR(r_au.x, r_reg.x, EPS);
+    ASSERT_NEAR(r_au.y, r_reg.y, EPS);
+    ASSERT_NEAR(r_au.z, r_reg.z, EPS);
+}
