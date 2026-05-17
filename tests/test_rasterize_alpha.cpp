@@ -408,3 +408,51 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
         ASSERT_FAIL("has_vcol+cutout: G/B too high, expected near-zero from red vcol, got (" +
                     std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")");
 }
+
+// ─── Group H: cutout-only path (no nmap, no stex) — UV lifecycle ─────────────
+
+// H1: has_cutout=true, nmap=nullptr, stex=nullptr.
+// The block `if (!has_cutout && (tex || nmap || stex))` evaluates false on both
+// halves — UV recompute is entirely skipped.  The `if (tex)` branch uses cutout_rgb
+// (RGB from the pre-pass RGBA sample fetched at the pre-pass UV).
+//
+// Discriminating setup: 2×1 texture (left=red, right=blue) with all vertex UVs at
+// (0.75, 0.5) → samples the blue half.  If the pre-pass UV is missing or defaulted
+// to vec2{} the pixel would be red, not blue.
+TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
+{
+    vec3 sa{4.0f, 2.0f, 0.5f}, sb{36.0f, 2.0f, 0.5f}, sc{20.0f, 18.0f, 0.5f};
+    vec3 zero{}, normal{0.0f, 0.0f, 1.0f}, tan{1.0f, 0.0f, 0.0f}, white{1.0f, 1.0f, 1.0f};
+    vec3 eye{20.0f, 10.0f, -100.0f};
+    vec3 ambient{1.0f, 1.0f, 1.0f};
+    Material mat{};
+    mat.diffuse = {1.0f, 1.0f, 1.0f};
+    mat.ambient = {1.0f, 1.0f, 1.0f};
+    mat.specular = {0.0f, 0.0f, 0.0f};
+    mat.alpha_cutoff = 0.5f;
+    // 2×1: left=red, right=blue; both fully opaque.
+    // Sampler: fx = u*(width-1) = u*1.  At u=0.99: tx=0.99 → R≈3, B≈252.
+    // If UV defaulted to zero: tx=0 → pure red (R=255) — distinguishes the paths.
+    Texture tex = make_tex(2, 1, {255, 0, 0, 255, 0, 0, 255, 255});
+    vec2 uv{0.99f, 0.5f}; // deep in the blue half; opaque alpha passes cutout
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    rasterize_phong(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f,
+                    zero, zero, zero, normal, normal, normal, tan, tan, tan,
+                    uv, uv, uv,
+                    1.0f, 1.0f, 1.0f,
+                    white, white, white, false,
+                    eye, nullptr, 0, ambient, mat,
+                    &tex, nullptr, nullptr, nullptr,
+                    0, 19);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    // ambient*(1,1,1)*blue_texel=(0,0,1) → R≈0, B≈255
+    if (c.r > 10)
+        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (R≈0), got R=" +
+                    std::to_string(static_cast<int>(c.r)));
+    if (c.b < 200)
+        ASSERT_FAIL("cutout UV lifecycle: expected blue texel (B≈255), got B=" +
+                    std::to_string(static_cast<int>(c.b)));
+}
