@@ -113,7 +113,7 @@ namespace
         return "Unknown";
     }
 
-    void run_bench(const Mesh &mesh, const ParsedArgs &args)
+    void run_bench(const Mesh &mesh, const ParsedArgs &args, double load_ms)
     {
         using clock = std::chrono::steady_clock;
 
@@ -194,17 +194,29 @@ namespace
         const double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
 
         std::fprintf(
-            stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  (%.0f ms total)\n", n_measure, args.bench_width,
-            args.bench_height, n_threads, shading_mode_name(renderer.mode), total_ms
+            stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  mesh=%zu Tris / %zu Verts\n", n_measure,
+            args.bench_width, args.bench_height, n_threads, shading_mode_name(renderer.mode), mesh.triangles.size(),
+            mesh.vertices.size()
         );
-        std::fprintf(stderr, "mesh:    %zu tris  %zu verts\n", mesh.triangles.size(), mesh.vertices.size());
+
+        std::fprintf(stderr, "startup:\n");
+        std::fprintf(stderr, "  load    %.2f ms\n", load_ms);
         if (shadow_ms)
-            std::fprintf(stderr, "shadow:  %.2f ms  (one-time)\n", *shadow_ms);
+        {
+            std::fprintf(stderr, "  shadow  %.2f ms\n", *shadow_ms);
+            std::fprintf(stderr, "  total   %.2f ms\n", load_ms + *shadow_ms);
+        }
+
+        std::fprintf(stderr, "runtime:\n");
+        std::fprintf(stderr, "  min     %.2f ms\n", ms(mn));
         std::fprintf(
-            stderr, "frame:   min=%.2f  med=%.2f  p95=%.2f  max=%.2f  stddev=%.2f ms  (≈ %d fps)\n", ms(mn), med_ms,
-            ms(p95), ms(mx), stddev_ms, static_cast<int>(std::lround(fps))
+            stderr, "  median  %.2f ms   ≈ %d fps   %.1f MTri/s   %.1f MVert/s\n", med_ms,
+            static_cast<int>(std::lround(fps)), mtri_s, mvert_s
         );
-        std::fprintf(stderr, "         %.1f MTri/s  %.1f MVert/s  (input / median frame)\n", mtri_s, mvert_s);
+        std::fprintf(stderr, "  p95     %.2f ms\n", ms(p95));
+        std::fprintf(stderr, "  max     %.2f ms\n", ms(mx));
+        std::fprintf(stderr, "  stddev  %.2f ms\n", stddev_ms);
+        std::fprintf(stderr, "  total   %.0f ms  (%d frames incl. warmup)\n", total_ms, n_warmup + n_measure);
     }
 
 } // namespace
@@ -217,8 +229,9 @@ int main(int argc, char *argv[])
     const ParsedArgs &args = parsed.args;
 
     const int n_threads = resolve_thread_count(args.n_threads);
-
+    const bool bench_mode = args.bench > 0;
     Mesh mesh;
+    const auto load_t0 = std::chrono::steady_clock::now();
     if (!mesh.load_model(args.model_path, args.ao, n_threads))
     {
         std::fprintf(
@@ -230,9 +243,11 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    if (args.bench >= 1)
+    if (bench_mode)
     {
-        run_bench(mesh, args);
+        const double load_ms =
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
+        run_bench(mesh, args, load_ms);
         return 0;
     }
 
