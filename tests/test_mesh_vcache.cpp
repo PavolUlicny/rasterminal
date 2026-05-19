@@ -350,3 +350,45 @@ TEST(vcache, cache_eviction_large_mesh)
         ASSERT_TRUE(found_top);
     }
 }
+
+// ─── Group F: Material-grouping correctness ──────────────────────────────────
+
+TEST(vcache, material_idx_stays_aligned_with_geometry)
+{
+    // Two materials interleaved across usemtl directives so triangles arrive
+    // out of material order — forces the scatter path in optimize_vertex_cache.
+    // After meshopt's per-group reorder, each triangle's material_idx must
+    // still match the half its centroid sits in (left → red, right → blue).
+    // Pre-fix this failed: meshopt reordered triangles globally while
+    // material_idx stayed in original slots, so geometry and material desynced.
+    TmpFile mtl(
+        tmp_path("rast_vc_matalign.mtl"), "newmtl red\nKd 1 0 0\n"
+                                          "newmtl blue\nKd 0 0 1\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_vc_matalign.obj"), "mtllib rast_vc_matalign.mtl\n"
+                                          "v -2 0 0\nv -1 0 0\nv 0 0 0\nv 1 0 0\nv 2 0 0\n"
+                                          "v -2 1 0\nv -1 1 0\nv 0 1 0\nv 1 1 0\nv 2 1 0\n"
+                                          "usemtl red\nf 1 2 7\nf 1 7 6\n"
+                                          "usemtl blue\nf 3 4 9\nf 3 9 8\n"
+                                          "usemtl red\nf 2 3 8\nf 2 8 7\n"
+                                          "usemtl blue\nf 4 5 10\nf 4 10 9\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.triangles.size() == 8u);
+    for (const auto &tri : m.triangles)
+    {
+        const float cx = (m.vertices[tri.v[0]].pos.x + m.vertices[tri.v[1]].pos.x + m.vertices[tri.v[2]].pos.x) / 3.0f;
+        const vec3 &kd = m.mat_at(tri.material_idx).diffuse;
+        if (cx < 0.0f)
+        {
+            ASSERT_NEAR(kd.x, 1.0f, 1e-4f);
+            ASSERT_NEAR(kd.z, 0.0f, 1e-4f);
+        }
+        else
+        {
+            ASSERT_NEAR(kd.x, 0.0f, 1e-4f);
+            ASSERT_NEAR(kd.z, 1.0f, 1e-4f);
+        }
+    }
+}
