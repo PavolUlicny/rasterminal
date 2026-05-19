@@ -82,8 +82,10 @@ struct Mesh
     // Called by load_model() after compute_tangents(), unless ao=false was passed.
     void compute_ao(int n_threads = 1);
 
-    // Reorder triangles for vertex cache coherence (Tom Forsyth's algorithm) and
-    // remap the vertex array to first-use order. Output is bit-identical to input;
-    // only storage order changes. Called at the end of load_model().
-    void optimize_vertex_cache();
+    // Run meshoptimizer's three-pass pipeline (vertex cache, overdraw, vertex
+    // fetch) and remap the vertex array to first-use order. Multi-material
+    // meshes are grouped by material_idx before optimization so meshopt cannot
+    // strand per-triangle metadata; per-material groups optimize in parallel
+    // when n_threads > 1. Called at the end of load_model().
+    void optimize_vertex_cache(int n_threads = 1);
 };

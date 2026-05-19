@@ -4,6 +4,7 @@
 #include "meshoptimizer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -61,7 +62,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     compute_tangents();
     if (ao && ext != "stl")
         compute_ao(n_threads);
-    optimize_vertex_cache();
+    optimize_vertex_cache(n_threads);
 
     return true;
 }
@@ -252,24 +253,108 @@ void Mesh::compute_ao(int n_threads)
 
 // ─── Mesh::optimize_vertex_cache ─────────────────────────────────────────────
 
-void Mesh::optimize_vertex_cache()
+void Mesh::optimize_vertex_cache(int n_threads)
 {
     if (triangles.size() < 2)
         return;
 
     const size_t nv = vertices.size();
     const size_t nt = triangles.size();
-
     const size_t ni = nt * 3;
+
+    // meshopt's vertex-cache and overdraw passes reorder triangles within the
+    // index range we hand them but expose no permutation, so per-triangle
+    // metadata (here material_idx) gets stranded. Group triangles by material
+    // so each occupies a contiguous range, then call meshopt per range —
+    // reordering within a single-material range is safe. Single-material
+    // meshes skip grouping entirely. Loaders never write material_idx >=
+    // materials.size(), so that's a safe bucket count.
+    const bool multi_material = materials.size() > 1;
+    const size_t n_buckets = std::max<size_t>(materials.size(), 1);
+    std::vector<uint32_t> bucket_start;
+
+    if (multi_material)
+    {
+        bucket_start.assign(n_buckets + 1, 0);
+        bool already_sorted = true;
+        uint32_t prev_mat = 0;
+        for (const auto &t : triangles)
+        {
+            bucket_start[t.material_idx + 1]++;
+            already_sorted &= (t.material_idx >= prev_mat);
+            prev_mat = t.material_idx;
+        }
+        for (size_t i = 1; i <= n_buckets; i++)
+            bucket_start[i] += bucket_start[i - 1];
+
+        // glTF arrives in material order; OBJ may interleave. Skip the scatter
+        // when triangles are already grouped.
+        if (!already_sorted)
+        {
+            std::vector<Triangle> sorted(nt);
+            std::vector<uint32_t> cursor(
+                bucket_start.begin(), bucket_start.begin() + static_cast<std::ptrdiff_t>(n_buckets)
+            );
+            for (const auto &t : triangles)
+                sorted[cursor[t.material_idx]++] = t;
+            triangles = std::move(sorted);
+        }
+    }
+
     std::vector<uint32_t> idx(ni);
     for (size_t i = 0; i < nt; i++)
         for (size_t j = 0; j < 3; j++)
             idx[i * 3 + j] = triangles[i].v[j];
 
-    meshopt_optimizeVertexCache(idx.data(), idx.data(), ni, nv);
+    // 1.05 threshold: accept up to 5% vertex-cache regression for better
+    // occlusion ordering.
+    const auto optimize_range = [&](uint32_t *buf, size_t count)
+    {
+        meshopt_optimizeVertexCache(buf, buf, count, nv);
+        meshopt_optimizeOverdraw(buf, buf, count, &vertices[0].pos.x, nv, sizeof(Vertex), 1.05f);
+    };
 
-    // 1.05 threshold: accept up to 5% cache regression for better occlusion ordering.
-    meshopt_optimizeOverdraw(idx.data(), idx.data(), ni, &vertices[0].pos.x, nv, sizeof(Vertex), 1.05f);
+    if (multi_material)
+    {
+        // Per-group calls touch disjoint idx slices and read vertices[] only,
+        // so they parallelize cleanly — claws back the per-call allocator
+        // overhead meshopt pays on every entry.
+        const auto run_group = [&](size_t m)
+        {
+            const size_t g_start = bucket_start[m];
+            const size_t g_end = bucket_start[m + 1];
+            if (g_end - g_start < 2)
+                return;
+            optimize_range(idx.data() + g_start * 3, (g_end - g_start) * 3);
+        };
+
+        if (n_threads <= 1)
+        {
+            for (size_t m = 0; m < n_buckets; m++)
+                run_group(m);
+        }
+        else
+        {
+            std::atomic<size_t> next{ 0 };
+            const auto worker = [&]()
+            {
+                for (size_t m = next.fetch_add(1, std::memory_order_relaxed); m < n_buckets;
+                     m = next.fetch_add(1, std::memory_order_relaxed))
+                    run_group(m);
+            };
+            std::vector<std::thread> threads;
+            threads.reserve(static_cast<size_t>(n_threads - 1));
+            for (int t = 0; t < n_threads - 1; t++)
+                threads.emplace_back(worker);
+            worker();
+            for (auto &thr : threads)
+                thr.join();
+        }
+    }
+    else
+    {
+        optimize_range(idx.data(), ni);
+    }
 
     std::vector<uint32_t> remap(nv);
     const size_t new_nv = meshopt_optimizeVertexFetchRemap(remap.data(), idx.data(), ni, nv);
