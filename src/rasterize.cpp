@@ -17,6 +17,10 @@ namespace
 
     constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
 
+    // Standard normal-incidence reflectance (F0) for dielectrics; metals lerp from
+    // this toward their base colour by the metalness factor.
+    constexpr vec3 DIELECTRIC_F0{ 0.04f, 0.04f, 0.04f };
+
     constexpr Color vec3_to_color(vec3 c) noexcept
     {
         return { static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
@@ -367,7 +371,7 @@ void rasterize_phong(
     vec3 nb, vec3 nc, vec3 tana, vec3 tanb, vec3 tanc, vec2 uva, vec2 uvb, vec2 uvc, float aoa, float aob, float aoc,
     vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, const vec3 &eye, const Light *lights, int n_lights,
     const vec3 &ambient, const Material &mat, const Texture *tex, const Texture *nmap, const Texture *stex,
-    const ShadowMap *shadow_map, int y_min, int y_max
+    const ShadowMap *shadow_map, int y_min, int y_max, const Texture *mrtex
 )
 {
     const int width = fb.width();
@@ -387,6 +391,8 @@ void rasterize_phong(
     float bb_row = s.bb_row;
 
     const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
+    // Off (false) for every dielectric and non-glTF material, so they run unchanged.
+    const bool is_metallic = (mat.metallic > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -457,7 +463,7 @@ void rasterize_phong(
 
             // Compute UV once — needed by both diffuse and normal map.
             // Skip when has_cutout: uv was already computed in the pre-pass above.
-            if (!has_cutout && (tex || nmap || stex))
+            if (!has_cutout && (tex || nmap || stex || mrtex))
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
@@ -487,7 +493,7 @@ void rasterize_phong(
             // Only copy Material when a texture modifies it; otherwise use mat directly.
             Material mat_tex;
             const Material *use_mat = &mat;
-            if (tex || stex)
+            if (tex || stex || is_metallic)
             {
                 mat_tex = mat;
                 if (tex)
@@ -513,6 +519,23 @@ void rasterize_phong(
                 }
                 mat_tex.diffuse = mat_tex.diffuse * vcol;
                 mat_tex.ambient = mat_tex.ambient * vcol;
+            }
+
+            // Metals tint specular reflectance (F0) toward their base colour (already
+            // in mat_tex.diffuse); dielectrics keep the 4% baseline. Diffuse is
+            // deliberately NOT zeroed as strict PBR would: with no environment map a
+            // diffuse-less metal has nothing to reflect and renders near-black.
+            if (is_metallic)
+            {
+                const vec3 base = mat_tex.diffuse;
+                float metalness = mat.metallic;
+                if (mrtex)
+                {
+                    const vec3 mr = mrtex->sample_rgb(uv.x, uv.y); // G=roughness, B=metallic
+                    metalness *= mr.z;
+                    mat_tex.shininess = roughness_to_shininess(mat.roughness * mr.y);
+                }
+                mat_tex.specular = lerp(DIELECTRIC_F0, base, metalness);
             }
 
             // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.

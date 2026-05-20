@@ -198,7 +198,8 @@ void Renderer::worker_func(int t)
                                 a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
                                 show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1
+                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
+                                (mesh->has_metallic && show_tex) ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr
                             );
                         }
                         else

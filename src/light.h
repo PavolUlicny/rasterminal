@@ -30,6 +30,14 @@ inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
     return std::exp2f(shininess * 0.5f * std::log2f(ndh_sq));
 }
 
+// Map glTF roughness [0,1] to a Blinn-Phong shininess exponent. Used by the loader
+// (scalar roughnessFactor) and the Phong rasterizer (per-texel roughness from the MR
+// texture), so the mapping is defined once.
+inline float roughness_to_shininess(float roughness) noexcept
+{
+    return (1.0f - roughness) * 126.0f + 2.0f;
+}
+
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 struct Material
 {
@@ -40,6 +48,11 @@ struct Material
     int diffuse_tex = -1;  // index into Mesh::textures, or -1 if none
     int specular_tex = -1; // index into Mesh::textures, or -1 if none
     int normal_tex = -1;   // index into Mesh::textures, or -1 if none
+    // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
+    // per-pixel metallic work — non-glTF loaders leave these untouched).
+    float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
+    float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
+    int metallic_roughness_tex = -1; // index into Mesh::textures (G=roughness, B=metallic), or -1 if none
     bool double_sided = false;
     float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
 };

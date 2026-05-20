@@ -75,7 +75,11 @@ bool Mesh::load_gltf(const std::string &path)
         mat.ambient = mat.diffuse;
         const float mf = pbr.metallic_factor;
         mat.specular = { mf, mf, mf };
-        mat.shininess = (1.0f - pbr.roughness_factor) * 126.0f + 2.0f;
+        mat.shininess = roughness_to_shininess(pbr.roughness_factor);
+        mat.metallic = mf;
+        mat.roughness = pbr.roughness_factor;
+        if (pbr.metallic_roughness_texture.texture)
+            mat.metallic_roughness_tex = load_tex(pbr.metallic_roughness_texture.texture->image);
         if (pbr.base_color_texture.texture)
             mat.diffuse_tex = load_tex(pbr.base_color_texture.texture->image);
         if (m->normal_texture.texture)

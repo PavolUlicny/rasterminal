@@ -543,3 +543,106 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
             std::to_string(static_cast<int>(fb_stex.get_pixel(20, 10).r))
         );
 }
+
+// ── Group F: glTF metallic-roughness remap ────────────────────────────────────
+// rasterize_phong tints specular reflectance toward the base colour when
+// mat.metallic > 0:  specular(F0) = lerp(0.04, base, m),  m = mat.metallic * MR_tex.b.
+// Diffuse is intentionally NOT zeroed (no IBL → diffuse-less metals go near-black).
+// Dielectrics (metallic == 0) are untouched.
+
+// F1: a metal keeps its diffuse-lit surface. Grazing view (eye on +x, light/normal
+// on +z) gives full N·L (diffuse) but tiny N·H (no specular peak), so brightness can
+// only come from diffuse. Both metal and dielectric stay lit — guards against
+// re-introducing the diffuse-kill, which would render the metal near-black here.
+TEST(rasterize_phong, metallic_keeps_diffuse)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 5.0f, 0.0f, 0.0f }; // grazing: V≈(1,0,0), so N·H≈0.707 → 0.707^32 ≈ 0
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
+
+    auto rph = [&](Framebuffer &fb, float metallic)
+    {
+        Material mat{};
+        mat.diffuse = { 1.0f, 1.0f, 1.0f };
+        mat.ambient = { 0.0f, 0.0f, 0.0f };
+        mat.specular = { 0.0f, 0.0f, 0.0f };
+        mat.shininess = 32.0f;
+        mat.metallic = metallic;
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
+            19
+        );
+    };
+
+    Framebuffer fb_diel(40, 20, /*headless=*/true), fb_metal(40, 20, /*headless=*/true);
+    rph(fb_diel, 0.0f);
+    rph(fb_metal, 1.0f);
+
+    ASSERT_TRUE(was_drawn(fb_diel, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
+    if (fb_diel.get_pixel(20, 10).r < 240)
+        ASSERT_FAIL(
+            "dielectric: full diffuse expected, got R=" + std::to_string(static_cast<int>(fb_diel.get_pixel(20, 10).r))
+        );
+    if (fb_metal.get_pixel(20, 10).r < 240)
+        ASSERT_FAIL(
+            "metal: diffuse must be kept (not zeroed), got R=" +
+            std::to_string(static_cast<int>(fb_metal.get_pixel(20, 10).r))
+        );
+}
+
+// F2: metallic=1 tints F0 by the base colour. Peak specular (H=N) with a blue base
+// must stay blue — a regression to the old white specular={metallic} would light up
+// R/G. An MR texture with B=0 (dielectric texel) overrides metallic back to 0.
+TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f }; // V=(0,0,1), light=(0,0,1) → H=N → peak specular
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    Texture mr_dielectric = make_tex_rgba(1, 1, { 0, 255, 0, 255 }); // B=0 metallic, G=1 roughness
+
+    auto rph = [&](Framebuffer &fb, const Texture *mrtex)
+    {
+        Material mat{};
+        mat.diffuse = { 0.0f, 0.0f, 1.0f }; // blue base colour
+        mat.ambient = { 0.0f, 0.0f, 0.0f };
+        mat.specular = { 0.0f, 0.0f, 0.0f };
+        mat.shininess = 32.0f;
+        mat.metallic = 1.0f;
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
+            19, mrtex
+        );
+    };
+
+    Framebuffer fb_metal(40, 20, /*headless=*/true), fb_mr(40, 20, /*headless=*/true);
+    rph(fb_metal, nullptr);
+    rph(fb_mr, &mr_dielectric);
+
+    ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
+    Color metal = fb_metal.get_pixel(20, 10);
+    if (metal.b < 240)
+        ASSERT_FAIL("metal: blue F0 highlight expected, got B=" + std::to_string(static_cast<int>(metal.b)));
+    if (metal.r > 20)
+        ASSERT_FAIL("metal: highlight should be blue not white, got R=" + std::to_string(static_cast<int>(metal.r)));
+
+    // MR texel B=0 forces m=0 → dielectric: F0 = lerp(0.04, base, 0) ≈ 0.04 (a faint
+    // highlight, R≈10), with the blue base diffuse dominating — not a blue metal F0.
+    Color mr = fb_mr.get_pixel(20, 10);
+    if (mr.b < 240)
+        ASSERT_FAIL("mr-dielectric: full blue diffuse expected, got B=" + std::to_string(static_cast<int>(mr.b)));
+    if (mr.r > 20)
+        ASSERT_FAIL("mr-dielectric: red should stay zero, got R=" + std::to_string(static_cast<int>(mr.r)));
+}

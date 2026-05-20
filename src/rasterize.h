@@ -50,5 +50,7 @@ void rasterize_phong(
     vec3 nb, vec3 nc, vec3 tana, vec3 tanb, vec3 tanc, vec2 uva, vec2 uvb, vec2 uvc, float aoa, float aob, float aoc,
     vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, const vec3 &eye, const Light *lights, int n_lights,
     const vec3 &ambient, const Material &mat, const Texture *tex, const Texture *nmap, const Texture *stex,
-    const ShadowMap *shadow_map, int y_min, int y_max
+    const ShadowMap *shadow_map, int y_min, int y_max,
+    const Texture *mrtex =
+        nullptr // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
 );

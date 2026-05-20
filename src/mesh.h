@@ -31,6 +31,7 @@ struct Mesh
     std::vector<vec3> vertex_colors; // per-vertex RGB; populated only when has_vertex_colors is true
     bool has_vertex_colors = false;  // true when any loader populates vertex_colors (PLY, OBJ, glTF COLOR_0)
     bool has_double_sided = false;   // true if any material in the mesh has double_sided = true
+    bool has_metallic = false;       // true if any material has metallic > 0 (gates the Phong metallic path)
 
     [[nodiscard]] const Material &mat_at(uint32_t idx) const
     {

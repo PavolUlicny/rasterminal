@@ -58,6 +58,11 @@ TEST(gltf_valid, pbr_material_mapping)
     ASSERT_NEAR(mat.ambient.x, 0.5f, 1e-4f);
     ASSERT_NEAR(mat.specular.x, 0.3f, 1e-4f);
     ASSERT_NEAR(mat.shininess, 77.6f, 1e-2f);
+    // PBR factors retained for the Phong metallic remap; no MR texture here.
+    ASSERT_NEAR(mat.metallic, 0.3f, 1e-4f);
+    ASSERT_NEAR(mat.roughness, 0.4f, 1e-4f);
+    ASSERT_EQ(mat.metallic_roughness_tex, -1);
+    ASSERT_TRUE(m.has_metallic); // metallicFactor 0.3 > 0
 }
 
 TEST(gltf_valid, double_sided_flag_set)
