@@ -2,6 +2,9 @@
 #include "rasterize_test_util.h"
 #include "../src/rasterize.h"
 
+#include <atomic>
+#include <thread>
+
 // Call rasterize() with white flat colour, no texture/shadow, on the given band.
 static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_max)
 {
@@ -262,6 +265,60 @@ TEST(framebuffer, test_and_set_depth_semantics)
     ASSERT_FALSE(fb.test_and_set_depth(5, -1, 0.1f));
     ASSERT_FALSE(fb.test_and_set_depth(10, 5, 0.1f));
     ASSERT_FALSE(fb.test_and_set_depth(5, 10, 0.1f));
+}
+
+// Two threads race writing different (depth, color) at the same pixel.
+// The shallower fragment's color must always be the one observed — depth and
+// color update atomically together, regardless of which thread's CAS landed last.
+TEST(framebuffer, multithread_depth_color_race)
+{
+    constexpr int ITERS = 500;
+    constexpr int N_PAIRS_PER_ITER = 256;
+
+    Framebuffer fb(64, 64, /*headless=*/true);
+    std::atomic<bool> go{ false };
+
+    for (int it = 0; it < ITERS; ++it)
+    {
+        fb.clear({ 0, 0, 0 });
+        go.store(false, std::memory_order_relaxed);
+
+        // Thread A writes the shallower fragment (depth 0.2, red).
+        std::thread ta(
+            [&]
+            {
+                while (!go.load(std::memory_order_acquire))
+                {
+                }
+                for (int i = 0; i < N_PAIRS_PER_ITER; ++i)
+                    (void)fb.commit_pixel(i % 64, (i / 64) % 64, 0.2f, Color{ 255, 0, 0 });
+            }
+        );
+        // Thread B writes the deeper fragment (depth 0.8, blue) — must lose.
+        std::thread tb(
+            [&]
+            {
+                while (!go.load(std::memory_order_acquire))
+                {
+                }
+                for (int i = 0; i < N_PAIRS_PER_ITER; ++i)
+                    (void)fb.commit_pixel(i % 64, (i / 64) % 64, 0.8f, Color{ 0, 0, 255 });
+            }
+        );
+
+        go.store(true, std::memory_order_release);
+        ta.join();
+        tb.join();
+
+        // For every pixel both threads touched, the shallower (red) color must win.
+        for (int i = 0; i < N_PAIRS_PER_ITER; ++i)
+        {
+            const Color c = fb.get_pixel(i % 64, (i / 64) % 64);
+            ASSERT_EQ(c.r, 255);
+            ASSERT_EQ(c.g, 0);
+            ASSERT_EQ(c.b, 0);
+        }
+    }
 }
 
 // ─── perspective-correct interpolation ───────────────────────────────────────

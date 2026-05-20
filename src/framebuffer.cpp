@@ -79,11 +79,10 @@ namespace
 
 Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
     : m_width(pixel_width), m_height(pixel_height),
-      m_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_depth(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)), m_headless(headless)
+      m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
+      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u), m_headless(headless)
 {
-    fill_depth_infinity();
+    fill_cleared(0u);
     if (!m_headless)
     {
         // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
@@ -110,10 +109,9 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_width = pixel_width;
     m_height = pixel_height;
     const size_t npx = static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height);
-    m_color = std::vector<std::atomic<uint32_t>>(npx);
-    m_prev_color = std::vector<std::atomic<uint32_t>>(npx);
-    m_depth = std::vector<std::atomic<float>>(npx);
-    fill_depth_infinity();
+    m_pixel = std::vector<std::atomic<uint64_t>>(npx);
+    m_prev_color = std::vector<uint32_t>(npx, 0u);
+    fill_cleared(0u);
     m_buf.clear();
     m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
     m_force_redraw = true;
@@ -125,10 +123,7 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
 
 void Framebuffer::clear(Color bg)
 {
-    const uint32_t packed = pack_color(bg);
-    for (auto &c : m_color)
-        c.store(packed, std::memory_order_relaxed);
-    fill_depth_infinity();
+    fill_cleared(pack_color(bg));
 }
 
 void Framebuffer::present()
@@ -242,8 +237,8 @@ void Framebuffer::present()
         }
     };
 
-    auto unpack = [](uint32_t v) -> Color
-    { return { static_cast<uint8_t>(v), static_cast<uint8_t>(v >> 8u), static_cast<uint8_t>(v >> 16u) }; };
+    auto load_color = [&](size_t i) -> uint32_t
+    { return unpack_color_bits(m_pixel[i].load(std::memory_order_relaxed)); };
 
     if (m_force_redraw)
     {
@@ -257,10 +252,15 @@ void Framebuffer::present()
             const size_t bot_base = pixel_idx(0, prow + 1 < m_height ? prow + 1 : prow);
 
             for (int col = 0; col < m_width; col++)
-                emit_cell(
-                    unpack(m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed)),
-                    unpack(m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed))
-                );
+            {
+                const size_t ti = top_base + static_cast<size_t>(col);
+                const size_t bi = bot_base + static_cast<size_t>(col);
+                const uint32_t tc = load_color(ti);
+                const uint32_t bc = load_color(bi);
+                emit_cell(unpack_color(tc), unpack_color(bc));
+                m_prev_color[ti] = tc;
+                m_prev_color[bi] = bc;
+            }
         }
         m_force_redraw = false;
     }
@@ -276,17 +276,20 @@ void Framebuffer::present()
             int col = 0;
             while (col < m_width)
             {
-                const uint32_t top_cur = m_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed);
-                const uint32_t bot_cur = m_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed);
-                if (top_cur != m_prev_color[top_base + static_cast<size_t>(col)].load(std::memory_order_relaxed) ||
-                    bot_cur != m_prev_color[bot_base + static_cast<size_t>(col)].load(std::memory_order_relaxed))
+                const size_t ti = top_base + static_cast<size_t>(col);
+                const size_t bi = bot_base + static_cast<size_t>(col);
+                const uint32_t top_cur = load_color(ti);
+                const uint32_t bot_cur = load_color(bi);
+                if (top_cur != m_prev_color[ti] || bot_cur != m_prev_color[bi])
                 {
                     if (!row_started)
                     {
                         append_cursor_pos(row + 1, col + 1);
                         row_started = true;
                     }
-                    emit_cell(unpack(top_cur), unpack(bot_cur));
+                    emit_cell(unpack_color(top_cur), unpack_color(bot_cur));
+                    m_prev_color[ti] = top_cur;
+                    m_prev_color[bi] = bot_cur;
                     col++;
                 }
                 else if (!row_started)
@@ -298,11 +301,10 @@ void Framebuffer::present()
                     // col+0 is already known unchanged (dirty check above); start at 1.
                     int skip = 1;
                     while (col + skip < m_width &&
-                           m_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) ==
-                               m_prev_color[top_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed
-                               ) &&
-                           m_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed) ==
-                               m_prev_color[bot_base + static_cast<size_t>(col + skip)].load(std::memory_order_relaxed))
+                           load_color(top_base + static_cast<size_t>(col + skip)) ==
+                               m_prev_color[top_base + static_cast<size_t>(col + skip)] &&
+                           load_color(bot_base + static_cast<size_t>(col + skip)) ==
+                               m_prev_color[bot_base + static_cast<size_t>(col + skip)])
                         skip++;
                     if (skip == 1)
                         m_buf.append("\033[C", 3);
@@ -343,8 +345,4 @@ void Framebuffer::present()
     // the session is already broken; there is no meaningful recovery path here.
     (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
     (void)std::fflush(stdout);
-
-    // Swap instead of copy: O(1) and leaves m_prev_color holding the frame
-    // we just rendered — the correct reference for the next dirty comparison.
-    m_color.swap(m_prev_color);
 }

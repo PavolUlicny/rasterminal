@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
@@ -244,12 +245,14 @@ void rasterize(
     float bb_row = s.bb_row;
 
     const bool has_cutout = (alpha_cutoff > 0.0f && tex);
+    const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
         float bb = bb_row;
-        for (int x = s.x0; x <= s.x1; x++)
+        size_t idx = static_cast<size_t>(y) * stride + static_cast<size_t>(s.x0);
+        for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
             if (ba < 0.0f || bb < 0.0f)
             {
@@ -294,7 +297,7 @@ void rasterize(
                 cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
-            if (!fb.unchecked_test_and_set_depth(x, y, depth))
+            if (!fb.depth_test_relaxed(idx, depth))
             {
                 ba += ba_dx;
                 bb += bb_dx;
@@ -340,7 +343,7 @@ void rasterize(
                 }
             }
 
-            fb.unchecked_set_pixel(x, y, vec3_to_color(col));
+            fb.commit_pixel(idx, depth, vec3_to_color(col));
 
             ba += ba_dx;
             bb += bb_dx;
@@ -384,12 +387,14 @@ void rasterize_phong(
     float bb_row = s.bb_row;
 
     const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
+    const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
         float bb = bb_row;
-        for (int x = s.x0; x <= s.x1; x++)
+        size_t idx = static_cast<size_t>(y) * stride + static_cast<size_t>(s.x0);
+        for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
             if (ba < 0.0f || bb < 0.0f)
             {
@@ -432,7 +437,7 @@ void rasterize_phong(
                 cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
-            if (!fb.unchecked_test_and_set_depth(x, y, depth))
+            if (!fb.depth_test_relaxed(idx, depth))
             {
                 ba += ba_dx;
                 bb += bb_dx;
@@ -525,7 +530,7 @@ void rasterize_phong(
                 const vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
                 color = lerp(lit, shd, sf);
             }
-            fb.unchecked_set_pixel(x, y, vec3_to_color(color));
+            fb.commit_pixel(idx, depth, vec3_to_color(color));
 
             ba += ba_dx;
             bb += bb_dx;
