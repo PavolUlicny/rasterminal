@@ -17,7 +17,7 @@ A software 3D rasterizer that renders entirely in the terminal. No GPU, no windo
 - **Vertex colours** — PLY and glTF COLOR_0; per-face colours on PLY and STL
 - **Double-sided materials** — glTF `doubleSided` flag respected with correct back-face normals
 - **Near-plane clipping** — no pop-in artefacts when the camera gets close
-- **Multithreaded** — work-stealing rasterizer; thread count configurable
+- **Multithreaded** — single-pass work-stealing pipeline; workers run geometry and rasterization end-to-end on each triangle chunk and commit fragments through a 64-bit atomic depth+colour slot (no intermediate band buffer, no inter-phase barrier). Thread count configurable.
 - **Terminal resize** — framebuffer adapts each frame
 - **Clean exit** — restores terminal state on quit, Ctrl+C, or SIGTERM
 
@@ -89,6 +89,9 @@ rasterminal [options] <model>
 | `--spin` | `-S` | off | Start with auto-rotation enabled |
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
+| `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
+| `--bench-size` | | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
+| `--bench-warmup` | | `20` | Warmup frames discarded before measurement; requires `--bench` |
 | `--no-shadow` | | | Disable shadow map (faster startup on large meshes) |
 | `--no-ao` | | | Disable baked ambient occlusion |
 | `--no-hud` | | | Hide the status bar |
