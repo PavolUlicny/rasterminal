@@ -14,8 +14,10 @@ NamespaceIndentation: All
 # Column limit — code regularly reaches ~115 chars
 ColumnLimit: 120
 
-# Pointer/reference attached to the variable name (const vec3 &o, not const vec3& o)
+# Pointer/reference attached to the variable name (const vec3 &o, not const vec3& o);
+# DerivePointerAlignment off so the setting above is always honoured, never guessed from the file
 PointerAlignment: Right
+DerivePointerAlignment: false
 
 # Braced init lists: elements on separate lines, block-indented, closing brace on its own line
 AlignAfterOpenBracket: BlockIndent
@@ -25,6 +27,36 @@ Cpp11BracedListStyle: false
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
 
 # Include order is maintained manually (main header → project headers → system headers)
 SortIncludes: false
+
+# const on the left (const T, not T const)
+QualifierAlignment: Left
+
+# Reject stray redundant semicolons after definitions
+RemoveSemicolon: true
+
+# Trailing comments aligned within a block
+AlignTrailingComments: true
+
+# Wrapped ternaries break before ? and :
+BreakBeforeTernaryOperators: true
+
+# Preprocessor directives stay flush left (flat) — matches existing style and the LLVM default
+IndentPPDirectives: None
+
+# No space after C-style casts: (int)x — matches existing style and the LLVM/Google default
+SpaceAfterCStyleCast: false
+
+# Pin the parser to the project's actual standard (C++17), not Latest
+Standard: c++17
+
+# File hygiene: ensure a trailing newline, no runs of blank lines
+InsertNewlineAtEOF: true
+MaxEmptyLinesToKeep: 1
+
+# Keep // namespace <name> closing comments on long namespace bodies
+FixNamespaceComments: true
