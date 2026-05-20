@@ -97,7 +97,7 @@ namespace
     void make_default_lights(Light out[2], vec3 &ambient)
     {
         out[0].direction = { 0.408f, 0.816f, 0.408f };
-        out[0].color = { 1.0f, 0.9f, 0.75f };
+        out[0].color = { 0.85f, 0.77f, 0.64f };
         out[1].direction = { -0.667f, -0.333f, -0.667f };
         out[1].color = { 0.3f, 0.3f, 0.33f };
         ambient = { 0.32f, 0.32f, 0.33f };
