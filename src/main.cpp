@@ -93,8 +93,8 @@ namespace
         out[0].direction = { 0.408f, 0.816f, 0.408f };
         out[0].color = { 1.0f, 0.9f, 0.75f };
         out[1].direction = { -0.667f, -0.333f, -0.667f };
-        out[1].color = { 0.15f, 0.25f, 0.5f };
-        ambient = { 0.2f, 0.2f, 0.25f };
+        out[1].color = { 0.3f, 0.3f, 0.33f };
+        ambient = { 0.32f, 0.32f, 0.33f };
     }
 
     constexpr const char *shading_mode_name(ShadingMode mode) noexcept
