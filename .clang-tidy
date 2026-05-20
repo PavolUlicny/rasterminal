@@ -23,7 +23,6 @@ Checks: >-
   -cppcoreguidelines-pro-type-vararg,
   -cppcoreguidelines-non-private-member-variables-in-classes,
   -hicpp-uppercase-literal-suffix,
-  -hicpp-braces-around-statements,
   -hicpp-no-array-decay,
   -hicpp-avoid-c-arrays,
   -hicpp-vararg,
@@ -31,10 +30,8 @@ Checks: >-
   -modernize-avoid-c-arrays,
   -readability-identifier-length,
   -readability-uppercase-literal-suffix,
-  -readability-braces-around-statements,
   -readability-magic-numbers,
   -readability-implicit-bool-conversion,
   -readability-function-cognitive-complexity,
   -readability-avoid-nested-conditional-operator,
-  -google-readability-braces-around-statements,
   -google-runtime-int
