@@ -50,7 +50,9 @@ class Framebuffer
     [[nodiscard]] bool test_and_set_depth(int x, int y, float depth)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+        {
             return false;
+        }
         auto &slot = m_pixel[pixel_idx(x, y)];
         const uint64_t cur = slot.load(std::memory_order_relaxed);
         if (depth < unpack_depth(cur))
@@ -66,7 +68,9 @@ class Framebuffer
     void set_pixel(int x, int y, Color color)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+        {
             return;
+        }
         auto &slot = m_pixel[pixel_idx(x, y)];
         const uint64_t cur = slot.load(std::memory_order_relaxed);
         slot.store(pack_pixel(unpack_depth(cur), pack_color(color)), std::memory_order_relaxed);
@@ -75,7 +79,9 @@ class Framebuffer
     [[nodiscard]] Color get_pixel(int x, int y) const
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+        {
             return {};
+        }
         return unpack_color(unpack_color_bits(m_pixel[pixel_idx(x, y)].load(std::memory_order_relaxed)));
     }
 
@@ -99,7 +105,9 @@ class Framebuffer
         while (depth < unpack_depth(old))
         {
             if (slot.compare_exchange_weak(old, want, std::memory_order_relaxed, std::memory_order_relaxed))
+            {
                 return true;
+            }
         }
         return false;
     }
@@ -155,7 +163,9 @@ class Framebuffer
     {
         const uint64_t v = pack_pixel(std::numeric_limits<float>::infinity(), bg_bits);
         for (auto &p : m_pixel)
+        {
             p.store(v, std::memory_order_relaxed);
+        }
     }
 
     [[nodiscard]] size_t pixel_idx(int x, int y) const noexcept

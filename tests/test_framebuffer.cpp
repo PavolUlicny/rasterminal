@@ -267,7 +267,9 @@ struct CaptureStdout
         {
             const size_t n = std::fread(buf, 1, sizeof(buf), tmp);
             if (n == 0)
+            {
                 break;
+            }
             out.append(buf, n);
         }
         return out;

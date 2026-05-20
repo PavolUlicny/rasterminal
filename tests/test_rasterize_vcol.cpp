@@ -14,7 +14,9 @@ static Texture make_vcol_tex(int w, int h, std::initializer_list<int> rgba)
     t.height = h;
     t.pixels.reserve(rgba.size());
     for (int v : rgba)
+    {
         t.pixels.push_back(static_cast<uint8_t>(v));
+    }
     return t;
 }
 
@@ -71,10 +73,12 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 250 || c.g < 250 || c.b < 250)
+    {
         ASSERT_FAIL(
             "has_vcol=false: expected white, got (" + std::to_string(static_cast<int>(c.r)) + "," +
             std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
+    }
 }
 
 // V2: has_vcol=true: red vcol on all vertices must produce a red pixel.
@@ -92,9 +96,13 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 250)
+    {
         ASSERT_FAIL("has_vcol=true red: R too low (" + std::to_string(static_cast<int>(c.r)) + "), expected ~255");
+    }
     if (c.g > 5 || c.b > 5)
+    {
         ASSERT_FAIL("has_vcol=true red: G/B too high, expected near-zero");
+    }
 }
 
 // V3: white vcol with has_vcol=true must match the has_vcol=false result within ±2.
@@ -153,14 +161,18 @@ TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
     ASSERT_TRUE(was_drawn(fb, 12, 10));
     Color c = fb.get_pixel(12, 10);
     if (c.b < 200)
+    {
         ASSERT_FAIL(
             "B too low (" + std::to_string(static_cast<int>(c.b)) +
             "): perspective-correct vcol should bias hard toward blue"
         );
+    }
     if (c.r > 60)
+    {
         ASSERT_FAIL(
             "R too high (" + std::to_string(static_cast<int>(c.r)) + "): far red vertices should contribute little"
         );
+    }
 }
 
 // V6: red vcol × green diffuse texture → black.
@@ -182,8 +194,10 @@ TEST(rasterize_phong, vcol_combined_with_diffuse_texture)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5 || c.g > 5 || c.b > 5)
+    {
         ASSERT_FAIL(
             "expected black (red vcol * green tex = 0 per channel), got (" + std::to_string(static_cast<int>(c.r)) +
             "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
+    }
 }

@@ -22,7 +22,9 @@ bool Mesh::load_obj(const std::string &path)
     std::string obj_dir;
     const size_t slash = path.find_last_of("/\\");
     if (slash != std::string::npos)
+    {
         obj_dir = path.substr(0, slash + 1);
+    }
 
     tinyobj::ObjReaderConfig cfg;
     cfg.mtl_search_path = obj_dir;
@@ -30,7 +32,9 @@ bool Mesh::load_obj(const std::string &path)
 
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(path, cfg))
+    {
         return false;
+    }
 
     const auto &attrib = reader.GetAttrib();
     const auto &shapes = reader.GetShapes();
@@ -42,11 +46,17 @@ bool Mesh::load_obj(const std::string &path)
     const size_t n_nor = attrib.normals.size() / 3;
     const size_t n_tex = attrib.texcoords.size() / 2;
     for (const auto &shape : shapes)
+    {
         for (const auto &idx : shape.mesh.indices)
+        {
             if ((idx.vertex_index >= 0 && static_cast<size_t>(idx.vertex_index) >= n_pos) ||
                 (idx.normal_index >= 0 && static_cast<size_t>(idx.normal_index) >= n_nor) ||
                 (idx.texcoord_index >= 0 && static_cast<size_t>(idx.texcoord_index) >= n_tex))
+            {
                 return false;
+            }
+        }
+    }
 
     // Default white material at index 0 — always present.
     materials.push_back(Material{});
@@ -55,10 +65,14 @@ bool Mesh::load_obj(const std::string &path)
     auto load_tex = [&](const std::string &name) -> int
     {
         if (name.empty())
+        {
             return -1;
+        }
         Texture tex;
         if (!tex.load(obj_dir + name))
+        {
             return -1;
+        }
         const int idx = static_cast<int>(textures.size());
         textures.push_back(std::move(tex));
         return idx;
@@ -81,7 +95,9 @@ bool Mesh::load_obj(const std::string &path)
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
         if (!m.alpha_texname.empty())
+        {
             mat.alpha_cutoff = 0.5f;
+        }
         materials.push_back(mat);
     }
 
@@ -100,7 +116,9 @@ bool Mesh::load_obj(const std::string &path)
 
         const auto [it, inserted] = vert_cache.emplace(key, static_cast<uint32_t>(vertices.size()));
         if (!inserted)
+        {
             return it->second;
+        }
 
         Vertex v{};
         if (idx.vertex_index >= 0)
@@ -146,7 +164,9 @@ bool Mesh::load_obj(const std::string &path)
             {
                 std::array<uint32_t, 3> fv3{};
                 for (int v = 0; v < 3; v++)
+                {
                     fv3[static_cast<size_t>(v)] = get_vertex(shape.mesh.indices[idx_off + static_cast<size_t>(v)]);
+                }
 
                 Triangle t;
                 t.v[0] = fv3[0];
@@ -160,14 +180,18 @@ bool Mesh::load_obj(const std::string &path)
     }
 
     if (triangles.empty())
+    {
         return false;
+    }
 
     // Populate vertex colors when "v x y z r g b" data is present.
     if (src_has_vcol)
     {
         vertex_colors.assign(vertices.size(), { 1.0f, 1.0f, 1.0f });
         for (const auto &shape : shapes)
+        {
             for (const auto &idx : shape.mesh.indices)
+            {
                 if (idx.vertex_index >= 0)
                 {
                     const size_t ci = static_cast<size_t>(idx.vertex_index) * 3;
@@ -176,18 +200,26 @@ bool Mesh::load_obj(const std::string &path)
                                        (static_cast<size_t>(idx.texcoord_index + 1) * size_t{ 3266489917 });
                     const auto it = vert_cache.find(key);
                     if (it != vert_cache.end())
+                    {
                         vertex_colors[it->second] = { attrib.colors[ci], attrib.colors[ci + 1], attrib.colors[ci + 2] };
+                    }
                 }
+            }
+        }
         has_vertex_colors = std::any_of(
             vertex_colors.begin(), vertex_colors.end(),
             [](const vec3 &c) { return c.x < 0.999f || c.y < 0.999f || c.z < 0.999f; }
         );
         if (!has_vertex_colors)
+        {
             vertex_colors.clear();
+        }
     }
 
     if (attrib.normals.empty() || !all_have_normals)
+    {
         compute_normals();
+    }
 
     snap.commit();
     return true;

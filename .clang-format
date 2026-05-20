@@ -63,3 +63,6 @@ FixNamespaceComments: true
 
 # When a call/decl wraps, put each parameter on its own line (no bin-packing)
 BinPackParameters: false
+
+# Mandatory braces on all control statements — no single-statement if/for/while bodies
+InsertBraces: true

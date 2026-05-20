@@ -66,7 +66,9 @@ inline vec3 normalize(const vec3 &v) noexcept
 {
     const float len_sq = v.length_sq();
     if (len_sq < 1e-16f)
+    {
         return {};
+    }
     const float inv_len = 1.0f / std::sqrt(len_sq);
     return { v.x * inv_len, v.y * inv_len, v.z * inv_len };
 }
@@ -124,9 +126,15 @@ struct mat4
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
+        {
             for (int r = 0; r < 4; r++)
+            {
                 for (int k = 0; k < 4; k++)
+                {
                     result.m[c][r] += m[k][r] * o.m[c][k];
+                }
+            }
+        }
         return result;
     }
 
@@ -142,8 +150,12 @@ struct mat4
     {
         mat4 result;
         for (int c = 0; c < 4; c++)
+        {
             for (int r = 0; r < 4; r++)
+            {
                 result.m[r][c] = m[c][r];
+            }
+        }
         return result;
     }
 };
@@ -288,7 +300,9 @@ inline quat normalize(const quat &q) noexcept
 {
     const float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
     if (len_sq < 1e-8f)
+    {
         return quat::identity();
+    }
     const float inv = 1.0f / std::sqrt(len_sq);
     return { q.x * inv, q.y * inv, q.z * inv, q.w * inv };
 }

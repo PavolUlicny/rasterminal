@@ -22,7 +22,9 @@ TEST(gltf_valid, pbr_material_mapping)
                        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
                        "\"buffers\":[{\"byteLength\":36}]}";
     while (json.size() % 4 != 0)
+    {
         json += ' ';
+    }
     const uint32_t jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
@@ -76,7 +78,9 @@ TEST(gltf_valid, double_sided_flag_set)
                        "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
                        "\"buffers\":[{\"byteLength\":36}]}";
     while (json.size() % 4 != 0)
+    {
         json += ' ';
+    }
     const uint32_t jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
@@ -123,7 +127,9 @@ TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_load
         "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
         "\"buffers\":[{\"byteLength\":36}]}";
     while (json.size() % 4 != 0)
+    {
         json += ' ';
+    }
     const uint32_t jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
@@ -174,7 +180,9 @@ TEST(gltf_valid, unused_vertex_keeps_ao_at_one)
         "],"
         "\"buffers\":[{\"byteLength\":102}]}";
     while (json.size() % 4 != 0)
+    {
         json += ' ';
+    }
     const uint32_t jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
@@ -249,7 +257,9 @@ static std::string make_glb(const std::string &json_raw, const std::string &bin)
 {
     std::string json = json_raw;
     while (json.size() % 4 != 0)
+    {
         json += ' ';
+    }
     const uint32_t jlen = static_cast<uint32_t>(json.size());
     const uint32_t blen = static_cast<uint32_t>(bin.size());
     std::string glb;
@@ -1028,7 +1038,9 @@ TEST(gltf_valid, zero_normals_skip_normalise_and_load_succeeds)
     std::string bin;
     emit_tri_verts(bin);
     for (int i = 0; i < 9; i++)
+    {
         emit_f32_le(bin, 0.0f); // 3 zero normals
+    }
     TmpFile f(tmp_path("rast_zeronorm.glb"), make_glb(json, bin));
     Mesh m = load_ok(f.path);
     ASSERT_NEAR(m.vertices[0].normal.x, 0.0f, 1e-6f);
@@ -1121,11 +1133,17 @@ TEST(gltf_valid, first_primitive_color0_second_has_no_color)
     for (const auto &c : m.vertex_colors)
     {
         if (c.x > 0.9f && c.y < 0.1f && c.z < 0.1f)
+        {
             found_red = true;
+        }
         if (c.x < 0.1f && c.y > 0.9f && c.z < 0.1f)
+        {
             found_green = true;
+        }
         if (c.x < 0.1f && c.y < 0.1f && c.z > 0.9f)
+        {
             found_blue = true;
+        }
     }
     ASSERT_TRUE(found_red);
     ASSERT_TRUE(found_green);

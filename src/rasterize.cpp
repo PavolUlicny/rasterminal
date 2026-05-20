@@ -49,12 +49,16 @@ namespace
         s.y0 = std::max(y_min, static_cast<int>(std::floor(std::min({ sa.y, sb.y, sc.y }))));
         s.y1 = std::min(y_max, static_cast<int>(std::ceil(std::max({ sa.y, sb.y, sc.y }))));
         if (s.y0 > s.y1 || s.x0 > s.x1)
+        {
             return false;
+        }
 
         // Barycentric denominator (proportional to 2× signed screen area).
         const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
         if (std::abs(denom) < DEGEN_AREA_EPS)
+        {
             return false;
+        }
         const float inv_d = 1.0f / denom;
 
         s.inv_wa = 1.0f / wa;
@@ -101,7 +105,9 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
         return 1;
     }
     if (n == 0)
+    {
         return 0;
+    }
 
     // Only cases with partial visibility need local permutation/crossing.
     ClipVert aa = a;
@@ -193,7 +199,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     if (steps == 0)
     {
         if (fb.test_and_set_depth(x0, y0, a.z))
+        {
             fb.set_pixel(x0, y0, color);
+        }
         return;
     }
 
@@ -209,7 +217,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
         const int px = static_cast<int>(std::round(x));
         const int py = static_cast<int>(std::round(y));
         if (fb.test_and_set_depth(px, py, z))
+        {
             fb.set_pixel(px, py, color);
+        }
         x += sx;
         y += sy;
         z += sz;
@@ -257,7 +267,9 @@ void rasterize(
     TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
                 // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
+    {
         return;
+    }
 
     const float inv_wa = s.inv_wa;
     const float inv_wb = s.inv_wb;
@@ -360,7 +372,9 @@ void rasterize(
             if (tex)
             {
                 if (has_cutout)
+                {
                     col = col * cutout_rgb;
+                }
                 else
                 {
                     const vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
@@ -432,7 +446,9 @@ void rasterize_phong(
     TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
                 // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, width, y_min, y_max, s))
+    {
         return;
+    }
 
     const float inv_wa = s.inv_wa;
     const float inv_wb = s.inv_wb;
@@ -518,7 +534,9 @@ void rasterize_phong(
             // Compute UV once — needed by both diffuse and normal map.
             // Skip when has_cutout: uv was already computed in the pre-pass above.
             if (!has_cutout && (tex || nmap || stex || mrtex))
+            {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+            }
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
             if (nmap)
@@ -558,7 +576,9 @@ void rasterize_phong(
                     mat_tex.ambient = mat_tex.ambient * tc;
                 }
                 if (stex)
+                {
                     mat_tex.specular = mat_tex.specular * stex->sample_rgb(uv.x, uv.y);
+                }
                 use_mat = &mat_tex;
             }
 
@@ -598,9 +618,13 @@ void rasterize_phong(
             const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
             vec3 color;
             if (sf <= 0.0f)
+            {
                 color = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
+            }
             else if (sf >= 1.0f)
+            {
                 color = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
+            }
             else
             {
                 const vec3 lit = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);

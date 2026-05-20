@@ -120,7 +120,9 @@ TEST(renderer, near_clip_one_vertex_behind_renders)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("one-vertex-behind triangle: clip_near must produce visible output");
+    }
 }
 
 // G2: two vertices behind near plane, one in front.
@@ -137,7 +139,9 @@ TEST(renderer, near_clip_two_vertices_behind_renders)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("two-vertices-behind triangle: clip_near must produce visible output");
+    }
 }
 
 // G3: all three vertices behind near plane → clip_near returns 0 → no pixels (MT path).
@@ -151,7 +155,9 @@ TEST(renderer, near_clip_fully_behind_draws_nothing)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.1f, 0.1f, 0.1f }, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("fully-behind triangle must not produce any pixels");
+    }
 }
 
 // G4: wireframe path with a straddling triangle → clip_near fires → pixels drawn.
@@ -166,7 +172,9 @@ TEST(renderer, near_clip_wireframe_straddling_renders)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("wireframe: straddling triangle must draw clipped edges");
+    }
 }
 
 // G5: wireframe path with all vertices behind → no pixels.
@@ -180,7 +188,9 @@ TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("wireframe: fully-behind triangle must produce no pixels");
+    }
 }
 
 // G6: raising camera.near_plane above all clip-w values rejects a front-facing
@@ -199,7 +209,9 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("near_plane=10 must reject all vertices (clip w=5 < near_plane)");
+    }
 }
 
 // ─── grid mesh helper ─────────────────────────────────────────────────────────
@@ -220,15 +232,18 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     v.normal = { 0.0f, 0.0f, 1.0f };
     v.uv = { 0.5f, 0.5f };
     for (int j = 0; j <= grid_h; j++)
+    {
         for (int i = 0; i <= grid_w; i++)
         {
             v.pos = { -half + static_cast<float>(i) * dx, -half + static_cast<float>(j) * dy, 0.0f };
             m.vertices.push_back(v);
         }
+    }
 
     m.tangents.resize(m.vertices.size(), { 1.0f, 0.0f, 0.0f });
 
     for (int j = 0; j < grid_h; j++)
+    {
         for (int i = 0; i < grid_w; i++)
         {
             const auto v00 = static_cast<uint32_t>(j * (grid_w + 1) + i);
@@ -246,6 +261,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
             tri.v[2] = v01;
             m.triangles.push_back(tri);
         }
+    }
 
     m.materials.push_back(Material{});
     return m;
@@ -272,7 +288,9 @@ TEST(renderer, many_triangles_grid_renders_expected_coverage)
     r.render(mesh, cam, &light, 1, ambient, fb);
     int drawn = count_drawn_pixels(fb);
     if (drawn < 200)
+    {
         ASSERT_FAIL("grid: only " + std::to_string(drawn) + " pixels drawn, expected ≥200");
+    }
 }
 
 // H2: same grid with 1 vs 4 workers → identical pixel counts.
@@ -301,9 +319,11 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
     int n1 = count_drawn_pixels(fb1);
     int n4 = count_drawn_pixels(fb4);
     if (n1 != n4)
+    {
         ASSERT_FAIL(
             "1-worker drew " + std::to_string(n1) + " px, 4-worker drew " + std::to_string(n4) + " px: must match"
         );
+    }
 }
 
 // H3: rendering same mesh twice reuses same Renderer → second frame must match.
@@ -326,10 +346,12 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     int n1 = count_drawn_pixels(fb1);
     int n2 = count_drawn_pixels(fb2);
     if (n1 != n2)
+    {
         ASSERT_FAIL(
             "second render drew " + std::to_string(n2) + " px vs first " + std::to_string(n1) +
             ": m_tri_cursor may not have been reset"
         );
+    }
     assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
 }
 
@@ -355,10 +377,12 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 
     int n = count_drawn_pixels(fb2);
     if (n != 0)
+    {
         ASSERT_FAIL(
             "empty mesh after grid: " + std::to_string(n) +
             " stale pixels remain — fb.clear() or tri-cursor reset may be broken"
         );
+    }
 }
 
 // ─── AO mesh helpers ──────────────────────────────────────────────────────────
@@ -449,7 +473,9 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
+    {
         ASSERT_FAIL("flat ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+    }
 }
 
 // I8: Flat — all ao=1 → full ambient → bright baseline.
@@ -468,7 +494,9 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 180)
+    {
         ASSERT_FAIL("flat ao=1: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≥180");
+    }
 }
 
 // I2: Flat — ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
@@ -487,7 +515,9 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     Color c = fb.get_pixel(20, 10);
     // face_ao = (1+0+0)/3 ≈ 0.333 → R = 0.8*0.333*255 ≈ 68; allow [50,90].
     if (c.r < 50 || c.r > 90)
+    {
         ASSERT_FAIL("flat ao avg: R=" + std::to_string(static_cast<int>(c.r)) + " expected 50-90 (face_ao≈1/3)");
+    }
 }
 
 // I3: Gouraud — all ao=0 → all compute_lighting calls yield 0 ambient → black.
@@ -505,7 +535,9 @@ TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
+    {
         ASSERT_FAIL("gouraud ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+    }
 }
 
 // I4: Gouraud — ao=(1,0,0) → colour gradient across triangle.
@@ -527,11 +559,17 @@ TEST(renderer, gouraud_ao_interpolates_across_triangle)
     int r_near_a = static_cast<int>(fb.get_pixel(13, 17).r);
     int r_near_c = static_cast<int>(fb.get_pixel(20, 3).r);
     if (r_near_a < 120)
+    {
         ASSERT_FAIL("gouraud ao interp: near-a R=" + std::to_string(r_near_a) + " expected ≥120");
+    }
     if (r_near_c > 30)
+    {
         ASSERT_FAIL("gouraud ao interp: near-c R=" + std::to_string(r_near_c) + " expected ≤30");
+    }
     if (r_near_a - r_near_c < 80)
+    {
         ASSERT_FAIL("gouraud ao interp: gradient=" + std::to_string(r_near_a - r_near_c) + " expected ≥80");
+    }
 }
 
 // I5: Phong — all ao=0 → rasterize_phong produces 0 ambient → black.
@@ -549,7 +587,9 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
+    {
         ASSERT_FAIL("phong ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
+    }
 }
 
 // I6: Phong — ao=(1,0,0) → per-pixel AO gradient across triangle.
@@ -570,11 +610,17 @@ TEST(renderer, phong_ao_interpolates_per_pixel)
     int r_near_a = static_cast<int>(fb.get_pixel(13, 17).r);
     int r_near_c = static_cast<int>(fb.get_pixel(20, 3).r);
     if (r_near_a < 120)
+    {
         ASSERT_FAIL("phong ao interp: near-a R=" + std::to_string(r_near_a) + " expected ≥120");
+    }
     if (r_near_c > 30)
+    {
         ASSERT_FAIL("phong ao interp: near-c R=" + std::to_string(r_near_c) + " expected ≤30");
+    }
     if (r_near_a - r_near_c < 80)
+    {
         ASSERT_FAIL("phong ao interp: gradient=" + std::to_string(r_near_a - r_near_c) + " expected ≥80");
+    }
 }
 
 // I7: AO must not affect direct diffuse (only ambient).

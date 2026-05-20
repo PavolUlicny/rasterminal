@@ -20,7 +20,9 @@ TEST(obj_valid, mtl_multi_material_loaded)
     Mesh m = load_ok(obj.path);
     // Two usemtl directives → at least 2 non-default materials loaded.
     if (m.materials.size() < 2)
+    {
         ASSERT_FAIL("multi-material OBJ should produce at least 2 materials");
+    }
 }
 
 TEST(obj_valid, quad_multi_face_triangulates_to_twelve)

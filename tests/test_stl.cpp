@@ -26,7 +26,9 @@ TEST(stl_valid, binary_single_triangle)
     std::string s(80, 'X');     // 80-byte header (non-"solid")
     emit_u32_le(s, 1);          // tri_count = 1
     for (int i = 0; i < 3; i++) // normal (ignored)
+    {
         emit_f32_le(s, 0);
+    }
     emit_f32_le(s, 0);
     emit_f32_le(s, 0);
     emit_f32_le(s, 0);
@@ -53,7 +55,9 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
     s.resize(80, ' '); // pad to exactly 80 bytes
     emit_u32_le(s, 1); // tri_count = 1
     for (int i = 0; i < 3; i++)
+    {
         emit_f32_le(s, 0);
+    }
     emit_f32_le(s, 0);
     emit_f32_le(s, 0);
     emit_f32_le(s, 0);
@@ -126,14 +130,20 @@ TEST(reject, stl_binary_truncated_mid_triangle)
     emit_u32_le(s, 2);
     // First triangle (complete, 50 bytes).
     for (int i = 0; i < 3; i++)
+    {
         emit_f32_le(s, 0); // normal
+    }
     for (int i = 0; i < 9; i++)
+    {
         emit_f32_le(s, 0); // 3 verts
+    }
     s.push_back(0);
     s.push_back(0); // attr
     // Second triangle (truncated — only first 20 bytes).
     for (int i = 0; i < 5; i++)
+    {
         emit_f32_le(s, 0);
+    }
     TmpFile t(tmp_path("rasterminal_test_truncfacet.stl"), s);
     assert_rejects(t.path);
 }
@@ -209,7 +219,9 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
 
     // ao is hardcoded to 1.0 in the expansion loop (STL has no AO data).
     for (const Vertex &v : m.vertices)
+    {
         ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
+    }
 }
 
 TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
@@ -233,7 +245,9 @@ TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
     );
     Mesh m = load_ok(t.path);
     for (const Vertex &v : m.vertices)
+    {
         ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+    }
 }
 
 TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
@@ -245,7 +259,9 @@ TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
     for (int tri = 0; tri < 2; tri++)
     {
         for (int i = 0; i < 3; i++)
+        {
             emit_f32_le(s, 0.0f); // normal (ignored)
+        }
         // Non-degenerate triangle, shifted per tri so no vertex deduplication.
         emit_f32_le(s, static_cast<float>(tri * 10));
         emit_f32_le(s, 0.0f);
@@ -310,7 +326,9 @@ TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
     std::string s(80, 'X');
     emit_u32_le(s, 1); // tri_count = 1
     for (int i = 0; i < 3; i++)
+    {
         emit_f32_le(s, 0.0f); // normal (ignored)
+    }
     emit_f32_le(s, 0.0f);
     emit_f32_le(s, 0.0f);
     emit_f32_le(s, 0.0f);

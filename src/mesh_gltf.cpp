@@ -21,21 +21,29 @@ bool Mesh::load_gltf(const std::string &path)
     std::string dir;
     const size_t slash = path.find_last_of("/\\");
     if (slash != std::string::npos)
+    {
         dir = path.substr(0, slash + 1);
+    }
 
     const cgltf_options opts{};
     cgltf_data *data = nullptr;
 
     if (cgltf_parse_file(&opts, path.c_str(), &data) != cgltf_result_success)
+    {
         return false;
+    }
 
     // RAII guard — ensures cgltf_free on every exit path.
     const auto guard = std::unique_ptr<cgltf_data, decltype(&cgltf_free)>(data, cgltf_free);
 
     if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success)
+    {
         return false;
+    }
     if (cgltf_validate(data) != cgltf_result_success)
+    {
         return false;
+    }
 
     // Default white material at index 0.
     materials.push_back(Material{});
@@ -44,7 +52,9 @@ bool Mesh::load_gltf(const std::string &path)
     auto load_tex = [&](const cgltf_image *img) -> int
     {
         if (!img)
+        {
             return -1;
+        }
         Texture tex;
         bool ok = false;
         if (img->uri && img->uri[0] != '\0')
@@ -58,7 +68,9 @@ bool Mesh::load_gltf(const std::string &path)
             ok = tex.load_from_memory(ptr, bv->size);
         }
         if (!ok)
+        {
             return -1;
+        }
         const int idx = static_cast<int>(textures.size());
         textures.push_back(std::move(tex));
         return idx;
@@ -69,7 +81,9 @@ bool Mesh::load_gltf(const std::string &path)
     {
         Material mat{};
         if (!m)
+        {
             return mat;
+        }
         const cgltf_pbr_metallic_roughness &pbr = m->pbr_metallic_roughness;
         mat.diffuse = { pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2] };
         mat.ambient = mat.diffuse;
@@ -79,14 +93,22 @@ bool Mesh::load_gltf(const std::string &path)
         mat.metallic = mf;
         mat.roughness = pbr.roughness_factor;
         if (pbr.metallic_roughness_texture.texture)
+        {
             mat.metallic_roughness_tex = load_tex(pbr.metallic_roughness_texture.texture->image);
+        }
         if (pbr.base_color_texture.texture)
+        {
             mat.diffuse_tex = load_tex(pbr.base_color_texture.texture->image);
+        }
         if (m->normal_texture.texture)
+        {
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
+        }
         mat.double_sided = m->double_sided;
         if (m->alpha_mode == cgltf_alpha_mode_mask)
+        {
             mat.alpha_cutoff = m->alpha_cutoff;
+        }
         return mat;
     };
 
@@ -108,12 +130,16 @@ bool Mesh::load_gltf(const std::string &path)
             {
                 const cgltf_primitive &prim = node->mesh->primitives[pi];
                 if (prim.type != cgltf_primitive_type_triangles)
+                {
                     continue;
+                }
 
                 const uint32_t mat_idx = [&]() -> uint32_t
                 {
                     if (!prim.material)
+                    {
                         return 0u;
+                    }
                     const auto idx = static_cast<uint32_t>(materials.size());
                     materials.push_back(map_mat(prim.material));
                     return idx;
@@ -128,17 +154,27 @@ bool Mesh::load_gltf(const std::string &path)
                 {
                     const cgltf_attribute &attr = prim.attributes[ai];
                     if (attr.type == cgltf_attribute_type_position)
+                    {
                         pos_acc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_normal)
+                    {
                         norm_acc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
+                    {
                         uv_acc = attr.data;
+                    }
                     else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
+                    {
                         color_acc = attr.data;
+                    }
                 }
 
                 if (!pos_acc)
+                {
                     continue;
+                }
 
                 const size_t n_verts = pos_acc->count;
                 const size_t vert_base = vertices.size();
@@ -163,7 +199,9 @@ bool Mesh::load_gltf(const std::string &path)
                         v.normal.z = w[2] * n[0] + w[6] * n[1] + w[10] * n[2];
                         const float len = v.normal.length();
                         if (len > 1e-6f)
+                        {
                             v.normal = v.normal * (1.0f / len);
+                        }
                     }
 
                     if (uv_acc)
@@ -178,7 +216,9 @@ bool Mesh::load_gltf(const std::string &path)
                 }
 
                 if (norm_acc)
+                {
                     has_normals = true;
+                }
 
                 if (color_acc)
                 {
@@ -225,19 +265,29 @@ bool Mesh::load_gltf(const std::string &path)
         }
 
         for (size_t i = 0; i < node->children_count; i++)
+        {
             visit(node->children[i]);
+        }
     };
 
     const cgltf_scene *scene = data->scene ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (scene)
+    {
         for (size_t i = 0; i < scene->nodes_count; i++)
+        {
             visit(scene->nodes[i]);
+        }
+    }
 
     if (vertices.empty() || triangles.empty())
+    {
         return false;
+    }
 
     if (!has_normals)
+    {
         compute_normals();
+    }
 
     snap.commit();
     return true;

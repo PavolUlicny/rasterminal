@@ -25,7 +25,9 @@ TEST(draw_line, horizontal)
     draw_line(fb, { 2.0f, 5.0f, 0.5f }, { 8.0f, 5.0f, 0.5f }, Color{ 255, 255, 255 });
 
     for (int x = 2; x <= 8; ++x)
+    {
         ASSERT_TRUE(was_drawn(fb, x, 5));
+    }
     ASSERT_FALSE(was_drawn(fb, 1, 5));
     ASSERT_FALSE(was_drawn(fb, 9, 5));
     ASSERT_FALSE(was_drawn(fb, 5, 4));
@@ -38,7 +40,9 @@ TEST(draw_line, vertical)
     draw_line(fb, { 5.0f, 2.0f, 0.5f }, { 5.0f, 8.0f, 0.5f }, Color{ 255, 255, 255 });
 
     for (int y = 2; y <= 8; ++y)
+    {
         ASSERT_TRUE(was_drawn(fb, 5, y));
+    }
     ASSERT_FALSE(was_drawn(fb, 5, 1));
     ASSERT_FALSE(was_drawn(fb, 5, 9));
     ASSERT_FALSE(was_drawn(fb, 4, 5));
@@ -51,7 +55,9 @@ TEST(draw_line, diagonal)
     draw_line(fb, { 1.0f, 1.0f, 0.5f }, { 7.0f, 7.0f, 0.5f }, Color{ 255, 255, 255 });
 
     for (int i = 1; i <= 7; ++i)
+    {
         ASSERT_TRUE(was_drawn(fb, i, i));
+    }
 }
 
 TEST(draw_line, single_pixel)
@@ -112,8 +118,12 @@ TEST(draw_line, fully_offscreen_draws_nothing)
     draw_line(fb, { -10.0f, -10.0f, 0.5f }, { -5.0f, -5.0f, 0.5f }, Color{ 255, 255, 255 });
     // No pixel inside the framebuffer should have been touched.
     for (int y = 0; y < fb.height(); y++)
+    {
         for (int x = 0; x < fb.width(); x++)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 // ─── rasterize ────────────────────────────────────────────────────────────────
@@ -169,7 +179,9 @@ TEST(rasterize, degenerate_collinear_skipped)
     rast(fb, { 5.0f, 5.0f, 0.5f }, { 15.0f, 5.0f, 0.5f }, { 10.0f, 5.0f, 0.5f }, 0, fb.height() - 1);
 
     for (int x = 4; x <= 16; ++x)
+    {
         ASSERT_FALSE(was_drawn(fb, x, 5));
+    }
 }
 
 TEST(rasterize, entirely_off_screen_no_crash)
@@ -179,8 +191,12 @@ TEST(rasterize, entirely_off_screen_no_crash)
     rast(fb, { -50.0f, -30.0f, 0.5f }, { -20.0f, -30.0f, 0.5f }, { -35.0f, -10.0f, 0.5f }, 0, fb.height() - 1);
 
     for (int x = 0; x < fb.width(); ++x)
+    {
         for (int y = 0; y < fb.height(); ++y)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 TEST(rasterize, subpixel_degenerate_no_crash)
@@ -291,7 +307,9 @@ TEST(framebuffer, multithread_depth_color_race)
                 {
                 }
                 for (int i = 0; i < N_PAIRS_PER_ITER; ++i)
+                {
                     (void)fb.commit_pixel(i % 64, (i / 64) % 64, 0.2f, Color{ 255, 0, 0 });
+                }
             }
         );
         // Thread B writes the deeper fragment (depth 0.8, blue) — must lose.
@@ -302,7 +320,9 @@ TEST(framebuffer, multithread_depth_color_race)
                 {
                 }
                 for (int i = 0; i < N_PAIRS_PER_ITER; ++i)
+                {
                     (void)fb.commit_pixel(i % 64, (i / 64) % 64, 0.8f, Color{ 0, 0, 255 });
+                }
             }
         );
 
@@ -439,11 +459,15 @@ TEST(rasterize, unequal_w_color_biased_to_near_vertex)
     ASSERT_TRUE(was_drawn(fb, 12, 10));
     Color c = fb.get_pixel(12, 10);
     if (c.r > 50)
+    {
         ASSERT_FAIL(
             "R too high (" + std::to_string(static_cast<int>(c.r)) + "): expected bias toward blue near vertex"
         );
+    }
     if (c.b < 200)
+    {
         ASSERT_FAIL("B too low (" + std::to_string(static_cast<int>(c.b)) + "): expected bias toward blue near vertex");
+    }
 }
 
 // a=white(far), b=red(near), c=green(far); wb=1, wa=wc=10.
@@ -462,13 +486,17 @@ TEST(rasterize, unequal_w_screen_midpoint_not_attribute_midpoint)
     ASSERT_TRUE(was_drawn(fb, 27, 10));
     Color c = fb.get_pixel(27, 10);
     if (c.r < 200)
+    {
         ASSERT_FAIL(
             "R too low (" + std::to_string(static_cast<int>(c.r)) + "): expected bias toward near red vertex b"
         );
+    }
     if (c.g > 50)
+    {
         ASSERT_FAIL(
             "G too high (" + std::to_string(static_cast<int>(c.g)) + "): green (far) vertex should contribute little"
         );
+    }
 }
 
 // Phong path: aoc=1 (only c has AO); wa=wb=10 (far), wc=1 (near).
@@ -501,10 +529,14 @@ TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
 
     // Perspective-correct: ao≈0.919 → R≥200
     if (fb_persp.get_pixel(12, 10).r < 200)
+    {
         ASSERT_FAIL("R too low for perspective-correct run: expected ao≈0.919 at (12,10)");
+    }
     // Linear baseline: ao≈0.531 → R≤160
     if (fb_linear.get_pixel(12, 10).r > 160)
+    {
         ASSERT_FAIL("R too high for linear baseline: expected ao≈0.531 at (12,10)");
+    }
 }
 
 // Extreme w ratio (wc=1000): the contribution of c must be negligible.
@@ -522,15 +554,19 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 250)
+    {
         ASSERT_FAIL(
             "R too low (" + std::to_string(static_cast<int>(c.r)) +
             "): far blue vertex (wc=1000) should contribute nearly zero"
         );
+    }
     if (c.b > 5)
+    {
         ASSERT_FAIL(
             "B too high (" + std::to_string(static_cast<int>(c.b)) +
             "): far blue vertex (wc=1000) should contribute nearly zero"
         );
+    }
 }
 
 // ── Group C: depth interpolation is linear (not perspective-corrected) ────────
@@ -611,8 +647,12 @@ TEST(rasterize, triangle_entirely_left_of_screen_no_draw)
     Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, { -20.0f, 5.0f, 0.5f }, { -10.0f, 5.0f, 0.5f }, { -15.0f, 15.0f, 0.5f }, 0, fb.height() - 1);
     for (int y = 0; y < fb.height(); ++y)
+    {
         for (int x = 0; x < fb.width(); ++x)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 TEST(rasterize, single_row_band)
@@ -632,8 +672,12 @@ TEST(rasterize, band_disjoint_from_triangle_draws_nothing)
     Framebuffer fb(40, 20, /*headless=*/true);
     rast(fb, { 4.0f, 2.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, 19, 19);
     for (int y = 0; y < fb.height(); ++y)
+    {
         for (int x = 0; x < fb.width(); ++x)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 // ─── degenerate triangle edge cases ──────────────────────────────────────────
@@ -645,8 +689,12 @@ TEST(rasterize, three_identical_vertices_no_draw)
     Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, { 10.0f, 10.0f, 0.5f }, { 10.0f, 10.0f, 0.5f }, { 10.0f, 10.0f, 0.5f }, 0, fb.height() - 1);
     for (int y = 9; y <= 11; ++y)
+    {
         for (int x = 9; x <= 11; ++x)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 TEST(rasterize, winding_agnostic_cw_also_draws)
@@ -717,7 +765,9 @@ TEST(draw_line, negative_slope)
     Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, { 1.0f, 7.0f, 0.5f }, { 7.0f, 1.0f, 0.5f }, Color{ 255, 255, 255 });
     for (int i = 0; i <= 6; ++i)
+    {
         ASSERT_TRUE(was_drawn(fb, 1 + i, 7 - i));
+    }
     ASSERT_FALSE(was_drawn(fb, 0, 8)); // before start
 }
 
@@ -750,7 +800,9 @@ TEST(rasterize_phong, degenerate_collinear_no_crash)
         fb.height() - 1
     );
     for (int x = 4; x <= 16; ++x)
+    {
         ASSERT_FALSE(was_drawn(fb, x, 5));
+    }
 }
 
 TEST(rasterize_phong, entirely_off_screen_no_crash)
@@ -763,8 +815,12 @@ TEST(rasterize_phong, entirely_off_screen_no_crash)
         fb.height() - 1
     );
     for (int x = 0; x < fb.width(); ++x)
+    {
         for (int y = 0; y < fb.height(); ++y)
+        {
             ASSERT_FALSE(was_drawn(fb, x, y));
+        }
+    }
 }
 
 TEST(rasterize, bbox_clamps_all_four_edges)

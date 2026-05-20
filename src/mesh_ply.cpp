@@ -34,7 +34,9 @@ namespace
     float rd_col(const uint8_t *buf, tinyply::Type t, size_t i)
     {
         if (t == tinyply::Type::UINT8)
+        {
             return static_cast<float>(buf[i]) / 255.0f;
+        }
         if (t == tinyply::Type::FLOAT64)
         {
             double d = 0.0;
@@ -108,7 +110,9 @@ bool Mesh::load_ply(const std::string &path)
 
     std::ifstream ss(path, std::ios::binary);
     if (!ss.is_open())
+    {
         return false;
+    }
 
     tinyply::PlyFile file;
     try
@@ -128,8 +132,12 @@ bool Mesh::load_ply(const std::string &path)
         const uint64_t data_bytes = static_cast<uint64_t>(ss.tellg()) - static_cast<uint64_t>(data_start);
         ss.seekg(data_start);
         for (const auto &el : file.get_elements())
+        {
             if (el.size > 0 && static_cast<uint64_t>(el.size) > data_bytes)
+            {
                 return false;
+            }
+        }
     }
 
     std::shared_ptr<tinyply::PlyData> positions;
@@ -158,6 +166,7 @@ bool Mesh::load_ply(const std::string &path)
 
     // UV aliases tried in priority order.
     if (!uvs)
+    {
         try
         {
             uvs = file.request_properties_from_element("vertex", { "u", "v" });
@@ -165,7 +174,9 @@ bool Mesh::load_ply(const std::string &path)
         catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
+    }
     if (!uvs)
+    {
         try
         {
             uvs = file.request_properties_from_element("vertex", { "s", "t" });
@@ -173,7 +184,9 @@ bool Mesh::load_ply(const std::string &path)
         catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
+    }
     if (!uvs)
+    {
         try
         {
             uvs = file.request_properties_from_element("vertex", { "texture_u", "texture_v" });
@@ -181,6 +194,7 @@ bool Mesh::load_ply(const std::string &path)
         catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
+    }
 
     // Vertex colors: red/green/blue first, then r/g/b.
     try
@@ -191,6 +205,7 @@ bool Mesh::load_ply(const std::string &path)
     {
     }
     if (!vcolors)
+    {
         try
         {
             vcolors = file.request_properties_from_element("vertex", { "r", "g", "b" });
@@ -198,6 +213,7 @@ bool Mesh::load_ply(const std::string &path)
         catch (...) // NOLINT(bugprone-empty-catch)
         {
         }
+    }
 
     // Face indices (try both common property names).
     try
@@ -227,6 +243,7 @@ bool Mesh::load_ply(const std::string &path)
         {
         }
         if (!fcolors)
+        {
             try
             {
                 fcolors = file.request_properties_from_element("face", { "r", "g", "b" });
@@ -234,6 +251,7 @@ bool Mesh::load_ply(const std::string &path)
             catch (...) // NOLINT(bugprone-empty-catch)
             {
             }
+        }
     }
 
     try
@@ -248,14 +266,18 @@ bool Mesh::load_ply(const std::string &path)
     const size_t n_verts = positions->count;
     const size_t n_faces = faces->count;
     if (n_verts == 0 || n_faces == 0)
+    {
         return false;
+    }
 
     // Compute indices-per-face from buffer size (tinyply enforces uniform list length).
     const size_t idx_stride = type_stride(faces->t);
     const size_t total_idx = faces->buffer.size_bytes() / idx_stride;
     const size_t ipf = total_idx / n_faces;
     if (ipf < 3)
+    {
         return false;
+    }
 
     const bool use_face_colors = (fcolors != nullptr);
 
@@ -275,10 +297,14 @@ bool Mesh::load_ply(const std::string &path)
             v.pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
                       rd_f(pb, positions->t, i * 3 + 2) };
             if (nb)
+            {
                 v.normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
                              rd_f(nb, normals->t, i * 3 + 2) };
+            }
             if (ub)
+            {
                 v.uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
+            }
             v.ao = 1.0f;
             vertices.push_back(v);
         }
@@ -288,8 +314,10 @@ bool Mesh::load_ply(const std::string &path)
             const uint8_t *cb = vcolors->buffer.get();
             vertex_colors.resize(n_verts);
             for (size_t i = 0; i < n_verts; i++)
+            {
                 vertex_colors[i] = { rd_col(cb, vcolors->t, i * 3), rd_col(cb, vcolors->t, i * 3 + 1),
                                      rd_col(cb, vcolors->t, i * 3 + 2) };
+            }
             has_vertex_colors = true;
         }
 
@@ -332,10 +360,14 @@ bool Mesh::load_ply(const std::string &path)
             pool[i].pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
                             rd_f(pb, positions->t, i * 3 + 2) };
             if (nb)
+            {
                 pool[i].normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
                                    rd_f(nb, normals->t, i * 3 + 2) };
+            }
             if (ub)
+            {
                 pool[i].uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
+            }
         }
 
         const uint8_t *fb = faces->buffer.get();
@@ -355,7 +387,9 @@ bool Mesh::load_ply(const std::string &path)
                 const uint32_t iv = rd_idx(fb, faces->t, f * ipf + v);
                 const uint32_t iw = rd_idx(fb, faces->t, f * ipf + v + 1);
                 if (i0 >= n_verts || iv >= n_verts || iw >= n_verts)
+                {
                     continue;
+                }
 
                 const auto base = static_cast<uint32_t>(vertices.size());
                 for (const uint32_t pi : { i0, iv, iw })
@@ -380,10 +414,14 @@ bool Mesh::load_ply(const std::string &path)
     }
 
     if (vertices.empty() || triangles.empty())
+    {
         return false;
+    }
 
     if (!normals || use_face_colors)
+    {
         compute_normals();
+    }
 
     snap.commit();
     return true;

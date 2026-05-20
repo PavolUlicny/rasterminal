@@ -107,7 +107,9 @@ inline vec3 compute_lighting(
     const vec3 n = normalize(normal);
     vec3 result = ambient * mat.ambient * ao;
     for (int i = 0; i < n_lights; i++)
+    {
         apply_light(result, n, v, lights[i], mat);
+    }
     return result;
 }
 
@@ -143,7 +145,9 @@ inline vec3 compute_lighting(
 {
     vec3 result = ambient * mat.ambient * ao;
     for (int i = 0; i < n_lights; i++)
+    {
         apply_light(result, n, v, lights[i], mat);
+    }
     return result;
 }
 

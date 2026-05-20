@@ -418,7 +418,9 @@ TEST(reject, ply_truncated_binary_data)
                     "end_header\n";
     // Only 2 vertices of data (24 bytes) — far short of 10 × 12 = 120.
     for (int i = 0; i < 6; i++)
+    {
         emit_f32_le(s, 0);
+    }
     TmpFile t(tmp_path("rasterminal_test_trunc.ply"), s);
     assert_rejects(t.path);
 }
@@ -523,7 +525,9 @@ static void emit_f64_le(std::string &s, double v)
     uint64_t u;
     std::memcpy(&u, &v, 8);
     for (int i = 0; i < 8; i++)
+    {
         s.push_back(static_cast<char>((u >> (i * 8)) & 0xFFu));
+    }
 }
 
 TEST(ply_valid, binary_le_float64_coordinates)
@@ -724,7 +728,9 @@ TEST(ply_valid, face_colors_with_file_normals_recomputes)
     Mesh m = load_ok(t.path);
     // Geometry (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal is (0,0,+1).
     for (const Vertex &v : m.vertices)
+    {
         ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

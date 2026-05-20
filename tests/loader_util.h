@@ -53,11 +53,17 @@ struct TmpFile
     // correctness). compute_tangents/normals still run via load_model.
     bool ok = m.load_model(path, /*ao=*/false);
     if (!ok)
+    {
         ASSERT_FAIL("load_model(\"" + path + "\") returned false");
+    }
     if (m.vertices.empty())
+    {
         ASSERT_FAIL("load_model(\"" + path + "\") produced zero vertices");
+    }
     if (m.triangles.empty())
+    {
         ASSERT_FAIL("load_model(\"" + path + "\") produced zero triangles");
+    }
     return m;
 }
 
@@ -66,10 +72,14 @@ struct TmpFile
     Mesh m;
     bool ok = m.load_model(path, /*ao=*/false);
     if (ok)
+    {
         ASSERT_FAIL("load_model(\"" + path + "\") should have rejected but returned true");
+    }
     // After a failed load, load_model clears the mesh — verify.
     if (!m.vertices.empty() || !m.triangles.empty())
+    {
         ASSERT_FAIL("rejected load left residual mesh state");
+    }
 }
 
 // Little/big-endian byte emitters for binary file construction.

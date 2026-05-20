@@ -65,7 +65,9 @@ inline Mesh make_unit_triangle(bool flip_winding = false, bool double_sided = fa
     m.materials.push_back(mat);
 
     if (double_sided)
+    {
         m.has_double_sided = true;
+    }
 
     return m;
 }
@@ -114,9 +116,15 @@ inline int count_drawn_pixels(Framebuffer &fb)
 {
     int n = 0;
     for (int y = 0; y < fb.height(); y++)
+    {
         for (int x = 0; x < fb.width(); x++)
+        {
             if (was_drawn(fb, x, y))
+            {
                 n++;
+            }
+        }
+    }
     return n;
 }
 

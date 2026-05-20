@@ -31,9 +31,13 @@ namespace platform
         // Try all three standard fds; depending on how the process was launched,
         // any subset may be attached to a terminal.
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
+        {
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
+        }
         if (ws.ws_col == 0)
+        {
             ioctl(STDERR_FILENO, TIOCGWINSZ, &ws);
+        }
         cols = ws.ws_col > 0 ? ws.ws_col : 80; // sane fallback
         rows = ws.ws_row > 0 ? ws.ws_row : 24;
 #endif
@@ -231,7 +235,9 @@ namespace platform
 
 #ifdef _WIN32
         if (!_kbhit())
+        {
             return ev;
+        }
         // On Windows with ENABLE_VIRTUAL_TERMINAL_INPUT, mouse events arrive as
         // VT escape sequences readable via _getch() byte-by-byte.
         auto rb = []() -> char { return static_cast<char>(_getch()); };
@@ -241,7 +247,9 @@ namespace platform
         {
             HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
             if (WaitForSingleObject(hin, static_cast<DWORD>(ms)) != WAIT_OBJECT_0)
+            {
                 return 0;
+            }
             return _kbhit() ? static_cast<char>(_getch()) : 0;
         };
         char c = rb();
@@ -249,7 +257,9 @@ namespace platform
         {
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             if (poll(&pfd, 1, 0) <= 0)
+            {
                 return ev;
+            }
         }
         auto rb = []() -> char
         {
@@ -265,7 +275,9 @@ namespace platform
         {
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             if (poll(&pfd, 1, ms) <= 0)
+            {
                 return 0;
+            }
             char b = 0;
             const ssize_t n = read(STDIN_FILENO, &b, 1);
             (void)n;
@@ -273,7 +285,9 @@ namespace platform
         };
         const char c = rb();
         if (c == 0)
+        {
             return ev;
+        }
 #endif
 
         // ── Regular character ────────────────────────────────────────────────────
@@ -313,11 +327,15 @@ namespace platform
             {
                 const char d = rb_timeout(50);
                 if (d == 0)
+                {
                     break; // incomplete sequence — discard
+                }
                 if (d == ';')
                 {
                     if (ni < 2)
+                    {
                         ni++;
+                    }
                 }
                 else if (d >= '0' && d <= '9')
                 {
@@ -332,7 +350,9 @@ namespace platform
 
             // Discard if sequence never completed (timeout or unknown terminator).
             if (fin != 'M' && fin != 'm')
+            {
                 return ev; // Type::None
+            }
 
             const int btn = nums[0];
             ev.x = nums[1];
@@ -340,15 +360,25 @@ namespace platform
             ev.btn = static_cast<int>(static_cast<unsigned int>(btn) & 3U); // low 2 bits = button number
 
             if (btn == 64)
+            {
                 ev.type = InputEvent::Type::ScrollUp;
+            }
             else if (btn == 65)
+            {
                 ev.type = InputEvent::Type::ScrollDown;
+            }
             else if (btn >= 32)
+            {
                 ev.type = InputEvent::Type::MouseMove; // motion + button held
+            }
             else if (fin == 'M')
+            {
                 ev.type = InputEvent::Type::MousePress;
+            }
             else
+            {
                 ev.type = InputEvent::Type::MouseRelease;
+            }
             return ev;
         }
 

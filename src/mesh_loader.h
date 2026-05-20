@@ -17,7 +17,9 @@ struct MeshSnapshot
     ~MeshSnapshot()
     {
         if (!m_done)
+        {
             rollback();
+        }
     }
 
     void commit() { m_done = true; }

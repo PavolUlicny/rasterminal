@@ -14,7 +14,9 @@ static Texture make_tex(int w, int h, std::initializer_list<int> rgba)
     t.height = h;
     t.pixels.reserve(rgba.size());
     for (int v : rgba)
+    {
         t.pixels.push_back(static_cast<uint8_t>(v));
+    }
     return t;
 }
 
@@ -204,10 +206,12 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
     // Pixel (20,10) should still show the white rear triangle, not be occluded.
     Color c = fb2.get_pixel(20, 10);
     if (c.r < 200 || c.g < 200 || c.b < 200)
+    {
         ASSERT_FAIL(
             "transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," +
             std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
+    }
 }
 
 // C2: same depth-non-pollution test for Phong path.
@@ -251,10 +255,12 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 
     Color c = fb.get_pixel(20, 10);
     if (c.r < 200 || c.g < 200 || c.b < 200)
+    {
         ASSERT_FAIL(
             "transparent front should not occlude rear: got (" + std::to_string(static_cast<int>(c.r)) + "," +
             std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
+    }
 }
 
 // ─── Group D: no overhead on non-cutout path ─────────────────────────────────
@@ -353,13 +359,17 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
     ASSERT_TRUE(was_drawn(fb_nonmap, 20, 10));
     ASSERT_TRUE(was_drawn(fb_nmap, 20, 10));
     if (fb_nonmap.get_pixel(20, 10).r > 5)
+    {
         ASSERT_FAIL("without nmap+cutout: R too high, normal perpendicular to light");
+    }
     Color c_nmap = fb_nmap.get_pixel(20, 10);
     if (c_nmap.r < 230)
+    {
         ASSERT_FAIL(
             "with nmap+cutout: R too low, expected bright red from redirected normal, got R=" +
             std::to_string(static_cast<int>(c_nmap.r))
         );
+    }
 }
 
 // ─── Group G: has_vcol + alpha_cutoff combined ────────────────────────────────
@@ -391,12 +401,16 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 230)
+    {
         ASSERT_FAIL("has_vcol+cutout: R too low, expected red tint, got R=" + std::to_string(static_cast<int>(c.r)));
+    }
     if (c.g > 20 || c.b > 20)
+    {
         ASSERT_FAIL(
             "has_vcol+cutout: G/B too high, expected near-zero from red vcol, got (" +
             std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
+    }
 }
 
 // ─── Group H: cutout-only path (no nmap, no stex) — UV lifecycle ─────────────
@@ -436,7 +450,11 @@ TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
     Color c = fb.get_pixel(20, 10);
     // ambient*(1,1,1)*blue_texel=(0,0,1) → R≈0, B≈255
     if (c.r > 10)
+    {
         ASSERT_FAIL("cutout UV lifecycle: expected blue texel (R≈0), got R=" + std::to_string(static_cast<int>(c.r)));
+    }
     if (c.b < 200)
+    {
         ASSERT_FAIL("cutout UV lifecycle: expected blue texel (B≈255), got B=" + std::to_string(static_cast<int>(c.b)));
+    }
 }

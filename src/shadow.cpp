@@ -40,10 +40,14 @@ float ShadowMap::in_shadow(vec3 world_pos) const
 {
     const vec4 light_clip = light_vp * vec4(world_pos, 1.0f);
     if (light_clip.w <= 0.0f)
+    {
         return 0.0f;
+    }
     const vec3 ndc = light_clip.perspective_divide();
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < -1.0f || ndc.z > 1.0f)
+    {
         return 0.0f;
+    }
     const float u = (ndc.x + 1.0f) * 0.5f;
     const float v = (ndc.y + 1.0f) * 0.5f;
     const int cx = std::clamp(static_cast<int>(u * static_cast<float>(SIZE)), 0, SIZE - 1);
@@ -55,11 +59,17 @@ float ShadowMap::in_shadow(vec3 world_pos) const
     if (cx > 0 && cx < SIZE - 1 && cy > 0 && cy < SIZE - 1)
     {
         for (int dy = -1; dy <= 1; dy++)
+        {
             for (int dx = -1; dx <= 1; dx++)
+            {
                 if (ref > depth[static_cast<size_t>(cy + dy) * SIZE + static_cast<size_t>(cx + dx)].load(
                               std::memory_order_relaxed
                           ))
+                {
                     hits++;
+                }
+            }
+        }
     }
     else
     {
@@ -71,7 +81,9 @@ float ShadowMap::in_shadow(vec3 world_pos) const
                 const int px = std::clamp(cx + dx, 0, SIZE - 1);
                 if (ref >
                     depth[static_cast<size_t>(py) * SIZE + static_cast<size_t>(px)].load(std::memory_order_relaxed))
+                {
                     hits++;
+                }
             }
         }
     }
@@ -84,18 +96,26 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
     shadow_map.clear();
 
     if (mesh.vertices.empty())
+    {
         return shadow_map;
+    }
 
     // Bounding sphere: centroid + max radius.
     vec3 center{};
     for (const auto &v : mesh.vertices)
+    {
         center += v.pos;
+    }
     center = center * (1.0f / static_cast<float>(mesh.vertices.size()));
     float radius = 0.0f;
     for (const auto &v : mesh.vertices)
+    {
         radius = std::max(radius, (v.pos - center).length());
+    }
     if (radius < 0.001f)
+    {
         radius = 1.0f;
+    }
 
     // light.direction is "toward the light", so eye is in that direction.
     const vec3 dir = normalize(light.direction);
@@ -153,7 +173,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
             // bounding-sphere margin so all vertices always project within clip space.
             // Kept as a defensive guard against future frustum-sizing changes or NaN inputs.
             if (clip_reject(ca, cb, cc))
+            {
                 continue;
+            }
 
             // Ortho projection: w is always 1, perspective divide is safe.
             const vec3 ndc_a = ca.perspective_divide();
@@ -174,7 +196,9 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
 
             const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
             if (std::abs(denom) < 1e-6f)
+            {
                 continue;
+            }
             const float inv_d = 1.0f / denom;
 
             const float ba_dx = (sb.y - sc.y) * inv_d;
@@ -213,15 +237,21 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
                         {
                             float old = stored.load(std::memory_order_relaxed);
                             while (d < old)
+                            {
                                 if (stored.compare_exchange_weak(
                                         old, d, std::memory_order_relaxed, std::memory_order_relaxed
                                     ))
+                                {
                                     break;
+                                }
+                            }
                         }
                         else
                         {
                             if (d < stored.load(std::memory_order_relaxed))
+                            {
                                 stored.store(d, std::memory_order_relaxed);
+                            }
                         }
                     }
                     ba += ba_dx;
@@ -242,10 +272,14 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
         std::vector<std::thread> threads;
         threads.reserve(static_cast<size_t>(eff_threads - 1));
         for (int t = 0; t < eff_threads - 1; t++)
+        {
             threads.emplace_back(rasterize_range, t * nt / eff_threads, (t + 1) * nt / eff_threads);
+        }
         rasterize_range((eff_threads - 1) * nt / eff_threads, nt);
         for (auto &t : threads)
+        {
             t.join();
+        }
     }
 
     return shadow_map;

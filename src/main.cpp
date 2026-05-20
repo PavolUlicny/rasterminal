@@ -39,9 +39,13 @@ namespace
     {
         const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
         if (requested == 0)
+        {
             return hw;
+        }
         if (requested < 0)
+        {
             return std::min(hw, 4);
+        }
         return requested;
     }
 
@@ -76,7 +80,9 @@ namespace
         const vec3 centre = (lo + hi) * 0.5f;
         float radius = (hi - lo).length() * 0.5f;
         if (radius < 1e-4f)
+        {
             radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
+        }
 
         Camera camera;
         camera.target = centre;
@@ -157,7 +163,9 @@ namespace
             renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb, shadow_map ? &*shadow_map : nullptr);
             auto t1 = clock::now();
             if (i >= n_warmup)
+            {
                 frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+            }
         }
         const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
 
@@ -225,7 +233,9 @@ int main(int argc, char *argv[])
 {
     const ParseResult parsed = parse_args(argc, argv);
     if (!parsed.ok)
+    {
         return parsed.exit_code;
+    }
     const ParsedArgs &args = parsed.args;
 
     const int n_threads = resolve_thread_count(args.n_threads);
@@ -260,7 +270,9 @@ int main(int argc, char *argv[])
     {
         const size_t slash = model_name.find_last_of("/\\");
         if (slash != std::string::npos)
+        {
             model_name = model_name.substr(slash + 1);
+        }
     }
 
     std::signal(SIGINT, signal_handler);  // Ctrl+C
@@ -289,7 +301,9 @@ int main(int argc, char *argv[])
     // so the map never changes regardless of camera movement or spin.
     std::optional<ShadowMap> shadow_map;
     if (args.shadow)
+    {
         shadow_map = build_shadow_map(mesh, lights[0], n_threads);
+    }
 
     Renderer renderer(args.n_threads);
     renderer.mode = static_cast<ShadingMode>(args.shading);
@@ -332,14 +346,18 @@ int main(int argc, char *argv[])
 
         // ── Input ─────────────────────────────────────────────────────────
         if (g_interrupted)
+        {
             break;
+        }
 
         // Drain all queued input events so held keys and mouse feel responsive.
         while (true)
         {
             const platform::InputEvent ev = platform::poll_event();
             if (ev.type == platform::InputEvent::Type::None)
+            {
                 break;
+            }
 
             if (ev.type == platform::InputEvent::Type::Key)
             {
@@ -350,27 +368,47 @@ int main(int argc, char *argv[])
                     break;
                 }
                 if (k == platform::KEY_SPACE)
+                {
                     spinning = !spinning;
+                }
                 else if (k == platform::KEY_1)
+                {
                     renderer.mode = ShadingMode::Wireframe;
+                }
                 else if (k == platform::KEY_2)
+                {
                     renderer.mode = ShadingMode::Flat;
+                }
                 else if (k == platform::KEY_3)
+                {
                     renderer.mode = ShadingMode::Gouraud;
+                }
                 else if (k == platform::KEY_4)
+                {
                     renderer.mode = ShadingMode::Phong;
+                }
                 else if (k == platform::KEY_B)
+                {
                     bg_mode = (bg_mode + 1) % 3;
+                }
                 else if (k == platform::KEY_L)
+                {
                     lighting_mode = (lighting_mode + 1) % 3;
+                }
                 else if (k == platform::KEY_C)
+                {
                     wf_color = (wf_color + 1) % 6;
+                }
                 else if (k == platform::KEY_K)
+                {
                     culling = !culling;
+                }
                 else if (k == platform::KEY_T)
                 {
                     if (has_textures)
+                    {
                         texturing = !texturing;
+                    }
                 }
                 else if (k == platform::KEY_R)
                 {
@@ -417,21 +455,29 @@ int main(int argc, char *argv[])
             }
         }
         if (!running)
+        {
             break;
+        }
 
         // ── Camera key movement (once per frame, frame-rate independent) ──
         if (held_cam_key != platform::KEY_NONE)
         {
             const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
             if (since > 0.1f)
+            {
                 held_cam_key = platform::KEY_NONE; // key released
+            }
             else
+            {
                 camera.process_key(held_cam_key, dt);
+            }
         }
 
         // ── Auto-rotation ────────────────────────────────────────────────
         if (spinning)
+        {
             camera.spin_world_y(spin_speed * dt);
+        }
 
         // ── Resize detection ─────────────────────────────────────────────
         {
@@ -480,6 +526,7 @@ int main(int argc, char *argv[])
             const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
             char hud[256];
             if (renderer.mode == ShadingMode::Wireframe)
+            {
                 std::snprintf(
                     hud, sizeof(hud),
                     "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
@@ -487,13 +534,16 @@ int main(int argc, char *argv[])
                     model_name.c_str(), spinning ? "spin ON" : "spin OFF", lighting_str, bg_str,
                     WIREFRAME_NAMES[wf_color], culling ? "ON" : "OFF", tex_suffix
                 );
+            }
             else
+            {
                 std::snprintf(
                     hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
                     shading_mode_name(renderer.mode), (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth),
                     model_name.c_str(), spinning ? "spin ON" : "spin OFF", lighting_str, bg_str, culling ? "ON" : "OFF",
                     tex_suffix
                 );
+            }
             fb.set_hud(hud);
         }
 
@@ -542,7 +592,9 @@ int main(int argc, char *argv[])
             auto frame_end = clock::now();
             const float elapsed = std::chrono::duration<float>(frame_end - now).count();
             if (elapsed < target_dt)
+            {
                 std::this_thread::sleep_for(std::chrono::duration<float>(target_dt - elapsed));
+            }
         }
     }
 

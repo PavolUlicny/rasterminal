@@ -26,7 +26,9 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("n_active cap: no pixels drawn with height=4 and 4 workers");
+    }
 }
 
 // ─── N2: render completes correctly when framebuffer height changes ───────────
@@ -48,14 +50,18 @@ TEST(renderer, band_tris_resize_across_frames)
     fb1.clear();
     r.render(mesh, cam, &light, 1, ambient, fb1);
     if (count_drawn_pixels(fb1) == 0)
+    {
         ASSERT_FAIL("band_tris resize: frame 1 (40x20) drew nothing");
+    }
 
     // Second render with smaller height — m_tri_cursor resets, all workers re-run.
     Framebuffer fb2(40, 4, /*headless=*/true);
     fb2.clear();
     r.render(mesh, cam, &light, 1, ambient, fb2);
     if (count_drawn_pixels(fb2) == 0)
+    {
         ASSERT_FAIL("band_tris resize: frame 2 (40x4) drew nothing after resize");
+    }
 }
 
 // ─── N3: alpha_cutoff end-to-end with show_texture=true ──────────────────────
@@ -87,7 +93,9 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("alpha_cutoff: transparent texture pixels must be culled when show_texture=true");
+    }
 }
 
 // ─── N4: alpha_cutoff zeroed when show_texture=false ─────────────────────────
@@ -118,7 +126,9 @@ TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (!was_drawn(fb, 20, 10))
+    {
         ASSERT_FAIL("alpha_cutoff zeroed: triangle must be drawn when show_texture=false");
+    }
 }
 
 // ─── N5: clip_reject fires in MT path for a laterally off-screen triangle ────
@@ -163,7 +173,9 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_mt)
     fb.clear();
     r.render(mesh, cam, &light, 1, ambient, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("clip_reject MT: off-screen triangle must produce no pixels");
+    }
 }
 
 // ─── N6: clip_reject fires in wireframe path for a laterally off-screen triangle
@@ -198,7 +210,9 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     if (count_drawn_pixels(fb) != 0)
+    {
         ASSERT_FAIL("clip_reject wireframe: off-screen triangle must produce no pixels");
+    }
 }
 
 // ─── N7: Phong mode with zero tangents uses vertex normals ───────────────────
@@ -241,7 +255,9 @@ TEST(renderer, phong_zero_tangents_uses_vertex_normals)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     if (!was_drawn(fb, 20, 10))
+    {
         ASSERT_FAIL("phong zero tangents: centre pixel not drawn");
+    }
 }
 
 TEST(renderer, choose_phase1_chunk_zero_tris_no_crash)

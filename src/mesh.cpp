@@ -34,22 +34,36 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
 
     const size_t ext_pos = path.find_last_of('.');
     if (ext_pos == std::string::npos)
+    {
         return false;
+    }
 
     std::string ext = path.substr(ext_pos + 1);
     for (char &c : ext)
+    {
         if (c >= 'A' && c <= 'Z')
+        {
             c += 32;
+        }
+    }
 
     bool ok = false;
     if (ext == "obj")
+    {
         ok = load_obj(path);
+    }
     else if (ext == "ply")
+    {
         ok = load_ply(path);
+    }
     else if (ext == "stl")
+    {
         ok = load_stl(path);
+    }
     else if (ext == "gltf" || ext == "glb")
+    {
         ok = load_gltf(path);
+    }
 
     if (!ok)
     {
@@ -63,7 +77,9 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
 
     compute_tangents();
     if (ao && ext != "stl")
+    {
         compute_ao(n_threads);
+    }
     optimize_vertex_cache(n_threads);
 
     return true;
@@ -74,7 +90,9 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
 void Mesh::compute_normals()
 {
     for (auto &v : vertices)
+    {
         v.normal = vec3{};
+    }
 
     // Accumulate face normals. The cross product magnitude is proportional to
     // triangle area, giving area-weighted averaging for free.
@@ -95,7 +113,9 @@ void Mesh::compute_normals()
     {
         const float len_sq = v.normal.length_sq();
         if (len_sq > 1e-12f)
+        {
             v.normal = v.normal * (1.0f / std::sqrt(len_sq));
+        }
     }
 }
 
@@ -123,7 +143,9 @@ void Mesh::compute_tangents()
 
         const float det = du1 * dv2 - du2 * dv1;
         if (std::abs(det) < 1e-8f)
+        {
             continue;
+        }
 
         const vec3 T = (dp1 * dv2 - dp2 * dv1) * (1.0f / det);
 
@@ -169,20 +191,25 @@ void Mesh::compute_ao(int n_threads)
     // CSR avoids N separate heap allocations and keeps neighbor indices contiguous.
     std::vector<int> adj_count(n, 0);
     for (const auto &tri : triangles)
+    {
         for (int i = 0; i < 3; i++)
         {
             adj_count[tri.v[i]]++;
             adj_count[tri.v[(i + 1) % 3]]++;
         }
+    }
 
     std::vector<int> adj_start(n + 1, 0);
     for (size_t v = 0; v < n; v++)
+    {
         adj_start[v + 1] = adj_start[v] + adj_count[v];
+    }
 
     std::vector<uint32_t> adj_list(static_cast<size_t>(adj_start[n]));
     {
         std::vector<int> cursor(adj_start.begin(), adj_start.begin() + static_cast<std::ptrdiff_t>(n));
         for (const auto &tri : triangles)
+        {
             for (int i = 0; i < 3; i++)
             {
                 const uint32_t a = tri.v[i];
@@ -190,6 +217,7 @@ void Mesh::compute_ao(int n_threads)
                 adj_list[static_cast<size_t>(cursor[a]++)] = b;
                 adj_list[static_cast<size_t>(cursor[b]++)] = a;
             }
+        }
     }
 
     // Per-vertex AO is independent — each vertex only writes to its own ao field.
@@ -215,7 +243,9 @@ void Mesh::compute_ao(int n_threads)
             // Centroid of neighboring positions.
             vec3 centroid{};
             for (int ai = adj_start[i]; ai < adj_start[i + 1]; ai++)
+            {
                 centroid += vertices[adj_list[static_cast<size_t>(ai)]].pos;
+            }
             centroid = centroid * (1.0f / static_cast<float>(deg));
 
             const vec3 d = centroid - p;
@@ -249,7 +279,9 @@ void Mesh::compute_ao(int n_threads)
         }
         ao_range(static_cast<size_t>(eff_threads - 1) * n / static_cast<size_t>(eff_threads), n);
         for (auto &t : threads)
+        {
             t.join();
+        }
     }
 }
 
@@ -258,7 +290,9 @@ void Mesh::compute_ao(int n_threads)
 void Mesh::optimize_vertex_cache(int n_threads)
 {
     if (triangles.size() < 2)
+    {
         return;
+    }
 
     const size_t nv = vertices.size();
     const size_t nt = triangles.size();
@@ -287,7 +321,9 @@ void Mesh::optimize_vertex_cache(int n_threads)
             prev_mat = t.material_idx;
         }
         for (size_t i = 1; i <= n_buckets; i++)
+        {
             bucket_start[i] += bucket_start[i - 1];
+        }
 
         // glTF arrives in material order; OBJ may interleave. Skip the scatter
         // when triangles are already grouped.
@@ -298,15 +334,21 @@ void Mesh::optimize_vertex_cache(int n_threads)
                 bucket_start.begin(), bucket_start.begin() + static_cast<std::ptrdiff_t>(n_buckets)
             );
             for (const auto &t : triangles)
+            {
                 sorted[cursor[t.material_idx]++] = t;
+            }
             triangles = std::move(sorted);
         }
     }
 
     std::vector<uint32_t> idx(ni);
     for (size_t i = 0; i < nt; i++)
+    {
         for (size_t j = 0; j < 3; j++)
+        {
             idx[i * 3 + j] = triangles[i].v[j];
+        }
+    }
 
     // 1.05 threshold: accept up to 5% vertex-cache regression for better
     // occlusion ordering.
@@ -326,14 +368,18 @@ void Mesh::optimize_vertex_cache(int n_threads)
             const size_t g_start = bucket_start[m];
             const size_t g_end = bucket_start[m + 1];
             if (g_end - g_start < 2)
+            {
                 return;
+            }
             optimize_range(idx.data() + g_start * 3, (g_end - g_start) * 3);
         };
 
         if (n_threads <= 1)
         {
             for (size_t m = 0; m < n_buckets; m++)
+            {
                 run_group(m);
+            }
         }
         else
         {
@@ -342,15 +388,21 @@ void Mesh::optimize_vertex_cache(int n_threads)
             {
                 for (size_t m = next.fetch_add(1, std::memory_order_relaxed); m < n_buckets;
                      m = next.fetch_add(1, std::memory_order_relaxed))
+                {
                     run_group(m);
+                }
             };
             std::vector<std::thread> threads;
             threads.reserve(static_cast<size_t>(n_threads - 1));
             for (int t = 0; t < n_threads - 1; t++)
+            {
                 threads.emplace_back(worker);
+            }
             worker();
             for (auto &thr : threads)
+            {
                 thr.join();
+            }
         }
     }
     else
@@ -363,30 +415,44 @@ void Mesh::optimize_vertex_cache(int n_threads)
 
     // Some glTF primitives have no COLOR_0, leaving vertex_colors shorter than nv.
     if (has_vertex_colors && vertex_colors.size() < nv)
+    {
         vertex_colors.resize(nv, { 1.0f, 1.0f, 1.0f });
+    }
 
     std::vector<Vertex> new_verts(new_nv);
     std::vector<vec3> new_tans(new_nv);
     std::vector<vec3> new_vcols;
     if (has_vertex_colors)
+    {
         new_vcols.resize(new_nv);
+    }
 
     for (size_t v = 0; v < nv; v++)
     {
         if (remap[v] == ~0u)
+        {
             continue;
+        }
         new_verts[remap[v]] = vertices[v];
         new_tans[remap[v]] = tangents[v];
         if (has_vertex_colors)
+        {
             new_vcols[remap[v]] = vertex_colors[v];
+        }
     }
 
     for (size_t i = 0; i < nt; i++)
+    {
         for (size_t j = 0; j < 3; j++)
+        {
             triangles[i].v[j] = remap[idx[i * 3 + j]];
+        }
+    }
 
     vertices = std::move(new_verts);
     tangents = std::move(new_tans);
     if (has_vertex_colors)
+    {
         vertex_colors = std::move(new_vcols);
+    }
 }

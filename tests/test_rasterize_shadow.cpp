@@ -115,14 +115,18 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.b < 250)
+    {
         ASSERT_FAIL(
             "B too low (" + std::to_string(static_cast<int>(c.b)) +
             "): occluded position should use shadowed color (blue)"
         );
+    }
     if (c.r > 5)
+    {
         ASSERT_FAIL(
             "R too high (" + std::to_string(static_cast<int>(c.r)) + "): lit color (red) must not appear in shadow"
         );
+    }
 }
 
 // ── Group B: rasterize_phong() ────────────────────────────────────────────────
@@ -179,18 +183,24 @@ TEST(rasterize_phong, shadow_occluded_position_excludes_key_light)
     ASSERT_TRUE(was_drawn(fb_nosm, 20, 10));
     ASSERT_TRUE(was_drawn(fb_sm, 20, 10));
     if (fb_nosm.get_pixel(20, 10).r < 200)
+    {
         ASSERT_FAIL("without shadow: R too low, key light should give strong red diffuse");
+    }
     Color c = fb_sm.get_pixel(20, 10);
     if (c.r > 30)
+    {
         ASSERT_FAIL(
             "with shadow: R too high (" + std::to_string(static_cast<int>(c.r)) +
             "): key light must be excluded when fully occluded"
         );
+    }
     if (c.g > 30)
+    {
         ASSERT_FAIL(
             "with shadow: G too high (" + std::to_string(static_cast<int>(c.g)) +
             "): fill light dir is tangential to normal, should give no diffuse"
         );
+    }
 }
 
 // ── Group C: rasterize_phong() manual shadow map ──────────────────────────────
@@ -224,8 +234,12 @@ namespace
         sm.light_vp = mat4::identity();
         int count = 0;
         for (int dy = -1; dy <= 1 && count < hits; dy++)
+        {
             for (int dx = -1; dx <= 1 && count < hits; dx++, ++count)
+            {
                 sm.depth[static_cast<size_t>(cy + dy) * S + static_cast<size_t>(cx + dx)] = 0.0f;
+            }
+        }
         return sm;
     }
 
@@ -280,18 +294,24 @@ TEST(rasterize_phong, partial_shadow_lerps_between_lit_and_shadowed)
     const int r_par = static_cast<int>(fb_par.get_pixel(20, 10).r);
 
     if (r_lit <= r_shd)
+    {
         ASSERT_FAIL(
             "lit must be brighter than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd)
         );
+    }
     if (r_par <= r_shd)
+    {
         ASSERT_FAIL(
             "partial must be brighter than fully shadowed: par=" + std::to_string(r_par) +
             " shd=" + std::to_string(r_shd)
         );
+    }
     if (r_par >= r_lit)
+    {
         ASSERT_FAIL(
             "partial must be darker than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit)
         );
+    }
 }
 
 // S7: n_lights=0 with shadow_map != nullptr. The shadow factor may be non-zero but
@@ -344,13 +364,17 @@ TEST(rasterize_phong, n_lights_one_fully_shadowed_gives_ambient_only)
     const int r_lit = static_cast<int>(fb_lit.get_pixel(20, 10).r);
     Color c_shd = fb_shd.get_pixel(20, 10);
     if (r_lit < 200)
+    {
         ASSERT_FAIL("unoccluded with key light must be bright: R=" + std::to_string(r_lit));
+    }
     if (c_shd.r > 5 || c_shd.g > 5 || c_shd.b > 5)
+    {
         ASSERT_FAIL(
             "n_lights=1 fully shadowed: sl=key+1 n_shadow=0 → ambient-only → near-black, got (" +
             std::to_string(static_cast<int>(c_shd.r)) + "," + std::to_string(static_cast<int>(c_shd.g)) + "," +
             std::to_string(static_cast<int>(c_shd.b)) + ")"
         );
+    }
 }
 
 // S10: Phong partial shadow (0 < sf < 1) with n_lights=0 exercises the else-branch.
@@ -430,13 +454,19 @@ TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
     const int r_par = static_cast<int>(fb_par.get_pixel(20, 10).r);
 
     if (r_lit <= r_shd)
+    {
         ASSERT_FAIL("lit must be redder than shadowed: lit=" + std::to_string(r_lit) + " shd=" + std::to_string(r_shd));
+    }
     if (r_par <= r_shd)
+    {
         ASSERT_FAIL(
             "partial must be redder than fully shadowed: par=" + std::to_string(r_par) + " shd=" + std::to_string(r_shd)
         );
+    }
     if (r_par >= r_lit)
+    {
         ASSERT_FAIL(
             "partial must be less red than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit)
         );
+    }
 }

@@ -25,9 +25,13 @@ struct ShadowMap
         const size_t total = static_cast<size_t>(SIZE) * SIZE;
         // atomic<float> is not assignable — resize only if needed, then loop-store.
         if (depth.size() != total)
+        {
             depth = std::vector<std::atomic<float>>(total);
+        }
         for (auto &d : depth)
+        {
             d.store(1.0f, std::memory_order_relaxed);
+        }
     }
 
     // Returns shadow factor in [0,1]: 0=fully lit, 1=fully shadowed.

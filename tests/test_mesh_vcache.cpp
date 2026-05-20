@@ -52,10 +52,16 @@ TEST(vcache, fully_unshared_stl_optimises_correctly)
     ASSERT_TRUE(m.triangles.size() == 2u);
     ASSERT_TRUE(m.vertices.size() == 6u);
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < 6u);
+        }
+    }
     for (const auto &v : m.vertices)
+    {
         ASSERT_TRUE(std::isfinite(v.pos.x));
+    }
 }
 
 TEST(vcache, early_exit_max_adj_lt_2)
@@ -80,8 +86,12 @@ TEST(vcache, early_exit_max_adj_lt_2)
     ASSERT_TRUE(m.triangles.size() == 2u);
     ASSERT_TRUE(m.vertices.size() == 6u); // unreferenced vertex dropped
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < static_cast<uint32_t>(m.vertices.size()));
+        }
+    }
 }
 
 // ─── Group B: Geometry invariants on shared-vertex mesh ──────────────────────
@@ -110,8 +120,12 @@ TEST(vcache, geometry_all_positions_preserved)
     {
         bool found = false;
         for (const auto &v : m.vertices)
+        {
             if (std::abs(v.pos.x - ex) < 1e-4f && std::abs(v.pos.y - ey) < 1e-4f)
+            {
                 found = true;
+            }
+        }
         ASSERT_TRUE(found);
     }
 }
@@ -136,8 +150,12 @@ TEST(vcache, all_triangle_indices_in_range)
     Mesh m = load_ok(f.path);
     const size_t nv = m.vertices.size();
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < static_cast<uint32_t>(nv));
+        }
+    }
 }
 
 TEST(vcache, tangents_count_matches_vertices)
@@ -155,7 +173,9 @@ TEST(vcache, tangents_remain_orthogonal_to_normals)
     TmpFile f(tmp_path("rast_vc_fan_orth.obj"), k_fan_obj);
     Mesh m = load_ok(f.path);
     for (size_t i = 0; i < m.vertices.size(); i++)
+    {
         ASSERT_NEAR(dot(m.tangents[i], m.vertices[i].normal), 0.0f, 1e-5f);
+    }
 }
 
 // ─── Group C: Vertex color remap ─────────────────────────────────────────────
@@ -252,8 +272,12 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
     ASSERT_TRUE(m.triangles.size() == 3u);
     ASSERT_TRUE(m.vertices.size() == 8u);
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < 8u);
+        }
+    }
     // All 8 input positions must appear somewhere in the output.
     const std::vector<std::pair<float, float>> expected_xz = { { 0.0f, 0.0f }, { 1.0f, 0.0f }, { 0.0f, 0.0f },
                                                                { 3.0f, 0.0f }, { 4.0f, 0.0f }, { 3.0f, 0.0f },
@@ -280,17 +304,23 @@ TEST(vcache, cache_update_cur_zero)
     ASSERT_TRUE(m.triangles.size() == 2u);
     ASSERT_TRUE(m.vertices.size() == 5u);
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < 5u);
+        }
+    }
     // Find the index that maps to position (0,0,0) and verify both triangles use it.
     uint32_t shared_idx = UINT32_MAX;
     for (uint32_t i = 0; i < static_cast<uint32_t>(m.vertices.size()); i++)
+    {
         if (std::abs(m.vertices[i].pos.x) < 1e-4f && std::abs(m.vertices[i].pos.y) < 1e-4f &&
             std::abs(m.vertices[i].pos.z) < 1e-4f)
         {
             shared_idx = i;
             break;
         }
+    }
     ASSERT_TRUE(shared_idx != UINT32_MAX);
     bool t0_has_shared =
         m.triangles[0].v[0] == shared_idx || m.triangles[0].v[1] == shared_idx || m.triangles[0].v[2] == shared_idx;
@@ -329,8 +359,12 @@ TEST(vcache, cache_eviction_large_mesh)
     ASSERT_TRUE(m.triangles.size() == 32u);
     ASSERT_TRUE(m.vertices.size() == 34u);
     for (const auto &tri : m.triangles)
+    {
         for (uint32_t vi : tri.v)
+        {
             ASSERT_TRUE(vi < 34u);
+        }
+    }
     // Every (x, y=0) and (x, y=1) pair for x=0..16 must be present.
     for (int x = 0; x <= 16; x++)
     {
@@ -341,9 +375,13 @@ TEST(vcache, cache_eviction_large_mesh)
             if (std::abs(v.pos.x - static_cast<float>(x)) < 1e-4f)
             {
                 if (std::abs(v.pos.y) < 1e-4f)
+                {
                     found_bot = true;
+                }
                 if (std::abs(v.pos.y - 1.0f) < 1e-4f)
+                {
                     found_top = true;
+                }
             }
         }
         ASSERT_TRUE(found_bot);

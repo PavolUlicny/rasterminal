@@ -22,16 +22,22 @@ bool Mesh::load_stl(const std::string &path)
     // allocation even with STL_READER_NO_EXCEPTIONS.
     const auto f = std::unique_ptr<FILE, int (*)(FILE *)>(std::fopen(path.c_str(), "rb"), std::fclose);
     if (!f)
+    {
         return false;
+    }
 
     char header[80];
     if (std::fread(header, 1, 80, f.get()) < 5)
+    {
         return false;
+    }
 
     // ASCII detection: header starts with "solid" (ignoring leading whitespace).
     const char *h = header;
     while (h < header + 80 && (*h == ' ' || *h == '\t'))
+    {
         h++;
+    }
     bool is_ascii = (h + 5 <= header + 80 && std::strncmp(h, "solid", 5) == 0);
 
     // Read tri_count (bytes 80–83).
@@ -44,20 +50,26 @@ bool Mesh::load_stl(const std::string &path)
 
     long file_size = -1;
     if (std::fseek(f.get(), 0, SEEK_END) == 0)
+    {
         file_size = std::ftell(f.get());
+    }
 
     const uint64_t expected_binary = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
 
     // A binary STL whose header happens to start with "solid" must be
     // disambiguated by exact file size.
     if (is_ascii && have_tri_count && file_size >= 0 && static_cast<uint64_t>(file_size) == expected_binary)
+    {
         is_ascii = false;
+    }
 
     // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes.
     if (!is_ascii)
     {
         if (!have_tri_count || file_size < 0 || static_cast<uint64_t>(file_size) < expected_binary)
+        {
             return false;
+        }
     }
 
     // Delegate parsing to stl_reader. STL_READER_NO_EXCEPTIONS converts internal
@@ -68,11 +80,15 @@ bool Mesh::load_stl(const std::string &path)
     std::vector<unsigned int> solids; // solid ranges (unused)
 
     if (!stl_reader::ReadStlFile(path.c_str(), coords, face_norms, tris, solids))
+    {
         return false;
+    }
 
     const size_t n_tris = tris.size() / 3;
     if (n_tris == 0)
+    {
         return false;
+    }
 
     materials.push_back(Material{});
 

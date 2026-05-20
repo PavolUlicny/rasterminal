@@ -71,7 +71,9 @@ namespace
             v /= 10;
         }
         for (int i = 0; i < len; i++)
+        {
             buf[i] = tmp[len - 1 - i];
+        }
         return len;
     }
 
@@ -213,7 +215,9 @@ void Framebuffer::present()
                     prev_fg = top;
                     fg_known = true;
                     if (bg_change)
+                    {
                         tmp[n++] = ';';
+                    }
                 }
                 if (bg_change)
                 {
@@ -305,9 +309,13 @@ void Framebuffer::present()
                                m_prev_color[top_base + static_cast<size_t>(col + skip)] &&
                            load_color(bot_base + static_cast<size_t>(col + skip)) ==
                                m_prev_color[bot_base + static_cast<size_t>(col + skip)])
+                    {
                         skip++;
+                    }
                     if (skip == 1)
+                    {
                         m_buf.append("\033[C", 3);
+                    }
                     else
                     {
                         tmp[0] = '\033';

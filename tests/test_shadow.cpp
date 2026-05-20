@@ -39,7 +39,9 @@ TEST(shadow, clear_initializes_depth_to_one)
     ShadowMap shadow_map;
     shadow_map.clear();
     for (float d : shadow_map.depth)
+    {
         ASSERT_NEAR(d, 1.0f, 1e-6f);
+    }
 }
 
 // ─── build_shadow_map + in_shadow ────────────────────────────────────────────
@@ -281,11 +283,13 @@ TEST(shadow, pcf_partial_occlusion_returns_fraction)
     // Set 4 of the 9 kernel texels to 0.0 (occluded); 5 remain at 1.0 (lit).
     int cnt = 0;
     for (int dy = -1; dy <= 1 && cnt < 4; dy++)
+    {
         for (int dx = -1; dx <= 1 && cnt < 4; dx++)
         {
             sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = 0.0f;
             cnt++;
         }
+    }
     ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 4.0f / 9.0f, 1e-6f);
 }
 
@@ -298,8 +302,12 @@ TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
     sm.light_vp = mat4::identity();
     constexpr float ref = 0.5f - 0.001f;
     for (int dy = -1; dy <= 1; dy++)
+    {
         for (int dx = -1; dx <= 1; dx++)
+        {
             sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = ref;
+        }
+    }
     ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 0.0f, 1e-6f);
 }
 
@@ -313,7 +321,9 @@ TEST(shadow, pcf_border_clamps_kernel_samples)
     sm.clear();
     sm.light_vp = mat4::identity();
     for (int py = 1023; py <= 1025; py++)
+    {
         sm.depth[static_cast<size_t>(py * ShadowMap::SIZE + 0)] = 0.0f;
+    }
     ASSERT_NEAR(sm.in_shadow({ -1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
@@ -421,7 +431,9 @@ TEST(shadow, pcf_right_border_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     constexpr int S = ShadowMap::SIZE;
     for (int py = 1023; py <= 1025; py++)
+    {
         sm.depth[static_cast<size_t>(py) * S + (S - 1)] = 0.0f;
+    }
     ASSERT_NEAR(sm.in_shadow({ 1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
@@ -436,8 +448,12 @@ TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     constexpr int S = ShadowMap::SIZE;
     for (int py = 0; py <= 1; py++)
+    {
         for (int px = 0; px <= 1; px++)
+        {
             sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+        }
+    }
     ASSERT_NEAR(sm.in_shadow({ -1.0f, -1.0f, 0.5f }), 1.0f, 1e-6f);
 }
 
@@ -452,7 +468,9 @@ TEST(shadow, pcf_top_border_clamps_y_kernel_samples)
     sm.clear();
     sm.light_vp = mat4::identity();
     for (int px = 1023; px <= 1025; px++)
+    {
         sm.depth[static_cast<size_t>(px)] = 0.0f; // row 0
+    }
     ASSERT_NEAR(sm.in_shadow({ 0.0f, -1.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
 
@@ -659,8 +677,12 @@ TEST(shadow, pcf_top_right_corner_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     constexpr int S = ShadowMap::SIZE;
     for (int py = S - 2; py <= S - 1; py++)
+    {
         for (int px = S - 2; px <= S - 1; px++)
+        {
             sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+        }
+    }
     ASSERT_NEAR(sm.in_shadow({ 1.0f, 1.0f, 0.5f }), 1.0f, 1e-6f);
 }
 
@@ -678,12 +700,15 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
     Vertex v{};
     v.ao = 1.0f;
     for (int r = 0; r < N; r++)
+    {
         for (int c = 0; c < N; c++)
         {
             v.pos = { static_cast<float>(c), static_cast<float>(r), 0.0f };
             m.vertices.push_back(v);
         }
+    }
     for (int r = 0; r < N - 1; r++)
+    {
         for (int c = 0; c < N - 1; c++)
         {
             const auto bl = static_cast<uint32_t>(r * N + c);
@@ -693,6 +718,7 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
             m.triangles.push_back({ { bl, br, tl } });
             m.triangles.push_back({ { br, tr, tl } });
         }
+    }
 
     const Light light = make_light_z();
     const ShadowMap sm1 = build_shadow_map(m, light, 1);
@@ -700,7 +726,9 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
 
     ASSERT_TRUE(sm1.depth.size() == sm4.depth.size());
     for (size_t i = 0; i < sm1.depth.size(); i++)
+    {
         ASSERT_TRUE(sm1.depth[i].load(std::memory_order_relaxed) == sm4.depth[i].load(std::memory_order_relaxed));
+    }
 }
 
 // ─── build_shadow_map: vertices present, triangles empty ─────────────────────

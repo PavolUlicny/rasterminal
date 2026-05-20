@@ -70,16 +70,22 @@ ParseResult parse_args(int argc, char *argv[])
         };
         const char *sep = std::strchr(val, 'x');
         if (!sep || sep == val)
+        {
             return err();
+        }
         char *end = nullptr;
         errno = 0;
         const long ww = std::strtol(val, &end, 10);
         if (end != sep || ww <= 0 || ww > INT_MAX || errno == ERANGE)
+        {
             return err();
+        }
         errno = 0;
         const long hh = std::strtol(sep + 1, &end, 10);
         if (end == sep + 1 || *end != '\0' || hh <= 0 || hh > INT_MAX || errno == ERANGE)
+        {
             return err();
+        }
         w = static_cast<int>(ww);
         h = static_cast<int>(hh);
         return true;
@@ -89,11 +95,15 @@ ParseResult parse_args(int argc, char *argv[])
     auto is_all_digits = [](const char *s) -> bool
     {
         if (!s || !*s)
+        {
             return false;
+        }
         while (*s)
         {
             if (!std::isdigit(static_cast<unsigned char>(*s)))
+            {
                 return false;
+            }
             ++s;
         }
         return true;
@@ -106,13 +116,21 @@ ParseResult parse_args(int argc, char *argv[])
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
         if (v == "wireframe" || v == "1")
+        {
             out = 0;
+        }
         else if (v == "flat" || v == "2")
+        {
             out = 1;
+        }
         else if (v == "gouraud" || v == "3")
+        {
             out = 2;
+        }
         else if (v == "phong" || v == "4")
+        {
             out = 3;
+        }
         else
         {
             std::fprintf(
@@ -133,11 +151,17 @@ ParseResult parse_args(int argc, char *argv[])
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
         if (v == "black" || v == "1")
+        {
             out = 0;
+        }
         else if (v == "gray" || v == "grey" || v == "2")
+        {
             out = 1;
+        }
         else if (v == "white" || v == "3")
+        {
             out = 2;
+        }
         else
         {
             std::fprintf(
@@ -158,11 +182,17 @@ ParseResult parse_args(int argc, char *argv[])
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
         if (v == "dual" || v == "1")
+        {
             out = 0;
+        }
         else if (v == "single" || v == "2")
+        {
             out = 1;
+        }
         else if (v == "flat" || v == "3")
+        {
             out = 2;
+        }
         else
         {
             std::fprintf(
@@ -183,9 +213,13 @@ ParseResult parse_args(int argc, char *argv[])
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
         if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
+        {
             out = true;
+        }
         else if (v == "off" || v == "0" || v == "false" || v == "no" || v == "n")
+        {
             out = false;
+        }
         else
         {
             std::fprintf(
@@ -206,17 +240,29 @@ ParseResult parse_args(int argc, char *argv[])
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
         if (v == "white" || v == "1")
+        {
             out = 0;
+        }
         else if (v == "red" || v == "2")
+        {
             out = 1;
+        }
         else if (v == "green" || v == "3")
+        {
             out = 2;
+        }
         else if (v == "yellow" || v == "4")
+        {
             out = 3;
+        }
         else if (v == "cyan" || v == "5")
+        {
             out = 4;
+        }
         else if (v == "magenta" || v == "6")
+        {
             out = 5;
+        }
         else
         {
             std::fprintf(
@@ -254,7 +300,9 @@ ParseResult parse_args(int argc, char *argv[])
         auto get_val = [&](int &arg_i) -> const char *
         {
             if (eq_val != nullptr)
+            {
                 return eq_val;
+            }
             return require_val(arg_i, flag);
         };
 
@@ -262,99 +310,133 @@ ParseResult parse_args(int argc, char *argv[])
         {
             // Bare form (no value, or next token is not a positive integer) = all threads.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            {
                 args.n_threads = 0;
+            }
             else
             {
                 const char *val = get_val(i);
                 if (!val || !parse_threads(flag, val, args.n_threads))
+                {
                     return fail(1);
+                }
             }
         }
         else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-j", argv[i] + 2, args.n_threads))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-f" || arg == "--fps")
         {
             // Bare form (no value, or next token is not a positive integer) = uncapped.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            {
                 args.fps = 0;
+            }
             else
             {
                 const char *val = get_val(i);
                 if (!val || !parse_threads(flag, val, args.fps))
+                {
                     return fail(1);
+                }
             }
         }
         else if (std::strncmp(argv[i], "-f", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-f", argv[i] + 2, args.fps))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-B" || arg == "--bench")
         {
             // Bare form (no value, or next token is not a positive integer) = 200 frames.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            {
                 args.bench = 200;
+            }
             else
             {
                 const char *val = get_val(i);
                 if (!val || !parse_threads(flag, val, args.bench))
+                {
                     return fail(1);
+                }
             }
         }
         else if (std::strncmp(argv[i], "-B", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_threads("-B", argv[i] + 2, args.bench))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "--bench-size")
         {
             const char *val = get_val(i);
             if (!val || !parse_size(flag, val, args.bench_width, args.bench_height))
+            {
                 return fail(1);
+            }
             saw_bench_size = true;
         }
         else if (arg == "--bench-warmup")
         {
             const char *val = get_val(i);
             if (!val || !parse_nonneg_int(flag, val, args.bench_warmup))
+            {
                 return fail(1);
+            }
             saw_bench_warmup = true;
         }
         else if (arg == "-s" || arg == "--shading")
         {
             const char *val = get_val(i);
             if (!val || !parse_shading(flag, val, args.shading))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-s", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_shading("-s", argv[i] + 2, args.shading))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-b" || arg == "--bg")
         {
             const char *val = get_val(i);
             if (!val || !parse_bg(flag, val, args.bg))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-b", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bg("-b", argv[i] + 2, args.bg))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-l" || arg == "--lighting")
         {
             const char *val = get_val(i);
             if (!val || !parse_lighting(flag, val, args.lighting))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-l", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_lighting("-l", argv[i] + 2, args.lighting))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-h" || arg == "--help")
         {
@@ -452,34 +534,46 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_bool(flag, val, args.cull))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-c", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bool("-c", argv[i] + 2, args.cull))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-t" || arg == "--texture")
         {
             const char *val = get_val(i);
             if (!val || !parse_bool(flag, val, args.texture))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-t", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_bool("-t", argv[i] + 2, args.texture))
+            {
                 return fail(1);
+            }
         }
         else if (arg == "-w" || arg == "--wireframe-color")
         {
             const char *val = get_val(i);
             if (!val || !parse_wireframe_color(flag, val, args.wireframe_color))
+            {
                 return fail(1);
+            }
         }
         else if (std::strncmp(argv[i], "-w", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
         {
             if (!parse_wireframe_color("-w", argv[i] + 2, args.wireframe_color))
+            {
                 return fail(1);
+            }
         }
         else if (argv[i][0] == '-')
         {
@@ -492,7 +586,9 @@ ParseResult parse_args(int argc, char *argv[])
             return fail(1);
         }
         else
+        {
             args.model_path = argv[i];
+        }
     }
 
     if (saw_bench_size && args.bench < 1)

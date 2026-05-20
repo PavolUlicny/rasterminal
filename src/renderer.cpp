@@ -40,7 +40,9 @@ namespace
         constexpr int TARGET_CLAIMS_PER_WORKER = 12;
 
         if (total_tris <= 0 || n_workers <= 0)
+        {
             return MIN_CHUNK;
+        }
 
         const int denom = n_workers * TARGET_CLAIMS_PER_WORKER;
         const int raw = (total_tris + denom - 1) / denom; // ceil(total/denom)
@@ -61,7 +63,9 @@ Renderer::Renderer(int n_threads)
     m_n_workers = std::clamp(req, 1, hw);
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
+    {
         m_threads.emplace_back(&Renderer::worker_func, this, t);
+    }
 }
 
 Renderer::~Renderer()
@@ -73,7 +77,9 @@ Renderer::~Renderer()
     }
     m_cv_work.notify_all();
     for (auto &th : m_threads)
+    {
         th.join();
+    }
 }
 
 // ─── Renderer::worker_func ────────────────────────────────────────────────────
@@ -88,7 +94,9 @@ void Renderer::worker_func(int t)
         std::unique_lock<std::mutex> lk(m_mutex);
         m_cv_work.wait(lk, [this, my_gen] { return m_generation != my_gen || m_stop; });
         if (m_stop)
+        {
             return;
+        }
 
         my_gen = m_generation;
         lk.unlock();
@@ -129,7 +137,9 @@ void Renderer::worker_func(int t)
             {
                 const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
                 if (start >= total)
+                {
                     break;
+                }
                 const int end = std::min(start + chunk, total);
                 for (int i = start; i < end; i++)
                 {
@@ -149,7 +159,9 @@ void Renderer::worker_func(int t)
                         if (dot(face_normal, eye - va.pos) <= 0.0f)
                         {
                             if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
+                            {
                                 continue;
+                            }
                             flip_normals = true;
                         }
                     }
@@ -182,7 +194,9 @@ void Renderer::worker_func(int t)
                         const ClipVert &c = clipped[ti][2];
 
                         if (clip_reject(a.c, b.c, c.c))
+                        {
                             continue;
+                        }
 
                         const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
                         const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
@@ -217,7 +231,9 @@ void Renderer::worker_func(int t)
                             {
                                 vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                                 if (flip_normals)
+                                {
                                     face_n = face_n * -1.0f;
+                                }
                                 const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
                                 const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
                                 const Material *flat_mat = &mat;
@@ -237,10 +253,12 @@ void Renderer::worker_func(int t)
                                     assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
                                 );
                                 if (shadow_map)
+                                {
                                     shad_a = shad_b = shad_c = compute_lighting(
                                         assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient,
                                         *flat_mat, face_ao
                                     );
+                                }
                             }
                             else // Gouraud
                             {
@@ -250,7 +268,9 @@ void Renderer::worker_func(int t)
                                     auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
                                     {
                                         if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
+                                        {
                                             return mat;
+                                        }
                                         gvcol_mat = mat;
                                         gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
                                         gvcol_mat.ambient = gvcol_mat.ambient * vcol;
@@ -369,7 +389,9 @@ void Renderer::render(
                 const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
                 if (dot(face_normal, eye - va.pos) <= 0.0f &&
                     (!mesh.has_double_sided || !mesh.mat_at(tri.material_idx).double_sided))
+                {
                     continue;
+                }
             }
 
             const ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao };
@@ -385,7 +407,9 @@ void Renderer::render(
                 const ClipVert &c = clipped[ti][2];
 
                 if (clip_reject(a.c, b.c, c.c))
+                {
                     continue;
+                }
 
                 const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
                 const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);

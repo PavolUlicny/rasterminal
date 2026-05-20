@@ -329,12 +329,18 @@ TEST(camera, orbit_does_not_gimbal_lock)
 
     static constexpr float step = 3.14159265f / 4.0f; // 45° steps
     for (int i = 0; i < 64; i++)                      // 8 full revolutions
+    {
         c.orbit(0.0f, step);
+    }
 
     mat4 v = c.view();
     for (int row = 0; row < 4; row++)
+    {
         for (int col = 0; col < 4; col++)
+        {
             ASSERT_TRUE(std::isfinite(v.m[row][col]));
+        }
+    }
 
     for (int r = 0; r < 3; r++)
     {
@@ -528,7 +534,9 @@ TEST(camera, process_key_dt_zero_is_noop)
     const float d_before = c.distance;
     for (auto key : { platform::KEY_A, platform::KEY_D, platform::KEY_W, platform::KEY_S, platform::KEY_PLUS,
                       platform::KEY_MINUS })
+    {
         c.process_key(key, 0.0f);
+    }
     ASSERT_NEAR(c.distance, d_before, EPS);
     vec3 e_after = c.eye();
     ASSERT_NEAR(e_after.x, e_before.x, EPS);

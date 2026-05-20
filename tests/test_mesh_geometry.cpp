@@ -32,7 +32,9 @@ TEST(normals, all_normals_have_unit_length)
     TmpFile f(tmp_path("rast_norm_unit.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &v : m.vertices)
+    {
         ASSERT_NEAR(v.normal.length(), 1.0f, 1e-5f);
+    }
 }
 
 TEST(normals, two_coplanar_triangles_normal_consistent)
@@ -64,7 +66,9 @@ TEST(tangents, all_tangents_have_unit_length)
     TmpFile f(tmp_path("rast_tan_unit.obj"), obj);
     Mesh m = load_ok(f.path);
     for (const auto &t : m.tangents)
+    {
         ASSERT_NEAR(t.length(), 1.0f, 1e-5f);
+    }
 }
 
 TEST(tangents, tangents_are_orthogonal_to_normals)
@@ -76,7 +80,9 @@ TEST(tangents, tangents_are_orthogonal_to_normals)
     TmpFile f(tmp_path("rast_tan_orth.obj"), obj);
     Mesh m = load_ok(f.path);
     for (size_t i = 0; i < m.vertices.size(); i++)
+    {
         ASSERT_NEAR(dot(m.tangents[i], m.vertices[i].normal), 0.0f, 1e-5f);
+    }
 }
 
 TEST(tangents, tangent_aligns_with_uv_u_gradient)
@@ -166,7 +172,9 @@ TEST(ao, flat_triangle_vertices_are_one)
     bool ok = m.load_model(f.path, /*ao=*/true);
     ASSERT_TRUE(ok);
     for (const auto &v : m.vertices)
+    {
         ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
+    }
 }
 
 TEST(ao, isolated_vertex_is_one_and_finite)
@@ -373,7 +381,9 @@ TEST(ao, disabled_skips_computation)
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/false));
     for (const auto &v : m.vertices)
+    {
         ASSERT_NEAR(v.ao, 1.0f, 1e-5f);
+    }
 }
 
 TEST(ao, stl_load_skips_compute_ao)
@@ -394,7 +404,9 @@ TEST(ao, stl_load_skips_compute_ao)
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
     for (const auto &v : m.vertices)
+    {
         ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
+    }
 }
 
 TEST(ao, ply_load_runs_compute_ao)
@@ -509,9 +521,14 @@ TEST(ao, mt_matches_single_threaded)
     std::string obj;
     obj.reserve(65536);
     for (int r = 0; r < N; r++)
+    {
         for (int c = 0; c < N; c++)
+        {
             obj += "v " + std::to_string(c) + " " + std::to_string(r) + " 0\n";
+        }
+    }
     for (int r = 0; r < N - 1; r++)
+    {
         for (int c = 0; c < N - 1; c++)
         {
             const int bl = r * N + c + 1;
@@ -521,6 +538,7 @@ TEST(ao, mt_matches_single_threaded)
             obj += "f " + std::to_string(bl) + " " + std::to_string(br) + " " + std::to_string(tl) + "\n";
             obj += "f " + std::to_string(br) + " " + std::to_string(tr) + " " + std::to_string(tl) + "\n";
         }
+    }
 
     TmpFile f(tmp_path("rast_ao_mt.obj"), obj);
     Mesh m1;
@@ -530,5 +548,7 @@ TEST(ao, mt_matches_single_threaded)
 
     ASSERT_TRUE(m1.vertices.size() == m4.vertices.size());
     for (size_t i = 0; i < m1.vertices.size(); i++)
+    {
         ASSERT_NEAR(m1.vertices[i].ao, m4.vertices[i].ao, 1e-6f);
+    }
 }

@@ -287,7 +287,9 @@ TEST(texture_load, load_failure_preserves_previous_data)
     ASSERT_EQ(t.width, old_w);
     ASSERT_EQ(t.height, old_h);
     if (t.pixels != old_pixels)
+    {
         ASSERT_FAIL("load() should leave pixels unchanged on failure");
+    }
 }
 
 TEST(texture_load, load_from_memory_failure_preserves_previous_data)
@@ -302,7 +304,9 @@ TEST(texture_load, load_from_memory_failure_preserves_previous_data)
     ASSERT_EQ(t.width, old_w);
     ASSERT_EQ(t.height, old_h);
     if (t.pixels != old_pixels)
+    {
         ASSERT_FAIL("load_from_memory() should leave pixels unchanged on failure");
+    }
 }
 
 // ─── success paths for load() and load_from_memory() ─────────────────────────

@@ -15,7 +15,9 @@ static Texture make_tex_rgba(int w, int h, std::initializer_list<int> rgba)
     t.height = h;
     t.pixels.reserve(rgba.size());
     for (int v : rgba)
+    {
         t.pixels.push_back(static_cast<uint8_t>(v));
+    }
     return t;
 }
 
@@ -70,9 +72,13 @@ TEST(rasterize, solid_diffuse_texture_replaces_color)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 250)
+    {
         ASSERT_FAIL("R too low (" + std::to_string(static_cast<int>(c.r)) + "): expected red from 1x1 red texture");
+    }
     if (c.g > 5 || c.b > 5)
+    {
         ASSERT_FAIL("G/B too high: expected pure red pixel");
+    }
 }
 
 // A2: 1×1 red texture × green vertex colour → black (R*G = 0 per component).
@@ -89,7 +95,9 @@ TEST(rasterize, texture_modulates_with_vertex_color)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5 || c.g > 5 || c.b > 5)
+    {
         ASSERT_FAIL("Expected black: red*green per-component should zero all channels");
+    }
 }
 
 // A3: 2×1 red/blue texture; wa=wb=10 (far), wc=1 (near).
@@ -108,14 +116,18 @@ TEST(rasterize, texture_uv_perspective_correct_unequal_w)
     ASSERT_TRUE(was_drawn(fb, 12, 10));
     Color c = fb.get_pixel(12, 10);
     if (c.b < 200)
+    {
         ASSERT_FAIL(
             "B too low (" + std::to_string(static_cast<int>(c.b)) +
             "): perspective-correct UV should bias toward blue near vertex c"
         );
+    }
     if (c.r > 60)
+    {
         ASSERT_FAIL(
             "R too high (" + std::to_string(static_cast<int>(c.r)) + "): far red vertices should contribute little"
         );
+    }
 }
 
 // A4: 1×2 texture (row 0=red, row 1=blue); UV v=0.
@@ -133,9 +145,13 @@ TEST(rasterize, texture_v_flip_convention)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.b < 200)
+    {
         ASSERT_FAIL("B too low: UV v=0 should map to bottom image row (blue) via V-flip");
+    }
     if (c.r > 5)
+    {
         ASSERT_FAIL("R too high: UV v=0 must not map to top image row (red)");
+    }
 }
 
 // A5: 2×1 red/blue texture; UV u=1.1 wraps to 0.1 → mostly red (R≈230, B≈26).
@@ -153,11 +169,15 @@ TEST(rasterize, texture_uv_wrap)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 200)
+    {
         ASSERT_FAIL(
             "R too low (" + std::to_string(static_cast<int>(c.r)) + "): u=1.1 should wrap to 0.1 giving mostly red"
         );
+    }
     if (c.b > 50)
+    {
         ASSERT_FAIL("B too high: blue texel should barely contribute after wrap");
+    }
 }
 
 // ── Group B: diffuse texture in rasterize_phong() ────────────────────────────
@@ -193,12 +213,16 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
     ASSERT_TRUE(was_drawn(fb_notex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_tex, 20, 10));
     if (fb_notex.get_pixel(20, 10).r < 250)
+    {
         ASSERT_FAIL("no-texture: R too low, expected ~255 from ambient");
+    }
     Color with_tex = fb_tex.get_pixel(20, 10);
     if (with_tex.r < 110 || with_tex.r > 145)
+    {
         ASSERT_FAIL(
             "with gray tex: R=" + std::to_string(static_cast<int>(with_tex.r)) + " expected ~128 (gray halves ambient)"
         );
+    }
 }
 
 // B2: Same 2×1 red/blue + unequal-w setup as A3, but in the Phong path.
@@ -227,12 +251,16 @@ TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
     ASSERT_TRUE(was_drawn(fb, 12, 10));
     Color c = fb.get_pixel(12, 10);
     if (c.b < 200)
+    {
         ASSERT_FAIL(
             "B too low (" + std::to_string(static_cast<int>(c.b)) +
             "): Phong UV must use perspective-correct interpolation"
         );
+    }
     if (c.r > 60)
+    {
         ASSERT_FAIL("R too high: far red vertices should contribute little");
+    }
 }
 
 // B3: 1×1 white texture must not change the rendered colour.
@@ -306,9 +334,13 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
     ASSERT_TRUE(was_drawn(fb_nostex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_stex, 20, 10));
     if (fb_nostex.get_pixel(20, 10).r < 240)
+    {
         ASSERT_FAIL("without stex: R too low, expected peak specular ~255");
+    }
     if (fb_stex.get_pixel(20, 10).r > 5)
+    {
         ASSERT_FAIL("with black stex: R too high, specular should be zeroed");
+    }
 }
 
 // ── Group D: normal map ───────────────────────────────────────────────────────
@@ -348,9 +380,13 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     ASSERT_TRUE(was_drawn(fb_nonmap, 20, 10));
     ASSERT_TRUE(was_drawn(fb_nmap, 20, 10));
     if (fb_nonmap.get_pixel(20, 10).r > 10)
+    {
         ASSERT_FAIL("without nmap: R too high -- dot((0,0,1),(1,0,0))=0, no diffuse expected");
+    }
     if (fb_nmap.get_pixel(20, 10).r < 240)
+    {
         ASSERT_FAIL("with nmap: R too low -- redirected normal ~(1,0,0) should give full red diffuse");
+    }
 }
 
 // D2: degenerate tangent (tan parallel to normal) must not crash or produce NaN.
@@ -387,11 +423,13 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
     // Result should be close to normal-map-free lighting (bright, not black).
     Color c = fb.get_pixel(20, 10);
     if (c.r < 100)
+    {
         ASSERT_FAIL(
             "degenerate tangent: T/B=0 so normal falls back to N*nm.z≈N; "
             "expected bright pixel, got R=" +
             std::to_string(static_cast<int>(c.r))
         );
+    }
 }
 
 // ── Group D3: degenerate tangent — colour value validation ───────────────────
@@ -490,14 +528,18 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
     // both (red diffuse, green specular): B_specular=0, B_diffuse=0 → B≈0.
     // Green stex zeroes the blue specular channel; this is the distinguishing observable.
     if (texonly.b < 200)
+    {
         ASSERT_FAIL(
             "tex-only: white specular should give high B, got B=" + std::to_string(static_cast<int>(texonly.b))
         );
+    }
     if (both.b > 20)
+    {
         ASSERT_FAIL(
             "both textures: green stex zeroes B specular, expected B≈0, got B=" +
             std::to_string(static_cast<int>(both.b))
         );
+    }
 }
 
 // ── Group F: specular texture combined with alpha cutout ─────────────────────
@@ -547,15 +589,19 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
     ASSERT_TRUE(was_drawn(fb_nostex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_stex, 20, 10));
     if (fb_nostex.get_pixel(20, 10).r < 240)
+    {
         ASSERT_FAIL(
             "cutout+no-stex: peak specular expected, got R=" +
             std::to_string(static_cast<int>(fb_nostex.get_pixel(20, 10).r))
         );
+    }
     if (fb_stex.get_pixel(20, 10).r > 5)
+    {
         ASSERT_FAIL(
             "cutout+black-stex: specular should be zeroed, got R=" +
             std::to_string(static_cast<int>(fb_stex.get_pixel(20, 10).r))
         );
+    }
 }
 
 // ── Group F: glTF metallic-roughness remap ────────────────────────────────────
@@ -601,14 +647,18 @@ TEST(rasterize_phong, metallic_keeps_diffuse)
     ASSERT_TRUE(was_drawn(fb_diel, 20, 10));
     ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
     if (fb_diel.get_pixel(20, 10).r < 240)
+    {
         ASSERT_FAIL(
             "dielectric: full diffuse expected, got R=" + std::to_string(static_cast<int>(fb_diel.get_pixel(20, 10).r))
         );
+    }
     if (fb_metal.get_pixel(20, 10).r < 240)
+    {
         ASSERT_FAIL(
             "metal: diffuse must be kept (not zeroed), got R=" +
             std::to_string(static_cast<int>(fb_metal.get_pixel(20, 10).r))
         );
+    }
 }
 
 // F2: metallic=1 tints F0 by the base colour. Peak specular (H=N) with a blue base
@@ -648,15 +698,23 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
     ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
     Color metal = fb_metal.get_pixel(20, 10);
     if (metal.b < 240)
+    {
         ASSERT_FAIL("metal: blue F0 highlight expected, got B=" + std::to_string(static_cast<int>(metal.b)));
+    }
     if (metal.r > 20)
+    {
         ASSERT_FAIL("metal: highlight should be blue not white, got R=" + std::to_string(static_cast<int>(metal.r)));
+    }
 
     // MR texel B=0 forces m=0 → dielectric: F0 = lerp(0.04, base, 0) ≈ 0.04 (a faint
     // highlight, R≈10), with the blue base diffuse dominating — not a blue metal F0.
     Color mr = fb_mr.get_pixel(20, 10);
     if (mr.b < 240)
+    {
         ASSERT_FAIL("mr-dielectric: full blue diffuse expected, got B=" + std::to_string(static_cast<int>(mr.b)));
+    }
     if (mr.r > 20)
+    {
         ASSERT_FAIL("mr-dielectric: red should stay zero, got R=" + std::to_string(static_cast<int>(mr.r)));
+    }
 }

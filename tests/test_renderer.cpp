@@ -95,14 +95,20 @@ TEST(renderer, wireframe_uses_wireframe_color)
             {
                 drawn++;
                 if (std::abs(static_cast<int>(c.r) - 255) > 2 || c.g > 2 || c.b > 2)
+                {
                     wrong++;
+                }
             }
         }
     }
     if (drawn == 0)
+    {
         ASSERT_FAIL("wireframe drew no pixels");
+    }
     if (wrong > 0)
+    {
         ASSERT_FAIL("wireframe_color not honoured: " + std::to_string(wrong) + " pixels wrong");
+    }
 }
 
 // ─── Group C — shading dispatch ───────────────────────────────────────────────
@@ -125,11 +131,17 @@ TEST(renderer, flat_shading_renders_lit_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL("flat: R too low (" + std::to_string(static_cast<int>(c.r)) + ")");
+    }
     if (c.g > 30)
+    {
         ASSERT_FAIL("flat: G too high (" + std::to_string(static_cast<int>(c.g)) + ")");
+    }
     if (c.b > 30)
+    {
         ASSERT_FAIL("flat: B too high (" + std::to_string(static_cast<int>(c.b)) + ")");
+    }
 }
 
 // C2: Gouraud shading produces a lit centre pixel.
@@ -147,11 +159,17 @@ TEST(renderer, gouraud_shading_renders_lit_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL("gouraud: R too low (" + std::to_string(static_cast<int>(c.r)) + ")");
+    }
     if (c.g > 30)
+    {
         ASSERT_FAIL("gouraud: G too high (" + std::to_string(static_cast<int>(c.g)) + ")");
+    }
     if (c.b > 30)
+    {
         ASSERT_FAIL("gouraud: B too high (" + std::to_string(static_cast<int>(c.b)) + ")");
+    }
 }
 
 // C3: Phong shading produces a lit centre pixel.
@@ -169,11 +187,17 @@ TEST(renderer, phong_shading_renders_lit_pixel)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL("phong: R too low (" + std::to_string(static_cast<int>(c.r)) + ")");
+    }
     if (c.g > 30)
+    {
         ASSERT_FAIL("phong: G too high (" + std::to_string(static_cast<int>(c.g)) + ")");
+    }
     if (c.b > 30)
+    {
         ASSERT_FAIL("phong: B too high (" + std::to_string(static_cast<int>(c.b)) + ")");
+    }
 }
 
 // ─── Group D — backface culling in MT path ────────────────────────────────────
@@ -209,7 +233,9 @@ TEST(renderer, mt_double_sided_renders_backface)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, ambient, fb);
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("double-sided backface must not be culled");
+    }
 }
 
 // ─── Group E — MT correctness / multi-frame ───────────────────────────────────
@@ -267,13 +293,21 @@ TEST(renderer, large_triangle_spans_all_bands)
     r.render(mesh, cam, &light, 1, ambient, fb);
 
     if (!was_drawn(fb, 20, 3))
+    {
         ASSERT_FAIL("no pixel drawn at y=3 (band 0): band bucketing gap");
+    }
     if (!was_drawn(fb, 20, 7))
+    {
         ASSERT_FAIL("no pixel drawn at y=7 (band 1): band bucketing gap");
+    }
     if (!was_drawn(fb, 20, 10))
+    {
         ASSERT_FAIL("no pixel drawn at y=10 (band 2): band bucketing gap");
+    }
     if (!was_drawn(fb, 20, 17))
+    {
         ASSERT_FAIL("no pixel drawn at y=17 (band 3): band bucketing gap");
+    }
 }
 
 // ─── Group F — lights, shadow, texture toggle ─────────────────────────────────
@@ -300,11 +334,17 @@ TEST(renderer, zero_lights_renders_ambient_only)
     Color c = fb.get_pixel(20, 10);
     // ambient * mat.ambient * ao = (0.5,0,0) * (1,1,1) * 1 ≈ R=127.
     if (c.r < 80)
+    {
         ASSERT_FAIL("ambient-only R too low (" + std::to_string(static_cast<int>(c.r)) + ")");
+    }
     if (c.g > 20)
+    {
         ASSERT_FAIL("ambient-only G too high (" + std::to_string(static_cast<int>(c.g)) + ")");
+    }
     if (c.b > 20)
+    {
         ASSERT_FAIL("ambient-only B too high (" + std::to_string(static_cast<int>(c.b)) + ")");
+    }
 }
 
 // F2: show_texture toggle changes pixel colour.
@@ -346,15 +386,23 @@ TEST(renderer, show_texture_toggle_changes_pixel)
 
     // With texture: diffuse*tex = (1,1,1)*(0,1,0) → green.
     if (ct.g < 200)
+    {
         ASSERT_FAIL("show_texture=true: G too low (" + std::to_string(static_cast<int>(ct.g)) + ")");
+    }
     if (ct.r > 60)
+    {
         ASSERT_FAIL("show_texture=true: R too high (" + std::to_string(static_cast<int>(ct.r)) + ")");
+    }
 
     // Without texture: diffuse (1,1,1) × white light → white.
     if (cn.r < 200)
+    {
         ASSERT_FAIL("show_texture=false: R too low (" + std::to_string(static_cast<int>(cn.r)) + ")");
+    }
     if (cn.g < 200)
+    {
         ASSERT_FAIL("show_texture=false: G too low (" + std::to_string(static_cast<int>(cn.g)) + ")");
+    }
 }
 
 // F3: show_texture=false must null-out stex and nmap even when specular_tex and
@@ -401,12 +449,14 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
     Color cb = fb_base.get_pixel(20, 10);
     auto diff = [](uint8_t a, uint8_t b) { return a > b ? a - b : b - a; };
     if (diff(cw.r, cb.r) > 2 || diff(cw.g, cb.g) > 2 || diff(cw.b, cb.b) > 2)
+    {
         ASSERT_FAIL(
             "show_tex=false: stex/nmap not suppressed — output differs from baseline (" +
             std::to_string(static_cast<int>(cw.r)) + "," + std::to_string(static_cast<int>(cw.g)) + "," +
             std::to_string(static_cast<int>(cw.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," +
             std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")"
         );
+    }
 }
 
 // ─── Group J: double-sided lighting correctness ───────────────────────────────
@@ -527,10 +577,12 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL(
             "Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
             ") — normal flip not applied"
         );
+    }
 }
 
 // J2: Gouraud — same scene.
@@ -551,10 +603,12 @@ TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL(
             "Gouraud double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
             ") — normal flip not applied"
         );
+    }
 }
 
 // J3: Flat — same scene; covers the separate face-normal negation branch.
@@ -575,10 +629,12 @@ TEST(renderer, flat_double_sided_back_face_lit_correctly)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL(
             "Flat double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
             ") — face normal flip not applied"
         );
+    }
 }
 
 // J4: cull off, single-sided back-face → drawn but dark.
@@ -601,10 +657,12 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
+    {
         ASSERT_FAIL(
             "cull-off single-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
             ") — flip applied when it should not be"
         );
+    }
 }
 
 // J5: cull off, double-sided back-face → also drawn but dark.
@@ -626,10 +684,12 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r > 5)
+    {
         ASSERT_FAIL(
             "cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
             ") — flip applied when cull is off"
         );
+    }
 }
 
 // J6: front-facing double-sided triangle — flip must NOT fire.
@@ -652,10 +712,12 @@ TEST(renderer, double_sided_front_face_lit_normally)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
     if (c.r < 150)
+    {
         ASSERT_FAIL(
             "front-facing double-sided R too low (" + std::to_string(static_cast<int>(c.r)) +
             ") — flip incorrectly applied to front face"
         );
+    }
 }
 
 // J7: mixed mesh — only the double-sided back-face triangle is drawn.
@@ -678,13 +740,17 @@ TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
     ASSERT_TRUE(was_drawn(fb, 16, 10));
     Color c_ds = fb.get_pixel(16, 10);
     if (c_ds.r < 80)
+    {
         ASSERT_FAIL(
             "double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + ") — may have been culled"
         );
+    }
 
     // Single-sided triangle must be culled — pixel stays undrawn.
     if (was_drawn(fb, 24, 10))
+    {
         ASSERT_FAIL("single-sided back-face was drawn — per-material check bypassed");
+    }
 }
 
 // J8: wireframe double-sided back-face — covers the wireframe path's separate cull bypass.
@@ -702,7 +768,9 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
     r.render(mesh, cam, nullptr, 0, ambient, fb);
 
     if (count_drawn_pixels(fb) == 0)
+    {
         ASSERT_FAIL("wireframe double-sided back-face drew no pixels — cull bypass missing");
+    }
 }
 
 TEST(renderer, wireframe_shadow_map_is_ignored)

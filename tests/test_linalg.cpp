@@ -60,8 +60,12 @@ TEST(mat4, identity_times_identity_is_identity)
     mat4 I = mat4::identity();
     mat4 II = I * I;
     for (int c = 0; c < 4; c++)
+    {
         for (int r = 0; r < 4; r++)
+        {
             ASSERT_NEAR(II.m[c][r], c == r ? 1.0f : 0.0f, 1e-6f);
+        }
+    }
 }
 
 TEST(mat4, translation_applies_to_point)
@@ -116,8 +120,12 @@ TEST(mat4, default_constructor_is_zero)
 {
     mat4 m;
     for (int c = 0; c < 4; c++)
+    {
         for (int r = 0; r < 4; r++)
+        {
             ASSERT_NEAR(m.m[c][r], 0.0f, 0.0f);
+        }
+    }
 }
 
 TEST(mat4, transposed_is_involution)
@@ -125,8 +133,12 @@ TEST(mat4, transposed_is_involution)
     mat4 M = translation(1.0f, 2.0f, 3.0f);
     mat4 TT = M.transposed().transposed();
     for (int c = 0; c < 4; c++)
+    {
         for (int r = 0; r < 4; r++)
+        {
             ASSERT_NEAR(TT.m[c][r], M.m[c][r], 1e-6f);
+        }
+    }
 }
 
 TEST(mat4, multiplication_is_associative)
