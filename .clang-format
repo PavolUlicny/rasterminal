@@ -60,3 +60,6 @@ MaxEmptyLinesToKeep: 1
 
 # Keep // namespace <name> closing comments on long namespace bodies
 FixNamespaceComments: true
+
+# When a call/decl wraps, put each parameter on its own line (no bin-packing)
+BinPackParameters: false

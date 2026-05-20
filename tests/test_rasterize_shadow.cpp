@@ -49,7 +49,13 @@ static void rast_shadow(Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, vec3 col, ve
 // lights, material, and shadow map. ambient=(0,0,0) so ambient terms don't mask
 // whether the key light is included or excluded.
 static void rast_phong_shadow(
-    Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, const Light *lights, int n_lights, const Material &mat,
+    Framebuffer &fb,
+    vec3 pa,
+    vec3 pb,
+    vec3 pc,
+    const Light *lights,
+    int n_lights,
+    const Material &mat,
     const ShadowMap *sm
 )
 {

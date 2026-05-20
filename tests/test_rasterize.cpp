@@ -334,7 +334,17 @@ TEST(framebuffer, multithread_depth_color_race)
 
 // Call rasterize() with per-vertex colours (no texture, no shadow).
 static void rast_colored(
-    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 ca, vec3 cb, vec3 cc, int y_min,
+    Framebuffer &fb,
+    vec3 sa,
+    vec3 sb,
+    vec3 sc,
+    float wa,
+    float wb,
+    float wc,
+    vec3 ca,
+    vec3 cb,
+    vec3 cc,
+    int y_min,
     int y_max
 )
 {

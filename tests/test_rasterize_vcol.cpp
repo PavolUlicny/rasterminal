@@ -25,8 +25,16 @@ static Texture make_vcol_tex(int w, int h, std::initializer_list<int> rgba)
 //
 // Caller supplies: vcol per vertex, has_vcol flag, w per vertex, mat, optional tex.
 static void rast_phong_vcol(
-    Framebuffer &fb, vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, float wa, float wb, float wc,
-    const Material &mat, const Texture *tex
+    Framebuffer &fb,
+    vec3 vcola,
+    vec3 vcolb,
+    vec3 vcolc,
+    bool has_vcol,
+    float wa,
+    float wb,
+    float wc,
+    const Material &mat,
+    const Texture *tex
 )
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };

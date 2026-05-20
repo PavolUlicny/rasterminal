@@ -21,8 +21,22 @@ static Texture make_tex_rgba(int w, int h, std::initializer_list<int> rgba)
 
 // rasterize() with explicit w, UVs, optional texture; shad == col (no shadow needed).
 static void rast_tex(
-    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 ca, vec3 cb, vec3 cc, vec2 uva,
-    vec2 uvb, vec2 uvc, const Texture *tex, int y_min, int y_max
+    Framebuffer &fb,
+    vec3 sa,
+    vec3 sb,
+    vec3 sc,
+    float wa,
+    float wb,
+    float wc,
+    vec3 ca,
+    vec3 cb,
+    vec3 cc,
+    vec2 uva,
+    vec2 uvb,
+    vec2 uvc,
+    const Texture *tex,
+    int y_min,
+    int y_max
 )
 {
     vec3 zero{};

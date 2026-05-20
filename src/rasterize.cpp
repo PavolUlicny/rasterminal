@@ -227,9 +227,30 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // shadow_map may be nullptr if shadows are disabled.
 
 void rasterize(
-    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 col_a, vec3 col_b, vec3 col_c,
-    vec3 shad_a, vec3 shad_b, vec3 shad_c, vec3 pa, vec3 pb, vec3 pc, vec2 uva, vec2 uvb, vec2 uvc, const Texture *tex,
-    float alpha_cutoff, const ShadowMap *shadow_map, int y_min, int y_max
+    Framebuffer &fb,
+    vec3 sa,
+    vec3 sb,
+    vec3 sc,
+    float wa,
+    float wb,
+    float wc,
+    vec3 col_a,
+    vec3 col_b,
+    vec3 col_c,
+    vec3 shad_a,
+    vec3 shad_b,
+    vec3 shad_c,
+    vec3 pa,
+    vec3 pb,
+    vec3 pc,
+    vec2 uva,
+    vec2 uvb,
+    vec2 uvc,
+    const Texture *tex,
+    float alpha_cutoff,
+    const ShadowMap *shadow_map,
+    int y_min,
+    int y_max
 )
 {
     const int width = fb.width();
@@ -367,11 +388,44 @@ void rasterize(
 // multiplied into mat.diffuse before the lighting calculation.
 
 void rasterize_phong(
-    Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, vec3 pa, vec3 pb, vec3 pc, vec3 na,
-    vec3 nb, vec3 nc, vec3 tana, vec3 tanb, vec3 tanc, vec2 uva, vec2 uvb, vec2 uvc, float aoa, float aob, float aoc,
-    vec3 vcola, vec3 vcolb, vec3 vcolc, bool has_vcol, const vec3 &eye, const Light *lights, int n_lights,
-    const vec3 &ambient, const Material &mat, const Texture *tex, const Texture *nmap, const Texture *stex,
-    const ShadowMap *shadow_map, int y_min, int y_max, const Texture *mrtex
+    Framebuffer &fb,
+    vec3 sa,
+    vec3 sb,
+    vec3 sc,
+    float wa,
+    float wb,
+    float wc,
+    vec3 pa,
+    vec3 pb,
+    vec3 pc,
+    vec3 na,
+    vec3 nb,
+    vec3 nc,
+    vec3 tana,
+    vec3 tanb,
+    vec3 tanc,
+    vec2 uva,
+    vec2 uvb,
+    vec2 uvc,
+    float aoa,
+    float aob,
+    float aoc,
+    vec3 vcola,
+    vec3 vcolb,
+    vec3 vcolc,
+    bool has_vcol,
+    const vec3 &eye,
+    const Light *lights,
+    int n_lights,
+    const vec3 &ambient,
+    const Material &mat,
+    const Texture *tex,
+    const Texture *nmap,
+    const Texture *stex,
+    const ShadowMap *shadow_map,
+    int y_min,
+    int y_max,
+    const Texture *mrtex
 )
 {
     const int width = fb.width();

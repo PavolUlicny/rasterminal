@@ -336,7 +336,12 @@ void Renderer::worker_func(int t)
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
 void Renderer::render(
-    const Mesh &mesh, const Camera &camera, const Light *lights, int n_lights, const vec3 &ambient, Framebuffer &fb,
+    const Mesh &mesh,
+    const Camera &camera,
+    const Light *lights,
+    int n_lights,
+    const vec3 &ambient,
+    Framebuffer &fb,
     const ShadowMap *shadow_map
 )
 {
