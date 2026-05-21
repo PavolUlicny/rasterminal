@@ -39,15 +39,18 @@ inline float roughness_to_shininess(float roughness) noexcept
 }
 
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
+// NOTE: when adding a new *_tex field, also update the remap loop in
+// decode_textures() (mesh_loader.h) — it enumerates each one explicitly.
 struct Material
 {
     vec3 diffuse = { 1.0f, 1.0f, 1.0f };
     vec3 ambient = { 1.0f, 1.0f, 1.0f }; // Ka; defaults to Kd when Ka absent in MTL
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
-    int diffuse_tex = -1;  // index into Mesh::textures, or -1 if none
-    int specular_tex = -1; // index into Mesh::textures, or -1 if none
-    int normal_tex = -1;   // index into Mesh::textures, or -1 if none
+    // Texture slot indices into Mesh::textures (-1 = none).
+    int diffuse_tex = -1;
+    int specular_tex = -1;
+    int normal_tex = -1;
     // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
     // per-pixel metallic work — non-glTF loaders leave these untouched).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap

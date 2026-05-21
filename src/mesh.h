@@ -51,8 +51,8 @@ struct Mesh
     void clear();
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
-    // Returns false on failure.
-    bool load_obj(const std::string &path);
+    // n_threads parallelizes texture decode. Returns false on failure.
+    bool load_obj(const std::string &path, int n_threads = 1);
 
     // Load geometry from a PLY file (ASCII or binary little/big-endian).
     // Supports vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
@@ -66,8 +66,9 @@ struct Mesh
 
     // Load geometry from a glTF or GLB file.
     // Supports positions, normals, UVs, PBR materials, diffuse/normal textures,
-    // and node transforms. Returns false on failure.
-    bool load_gltf(const std::string &path);
+    // and node transforms. n_threads parallelizes texture decode.
+    // Returns false on failure.
+    bool load_gltf(const std::string &path, int n_threads = 1);
 
   private:
     // Average adjacent face normals to produce smooth per-vertex normals.

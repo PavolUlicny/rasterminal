@@ -10,11 +10,12 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
-bool Mesh::load_gltf(const std::string &path)
+bool Mesh::load_gltf(const std::string &path, int n_threads)
 {
     MeshSnapshot snap(*this);
 
@@ -49,10 +50,11 @@ bool Mesh::load_gltf(const std::string &path)
     // Default white material at index 0.
     materials.push_back(Material{});
 
-    // Load a texture from a cgltf_image (external URI or embedded buffer_view).
-    // Each distinct cgltf_image is decoded once; later references reuse the slot.
-    // Failed decodes are cached as -1 so they are not retried.
+    // Register a texture by cgltf_image, returning its slot index. Each distinct
+    // image is registered once (dedup); the actual decode is deferred and run in
+    // parallel after the scene walk. Slot order follows first-encounter order.
     std::unordered_map<const cgltf_image *, int> tex_cache;
+    std::vector<const cgltf_image *> tex_requests;
     auto load_tex = [&](const cgltf_image *img) -> int
     {
         if (!img)
@@ -64,23 +66,8 @@ bool Mesh::load_gltf(const std::string &path)
         {
             return it->second;
         }
-        Texture tex;
-        bool ok = false;
-        if (img->uri && img->uri[0] != '\0')
-        {
-            ok = tex.load(dir + img->uri);
-        }
-        else if (img->buffer_view)
-        {
-            const auto *bv = img->buffer_view;
-            const auto *ptr = static_cast<const uint8_t *>(bv->buffer->data) + bv->offset;
-            ok = tex.load_from_memory(ptr, bv->size);
-        }
-        const int idx = ok ? static_cast<int>(textures.size()) : -1;
-        if (ok)
-        {
-            textures.push_back(std::move(tex));
-        }
+        const int idx = static_cast<int>(tex_requests.size());
+        tex_requests.push_back(img);
         tex_cache.emplace(img, idx);
         return idx;
     };
@@ -297,6 +284,28 @@ bool Mesh::load_gltf(const std::string &path)
     {
         compute_normals();
     }
+
+    // Decode all registered images in parallel. data (held by guard) and dir
+    // outlive the join, so worker reads of buffer_view->buffer->data are valid.
+    decode_textures(
+        textures, materials, tex_requests.size(), n_threads,
+        [&](size_t i) -> Texture
+        {
+            const cgltf_image *img = tex_requests[i];
+            Texture tex;
+            if (img->uri && img->uri[0] != '\0')
+            {
+                (void)tex.load(dir + img->uri);
+            }
+            else if (img->buffer_view)
+            {
+                // cgltf_buffer_view_data honours EXT_meshopt_compression overrides.
+                const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
+                (void)tex.load_from_memory(ptr, img->buffer_view->size);
+            }
+            return tex;
+        }
+    );
 
     snap.commit();
     return true;

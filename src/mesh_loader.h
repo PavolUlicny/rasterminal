@@ -2,6 +2,12 @@
 
 #include "mesh.h"
 
+#include <algorithm>
+#include <atomic>
+#include <cassert>
+#include <thread>
+#include <vector>
+
 // RAII snapshot of Mesh state for transactional loader rollback.
 // Construct at the top of a loader; call commit() on the success path.
 // Destruction without commit() restores all vectors and flags to their entry state.
@@ -46,3 +52,98 @@ struct MeshSnapshot
     bool m_has_vcol;
     bool m_done = false;
 };
+
+// Decode `count` textures into `textures` (must be empty on entry), in parallel
+// across n_threads when count >= 2. decode(i) returns the i-th Texture
+// independently (an invalid Texture signals a failed decode). Successful
+// decodes populate `textures` in request order; on any failure, the failed
+// slot is dropped and material *_tex indices are remapped through the
+// compaction (failed -> -1) so the textures vector contains only valid entries.
+//
+// Workers write disjoint, pre-sized slots and read only immutable inputs, so no
+// locking is needed. decode(i) must not mutate shared loader state.
+template <class Decode>
+inline void decode_textures(
+    std::vector<Texture> &textures, std::vector<Material> &materials, size_t count, int n_threads, Decode decode
+)
+{
+    assert(textures.empty());
+    if (count == 0)
+    {
+        return;
+    }
+
+    // Failed decodes are silently dropped (compacted out + material *_tex
+    // remapped to -1). The helper is format-agnostic and has no per-texture
+    // identity string to log here; loaders that need user-facing diagnostics
+    // would have to surface them at registration time.
+    std::vector<Texture> decoded(count);
+
+    const int eff =
+        (n_threads <= 1 || count < 2) ? 1 : static_cast<int>(std::min(static_cast<size_t>(n_threads), count));
+    if (eff <= 1)
+    {
+        for (size_t i = 0; i < count; i++)
+        {
+            decoded[i] = decode(i);
+        }
+    }
+    else
+    {
+        std::atomic<size_t> next{ 0 };
+        const auto worker = [&]()
+        {
+            for (size_t i = next.fetch_add(1, std::memory_order_relaxed); i < count;
+                 i = next.fetch_add(1, std::memory_order_relaxed))
+            {
+                decoded[i] = decode(i);
+            }
+        };
+        std::vector<std::thread> threads;
+        threads.reserve(static_cast<size_t>(eff - 1));
+        for (int t = 0; t < eff - 1; t++)
+        {
+            threads.emplace_back(worker);
+        }
+        worker();
+        for (auto &th : threads)
+        {
+            th.join();
+        }
+    }
+
+    const bool any_failed = std::any_of(decoded.begin(), decoded.end(), [](const Texture &t) { return !t.valid(); });
+    if (!any_failed)
+    {
+        // Provisional indices already match final slots; no remap needed.
+        textures = std::move(decoded);
+        return;
+    }
+
+    std::vector<int> remap(count, -1);
+    std::vector<Texture> compacted;
+    compacted.reserve(count);
+    for (size_t i = 0; i < count; i++)
+    {
+        if (decoded[i].valid())
+        {
+            remap[i] = static_cast<int>(compacted.size());
+            compacted.push_back(std::move(decoded[i]));
+        }
+    }
+    textures = std::move(compacted);
+    for (auto &m : materials)
+    {
+        const auto fix = [&](int &f)
+        {
+            if (f >= 0)
+            {
+                f = remap[static_cast<size_t>(f)];
+            }
+        };
+        fix(m.diffuse_tex);
+        fix(m.specular_tex);
+        fix(m.normal_tex);
+        fix(m.metallic_roughness_tex);
+    }
+}

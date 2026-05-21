@@ -610,6 +610,32 @@ TEST(obj_valid, shared_map_kd_deduplicates_texture)
     ASSERT_EQ(m.materials[2].diffuse_tex, 0);
 }
 
+TEST(obj_valid, parallel_decode_two_distinct_textures)
+{
+    // Two materials naming two distinct map_Kd files. Loaded with n_threads=4 so
+    // the decodes run on the parallel path; both must land in distinct valid slots.
+    TmpFile bmpA(tmp_path("rast_par_a.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile bmpB(tmp_path("rast_par_b.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(
+        tmp_path("rast_par.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd rast_par_a.bmp\n"
+                                  "newmtl B\nKd 1 1 1\nmap_Kd rast_par_b.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_par.obj"), "mtllib rast_par.mtl\n"
+                                  "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                  "usemtl A\nf 1 2 3\n"
+                                  "usemtl B\nf 1 2 3\n"
+    );
+    Mesh m;
+    const bool ok = m.load_model(obj.path, /*ao=*/false, /*n_threads=*/4);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(m.textures.size(), size_t{ 2 });
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_TRUE(m.materials[1].diffuse_tex >= 0);
+    ASSERT_TRUE(m.materials[2].diffuse_tex >= 0);
+    ASSERT_TRUE(m.materials[1].diffuse_tex != m.materials[2].diffuse_tex);
+}
+
 TEST(obj_valid, face_without_usemtl_uses_default_material)
 {
     // mtllib declares a material, but no usemtl → tinyobjloader sets mat_id=-1

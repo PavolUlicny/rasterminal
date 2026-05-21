@@ -10,11 +10,12 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
-bool Mesh::load_obj(const std::string &path)
+bool Mesh::load_obj(const std::string &path, int n_threads)
 {
     MeshSnapshot snap(*this);
 
@@ -61,10 +62,11 @@ bool Mesh::load_obj(const std::string &path)
     // Default white material at index 0 — always present.
     materials.push_back(Material{});
 
-    // Load a texture from a name relative to obj_dir. Returns -1 on missing/error.
-    // Each distinct name is decoded once; later references reuse the slot.
-    // Failed decodes are cached as -1 so they are not retried.
+    // Register a texture by name (relative to obj_dir), returning its slot index.
+    // Each distinct name is registered once (dedup); the actual decode is deferred
+    // and run in parallel after material parsing. Empty name -> no texture (-1).
     std::unordered_map<std::string, int> tex_cache;
+    std::vector<std::string> tex_requests;
     auto load_tex = [&](const std::string &name) -> int
     {
         if (name.empty())
@@ -76,13 +78,8 @@ bool Mesh::load_obj(const std::string &path)
         {
             return it->second;
         }
-        Texture tex;
-        const bool ok = tex.load(obj_dir + name);
-        const int idx = ok ? static_cast<int>(textures.size()) : -1;
-        if (ok)
-        {
-            textures.push_back(std::move(tex));
-        }
+        const int idx = static_cast<int>(tex_requests.size());
+        tex_requests.push_back(obj_dir + name);
         tex_cache.emplace(name, idx);
         return idx;
     };
@@ -229,6 +226,17 @@ bool Mesh::load_obj(const std::string &path)
     {
         compute_normals();
     }
+
+    // tex_requests holds obj_dir-resolved paths, decoded in parallel.
+    decode_textures(
+        textures, materials, tex_requests.size(), n_threads,
+        [&](size_t i) -> Texture
+        {
+            Texture tex;
+            (void)tex.load(tex_requests[i]);
+            return tex;
+        }
+    );
 
     snap.commit();
     return true;

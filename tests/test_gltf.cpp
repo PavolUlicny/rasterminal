@@ -1257,6 +1257,96 @@ TEST(gltf_valid, shared_image_deduplicates_texture)
     ASSERT_TRUE(found);
 }
 
+// ─── Group V++: parallel texture decode (n_threads > 1) ───────────────────────
+
+TEST(gltf_valid, parallel_decode_two_distinct_textures)
+{
+    // Two images (two bufferViews over the same BMP bytes → two distinct
+    // cgltf_image), two materials, two primitives. Loaded with n_threads=4 so the
+    // two decodes run on the parallel path. Both must land in distinct valid slots.
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);                                                // 36 bytes at offset 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // 58 bytes at offset 36
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":1}]}],"
+                             "\"materials\":["
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":1}}}],"
+                             "\"textures\":[{\"source\":0},{\"source\":1}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"},"
+                             "{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_par_tex.glb"), make_glb(json, bin));
+    Mesh m;
+    const bool ok = m.load_model(f.path, /*ao=*/false, /*n_threads=*/4);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(m.textures.size(), size_t{ 2 });
+    ASSERT_TRUE(m.textures[0].valid());
+    ASSERT_TRUE(m.textures[1].valid());
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[2].diffuse_tex, 1);
+}
+
+TEST(gltf_valid, parallel_decode_failure_compacts_and_remaps)
+{
+    // image0 valid (BMP), image1 bad (4 garbage bytes). Loaded with n_threads=4.
+    // The failed slot must be compacted out and the referencing material remapped
+    // to -1, while the survivor occupies slot 0.
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);                                                // 36 at offset 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // 58 at offset 36
+    // 4 zero bytes at offset 94: too short for any stb_image format probe to
+    // accept (PNG needs 8-byte sig, BMP/PSD/GIF need magic, TGA needs ≥18-byte
+    // header). Decode reliably fails — exercises the failure-compaction path.
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":1}]}],"
+                             "\"materials\":["
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":1}}}],"
+                             "\"textures\":[{\"source\":0},{\"source\":1}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"},"
+                             "{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58},"
+                             "{\"buffer\":0,\"byteOffset\":94,\"byteLength\":4}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":98}]}";
+
+    TmpFile f(tmp_path("rast_par_fail.glb"), make_glb(json, bin));
+    Mesh m;
+    const bool ok = m.load_model(f.path, /*ao=*/false, /*n_threads=*/4);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].valid());
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[2].diffuse_tex, -1);
+}
+
 // ─── Group W: primitive without POSITION attribute ────────────────────────────
 
 TEST(gltf_valid, primitive_without_position_attribute_is_skipped)

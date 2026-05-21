@@ -50,7 +50,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     bool ok = false;
     if (ext == "obj")
     {
-        ok = load_obj(path);
+        ok = load_obj(path, n_threads);
     }
     else if (ext == "ply")
     {
@@ -62,7 +62,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     }
     else if (ext == "gltf" || ext == "glb")
     {
-        ok = load_gltf(path);
+        ok = load_gltf(path, n_threads);
     }
 
     if (!ok)
