@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 #define CGLTF_IMPLEMENTATION
@@ -49,11 +50,19 @@ bool Mesh::load_gltf(const std::string &path)
     materials.push_back(Material{});
 
     // Load a texture from a cgltf_image (external URI or embedded buffer_view).
+    // Each distinct cgltf_image is decoded once; later references reuse the slot.
+    // Failed decodes are cached as -1 so they are not retried.
+    std::unordered_map<const cgltf_image *, int> tex_cache;
     auto load_tex = [&](const cgltf_image *img) -> int
     {
         if (!img)
         {
             return -1;
+        }
+        const auto it = tex_cache.find(img);
+        if (it != tex_cache.end())
+        {
+            return it->second;
         }
         Texture tex;
         bool ok = false;
@@ -67,12 +76,12 @@ bool Mesh::load_gltf(const std::string &path)
             const auto *ptr = static_cast<const uint8_t *>(bv->buffer->data) + bv->offset;
             ok = tex.load_from_memory(ptr, bv->size);
         }
-        if (!ok)
+        const int idx = ok ? static_cast<int>(textures.size()) : -1;
+        if (ok)
         {
-            return -1;
+            textures.push_back(std::move(tex));
         }
-        const int idx = static_cast<int>(textures.size());
-        textures.push_back(std::move(tex));
+        tex_cache.emplace(img, idx);
         return idx;
     };
 

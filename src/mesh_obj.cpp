@@ -62,19 +62,28 @@ bool Mesh::load_obj(const std::string &path)
     materials.push_back(Material{});
 
     // Load a texture from a name relative to obj_dir. Returns -1 on missing/error.
+    // Each distinct name is decoded once; later references reuse the slot.
+    // Failed decodes are cached as -1 so they are not retried.
+    std::unordered_map<std::string, int> tex_cache;
     auto load_tex = [&](const std::string &name) -> int
     {
         if (name.empty())
         {
             return -1;
         }
-        Texture tex;
-        if (!tex.load(obj_dir + name))
+        const auto it = tex_cache.find(name);
+        if (it != tex_cache.end())
         {
-            return -1;
+            return it->second;
         }
-        const int idx = static_cast<int>(textures.size());
-        textures.push_back(std::move(tex));
+        Texture tex;
+        const bool ok = tex.load(obj_dir + name);
+        const int idx = ok ? static_cast<int>(textures.size()) : -1;
+        if (ok)
+        {
+            textures.push_back(std::move(tex));
+        }
+        tex_cache.emplace(name, idx);
         return idx;
     };
 

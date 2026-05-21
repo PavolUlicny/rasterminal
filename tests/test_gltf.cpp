@@ -1212,6 +1212,51 @@ TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
     ASSERT_FALSE(m.textures.empty());
 }
 
+// ─── Group V+: shared image deduplicates texture ──────────────────────────────
+
+TEST(gltf_valid, shared_image_deduplicates_texture)
+{
+    // Two primitives both reference material 0, whose baseColorTexture resolves
+    // to image 0 (a valid embedded BMP).  map_mat runs once per primitive, so
+    // load_tex is invoked twice with the same cgltf_image; dedup must collapse
+    // them into a single texture slot rather than decoding twice.
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin); // 36 bytes geometry at offset 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size);
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_tex_dedup.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(2));
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    // Every material that carries a diffuse texture points at the single slot 0.
+    bool found = false;
+    for (const auto &mat : m.materials)
+    {
+        if (mat.diffuse_tex >= 0)
+        {
+            ASSERT_EQ(mat.diffuse_tex, 0);
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+}
+
 // ─── Group W: primitive without POSITION attribute ────────────────────────────
 
 TEST(gltf_valid, primitive_without_position_attribute_is_skipped)

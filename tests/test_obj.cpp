@@ -588,6 +588,28 @@ TEST(obj_valid, mtl_map_bump_fallback_when_map_kn_absent)
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
+TEST(obj_valid, shared_map_kd_deduplicates_texture)
+{
+    // Two materials declare the same map_Kd file. load_tex must decode it once
+    // and hand both materials the same slot index rather than pushing twice.
+    TmpFile bmp(tmp_path("rast_dedup_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(
+        tmp_path("rast_dedup_tex.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd rast_dedup_tex.bmp\n"
+                                        "newmtl B\nKd 1 1 1\nmap_Kd rast_dedup_tex.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_dedup_tex.obj"), "mtllib rast_dedup_tex.mtl\n"
+                                        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                        "usemtl A\nf 1 2 3\n"
+                                        "usemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[2].diffuse_tex, 0);
+}
+
 TEST(obj_valid, face_without_usemtl_uses_default_material)
 {
     // mtllib declares a material, but no usemtl → tinyobjloader sets mat_id=-1
