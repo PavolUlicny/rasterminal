@@ -218,7 +218,7 @@ namespace
         std::fprintf(stderr, "runtime:\n");
         std::fprintf(stderr, "  min     %.2f ms\n", ms(mn));
         std::fprintf(
-            stderr, "  median  %.2f ms   ≈ %d fps   %.1f MTri/s   %.1f MVert/s\n", med_ms,
+            stderr, "  median  %.2f ms   ~%d fps   %.1f MTri/s   %.1f MVert/s\n", med_ms,
             static_cast<int>(std::lround(fps)), mtri_s, mvert_s
         );
         std::fprintf(stderr, "  p95     %.2f ms\n", ms(p95));
