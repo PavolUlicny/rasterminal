@@ -257,7 +257,7 @@ struct CaptureStdout
         std::fclose(tmp);
     }
 
-    std::string read()
+    std::string read() const
     {
         std::fflush(stdout);
         std::rewind(tmp);

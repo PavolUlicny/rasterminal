@@ -14,10 +14,10 @@
 struct FdRedirect
 {
     int saved_out;
-    FdRedirect()
+    FdRedirect() : saved_out(test_dup(TEST_STDOUT))
     {
         std::fflush(stdout);
-        saved_out = test_dup(TEST_STDOUT);
+
         int dn = test_devnull();
         test_dup2(dn, TEST_STDOUT);
         test_close(dn);

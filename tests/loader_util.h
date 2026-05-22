@@ -13,6 +13,7 @@
 #include <cstring>
 #include <filesystem>
 #include <string>
+#include <utility>
 
 static std::string tmp_path(const char *name)
 {
@@ -38,8 +39,8 @@ static void write_str(const std::string &path, const std::string &s)
 struct TmpFile
 {
     std::string path;
-    TmpFile(const std::string &p, const std::string &contents) : path(p) { write_str(path, contents); }
-    TmpFile(const std::string &p, const void *data, size_t n) : path(p) { write_bytes(path, data, n); }
+    TmpFile(std::string p, const std::string &contents) : path(std::move(p)) { write_str(path, contents); }
+    TmpFile(std::string p, const void *data, size_t n) : path(std::move(p)) { write_bytes(path, data, n); }
     ~TmpFile() { std::remove(path.c_str()); }
     TmpFile(const TmpFile &) = delete;
     TmpFile &operator=(const TmpFile &) = delete;
@@ -101,14 +102,14 @@ static void emit_u32_be(std::string &s, uint32_t v)
 
 [[maybe_unused]] static void emit_f32_le(std::string &s, float v)
 {
-    uint32_t u;
+    uint32_t u = 0;
     std::memcpy(&u, &v, 4);
     emit_u32_le(s, u);
 }
 
 [[maybe_unused]] static void emit_f32_be(std::string &s, float v)
 {
-    uint32_t u;
+    uint32_t u = 0;
     std::memcpy(&u, &v, 4);
     emit_u32_be(s, u);
 }

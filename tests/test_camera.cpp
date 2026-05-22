@@ -334,11 +334,11 @@ TEST(camera, orbit_does_not_gimbal_lock)
     }
 
     mat4 v = c.view();
-    for (int row = 0; row < 4; row++)
+    for (auto &row : v.m)
     {
         for (int col = 0; col < 4; col++)
         {
-            ASSERT_TRUE(std::isfinite(v.m[row][col]));
+            ASSERT_TRUE(std::isfinite(row[col]));
         }
     }
 

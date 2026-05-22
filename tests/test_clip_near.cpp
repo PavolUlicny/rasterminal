@@ -80,11 +80,11 @@ TEST(clip_near, two_inside_all_output_verts_at_or_beyond_near)
     ClipVert a = make_cv(1.0f), b = make_cv(2.0f), c = make_cv(0.05f);
     ClipVert out[2][3];
     ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
-    for (int t = 0; t < 2; t++)
+    for (auto &t : out)
     {
         for (int v = 0; v < 3; v++)
         {
-            ASSERT_TRUE(out[t][v].c.w >= NEAR - 1e-5f);
+            ASSERT_TRUE(t[v].c.w >= NEAR - 1e-5f);
         }
     }
 }

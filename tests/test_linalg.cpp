@@ -119,11 +119,11 @@ TEST(mat4, compose_translation_then_scale)
 TEST(mat4, default_constructor_is_zero)
 {
     mat4 m;
-    for (int c = 0; c < 4; c++)
+    for (auto &c : m.m)
     {
         for (int r = 0; r < 4; r++)
         {
-            ASSERT_NEAR(m.m[c][r], 0.0f, 0.0f);
+            ASSERT_NEAR(c[r], 0.0f, 0.0f);
         }
     }
 }

@@ -9,7 +9,7 @@
 static ParseResult run(std::initializer_list<const char *> tokens)
 {
     std::vector<const char *> argv{ "rasterminal" };
-    for (auto t : tokens)
+    for (const auto *t : tokens)
     {
         argv.push_back(t);
     }

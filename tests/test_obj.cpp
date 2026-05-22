@@ -445,10 +445,10 @@ TEST(obj_valid, failed_load_rollback_preserves_previous_mesh_state)
     mat.shininess = 16.0f;
     m.materials.push_back(mat);
     m.textures.push_back(Texture{});
-    m.tangents.push_back(vec3{ 1.0f, 0.0f, 0.0f });
-    m.tangents.push_back(vec3{ 0.0f, 1.0f, 0.0f });
-    m.vertex_colors.push_back(vec3{ 0.1f, 0.2f, 0.3f });
-    m.vertex_colors.push_back(vec3{ 0.4f, 0.5f, 0.6f });
+    m.tangents.emplace_back(1.0f, 0.0f, 0.0f);
+    m.tangents.emplace_back(0.0f, 1.0f, 0.0f);
+    m.vertex_colors.emplace_back(0.1f, 0.2f, 0.3f);
+    m.vertex_colors.emplace_back(0.4f, 0.5f, 0.6f);
     m.has_vertex_colors = true;
     m.has_double_sided = true;
 

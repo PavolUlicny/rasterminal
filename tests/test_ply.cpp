@@ -522,7 +522,7 @@ TEST(ply_valid, ascii_uv_texture_uv_property_names)
 
 static void emit_f64_le(std::string &s, double v)
 {
-    uint64_t u;
+    uint64_t u = 0;
     std::memcpy(&u, &v, 8);
     for (int i = 0; i < 8; i++)
     {

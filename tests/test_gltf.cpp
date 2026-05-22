@@ -25,7 +25,7 @@ TEST(gltf_valid, pbr_material_mapping)
     {
         json += ' ';
     }
-    const uint32_t jlen = static_cast<uint32_t>(json.size());
+    const auto jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
     emit_f32_le(bin, -1.0f);
@@ -37,7 +37,7 @@ TEST(gltf_valid, pbr_material_mapping)
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
-    const uint32_t blen = static_cast<uint32_t>(bin.size());
+    const auto blen = static_cast<uint32_t>(bin.size());
 
     std::string glb;
     emit_u32_le(glb, 0x46546C67u);
@@ -81,7 +81,7 @@ TEST(gltf_valid, double_sided_flag_set)
     {
         json += ' ';
     }
-    const uint32_t jlen = static_cast<uint32_t>(json.size());
+    const auto jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
     emit_f32_le(bin, -1.0f);
@@ -93,7 +93,7 @@ TEST(gltf_valid, double_sided_flag_set)
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
-    const uint32_t blen = static_cast<uint32_t>(bin.size()); // 36
+    const auto blen = static_cast<uint32_t>(bin.size()); // 36
 
     std::string glb;
     emit_u32_le(glb, 0x46546C67u);                 // magic "glTF"
@@ -130,7 +130,7 @@ TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_load
     {
         json += ' ';
     }
-    const uint32_t jlen = static_cast<uint32_t>(json.size());
+    const auto jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
     emit_f32_le(bin, -1.0f);
@@ -142,7 +142,7 @@ TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_load
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
-    const uint32_t blen = static_cast<uint32_t>(bin.size());
+    const auto blen = static_cast<uint32_t>(bin.size());
 
     std::string glb;
     emit_u32_le(glb, 0x46546C67u);
@@ -183,7 +183,7 @@ TEST(gltf_valid, unused_vertex_keeps_ao_at_one)
     {
         json += ' ';
     }
-    const uint32_t jlen = static_cast<uint32_t>(json.size());
+    const auto jlen = static_cast<uint32_t>(json.size());
 
     std::string bin;
     emit_f32_le(bin, -1.0f);
@@ -210,7 +210,7 @@ TEST(gltf_valid, unused_vertex_keeps_ao_at_one)
     bin.push_back(static_cast<char>(0));
     bin.push_back(static_cast<char>(2));
     bin.push_back(static_cast<char>(0));
-    const uint32_t blen = static_cast<uint32_t>(bin.size());
+    const auto blen = static_cast<uint32_t>(bin.size());
 
     std::string glb;
     emit_u32_le(glb, 0x46546C67u);
@@ -260,8 +260,8 @@ static std::string make_glb(const std::string &json_raw, const std::string &bin)
     {
         json += ' ';
     }
-    const uint32_t jlen = static_cast<uint32_t>(json.size());
-    const uint32_t blen = static_cast<uint32_t>(bin.size());
+    const auto jlen = static_cast<uint32_t>(json.size());
+    const auto blen = static_cast<uint32_t>(bin.size());
     std::string glb;
     emit_u32_le(glb, 0x46546C67u);
     emit_u32_le(glb, 2u);
@@ -849,7 +849,7 @@ TEST(reject, gltf_no_scenes_array_rejects)
 {
     // No "scene" or "scenes" -> data->scene=nullptr, scenes_count=0 ->
     // visit() never called -> vertices empty -> load returns false.
-    TmpFile f(tmp_path("rast_noscenes.gltf"), "{\"asset\":{\"version\":\"2.0\"}}");
+    TmpFile f(tmp_path("rast_noscenes.gltf"), R"({"asset":{"version":"2.0"}})");
     assert_rejects(f.path);
 }
 
