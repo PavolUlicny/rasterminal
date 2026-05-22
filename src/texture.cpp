@@ -24,7 +24,7 @@ bool Texture::load(const std::string &path)
 
     width = w;
     height = h;
-    pixels.assign(data, data + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+    pixels.assign(data, data + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
     stbi_image_free(data);
     return true;
 }
@@ -47,7 +47,7 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     }
     width = w;
     height = h;
-    pixels.assign(img, img + static_cast<size_t>(w) * static_cast<size_t>(h) * 4);
+    pixels.assign(img, img + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
     stbi_image_free(img);
     return true;
 }

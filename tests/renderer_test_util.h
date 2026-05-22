@@ -137,10 +137,10 @@ inline Texture make_solid_tex_rgba(int w, int h, uint8_t r, uint8_t g, uint8_t b
     t.pixels.resize(static_cast<size_t>(w * h * 4));
     for (int i = 0; i < w * h; i++)
     {
-        t.pixels[static_cast<size_t>(i * 4 + 0)] = r;
-        t.pixels[static_cast<size_t>(i * 4 + 1)] = g;
-        t.pixels[static_cast<size_t>(i * 4 + 2)] = b;
-        t.pixels[static_cast<size_t>(i * 4 + 3)] = 255;
+        t.pixels[static_cast<size_t>((i * 4) + 0)] = r;
+        t.pixels[static_cast<size_t>((i * 4) + 1)] = g;
+        t.pixels[static_cast<size_t>((i * 4) + 2)] = b;
+        t.pixels[static_cast<size_t>((i * 4) + 3)] = 255;
     }
     return t;
 }

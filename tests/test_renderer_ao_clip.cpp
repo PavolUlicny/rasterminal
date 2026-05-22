@@ -235,7 +235,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     {
         for (int i = 0; i <= grid_w; i++)
         {
-            v.pos = { -half + static_cast<float>(i) * dx, -half + static_cast<float>(j) * dy, 0.0f };
+            v.pos = { -half + (static_cast<float>(i) * dx), -half + (static_cast<float>(j) * dy), 0.0f };
             m.vertices.push_back(v);
         }
     }
@@ -246,10 +246,10 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     {
         for (int i = 0; i < grid_w; i++)
         {
-            const auto v00 = static_cast<uint32_t>(j * (grid_w + 1) + i);
-            const auto v10 = static_cast<uint32_t>(j * (grid_w + 1) + i + 1);
-            const auto v01 = static_cast<uint32_t>((j + 1) * (grid_w + 1) + i);
-            const auto v11 = static_cast<uint32_t>((j + 1) * (grid_w + 1) + i + 1);
+            const auto v00 = static_cast<uint32_t>((j * (grid_w + 1)) + i);
+            const auto v10 = static_cast<uint32_t>((j * (grid_w + 1)) + i + 1);
+            const auto v01 = static_cast<uint32_t>(((j + 1) * (grid_w + 1)) + i);
+            const auto v11 = static_cast<uint32_t>(((j + 1) * (grid_w + 1)) + i + 1);
             Triangle tri{};
             tri.material_idx = 0;
             tri.v[0] = v00;

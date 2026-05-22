@@ -7,7 +7,7 @@
 TEST(vec3, dot_product)
 {
     vec3 a{ 1, 2, 3 }, b{ 4, -5, 6 };
-    ASSERT_NEAR(dot(a, b), 1.0f * 4 + 2 * -5 + 3 * 6, 1e-6f);
+    ASSERT_NEAR(dot(a, b), (1.0f * 4) + (2 * -5) + (3 * 6), 1e-6f);
 }
 
 TEST(vec3, cross_product_right_hand)
@@ -698,7 +698,7 @@ TEST(quat, normalize_produces_unit_length)
 {
     quat q{ 1.0f, 2.0f, 3.0f, 4.0f };
     quat n = normalize(q);
-    float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    float len_sq = (n.x * n.x) + (n.y * n.y) + (n.z * n.z) + (n.w * n.w);
     ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
 }
 
@@ -746,7 +746,7 @@ TEST(quat, normalize_unit_is_idempotent)
 {
     quat q = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(45.0f));
     quat n = normalize(q);
-    float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    float len_sq = (n.x * n.x) + (n.y * n.y) + (n.z * n.z) + (n.w * n.w);
     ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
     // Normalizing again should leave it unchanged.
     quat nn = normalize(n);
@@ -869,6 +869,6 @@ TEST(quat, normalize_just_above_threshold_normalizes)
     // len_sq = (sqrt(1.01e-8))^2 = 1.01e-8 > 1e-8 → guard does not fire → unit quat.
     const float mag = std::sqrt(1.01e-8f);
     quat n = normalize(quat{ mag, 0.0f, 0.0f, 0.0f });
-    const float len_sq = n.x * n.x + n.y * n.y + n.z * n.z + n.w * n.w;
+    const float len_sq = (n.x * n.x) + (n.y * n.y) + (n.z * n.z) + (n.w * n.w);
     ASSERT_NEAR(len_sq, 1.0f, 1e-5f);
 }

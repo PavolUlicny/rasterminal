@@ -182,17 +182,17 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
 
                     float p[3];
                     cgltf_accessor_read_float(pos_acc, i, p, 3);
-                    v.pos.x = w[0] * p[0] + w[4] * p[1] + w[8] * p[2] + w[12];
-                    v.pos.y = w[1] * p[0] + w[5] * p[1] + w[9] * p[2] + w[13];
-                    v.pos.z = w[2] * p[0] + w[6] * p[1] + w[10] * p[2] + w[14];
+                    v.pos.x = (w[0] * p[0]) + (w[4] * p[1]) + (w[8] * p[2]) + w[12];
+                    v.pos.y = (w[1] * p[0]) + (w[5] * p[1]) + (w[9] * p[2]) + w[13];
+                    v.pos.z = (w[2] * p[0]) + (w[6] * p[1]) + (w[10] * p[2]) + w[14];
 
                     if (norm_acc)
                     {
                         float n[3];
                         cgltf_accessor_read_float(norm_acc, i, n, 3);
-                        v.normal.x = w[0] * n[0] + w[4] * n[1] + w[8] * n[2];
-                        v.normal.y = w[1] * n[0] + w[5] * n[1] + w[9] * n[2];
-                        v.normal.z = w[2] * n[0] + w[6] * n[1] + w[10] * n[2];
+                        v.normal.x = (w[0] * n[0]) + (w[4] * n[1]) + (w[8] * n[2]);
+                        v.normal.y = (w[1] * n[0]) + (w[5] * n[1]) + (w[9] * n[2]);
+                        v.normal.z = (w[2] * n[0]) + (w[6] * n[1]) + (w[10] * n[2]);
                         const float len = v.normal.length();
                         if (len > 1e-6f)
                         {
@@ -232,7 +232,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
                 if (prim.indices)
                 {
                     const size_t n_idx = prim.indices->count;
-                    triangles.reserve(triangles.size() + n_idx / 3);
+                    triangles.reserve(triangles.size() + (n_idx / 3));
                     for (size_t i = 0; i + 2 < n_idx; i += 3)
                     {
                         Triangle t;
@@ -246,7 +246,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
                 else
                 {
                     // Non-indexed: every 3 vertices form a triangle.
-                    triangles.reserve(triangles.size() + n_verts / 3);
+                    triangles.reserve(triangles.size() + (n_verts / 3));
                     for (size_t i = 0; i + 2 < n_verts; i += 3)
                     {
                         Triangle t;

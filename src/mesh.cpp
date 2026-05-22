@@ -141,7 +141,7 @@ void Mesh::compute_tangents()
         const float du2 = v2.uv.x - v0.uv.x;
         const float dv2 = v2.uv.y - v0.uv.y;
 
-        const float det = du1 * dv2 - du2 * dv1;
+        const float det = (du1 * dv2) - (du2 * dv1);
         if (std::abs(det) < 1e-8f)
         {
             continue;
@@ -346,7 +346,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
     {
         for (size_t j = 0; j < 3; j++)
         {
-            idx[i * 3 + j] = triangles[i].v[j];
+            idx[(i * 3) + j] = triangles[i].v[j];
         }
     }
 
@@ -371,7 +371,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
             {
                 return;
             }
-            optimize_range(idx.data() + g_start * 3, (g_end - g_start) * 3);
+            optimize_range(idx.data() + (g_start * 3), (g_end - g_start) * 3);
         };
 
         if (n_threads <= 1)
@@ -448,7 +448,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
     {
         for (size_t j = 0; j < 3; j++)
         {
-            triangles[i].v[j] = remap[idx[i * 3 + j]];
+            triangles[i].v[j] = remap[idx[(i * 3) + j]];
         }
     }
 

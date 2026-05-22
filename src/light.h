@@ -35,7 +35,7 @@ inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
 // texture), so the mapping is defined once.
 inline float roughness_to_shininess(float roughness) noexcept
 {
-    return (1.0f - roughness) * 126.0f + 2.0f;
+    return ((1.0f - roughness) * 126.0f) + 2.0f;
 }
 
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).

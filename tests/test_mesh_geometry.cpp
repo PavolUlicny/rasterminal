@@ -531,7 +531,7 @@ TEST(ao, mt_matches_single_threaded)
     {
         for (int c = 0; c < N - 1; c++)
         {
-            const int bl = r * N + c + 1;
+            const int bl = (r * N) + c + 1;
             const int br = bl + 1;
             const int tl = bl + N;
             const int tr = tl + 1;

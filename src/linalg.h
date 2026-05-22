@@ -48,18 +48,18 @@ struct vec3
         return *this;
     }
 
-    [[nodiscard]] float length() const noexcept { return std::sqrt(x * x + y * y + z * z); }
-    [[nodiscard]] constexpr float length_sq() const noexcept { return x * x + y * y + z * z; }
+    [[nodiscard]] float length() const noexcept { return std::sqrt((x * x) + (y * y) + (z * z)); }
+    [[nodiscard]] constexpr float length_sq() const noexcept { return (x * x) + (y * y) + (z * z); }
 };
 
 constexpr float dot(const vec3 &a, const vec3 &b) noexcept
 {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
+    return (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
 }
 
 constexpr vec3 cross(const vec3 &a, const vec3 &b) noexcept
 {
-    return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
+    return { (a.y * b.z) - (a.z * b.y), (a.z * b.x) - (a.x * b.z), (a.x * b.y) - (a.y * b.x) };
 }
 
 inline vec3 normalize(const vec3 &v) noexcept
@@ -140,10 +140,10 @@ struct mat4
 
     constexpr vec4 operator*(const vec4 &v) const noexcept
     {
-        return { m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z + m[3][0] * v.w,
-                 m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z + m[3][1] * v.w,
-                 m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z + m[3][2] * v.w,
-                 m[0][3] * v.x + m[1][3] * v.y + m[2][3] * v.z + m[3][3] * v.w };
+        return { (m[0][0] * v.x) + (m[1][0] * v.y) + (m[2][0] * v.z) + (m[3][0] * v.w),
+                 (m[0][1] * v.x) + (m[1][1] * v.y) + (m[2][1] * v.z) + (m[3][1] * v.w),
+                 (m[0][2] * v.x) + (m[1][2] * v.y) + (m[2][2] * v.z) + (m[3][2] * v.w),
+                 (m[0][3] * v.x) + (m[1][3] * v.y) + (m[2][3] * v.z) + (m[3][3] * v.w) };
     }
 
     [[nodiscard]] constexpr mat4 transposed() const noexcept
@@ -284,8 +284,8 @@ struct quat
 
     constexpr quat operator*(const quat &o) const noexcept
     {
-        return { w * o.x + x * o.w + y * o.z - z * o.y, w * o.y - x * o.z + y * o.w + z * o.x,
-                 w * o.z + x * o.y - y * o.x + z * o.w, w * o.w - x * o.x - y * o.y - z * o.z };
+        return { (w * o.x) + (x * o.w) + (y * o.z) - (z * o.y), (w * o.y) - (x * o.z) + (y * o.w) + (z * o.x),
+                 (w * o.z) + (x * o.y) - (y * o.x) + (z * o.w), (w * o.w) - (x * o.x) - (y * o.y) - (z * o.z) };
     }
 
     [[nodiscard]] constexpr vec3 rotate(const vec3 &v) const noexcept
@@ -298,7 +298,7 @@ struct quat
 
 inline quat normalize(const quat &q) noexcept
 {
-    const float len_sq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    const float len_sq = (q.x * q.x) + (q.y * q.y) + (q.z * q.z) + (q.w * q.w);
     if (len_sq < 1e-8f)
     {
         return quat::identity();

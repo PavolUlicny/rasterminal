@@ -347,10 +347,10 @@ TEST(vcache, cache_eviction_large_mesh)
     for (int i = 0; i < 16; i++)
     {
         // 1-based OBJ indices: bottom-left=2i+1, top-left=2i+2, bottom-right=2i+3, top-right=2i+4
-        const int bl = 2 * i + 1;
-        const int tl = 2 * i + 2;
-        const int br = 2 * i + 3;
-        const int tr = 2 * i + 4;
+        const int bl = (2 * i) + 1;
+        const int tl = (2 * i) + 2;
+        const int br = (2 * i) + 3;
+        const int tr = (2 * i) + 4;
         obj += "f " + std::to_string(bl) + " " + std::to_string(tl) + " " + std::to_string(br) + "\n";
         obj += "f " + std::to_string(tl) + " " + std::to_string(tr) + " " + std::to_string(br) + "\n";
     }

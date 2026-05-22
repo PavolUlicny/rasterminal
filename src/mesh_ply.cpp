@@ -23,11 +23,11 @@ namespace
         if (t == tinyply::Type::FLOAT64)
         {
             double d = 0.0;
-            std::memcpy(&d, buf + i * 8, 8);
+            std::memcpy(&d, buf + (i * 8), 8);
             return static_cast<float>(d);
         }
         float f = 0.0f;
-        std::memcpy(&f, buf + i * 4, 4);
+        std::memcpy(&f, buf + (i * 4), 4);
         return f;
     }
 
@@ -40,11 +40,11 @@ namespace
         if (t == tinyply::Type::FLOAT64)
         {
             double d = 0.0;
-            std::memcpy(&d, buf + i * 8, 8);
+            std::memcpy(&d, buf + (i * 8), 8);
             return static_cast<float>(d);
         }
         float f = 0.0f;
-        std::memcpy(&f, buf + i * 4, 4);
+        std::memcpy(&f, buf + (i * 4), 4);
         return f;
     }
 
@@ -59,25 +59,25 @@ namespace
         case tinyply::Type::UINT16:
         {
             uint16_t v = 0;
-            std::memcpy(&v, buf + i * 2, 2);
+            std::memcpy(&v, buf + (i * 2), 2);
             return v;
         }
         case tinyply::Type::INT16:
         {
             int16_t v = 0;
-            std::memcpy(&v, buf + i * 2, 2);
+            std::memcpy(&v, buf + (i * 2), 2);
             return static_cast<uint32_t>(v);
         }
         case tinyply::Type::INT32:
         {
             int32_t v = 0;
-            std::memcpy(&v, buf + i * 4, 4);
+            std::memcpy(&v, buf + (i * 4), 4);
             return static_cast<uint32_t>(v);
         }
         default:
         {
             uint32_t v = 0;
-            std::memcpy(&v, buf + i * 4, 4);
+            std::memcpy(&v, buf + (i * 4), 4);
             return v;
         }
         }
@@ -294,16 +294,16 @@ bool Mesh::load_ply(const std::string &path)
         for (size_t i = 0; i < n_verts; i++)
         {
             Vertex v{};
-            v.pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
-                      rd_f(pb, positions->t, i * 3 + 2) };
+            v.pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, (i * 3) + 1),
+                      rd_f(pb, positions->t, (i * 3) + 2) };
             if (nb)
             {
-                v.normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
-                             rd_f(nb, normals->t, i * 3 + 2) };
+                v.normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, (i * 3) + 1),
+                             rd_f(nb, normals->t, (i * 3) + 2) };
             }
             if (ub)
             {
-                v.uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
+                v.uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, (i * 2) + 1) };
             }
             v.ao = 1.0f;
             vertices.push_back(v);
@@ -315,8 +315,8 @@ bool Mesh::load_ply(const std::string &path)
             vertex_colors.resize(n_verts);
             for (size_t i = 0; i < n_verts; i++)
             {
-                vertex_colors[i] = { rd_col(cb, vcolors->t, i * 3), rd_col(cb, vcolors->t, i * 3 + 1),
-                                     rd_col(cb, vcolors->t, i * 3 + 2) };
+                vertex_colors[i] = { rd_col(cb, vcolors->t, i * 3), rd_col(cb, vcolors->t, (i * 3) + 1),
+                                     rd_col(cb, vcolors->t, (i * 3) + 2) };
             }
             has_vertex_colors = true;
         }
@@ -328,8 +328,8 @@ bool Mesh::load_ply(const std::string &path)
             const uint32_t v0 = rd_idx(fb, faces->t, f * ipf);
             for (size_t v = 1; v + 1 < ipf; v++)
             {
-                const uint32_t vi = rd_idx(fb, faces->t, f * ipf + v);
-                const uint32_t vj = rd_idx(fb, faces->t, f * ipf + v + 1);
+                const uint32_t vi = rd_idx(fb, faces->t, (f * ipf) + v);
+                const uint32_t vj = rd_idx(fb, faces->t, (f * ipf) + v + 1);
                 if (v0 < n_verts && vi < n_verts && vj < n_verts)
                 {
                     Triangle t;
@@ -357,16 +357,16 @@ bool Mesh::load_ply(const std::string &path)
         const uint8_t *ub = uvs ? uvs->buffer.get() : nullptr;
         for (size_t i = 0; i < n_verts; i++)
         {
-            pool[i].pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, i * 3 + 1),
-                            rd_f(pb, positions->t, i * 3 + 2) };
+            pool[i].pos = { rd_f(pb, positions->t, i * 3), rd_f(pb, positions->t, (i * 3) + 1),
+                            rd_f(pb, positions->t, (i * 3) + 2) };
             if (nb)
             {
-                pool[i].normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, i * 3 + 1),
-                                   rd_f(nb, normals->t, i * 3 + 2) };
+                pool[i].normal = { rd_f(nb, normals->t, i * 3), rd_f(nb, normals->t, (i * 3) + 1),
+                                   rd_f(nb, normals->t, (i * 3) + 2) };
             }
             if (ub)
             {
-                pool[i].uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, i * 2 + 1) };
+                pool[i].uv = { rd_f(ub, uvs->t, i * 2), rd_f(ub, uvs->t, (i * 2) + 1) };
             }
         }
 
@@ -378,14 +378,14 @@ bool Mesh::load_ply(const std::string &path)
 
         for (size_t f = 0; f < n_faces; f++)
         {
-            const vec3 col = { rd_col(fcb, fcolors->t, f * 3), rd_col(fcb, fcolors->t, f * 3 + 1),
-                               rd_col(fcb, fcolors->t, f * 3 + 2) };
+            const vec3 col = { rd_col(fcb, fcolors->t, f * 3), rd_col(fcb, fcolors->t, (f * 3) + 1),
+                               rd_col(fcb, fcolors->t, (f * 3) + 2) };
 
             const uint32_t i0 = rd_idx(fb, faces->t, f * ipf);
             for (size_t v = 1; v + 1 < ipf; v++)
             {
-                const uint32_t iv = rd_idx(fb, faces->t, f * ipf + v);
-                const uint32_t iw = rd_idx(fb, faces->t, f * ipf + v + 1);
+                const uint32_t iv = rd_idx(fb, faces->t, (f * ipf) + v);
+                const uint32_t iw = rd_idx(fb, faces->t, (f * ipf) + v + 1);
                 if (i0 >= n_verts || iv >= n_verts || iw >= n_verts)
                 {
                     continue;

@@ -513,7 +513,7 @@ TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
     ASSERT_EQ(m.triangles.size(), size_t{ 2 });
     for (const Vertex &v : m.vertices)
     {
-        const float len_sq = v.normal.x * v.normal.x + v.normal.y * v.normal.y + v.normal.z * v.normal.z;
+        const float len_sq = (v.normal.x * v.normal.x) + (v.normal.y * v.normal.y) + (v.normal.z * v.normal.z);
         ASSERT_NEAR(len_sq, 1.0f, 0.01f);
     }
 }

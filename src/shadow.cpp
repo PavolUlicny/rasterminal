@@ -62,7 +62,7 @@ float ShadowMap::in_shadow(vec3 world_pos) const
         {
             for (int dx = -1; dx <= 1; dx++)
             {
-                if (ref > depth[static_cast<size_t>(cy + dy) * SIZE + static_cast<size_t>(cx + dx)].load(
+                if (ref > depth[(static_cast<size_t>(cy + dy) * SIZE) + static_cast<size_t>(cx + dx)].load(
                               std::memory_order_relaxed
                           ))
                 {
@@ -80,7 +80,7 @@ float ShadowMap::in_shadow(vec3 world_pos) const
             {
                 const int px = std::clamp(cx + dx, 0, SIZE - 1);
                 if (ref >
-                    depth[static_cast<size_t>(py) * SIZE + static_cast<size_t>(px)].load(std::memory_order_relaxed))
+                    depth[(static_cast<size_t>(py) * SIZE) + static_cast<size_t>(px)].load(std::memory_order_relaxed))
                 {
                     hits++;
                 }
@@ -194,7 +194,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
             const int y0 = std::max(0, static_cast<int>(std::floor(std::min({ sa.y, sb.y, sc.y }))));
             const int y1 = std::min(S - 1, static_cast<int>(std::ceil(std::max({ sa.y, sb.y, sc.y }))));
 
-            const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+            const float denom = ((sb.y - sc.y) * (sa.x - sc.x)) + ((sc.x - sb.x) * (sa.y - sc.y));
             if (std::abs(denom) < 1e-6f)
             {
                 continue;
@@ -208,8 +208,8 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
 
             const float px0 = static_cast<float>(x0) + 0.5f;
             const float py0 = static_cast<float>(y0) + 0.5f;
-            float ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
-            float bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+            float ba_row = (((sb.y - sc.y) * (px0 - sc.x)) + ((sc.x - sb.x) * (py0 - sc.y))) * inv_d;
+            float bb_row = (((sc.y - sa.y) * (px0 - sc.x)) + ((sa.x - sc.x) * (py0 - sc.y))) * inv_d;
 
             for (int y = y0; y <= y1; y++)
             {
@@ -231,7 +231,7 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
                                 continue;
                             }
                         }
-                        const float d = ba * sa.z + bb * sb.z + bc * sc.z + slope_bias;
+                        const float d = (ba * sa.z) + (bb * sb.z) + (bc * sc.z) + slope_bias;
                         auto &stored = shadow_map.depth[row_base + static_cast<size_t>(x)];
                         if (use_cas)
                         {

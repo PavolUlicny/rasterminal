@@ -237,7 +237,7 @@ namespace
         {
             for (int dx = -1; dx <= 1 && count < hits; dx++, ++count)
             {
-                sm.depth[static_cast<size_t>(cy + dy) * S + static_cast<size_t>(cx + dx)] = 0.0f;
+                sm.depth[(static_cast<size_t>(cy + dy) * S) + static_cast<size_t>(cx + dx)] = 0.0f;
             }
         }
         return sm;

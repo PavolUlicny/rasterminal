@@ -266,7 +266,7 @@ TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
         emit_f32_le(s, static_cast<float>(tri * 10));
         emit_f32_le(s, 0.0f);
         emit_f32_le(s, 0.0f); // v0
-        emit_f32_le(s, static_cast<float>(tri * 10 + 1));
+        emit_f32_le(s, static_cast<float>((tri * 10) + 1));
         emit_f32_le(s, 0.0f);
         emit_f32_le(s, 0.0f); // v1
         emit_f32_le(s, static_cast<float>(tri * 10));

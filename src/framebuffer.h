@@ -170,7 +170,7 @@ class Framebuffer
 
     [[nodiscard]] size_t pixel_idx(int x, int y) const noexcept
     {
-        return static_cast<size_t>(y) * static_cast<size_t>(m_width) + static_cast<size_t>(x);
+        return (static_cast<size_t>(y) * static_cast<size_t>(m_width)) + static_cast<size_t>(x);
     }
 
     int m_width, m_height;

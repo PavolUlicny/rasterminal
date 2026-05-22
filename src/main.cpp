@@ -341,7 +341,7 @@ int main(int argc, char *argv[])
         if (raw_dt > 0.001f)
         {
             const float fps = 1.0f / raw_dt;
-            fps_smooth = (fps_smooth < 0.0f) ? fps : fps_smooth * 0.9f + fps * 0.1f;
+            fps_smooth = (fps_smooth < 0.0f) ? fps : (fps_smooth * 0.9f) + (fps * 0.1f);
         }
 
         // ── Input ─────────────────────────────────────────────────────────

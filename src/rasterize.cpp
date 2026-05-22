@@ -54,7 +54,7 @@ namespace
         }
 
         // Barycentric denominator (proportional to 2× signed screen area).
-        const float denom = (sb.y - sc.y) * (sa.x - sc.x) + (sc.x - sb.x) * (sa.y - sc.y);
+        const float denom = ((sb.y - sc.y) * (sa.x - sc.x)) + ((sc.x - sb.x) * (sa.y - sc.y));
         if (std::abs(denom) < DEGEN_AREA_EPS)
         {
             return false;
@@ -72,8 +72,8 @@ namespace
 
         const float px0 = static_cast<float>(s.x0) + 0.5f;
         const float py0 = static_cast<float>(s.y0) + 0.5f;
-        s.ba_row = ((sb.y - sc.y) * (px0 - sc.x) + (sc.x - sb.x) * (py0 - sc.y)) * inv_d;
-        s.bb_row = ((sc.y - sa.y) * (px0 - sc.x) + (sa.x - sc.x) * (py0 - sc.y)) * inv_d;
+        s.ba_row = (((sb.y - sc.y) * (px0 - sc.x)) + ((sc.x - sb.x) * (py0 - sc.y))) * inv_d;
+        s.bb_row = (((sc.y - sa.y) * (px0 - sc.x)) + ((sa.x - sc.x) * (py0 - sc.y))) * inv_d;
         return true;
     }
 
@@ -124,7 +124,7 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
                  v0.normal + (v1.normal - v0.normal) * t,
                  v0.tangent + (v1.tangent - v0.tangent) * t,
                  v0.uv + (v1.uv - v0.uv) * t,
-                 v0.ao + (v1.ao - v0.ao) * t,
+                 v0.ao + ((v1.ao - v0.ao) * t),
                  v0.color + (v1.color - v0.color) * t };
     };
 
@@ -288,7 +288,7 @@ void rasterize(
     {
         float ba = ba_row;
         float bb = bb_row;
-        size_t idx = static_cast<size_t>(y) * stride + static_cast<size_t>(s.x0);
+        size_t idx = (static_cast<size_t>(y) * stride) + static_cast<size_t>(s.x0);
         for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
             if (ba < 0.0f || bb < 0.0f)
@@ -308,7 +308,7 @@ void rasterize(
             // z_ndc is linear in screen space (projection makes it A + B/z_view,
             // which is linear in NDC x/y), so plain barycentric is correct here —
             // perspective correction would distort it and break depth ordering.
-            const float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            const float depth = (ba * sa.z) + (bb * sb.z) + (bc * sc.z);
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
@@ -469,7 +469,7 @@ void rasterize_phong(
     {
         float ba = ba_row;
         float bb = bb_row;
-        size_t idx = static_cast<size_t>(y) * stride + static_cast<size_t>(s.x0);
+        size_t idx = (static_cast<size_t>(y) * stride) + static_cast<size_t>(s.x0);
         for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
             if (ba < 0.0f || bb < 0.0f)
@@ -486,7 +486,7 @@ void rasterize_phong(
                 continue;
             }
 
-            const float depth = ba * sa.z + bb * sb.z + bc * sc.z;
+            const float depth = (ba * sa.z) + (bb * sb.z) + (bc * sc.z);
 
             // Alpha cutout: sample before depth write so discarded pixels don't
             // claim z-buffer entries (otherwise transparent holes occlude geometry).
@@ -557,7 +557,7 @@ void rasterize_phong(
                 // normal will be normalized inside compute_lighting.
             }
 
-            const float ao = (aoa * pwa + aob * pwb + aoc * pwc) * w_corr;
+            const float ao = ((aoa * pwa) + (aob * pwb) + (aoc * pwc)) * w_corr;
 
             // Precompute view vector once — reused by both shadow branches.
             const vec3 v = normalize(eye - pos);

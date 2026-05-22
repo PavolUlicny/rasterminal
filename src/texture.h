@@ -51,7 +51,7 @@ struct Texture
         auto get = [&](int x, int y) -> vec3
         {
             const uint8_t *p =
-                pixels.data() + (static_cast<size_t>(y) * static_cast<size_t>(width) + static_cast<size_t>(x)) * 4;
+                pixels.data() + (((static_cast<size_t>(y) * static_cast<size_t>(width)) + static_cast<size_t>(x)) * 4);
             constexpr float inv255 = 1.0f / 255.0f;
             return { static_cast<float>(p[0]) * inv255, static_cast<float>(p[1]) * inv255,
                      static_cast<float>(p[2]) * inv255 };
@@ -85,10 +85,10 @@ struct Texture
         constexpr float inv255 = 1.0f / 255.0f;
         const uint8_t *base = pixels.data();
         const auto w = static_cast<size_t>(width);
-        const uint8_t *p00 = base + (static_cast<size_t>(y0) * w + static_cast<size_t>(x0)) * 4;
-        const uint8_t *p10 = base + (static_cast<size_t>(y0) * w + static_cast<size_t>(x1)) * 4;
-        const uint8_t *p01 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x0)) * 4;
-        const uint8_t *p11 = base + (static_cast<size_t>(y1) * w + static_cast<size_t>(x1)) * 4;
+        const uint8_t *p00 = base + (((static_cast<size_t>(y0) * w) + static_cast<size_t>(x0)) * 4);
+        const uint8_t *p10 = base + (((static_cast<size_t>(y0) * w) + static_cast<size_t>(x1)) * 4);
+        const uint8_t *p01 = base + (((static_cast<size_t>(y1) * w) + static_cast<size_t>(x0)) * 4);
+        const uint8_t *p11 = base + (((static_cast<size_t>(y1) * w) + static_cast<size_t>(x1)) * 4);
 
         const vec4 c00 = { static_cast<float>(p00[0]) * inv255, static_cast<float>(p00[1]) * inv255,
                            static_cast<float>(p00[2]) * inv255, static_cast<float>(p00[3]) * inv255 };

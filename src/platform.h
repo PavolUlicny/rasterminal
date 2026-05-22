@@ -339,7 +339,7 @@ namespace platform
                 }
                 else if (d >= '0' && d <= '9')
                 {
-                    nums[ni] = nums[ni] * 10 + (d - '0');
+                    nums[ni] = (nums[ni] * 10) + (d - '0');
                 }
                 else
                 {

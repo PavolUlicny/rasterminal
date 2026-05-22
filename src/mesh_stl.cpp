@@ -54,7 +54,7 @@ bool Mesh::load_stl(const std::string &path)
         file_size = std::ftell(f.get());
     }
 
-    const uint64_t expected_binary = 84ULL + 50ULL * static_cast<uint64_t>(tri_count);
+    const uint64_t expected_binary = 84ULL + (50ULL * static_cast<uint64_t>(tri_count));
 
     // A binary STL whose header happens to start with "solid" must be
     // disambiguated by exact file size.
@@ -105,10 +105,10 @@ bool Mesh::load_stl(const std::string &path)
         const auto base = static_cast<uint32_t>(vertices.size());
         for (int j = 0; j < 3; j++)
         {
-            const unsigned int vi = tris[3 * i + static_cast<size_t>(j)];
+            const unsigned int vi = tris[(3 * i) + static_cast<size_t>(j)];
             Vertex v{};
-            v.pos = { coords[3 * static_cast<size_t>(vi)], coords[3 * static_cast<size_t>(vi) + 1],
-                      coords[3 * static_cast<size_t>(vi) + 2] };
+            v.pos = { coords[3 * static_cast<size_t>(vi)], coords[(3 * static_cast<size_t>(vi)) + 1],
+                      coords[(3 * static_cast<size_t>(vi)) + 2] };
             v.ao = 1.0f;
             vertices.push_back(v);
         }

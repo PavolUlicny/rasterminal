@@ -286,7 +286,7 @@ TEST(shadow, pcf_partial_occlusion_returns_fraction)
     {
         for (int dx = -1; dx <= 1 && cnt < 4; dx++)
         {
-            sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = 0.0f;
+            sm.depth[static_cast<size_t>(((1024 + dy) * ShadowMap::SIZE) + (1024 + dx))] = 0.0f;
             cnt++;
         }
     }
@@ -305,7 +305,7 @@ TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
     {
         for (int dx = -1; dx <= 1; dx++)
         {
-            sm.depth[static_cast<size_t>((1024 + dy) * ShadowMap::SIZE + (1024 + dx))] = ref;
+            sm.depth[static_cast<size_t>(((1024 + dy) * ShadowMap::SIZE) + (1024 + dx))] = ref;
         }
     }
     ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 0.0f, 1e-6f);
@@ -322,7 +322,7 @@ TEST(shadow, pcf_border_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     for (int py = 1023; py <= 1025; py++)
     {
-        sm.depth[static_cast<size_t>(py * ShadowMap::SIZE + 0)] = 0.0f;
+        sm.depth[static_cast<size_t>((py * ShadowMap::SIZE) + 0)] = 0.0f;
     }
     ASSERT_NEAR(sm.in_shadow({ -1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
@@ -432,7 +432,7 @@ TEST(shadow, pcf_right_border_clamps_kernel_samples)
     constexpr int S = ShadowMap::SIZE;
     for (int py = 1023; py <= 1025; py++)
     {
-        sm.depth[static_cast<size_t>(py) * S + (S - 1)] = 0.0f;
+        sm.depth[(static_cast<size_t>(py) * S) + (S - 1)] = 0.0f;
     }
     ASSERT_NEAR(sm.in_shadow({ 1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }
@@ -451,7 +451,7 @@ TEST(shadow, pcf_bottom_left_corner_clamps_kernel_samples)
     {
         for (int px = 0; px <= 1; px++)
         {
-            sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+            sm.depth[(static_cast<size_t>(py) * S) + static_cast<size_t>(px)] = 0.0f;
         }
     }
     ASSERT_NEAR(sm.in_shadow({ -1.0f, -1.0f, 0.5f }), 1.0f, 1e-6f);
@@ -680,7 +680,7 @@ TEST(shadow, pcf_top_right_corner_clamps_kernel_samples)
     {
         for (int px = S - 2; px <= S - 1; px++)
         {
-            sm.depth[static_cast<size_t>(py) * S + static_cast<size_t>(px)] = 0.0f;
+            sm.depth[(static_cast<size_t>(py) * S) + static_cast<size_t>(px)] = 0.0f;
         }
     }
     ASSERT_NEAR(sm.in_shadow({ 1.0f, 1.0f, 0.5f }), 1.0f, 1e-6f);
@@ -711,7 +711,7 @@ TEST(shadow, mt_depth_buffer_matches_single_threaded)
     {
         for (int c = 0; c < N - 1; c++)
         {
-            const auto bl = static_cast<uint32_t>(r * N + c);
+            const auto bl = static_cast<uint32_t>((r * N) + c);
             const uint32_t br = bl + 1;
             const uint32_t tl = bl + static_cast<uint32_t>(N);
             const uint32_t tr = tl + 1;
