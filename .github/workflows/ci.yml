@@ -181,7 +181,7 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
           sudo apt-get install -y clang-tidy-22
 
-      - name: Run clang-tidy
+      - name: Run clang-tidy (src)
         run: >
           clang-tidy-22
           --warnings-as-errors='*'
@@ -191,6 +191,14 @@ jobs:
           src/mesh_obj.cpp src/mesh_ply.cpp src/mesh_stl.cpp src/mesh_gltf.cpp
           src/camera.cpp src/shadow.cpp src/rasterize.cpp src/renderer.cpp
           src/texture.cpp
+
+      - name: Run clang-tidy (tests)
+        run: >
+          clang-tidy-22
+          --warnings-as-errors='*'
+          -p build
+          --header-filter='(src|tests)/.*'
+          tests/*.cpp
 
   # ── cppcheck (Linux) ──────────────────────────────────────────────────────
   cppcheck:
