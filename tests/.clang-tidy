@@ -1,0 +1,11 @@
+InheritParentConfig: true
+Checks: >-
+  -bugprone-throwing-static-initialization,
+  -cert-err58-cpp,
+  -cppcoreguidelines-avoid-do-while,
+  -google-readability-avoid-underscore-in-googletest-name,
+  -hicpp-avoid-do-while,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-use-anonymous-namespace,
+  -readability-isolate-declaration,
