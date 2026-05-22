@@ -176,9 +176,14 @@ jobs:
           -DCMAKE_CXX_COMPILER=clang++
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
+      - name: Install clang-tidy-22
+        run: |
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
+          sudo apt-get install -y clang-tidy-22
+
       - name: Run clang-tidy
         run: >
-          clang-tidy
+          clang-tidy-22
           --warnings-as-errors='*'
           -p build
           --header-filter='src/.*'
