@@ -121,9 +121,9 @@ TEST(mat4, default_constructor_is_zero)
     mat4 m;
     for (auto &c : m.m)
     {
-        for (int r = 0; r < 4; r++)
+        for (float r : c)
         {
-            ASSERT_NEAR(c[r], 0.0f, 0.0f);
+            ASSERT_NEAR(r, 0.0f, 0.0f);
         }
     }
 }

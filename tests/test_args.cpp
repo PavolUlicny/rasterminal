@@ -20,19 +20,29 @@ static ParseResult run(std::initializer_list<const char *> tokens)
     int saved_out = test_dup(TEST_STDOUT);
     int saved_err = test_dup(TEST_STDERR);
     int devnull = test_devnull();
-    test_dup2(devnull, TEST_STDOUT);
-    test_dup2(devnull, TEST_STDERR);
-    test_close(devnull);
+    if (devnull >= 0)
+    {
+        test_dup2(devnull, TEST_STDOUT);
+        test_dup2(devnull, TEST_STDERR);
+        test_close(devnull);
+    }
 
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — parse_args takes char** (argv style)
     ParseResult result = parse_args(static_cast<int>(argv.size()), const_cast<char **>(argv.data()));
 
     // Drain any buffered output while fds still point to /dev/null, then restore.
     std::fflush(stdout);
     std::fflush(stderr);
-    test_dup2(saved_out, TEST_STDOUT);
-    test_dup2(saved_err, TEST_STDERR);
-    test_close(saved_out);
-    test_close(saved_err);
+    if (saved_out >= 0)
+    {
+        test_dup2(saved_out, TEST_STDOUT);
+        test_close(saved_out);
+    }
+    if (saved_err >= 0)
+    {
+        test_dup2(saved_err, TEST_STDERR);
+        test_close(saved_err);
+    }
 
     return result;
 }

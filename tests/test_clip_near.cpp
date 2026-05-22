@@ -82,9 +82,9 @@ TEST(clip_near, two_inside_all_output_verts_at_or_beyond_near)
     ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
     for (auto &t : out)
     {
-        for (int v = 0; v < 3; v++)
+        for (const ClipVert &cv : t)
         {
-            ASSERT_TRUE(t[v].c.w >= NEAR - 1e-5f);
+            ASSERT_TRUE(cv.c.w >= NEAR - 1e-5f);
         }
     }
 }

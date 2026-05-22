@@ -234,47 +234,68 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
 // CaptureStdout redirects stdout to a temp file for the duration of its lifetime,
 // then reads back the captured bytes. Used to verify HUD presence/absence.
 
-struct CaptureStdout
+namespace
 {
-    std::FILE *tmp;
-    int saved_out;
-
-    CaptureStdout() : tmp(std::tmpfile()), saved_out(test_dup(TEST_STDOUT))
+    struct CaptureStdout
     {
-        std::fflush(stdout);
-#ifdef _WIN32
-        test_dup2(_fileno(tmp), TEST_STDOUT);
-#else
-        test_dup2(fileno(tmp), TEST_STDOUT);
-#endif
-    }
+        std::FILE *tmp;
+        int saved_out;
 
-    ~CaptureStdout()
-    {
-        std::fflush(stdout);
-        test_dup2(saved_out, TEST_STDOUT);
-        test_close(saved_out);
-        std::fclose(tmp);
-    }
-
-    std::string read() const
-    {
-        std::fflush(stdout);
-        std::rewind(tmp);
-        std::string out;
-        char buf[4096];
-        for (;;)
+        CaptureStdout() : tmp(std::tmpfile()), saved_out(test_dup(TEST_STDOUT))
         {
-            const size_t n = std::fread(buf, 1, sizeof(buf), tmp);
-            if (n == 0)
-            {
-                break;
-            }
-            out.append(buf, n);
+            ASSERT_TRUE(tmp != nullptr);
+            std::fflush(stdout);
+#ifdef _WIN32
+            test_dup2(_fileno(tmp), TEST_STDOUT);
+#else
+            test_dup2(fileno(tmp), TEST_STDOUT);
+#endif
         }
-        return out;
-    }
-};
+
+        ~CaptureStdout()
+        {
+            std::fflush(stdout);
+            if (saved_out >= 0)
+            {
+                test_dup2(saved_out, TEST_STDOUT);
+                test_close(saved_out);
+            }
+            std::fclose(tmp);
+        }
+
+        CaptureStdout(const CaptureStdout &) = delete;
+        CaptureStdout &operator=(const CaptureStdout &) = delete;
+        CaptureStdout(CaptureStdout &&) = delete;
+        CaptureStdout &operator=(CaptureStdout &&) = delete;
+
+        [[nodiscard]] std::string read() const
+        {
+            std::fflush(stdout);
+            // clearerr + fseek instead of rewind: writes via the dup'd fd bypass the FILE*
+            // buffer so the stream's EOF/error flags may be stale; clearerr resets them, and
+            // fseek (unlike rewind) reports failure if the file is genuinely broken.
+            std::clearerr(tmp);
+            if (std::fseek(tmp, 0, SEEK_SET) != 0)
+            {
+                return {};
+            }
+            std::string out;
+            char buf[4096];
+            for (;;)
+            {
+                // clearerr+fseek above resets state, but the analyzer can't model that
+                // across the fd-write/FILE*-read mismatch.
+                const size_t n = std::fread(buf, 1, sizeof(buf), tmp); // NOLINT(clang-analyzer-unix.Stream)
+                if (n == 0)
+                {
+                    break;
+                }
+                out.append(buf, n);
+            }
+            return out;
+        }
+    };
+} // namespace
 
 TEST(framebuffer, hud_text_appears_in_present_output)
 {
@@ -376,8 +397,8 @@ TEST(framebuffer, present_incremental_dirty_at_last_column)
     // while exits immediately — the skip branch is never entered.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
-    fb.present(); // full-redraw
-    cap.read();   // drain
+    fb.present();     // full-redraw
+    (void)cap.read(); // drain
 
     fb.set_pixel(3, 0, { 200, 0, 0 }); // only last column dirty
     fb.present();                      // must not crash

@@ -286,7 +286,7 @@ TEST(shadow, pcf_partial_occlusion_returns_fraction)
     {
         for (int dx = -1; dx <= 1 && cnt < 4; dx++)
         {
-            sm.depth[static_cast<size_t>(((1024 + dy) * ShadowMap::SIZE) + (1024 + dx))] = 0.0f;
+            sm.depth[(static_cast<size_t>(1024 + dy) * ShadowMap::SIZE) + static_cast<size_t>(1024 + dx)] = 0.0f;
             cnt++;
         }
     }
@@ -305,7 +305,7 @@ TEST(shadow, pcf_ref_equal_to_stored_depth_is_lit)
     {
         for (int dx = -1; dx <= 1; dx++)
         {
-            sm.depth[static_cast<size_t>(((1024 + dy) * ShadowMap::SIZE) + (1024 + dx))] = ref;
+            sm.depth[(static_cast<size_t>(1024 + dy) * ShadowMap::SIZE) + static_cast<size_t>(1024 + dx)] = ref;
         }
     }
     ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, 0.5f }), 0.0f, 1e-6f);
@@ -322,7 +322,7 @@ TEST(shadow, pcf_border_clamps_kernel_samples)
     sm.light_vp = mat4::identity();
     for (int py = 1023; py <= 1025; py++)
     {
-        sm.depth[static_cast<size_t>((py * ShadowMap::SIZE) + 0)] = 0.0f;
+        sm.depth[static_cast<size_t>(py) * ShadowMap::SIZE] = 0.0f;
     }
     ASSERT_NEAR(sm.in_shadow({ -1.0f, 0.0f, 0.5f }), 6.0f / 9.0f, 1e-6f);
 }

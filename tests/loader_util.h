@@ -44,6 +44,8 @@ struct TmpFile
     ~TmpFile() { std::remove(path.c_str()); }
     TmpFile(const TmpFile &) = delete;
     TmpFile &operator=(const TmpFile &) = delete;
+    TmpFile(TmpFile &&) = delete;
+    TmpFile &operator=(TmpFile &&) = delete;
 };
 
 // Load a file expected to succeed; sanity-check that the mesh is non-empty.

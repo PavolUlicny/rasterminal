@@ -19,15 +19,26 @@ struct FdRedirect
         std::fflush(stdout);
 
         int dn = test_devnull();
+        if (dn < 0)
+        {
+            return; // /dev/null unavailable — leave stdout alone rather than corrupt it
+        }
         test_dup2(dn, TEST_STDOUT);
         test_close(dn);
     }
     ~FdRedirect()
     {
         std::fflush(stdout);
-        test_dup2(saved_out, TEST_STDOUT);
-        test_close(saved_out);
+        if (saved_out >= 0)
+        {
+            test_dup2(saved_out, TEST_STDOUT);
+            test_close(saved_out);
+        }
     }
+    FdRedirect(const FdRedirect &) = delete;
+    FdRedirect &operator=(const FdRedirect &) = delete;
+    FdRedirect(FdRedirect &&) = delete;
+    FdRedirect &operator=(FdRedirect &&) = delete;
 };
 
 // Returns true iff pixel (x,y) was drawn (stored depth < +inf).
