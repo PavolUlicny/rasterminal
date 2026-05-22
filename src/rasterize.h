@@ -1,10 +1,8 @@
 #pragma once
 
 #include "framebuffer.h"
-#include "clip.h"
 #include "light.h"
 #include "linalg.h"
-#include "mesh.h"
 #include "shadow.h"
 #include "texture.h"
 
