@@ -15,7 +15,7 @@
 #include <string>
 #include <utility>
 
-static std::string tmp_path(const char *name)
+[[maybe_unused]] static std::string tmp_path(const char *name)
 {
     return (std::filesystem::temp_directory_path() / name).string();
 }
