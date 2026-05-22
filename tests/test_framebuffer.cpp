@@ -2,8 +2,6 @@
 #include "rasterize_test_util.h"
 #include "../src/framebuffer.h"
 
-#include <limits>
-
 // ─── test_and_set_depth bounds ────────────────────────────────────────────────
 
 TEST(framebuffer, test_and_set_depth_rejects_negative_x)

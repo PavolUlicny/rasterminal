@@ -3,7 +3,6 @@
 #include "../src/rasterize.h"
 
 #include <initializer_list>
-#include <limits>
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
