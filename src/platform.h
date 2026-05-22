@@ -116,32 +116,32 @@ namespace platform
 
     // ─── input events ────────────────────────────────────────────────────────────
 
-    enum Key : std::uint8_t
+    enum class Key : std::uint8_t
     {
-        KEY_NONE = 0,
-        KEY_W,
-        KEY_A,
-        KEY_S,
-        KEY_D, // camera orbit
-        KEY_Q,
-        KEY_ESCAPE, // quit
-        KEY_1,
-        KEY_2,
-        KEY_3,
-        KEY_4, // shading modes
-        KEY_UP,
-        KEY_DOWN, // pitch
-        KEY_LEFT,
-        KEY_RIGHT, // yaw
-        KEY_PLUS,
-        KEY_MINUS, // zoom
-        KEY_SPACE, // toggle auto-rotation
-        KEY_B,     // toggle background colour
-        KEY_L,     // cycle lighting preset
-        KEY_R,     // reset camera
-        KEY_C,     // cycle wireframe colour
-        KEY_K,     // toggle backface culling
-        KEY_T,     // toggle texture rendering
+        None = 0,
+        W,
+        A,
+        S,
+        D, // camera orbit
+        Q,
+        Escape, // quit
+        Num1,
+        Num2,
+        Num3,
+        Num4, // shading modes
+        Up,
+        Down, // pitch
+        Left,
+        Right, // yaw
+        Plus,
+        Minus, // zoom
+        Space, // toggle auto-rotation
+        B,     // toggle background colour
+        L,     // cycle lighting preset
+        R,     // reset camera
+        C,     // cycle wireframe colour
+        K,     // toggle backface culling
+        T,     // toggle texture rendering
     };
 
     struct InputEvent
@@ -157,9 +157,9 @@ namespace platform
             MouseMove,    // left button held and dragging
         } type = Type::None;
 
-        Key key = KEY_NONE; // valid when type == Key
-        int btn = 0;        // mouse button (0 = left, 1 = middle, 2 = right)
-        int x = 0, y = 0;   // terminal cell position (1-based)
+        Key key = Key::None; // valid when type == Key
+        int btn = 0;         // mouse button (0 = left, 1 = middle, 2 = right)
+        int x = 0, y = 0;    // terminal cell position (1-based)
     };
 
     // ─── input parsing helpers ───────────────────────────────────────────────────
@@ -172,55 +172,55 @@ namespace platform
             {
             case 'w':
             case 'W':
-                return KEY_W;
+                return Key::W;
             case 'a':
             case 'A':
-                return KEY_A;
+                return Key::A;
             case 's':
             case 'S':
-                return KEY_S;
+                return Key::S;
             case 'd':
             case 'D':
-                return KEY_D;
+                return Key::D;
             case 'q':
             case 'Q':
-                return KEY_Q;
+                return Key::Q;
             case 27:
-                return KEY_ESCAPE;
+                return Key::Escape;
             case '1':
-                return KEY_1;
+                return Key::Num1;
             case '2':
-                return KEY_2;
+                return Key::Num2;
             case '3':
-                return KEY_3;
+                return Key::Num3;
             case '4':
-                return KEY_4;
+                return Key::Num4;
             case '+':
-                return KEY_PLUS;
+                return Key::Plus;
             case '-':
-                return KEY_MINUS;
+                return Key::Minus;
             case ' ':
-                return KEY_SPACE;
+                return Key::Space;
             case 'b':
             case 'B':
-                return KEY_B;
+                return Key::B;
             case 'l':
             case 'L':
-                return KEY_L;
+                return Key::L;
             case 'r':
             case 'R':
-                return KEY_R;
+                return Key::R;
             case 'c':
             case 'C':
-                return KEY_C;
+                return Key::C;
             case 'k':
             case 'K':
-                return KEY_K;
+                return Key::K;
             case 't':
             case 'T':
-                return KEY_T;
+                return Key::T;
             default:
-                return KEY_NONE;
+                return Key::None;
             }
         }
     } // namespace detail
@@ -305,7 +305,7 @@ namespace platform
         if (b1 != '[')
         {
             ev.type = InputEvent::Type::Key;
-            ev.key = KEY_ESCAPE;
+            ev.key = Key::Escape;
             return ev;
         }
 
@@ -313,7 +313,7 @@ namespace platform
         if (b2 == 0)
         {
             ev.type = InputEvent::Type::Key;
-            ev.key = KEY_ESCAPE;
+            ev.key = Key::Escape;
             return ev;
         }
 
@@ -387,19 +387,19 @@ namespace platform
         switch (b2)
         {
         case 'A':
-            ev.key = KEY_UP;
+            ev.key = Key::Up;
             return ev;
         case 'B':
-            ev.key = KEY_DOWN;
+            ev.key = Key::Down;
             return ev;
         case 'C':
-            ev.key = KEY_RIGHT;
+            ev.key = Key::Right;
             return ev;
         case 'D':
-            ev.key = KEY_LEFT;
+            ev.key = Key::Left;
             return ev;
         default:
-            ev.key = KEY_ESCAPE;
+            ev.key = Key::Escape;
             return ev;
         }
     }

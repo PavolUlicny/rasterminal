@@ -48,26 +48,26 @@ void Camera::process_key(platform::Key key, float dt)
 
     switch (key)
     {
-    case platform::KEY_A:
-    case platform::KEY_LEFT:
+    case platform::Key::A:
+    case platform::Key::Left:
         orbit(-orbit_speed * dt, 0.0f);
         break;
-    case platform::KEY_D:
-    case platform::KEY_RIGHT:
+    case platform::Key::D:
+    case platform::Key::Right:
         orbit(orbit_speed * dt, 0.0f);
         break;
-    case platform::KEY_W:
-    case platform::KEY_UP:
+    case platform::Key::W:
+    case platform::Key::Up:
         orbit(0.0f, orbit_speed * dt);
         break;
-    case platform::KEY_S:
-    case platform::KEY_DOWN:
+    case platform::Key::S:
+    case platform::Key::Down:
         orbit(0.0f, -orbit_speed * dt);
         break;
-    case platform::KEY_PLUS:
+    case platform::Key::Plus:
         distance -= zoom_speed * dt;
         break;
-    case platform::KEY_MINUS:
+    case platform::Key::Minus:
         distance += zoom_speed * dt;
         break;
     default:

@@ -322,7 +322,7 @@ int main(int argc, char *argv[])
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
-    platform::Key held_cam_key = platform::KEY_NONE;
+    platform::Key held_cam_key = platform::Key::None;
     clock::time_point held_cam_key_tp = clock::now();
 
     bool running = true;
@@ -362,55 +362,55 @@ int main(int argc, char *argv[])
             if (ev.type == platform::InputEvent::Type::Key)
             {
                 const platform::Key k = ev.key;
-                if (k == platform::KEY_Q || k == platform::KEY_ESCAPE)
+                if (k == platform::Key::Q || k == platform::Key::Escape)
                 {
                     running = false;
                     break;
                 }
-                if (k == platform::KEY_SPACE)
+                if (k == platform::Key::Space)
                 {
                     spinning = !spinning;
                 }
-                else if (k == platform::KEY_1)
+                else if (k == platform::Key::Num1)
                 {
                     renderer.mode = ShadingMode::Wireframe;
                 }
-                else if (k == platform::KEY_2)
+                else if (k == platform::Key::Num2)
                 {
                     renderer.mode = ShadingMode::Flat;
                 }
-                else if (k == platform::KEY_3)
+                else if (k == platform::Key::Num3)
                 {
                     renderer.mode = ShadingMode::Gouraud;
                 }
-                else if (k == platform::KEY_4)
+                else if (k == platform::Key::Num4)
                 {
                     renderer.mode = ShadingMode::Phong;
                 }
-                else if (k == platform::KEY_B)
+                else if (k == platform::Key::B)
                 {
                     bg_mode = (bg_mode + 1) % 3;
                 }
-                else if (k == platform::KEY_L)
+                else if (k == platform::Key::L)
                 {
                     lighting_mode = (lighting_mode + 1) % 3;
                 }
-                else if (k == platform::KEY_C)
+                else if (k == platform::Key::C)
                 {
                     wf_color = (wf_color + 1) % 6;
                 }
-                else if (k == platform::KEY_K)
+                else if (k == platform::Key::K)
                 {
                     culling = !culling;
                 }
-                else if (k == platform::KEY_T)
+                else if (k == platform::Key::T)
                 {
                     if (has_textures)
                     {
                         texturing = !texturing;
                     }
                 }
-                else if (k == platform::KEY_R)
+                else if (k == platform::Key::R)
                 {
                     camera = initial_camera;
                     renderer.mode = ShadingMode::Gouraud;
@@ -460,12 +460,12 @@ int main(int argc, char *argv[])
         }
 
         // ── Camera key movement (once per frame, frame-rate independent) ──
-        if (held_cam_key != platform::KEY_NONE)
+        if (held_cam_key != platform::Key::None)
         {
             const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
             if (since > 0.1f)
             {
-                held_cam_key = platform::KEY_NONE; // key released
+                held_cam_key = platform::Key::None; // key released
             }
             else
             {

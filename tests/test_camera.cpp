@@ -142,7 +142,7 @@ TEST(camera, process_key_A_model_moves_left)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::KEY_A, 0.1f);
+    c.process_key(platform::Key::A, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.x > 0.0f);
 }
@@ -152,7 +152,7 @@ TEST(camera, process_key_D_model_moves_right)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::KEY_D, 0.1f);
+    c.process_key(platform::Key::D, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.x < 0.0f);
 }
@@ -163,7 +163,7 @@ TEST(camera, process_key_W_model_moves_up)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::KEY_W, 0.1f);
+    c.process_key(platform::Key::W, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.y < 0.0f);
 }
@@ -173,7 +173,7 @@ TEST(camera, process_key_S_model_moves_down)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::KEY_S, 0.1f);
+    c.process_key(platform::Key::S, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.y > 0.0f);
 }
@@ -183,8 +183,8 @@ TEST(camera, process_key_LEFT_same_as_A)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::KEY_LEFT, 0.1f);
-    c2.process_key(platform::KEY_A, 0.1f);
+    c1.process_key(platform::Key::Left, 0.1f);
+    c2.process_key(platform::Key::A, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -196,8 +196,8 @@ TEST(camera, process_key_RIGHT_same_as_D)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::KEY_RIGHT, 0.1f);
-    c2.process_key(platform::KEY_D, 0.1f);
+    c1.process_key(platform::Key::Right, 0.1f);
+    c2.process_key(platform::Key::D, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -209,8 +209,8 @@ TEST(camera, process_key_UP_same_as_W)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::KEY_UP, 0.1f);
-    c2.process_key(platform::KEY_W, 0.1f);
+    c1.process_key(platform::Key::Up, 0.1f);
+    c2.process_key(platform::Key::W, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -222,8 +222,8 @@ TEST(camera, process_key_DOWN_same_as_S)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::KEY_DOWN, 0.1f);
-    c2.process_key(platform::KEY_S, 0.1f);
+    c1.process_key(platform::Key::Down, 0.1f);
+    c2.process_key(platform::Key::S, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -234,7 +234,7 @@ TEST(camera, process_key_PLUS_decreases_distance)
 {
     Camera c;
     c.distance = 3.0f;
-    c.process_key(platform::KEY_PLUS, 0.1f);
+    c.process_key(platform::Key::Plus, 0.1f);
     // zoom_speed = 3.0 * 1.5 = 4.5; distance -= 4.5 * 0.1 = 0.45
     ASSERT_NEAR(c.distance, 2.55f, 1e-3f);
 }
@@ -243,7 +243,7 @@ TEST(camera, process_key_MINUS_increases_distance)
 {
     Camera c;
     c.distance = 3.0f;
-    c.process_key(platform::KEY_MINUS, 0.1f);
+    c.process_key(platform::Key::Minus, 0.1f);
     ASSERT_NEAR(c.distance, 3.45f, 1e-3f);
 }
 
@@ -253,7 +253,7 @@ TEST(camera, process_key_distance_clamped_at_near)
     c.distance = 3.0f;
     c.near_plane = 0.01f;
     c.far_plane = 100.0f;
-    c.process_key(platform::KEY_PLUS, 100.0f);
+    c.process_key(platform::Key::Plus, 100.0f);
     ASSERT_NEAR(c.distance, c.near_plane * 2.0f, EPS);
 }
 
@@ -263,7 +263,7 @@ TEST(camera, process_key_distance_clamped_at_far)
     c.distance = 3.0f;
     c.near_plane = 0.01f;
     c.far_plane = 100.0f;
-    c.process_key(platform::KEY_MINUS, 100.0f);
+    c.process_key(platform::Key::Minus, 100.0f);
     ASSERT_NEAR(c.distance, c.far_plane * 0.5f, EPS);
 }
 
@@ -274,7 +274,7 @@ TEST(camera, process_key_unknown_does_not_change_state)
     c.orientation = quat::identity();
     vec3 e_before = c.eye();
     float d_before = c.distance;
-    c.process_key(platform::KEY_SPACE, 1.0f);
+    c.process_key(platform::Key::Space, 1.0f);
     ASSERT_NEAR(c.distance, d_before, EPS);
     vec3 e_after = c.eye();
     ASSERT_NEAR(e_after.x, e_before.x, EPS);
@@ -532,8 +532,8 @@ TEST(camera, process_key_dt_zero_is_noop)
     c.orientation = quat::identity();
     const vec3 e_before = c.eye();
     const float d_before = c.distance;
-    for (auto key : { platform::KEY_A, platform::KEY_D, platform::KEY_W, platform::KEY_S, platform::KEY_PLUS,
-                      platform::KEY_MINUS })
+    for (auto key : { platform::Key::A, platform::Key::D, platform::Key::W, platform::Key::S, platform::Key::Plus,
+                      platform::Key::Minus })
     {
         c.process_key(key, 0.0f);
     }
