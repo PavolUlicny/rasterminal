@@ -40,9 +40,11 @@ bool Mesh::load_stl(const std::string &path)
     }
     bool is_ascii = (h + 5 <= header + 80 && std::strncmp(h, "solid", 5) == 0);
 
-    // Read tri_count (bytes 80–83).
+    // Read tri_count (bytes 80–83). Explicit fseek resets the stream to a
+    // defined position — the prior fread accepts partial reads (5–79 bytes),
+    // after which the C standard says the position is indeterminate.
     uint8_t tcb[4];
-    const bool have_tri_count = (std::fread(tcb, 1, 4, f.get()) == 4);
+    const bool have_tri_count = (std::fseek(f.get(), 80, SEEK_SET) == 0 && std::fread(tcb, 1, 4, f.get()) == 4);
     const uint32_t tri_count = have_tri_count
                                    ? (static_cast<uint32_t>(tcb[0]) | (static_cast<uint32_t>(tcb[1]) << 8U) |
                                       (static_cast<uint32_t>(tcb[2]) << 16U) | (static_cast<uint32_t>(tcb[3]) << 24U))
