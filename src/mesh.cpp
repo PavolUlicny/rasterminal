@@ -392,9 +392,12 @@ void Mesh::optimize_vertex_cache(int n_threads)
                     run_group(m);
                 }
             };
+            // Main thread runs worker() too, so spawn one fewer; cap at n_buckets
+            // since surplus workers would just hit the fetch_add guard and exit.
+            const size_t spawn = std::min<size_t>(static_cast<size_t>(n_threads), n_buckets) - 1;
             std::vector<std::thread> threads;
-            threads.reserve(static_cast<size_t>(n_threads - 1));
-            for (int t = 0; t < n_threads - 1; t++)
+            threads.reserve(spawn);
+            for (size_t t = 0; t < spawn; t++)
             {
                 threads.emplace_back(worker);
             }
