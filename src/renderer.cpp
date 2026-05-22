@@ -71,7 +71,7 @@ Renderer::Renderer(int n_threads)
 Renderer::~Renderer()
 {
     {
-        const std::lock_guard<std::mutex> lk(m_mutex);
+        const std::scoped_lock lk(m_mutex);
         m_stop = true;
         ++m_generation; // ensure workers see the stop flag
     }
@@ -218,10 +218,10 @@ void Renderer::worker_func(int t)
                         }
                         else
                         {
-                            vec3 col_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
-                                        // overwritten in Flat/Gouraud branches below
-                            vec3 col_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 col_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
+                                         // overwritten in Flat/Gouraud branches below
+                            vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                             vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
                                          // when shadow_map != nullptr; written before that read
                             vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
@@ -347,7 +347,7 @@ void Renderer::worker_func(int t)
         // Signal completion. If this is the last worker, wake render().
         if (m_active.fetch_sub(1, std::memory_order_acq_rel) == 1)
         {
-            const std::lock_guard<std::mutex> done_lk(m_mutex);
+            const std::scoped_lock done_lk(m_mutex);
             m_cv_done.notify_one();
         }
     }
@@ -427,7 +427,7 @@ void Renderer::render(
     // ── Dispatch workers for single-pass geometry+rasterize ─────────────────
     m_tri_cursor.store(0, std::memory_order_relaxed);
     {
-        const std::lock_guard<std::mutex> lk(m_mutex);
+        const std::scoped_lock lk(m_mutex);
         m_mesh = &mesh;
         m_vp = vp;
         m_eye = eye;
