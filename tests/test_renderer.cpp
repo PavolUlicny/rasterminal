@@ -405,11 +405,10 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     }
 }
 
-// F2b: show_texture=false must also suppress the emissive factor on meshes whose factor
-// was loader-promoted ({0,0,0} → {1,1,1} when an emissive texture is bound). Otherwise
-// toggling textures off on a typical PBR asset (DamagedHelmet, BoomBox, etc.) would
-// produce solid white surfaces from the leftover factor add — a visible regression.
-TEST(renderer, show_texture_toggle_suppresses_emissive_factor)
+// F2b: show_texture=false must suppress the emissive factor on materials with a bound
+// emissive texture (the factor may have been loader-promoted from {0,0,0} → {1,1,1} —
+// keeping it would render solid white on common PBR assets like DamagedHelmet).
+TEST(renderer, show_texture_toggle_suppresses_promoted_emissive_factor)
 {
     Renderer r(1);
     r.mode = ShadingMode::Phong;
@@ -427,13 +426,11 @@ TEST(renderer, show_texture_toggle_suppresses_emissive_factor)
     Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f }); // no lighting contribution
     vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
-    // Texture on: emissive glow visible (green).
     Framebuffer fb_on(40, 20, /*headless=*/true);
     fb_on.clear();
     r.show_texture = true;
     r.render(mesh, cam, &light, 1, ambient, fb_on);
 
-    // Texture off: emissive must be fully suppressed → black pixel, NOT white.
     Framebuffer fb_off(40, 20, /*headless=*/true);
     fb_off.clear();
     r.show_texture = false;
@@ -455,6 +452,50 @@ TEST(renderer, show_texture_toggle_suppresses_emissive_factor)
             "show_texture=false: emissive factor leaked through (" + std::to_string(static_cast<int>(off.r)) + "," +
             std::to_string(static_cast<int>(off.g)) + "," + std::to_string(static_cast<int>(off.b)) +
             "), expected near-black"
+        );
+    }
+}
+
+// F2c: show_texture=false must NOT suppress authored factor-only emissive (no bound
+// texture means promotion was impossible — the factor is necessarily author-intended).
+// Without this guarantee, a model with `Ke 1 0 0` and no `map_Ke` would lose its red glow
+// under the texture toggle, divergent from mat.diffuse's behavior.
+TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.materials[0].emissive_tex = -1;               // no texture: factor must be authored
+    mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // red glow, authored
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 200)
+    {
+        ASSERT_FAIL(
+            "show_texture=false with authored factor-only emissive: expected red glow, got R=" +
+            std::to_string(static_cast<int>(c.r))
+        );
+    }
+    if (c.g > 20 || c.b > 20)
+    {
+        ASSERT_FAIL(
+            "show_texture=false: unexpected G/B leakage (" + std::to_string(static_cast<int>(c.g)) + "," +
+            std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }
