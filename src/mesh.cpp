@@ -86,6 +86,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
         if (m.emissive_tex >= 0 && m.emissive.x == 0.0f && m.emissive.y == 0.0f && m.emissive.z == 0.0f)
         {
             m.emissive = { 1.0f, 1.0f, 1.0f };
+            m.emissive_was_promoted = true;
         }
     }
 

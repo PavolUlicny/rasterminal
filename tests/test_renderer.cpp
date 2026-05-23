@@ -417,6 +417,7 @@ TEST(renderer, show_texture_toggle_suppresses_promoted_emissive_factor)
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // emissive texture: green
     mesh.materials[0].emissive_tex = 0;
     mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f }; // simulates loader-promoted factor
+    mesh.materials[0].emissive_was_promoted = true;    // matches what load_model would set
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
@@ -496,6 +497,52 @@ TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
         ASSERT_FAIL(
             "show_texture=false: unexpected G/B leakage (" + std::to_string(static_cast<int>(c.g)) + "," +
             std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
+// F2d: authored factor + bound emissive texture must keep the factor across the toggle.
+// emissive_was_promoted=false distinguishes this from the loader-promoted case (F2b).
+// The texture is suppressed by show_emissive but the authored factor survives — only the
+// promotion-derived white-out is what needs zeroing.
+TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // emissive texture: blue
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
+    mesh.materials[0].emissive_was_promoted = false;   // NOT promoted — author wrote this
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    // Texture suppressed (no blue), authored red factor survives.
+    if (c.r < 200)
+    {
+        ASSERT_FAIL(
+            "show_texture=false with authored factor + texture: expected red, got R=" +
+            std::to_string(static_cast<int>(c.r))
+        );
+    }
+    if (c.b > 20)
+    {
+        ASSERT_FAIL(
+            "show_texture=false: emissive texture leaked through (B=" + std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }

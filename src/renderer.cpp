@@ -123,10 +123,10 @@ void Renderer::worker_func(int t)
             const bool do_cull = m_cull_backfaces;
             const bool show_tex = m_show_texture;
             // Texture toggle gate. show_emissive controls the emissive texture sample. The
-            // emissive factor is gated separately at each call site: passed as-is when the
-            // material has NO emissive texture (factor must have been authored, can't be
-            // loader-promoted), zeroed when textures are toggled off on a textured material
-            // (avoids the loader-promoted {1,1,1} factor white-out described in load_model).
+            // emissive factor is gated separately at each call site on Material::emissive_was_promoted:
+            // authored factors always pass through; loader-promoted {1,1,1} factors are zeroed when
+            // show_tex is off, otherwise toggling textures off on a BoomBox/DamagedHelmet-style
+            // asset would render solid white from the leftover factor add.
             const bool show_emissive = mesh->has_emissive && show_tex;
             const bool show_metallic = mesh->has_metallic && show_tex;
             Framebuffer *fb = m_fb;
@@ -222,7 +222,7 @@ void Renderer::worker_func(int t)
                                 show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
                                 show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                (mat.emissive_tex < 0 || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
+                                (!mat.emissive_was_promoted || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
                             );
                         }
                         else
@@ -346,7 +346,7 @@ void Renderer::worker_func(int t)
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
                                 shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                (mat.emissive_tex < 0 || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
+                                (!mat.emissive_was_promoted || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
                             );
                         }
                     }
