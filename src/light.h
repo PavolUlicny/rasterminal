@@ -53,10 +53,10 @@ struct Material
     // NOTE: Mesh::load_model promotes a zero factor to {1,1,1} when emissive_tex >= 0 after
     // decode (industry convention for "author bound a texture but forgot the factor"); a
     // legitimate explicit-zero-with-texture material cannot be distinguished from default-zero.
-    // emissive_was_promoted tags promoted materials so the renderer can suppress the factor
-    // (alongside the texture) under the texture toggle without affecting authored factors.
+    // emissive_was_promoted (declared below alongside double_sided to pack the two bools into
+    // a single slot) tags promoted materials so the renderer can suppress the factor under
+    // the texture toggle without affecting authored factors.
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
-    bool emissive_was_promoted = false;
     // Texture slot indices into Mesh::textures (-1 = none).
     int diffuse_tex = -1;
     int specular_tex = -1;
@@ -68,7 +68,8 @@ struct Material
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
     int metallic_roughness_tex = -1; // index into Mesh::textures (G=roughness, B=metallic), or -1 if none
     bool double_sided = false;
-    float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
+    bool emissive_was_promoted = false; // packs into the same alignment slot as double_sided
+    float alpha_cutoff = 0.0f;          // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
 };
 
 struct Light
