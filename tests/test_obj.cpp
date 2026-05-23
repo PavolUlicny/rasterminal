@@ -658,6 +658,30 @@ TEST(obj_valid, mtl_map_ke_with_explicit_ke_keeps_authored_factor)
     ASSERT_NEAR(m.materials[1].emissive.z, 0.75f, 1e-5f);
 }
 
+TEST(obj_valid, mtl_map_ke_failed_decode_without_ke_does_not_promote)
+{
+    // Regression: promotion must run AFTER decode_textures. If it runs on the provisional
+    // pre-decode index, a missing map_Ke file would leave the material with emissive={1,1,1}
+    // and emissive_tex=-1, ghost-glowing solid white.
+    TmpFile mtl(
+        tmp_path("rast_ke_missing.mtl"), "newmtl M\n"
+                                         "Kd 1 1 1\n"
+                                         "map_Ke rast_ke_does_not_exist.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_ke_missing.obj"), "mtllib rast_ke_missing.mtl\n"
+                                         "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                         "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_NEAR(m.materials[1].emissive.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(m.materials[1].emissive.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(m.materials[1].emissive.z, 0.0f, 1e-6f);
+    ASSERT_FALSE(m.has_emissive);
+}
+
 TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
 {
     // A non-existent map_Ke file fails decoding; decode_textures must compact it
