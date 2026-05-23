@@ -547,6 +547,83 @@ TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
     }
 }
 
+// F2e: Flat-mode parity for F2b — promoted factor must be suppressed under the toggle.
+// renderer.cpp's Flat/Gouraud dispatch is a separate call site from the Phong dispatch;
+// the emissive gate is hand-typed at both, so each one needs renderer-level coverage.
+TEST(renderer, flat_show_texture_toggle_suppresses_promoted_emissive_factor)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f };
+    mesh.materials[0].emissive_was_promoted = true;
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 20 || c.g > 20 || c.b > 20)
+    {
+        ASSERT_FAIL(
+            "Flat show_texture=false: promoted emissive leaked (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
+// F2f: Flat-mode parity for F2d — authored factor + bound texture must survive the toggle.
+TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255));
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f };
+    mesh.materials[0].emissive_was_promoted = false;
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r < 200)
+    {
+        ASSERT_FAIL(
+            "Flat show_texture=false with authored factor: expected red, got R=" + std::to_string(static_cast<int>(c.r))
+        );
+    }
+    if (c.b > 20)
+    {
+        ASSERT_FAIL("Flat show_texture=false: blue texture leaked (B=" + std::to_string(static_cast<int>(c.b)) + ")");
+    }
+}
+
 // F3: show_texture=false must null-out stex and nmap even when specular_tex and
 // normal_tex are set on the material.  A black specular texture would zero out all
 // specular if stex were incorrectly forwarded — that mismatch catches the bug.
