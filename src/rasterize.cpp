@@ -389,6 +389,10 @@ void rasterize(
                 col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y));
             }
 
+            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
+            // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
+            // emissive contribution saturates invisibly — visible only where the lit colour
+            // has headroom. Real HDR (KHR_materials_emissive_strength + tonemap) would fix it.
             if (do_emissive)
             {
                 vec3 e = emissive;
@@ -657,6 +661,10 @@ void rasterize_phong(
                 color = lerp(lit, shd, sf);
             }
 
+            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
+            // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
+            // emissive contribution saturates invisibly — visible only where the lit colour
+            // has headroom. Real HDR (KHR_materials_emissive_strength + tonemap) would fix it.
             if (do_emissive)
             {
                 vec3 e = emissive;

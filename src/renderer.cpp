@@ -222,7 +222,7 @@ void Renderer::worker_func(int t)
                                 show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
                                 show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                (!mat.emissive_was_promoted || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
+                                mat.effective_emissive(show_emissive)
                             );
                         }
                         else
@@ -346,7 +346,7 @@ void Renderer::worker_func(int t)
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
                                 shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                (!mat.emissive_was_promoted || show_emissive) ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
+                                mat.effective_emissive(show_emissive)
                             );
                         }
                     }

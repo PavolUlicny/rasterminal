@@ -624,6 +624,45 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
     }
 }
 
+// F2g: Gouraud-mode parity — Flat and Gouraud share the rasterize() call site in the
+// renderer, but Gouraud has a different upstream branch (per-vertex lighting). A future
+// refactor that splits or rewires Gouraud should fail this test rather than silently lose
+// emissive on per-vertex-shaded surfaces.
+TEST(renderer, gouraud_show_texture_toggle_suppresses_promoted_emissive_factor)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f };
+    mesh.materials[0].emissive_was_promoted = true;
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 20 || c.g > 20 || c.b > 20)
+    {
+        ASSERT_FAIL(
+            "Gouraud show_texture=false: promoted emissive leaked (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
 // F3: show_texture=false must null-out stex and nmap even when specular_tex and
 // normal_tex are set on the material.  A black specular texture would zero out all
 // specular if stex were incorrectly forwarded — that mismatch catches the bug.

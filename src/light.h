@@ -70,6 +70,16 @@ struct Material
     bool double_sided = false;
     bool emissive_was_promoted = false; // packs into the same alignment slot as double_sided
     float alpha_cutoff = 0.0f;          // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
+
+    // Emissive factor to feed the rasterizer given the current texture toggle:
+    // authored factors always pass; loader-promoted {1,1,1} factors are zeroed when textures
+    // are off (otherwise toggling textures off on a BoomBox/DamagedHelmet-style asset would
+    // render solid white from the leftover factor add). Encapsulated here so the gate stays
+    // in one place across the Flat/Gouraud and Phong call sites in renderer.cpp.
+    [[nodiscard]] vec3 effective_emissive(bool show_emissive) const noexcept
+    {
+        return (!emissive_was_promoted || show_emissive) ? emissive : vec3{ 0.0f, 0.0f, 0.0f };
+    }
 };
 
 struct Light
