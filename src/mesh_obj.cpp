@@ -100,6 +100,12 @@ bool Mesh::load_obj(const std::string &path, int n_threads)
         mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname) : load_tex(m.bump_texname);
         mat.emissive = { m.emission[0], m.emission[1], m.emission[2] };
         mat.emissive_tex = load_tex(m.emissive_texname);
+        // Same map_Ke + missing-Ke promotion as the glTF loader: authors who write map_Ke
+        // and forget Ke almost always mean for it to glow at full intensity.
+        if (mat.emissive_tex >= 0 && mat.emissive.x == 0.0f && mat.emissive.y == 0.0f && mat.emissive.z == 0.0f)
+        {
+            mat.emissive = { 1.0f, 1.0f, 1.0f };
+        }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
         if (!m.alpha_texname.empty())

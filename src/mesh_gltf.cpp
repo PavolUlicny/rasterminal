@@ -103,6 +103,15 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
         if (m->emissive_texture.texture)
         {
             mat.emissive_tex = load_tex(m->emissive_texture.texture->image);
+            // Industry convention (Unreal, Sketchfab, MSFS, Blender's PBR importer): when an
+            // emissive texture is bound but emissiveFactor is at the spec default [0,0,0],
+            // promote to [1,1,1]. Strict glTF spec would render the texture as black
+            // (factor multiplies texel), but real-world content depends on this promotion
+            // because the spec default is a usability footgun authors routinely hit.
+            if (mat.emissive.x == 0.0f && mat.emissive.y == 0.0f && mat.emissive.z == 0.0f)
+            {
+                mat.emissive = { 1.0f, 1.0f, 1.0f };
+            }
         }
         mat.double_sided = m->double_sided;
         if (m->alpha_mode == cgltf_alpha_mode_mask)

@@ -122,6 +122,9 @@ void Renderer::worker_func(int t)
             const ShadingMode smode = m_smode;
             const bool do_cull = m_cull_backfaces;
             const bool show_tex = m_show_texture;
+            // Texture toggle suppresses the emissive/MR textures (mirrors how show_tex
+            // hides the diffuse texture); mat.emissive factor and mat.metallic still apply,
+            // matching mat.diffuse's behavior when textures are off.
             const bool show_emissive = mesh->has_emissive && show_tex;
             const bool show_metallic = mesh->has_metallic && show_tex;
             Framebuffer *fb = m_fb;
@@ -221,10 +224,10 @@ void Renderer::worker_func(int t)
                         }
                         else
                         {
-                            vec3 col_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
-                                        // overwritten in Flat/Gouraud branches below
-                            vec3 col_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 col_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
+                                         // overwritten in Flat/Gouraud branches below
+                            vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                             vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
                                          // when shadow_map != nullptr; written before that read
                             vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)

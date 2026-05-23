@@ -621,6 +621,43 @@ TEST(obj_valid, mtl_map_ke_real_file_sets_emissive_tex)
     ASSERT_TRUE(m.has_emissive);
 }
 
+TEST(obj_valid, mtl_map_ke_without_ke_promotes_factor_to_white)
+{
+    // Industry convention: map_Ke bound + Ke missing/zero ⇒ promote factor to {1,1,1} so the
+    // texture actually glows. Spec-strict reading would render it as black (factor × tex).
+    TmpFile bmp(tmp_path("rast_ke_promote.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_ke_promote.mtl"), "newmtl M\nKd 1 1 1\nmap_Ke rast_ke_promote.bmp\n");
+    TmpFile obj(
+        tmp_path("rast_ke_promote.obj"), "mtllib rast_ke_promote.mtl\n"
+                                         "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                         "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].emissive_tex >= 0);
+    ASSERT_NEAR(m.materials[1].emissive.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.y, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.z, 1.0f, 1e-5f);
+    ASSERT_TRUE(m.has_emissive);
+}
+
+TEST(obj_valid, mtl_map_ke_with_explicit_ke_keeps_authored_factor)
+{
+    // Promotion only applies when factor is the default zero. Explicit Ke values must survive.
+    TmpFile bmp(tmp_path("rast_ke_keep.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_ke_keep.mtl"), "newmtl M\nKd 1 1 1\nKe 0.25 0.5 0.75\nmap_Ke rast_ke_keep.bmp\n");
+    TmpFile obj(
+        tmp_path("rast_ke_keep.obj"), "mtllib rast_ke_keep.mtl\n"
+                                      "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                      "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].emissive.x, 0.25f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.y, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.z, 0.75f, 1e-5f);
+}
+
 TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
 {
     // A non-existent map_Ke file fails decoding; decode_textures must compact it

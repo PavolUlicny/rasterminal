@@ -284,8 +284,9 @@ void rasterize(
     float bb_row = s.bb_row;
 
     const bool has_cutout = (alpha_cutoff > 0.0f && tex);
-    const bool has_emissive_factor = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
-    const bool do_emissive = (etex != nullptr) || has_emissive_factor;
+    // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
+    // contribution regardless of texture, so the texture sample is skippable too.
+    const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -356,8 +357,10 @@ void rasterize(
             }
 
             // UV needed when sampling either the diffuse or the emissive texture; skip
-            // recomputation when the cutout pre-pass already produced it.
-            if (!has_cutout && ((tex != nullptr) || (etex != nullptr)))
+            // recomputation when the cutout pre-pass already produced it. The emissive
+            // sample is gated on do_emissive (factor non-zero), so don't pay for it on
+            // factor-zero materials that happen to carry a bound emissive texture.
+            if (!has_cutout && ((tex != nullptr) || (do_emissive && (etex != nullptr))))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
             }
@@ -478,8 +481,9 @@ void rasterize_phong(
     const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
     // Off (false) for every dielectric and non-glTF material, so they run unchanged.
     const bool is_metallic = (mat.metallic > 0.0f);
-    const bool has_emissive_factor = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
-    const bool do_emissive = (etex != nullptr) || has_emissive_factor;
+    // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
+    // contribution regardless of texture, so the texture sample is skippable too.
+    const bool do_emissive = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -549,8 +553,9 @@ void rasterize_phong(
             vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
             // Compute UV once — needed by diffuse, normal, specular, MR, and emissive samplers.
-            // Skip when has_cutout: uv was already computed in the pre-pass above.
-            if (!has_cutout && (tex || nmap || stex || mrtex || etex))
+            // Skip when has_cutout: uv was already computed in the pre-pass above. Emissive
+            // sample is gated on do_emissive, so a bound etex with a zero factor stays free.
+            if (!has_cutout && (tex || nmap || stex || mrtex || (do_emissive && etex)))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
             }

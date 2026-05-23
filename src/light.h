@@ -48,7 +48,8 @@ struct Material
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
     // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
-    // Modulated by emissive_tex when present. Zero default skips the per-pixel add entirely.
+    // Modulated by emissive_tex when present. A zero factor skips the per-pixel add and any
+    // emissive_tex sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0).
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
     // Texture slot indices into Mesh::textures (-1 = none).
     int diffuse_tex = -1;
