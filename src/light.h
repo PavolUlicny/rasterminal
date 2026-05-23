@@ -50,6 +50,9 @@ struct Material
     // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
     // Modulated by emissive_tex when present. A zero factor skips the per-pixel add and any
     // emissive_tex sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0).
+    // NOTE: Mesh::load_model promotes a zero factor to {1,1,1} when emissive_tex >= 0 after
+    // decode (industry convention for "author bound a texture but forgot the factor"); a
+    // legitimate explicit-zero-with-texture material cannot be distinguished from default-zero.
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
     // Texture slot indices into Mesh::textures (-1 = none).
     int diffuse_tex = -1;

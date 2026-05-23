@@ -457,7 +457,8 @@ void rasterize_phong(
     int y_min,
     int y_max,
     const Texture *mrtex,
-    const Texture *etex
+    const Texture *etex,
+    vec3 emissive
 )
 {
     const int width = fb.width();
@@ -483,7 +484,9 @@ void rasterize_phong(
     const bool is_metallic = (mat.metallic > 0.0f);
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
-    const bool do_emissive = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
+    // The factor is passed in (not read from mat) so the caller can gate emissive entirely
+    // on the texture-toggle UI flag — see show_emissive in renderer.cpp.
+    const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -656,7 +659,7 @@ void rasterize_phong(
 
             if (do_emissive)
             {
-                vec3 e = mat.emissive;
+                vec3 e = emissive;
                 if (etex)
                 {
                     e = e * etex->sample_rgb(uv.x, uv.y);

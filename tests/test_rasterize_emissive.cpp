@@ -43,7 +43,7 @@ static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Text
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
         1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
-        19, nullptr, etex
+        19, nullptr, etex, mat.emissive
     );
 }
 

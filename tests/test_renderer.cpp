@@ -405,6 +405,60 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     }
 }
 
+// F2b: show_texture=false must also suppress the emissive factor on meshes whose factor
+// was loader-promoted ({0,0,0} → {1,1,1} when an emissive texture is bound). Otherwise
+// toggling textures off on a typical PBR asset (DamagedHelmet, BoomBox, etc.) would
+// produce solid white surfaces from the leftover factor add — a visible regression.
+TEST(renderer, show_texture_toggle_suppresses_emissive_factor)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // emissive texture: green
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f }; // simulates loader-promoted factor
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true; // hand-crafted mesh skips load_model's derivation
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f }); // no lighting contribution
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    // Texture on: emissive glow visible (green).
+    Framebuffer fb_on(40, 20, /*headless=*/true);
+    fb_on.clear();
+    r.show_texture = true;
+    r.render(mesh, cam, &light, 1, ambient, fb_on);
+
+    // Texture off: emissive must be fully suppressed → black pixel, NOT white.
+    Framebuffer fb_off(40, 20, /*headless=*/true);
+    fb_off.clear();
+    r.show_texture = false;
+    r.render(mesh, cam, &light, 1, ambient, fb_off);
+
+    ASSERT_TRUE(was_drawn(fb_on, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_off, 20, 10));
+
+    Color on = fb_on.get_pixel(20, 10);
+    Color off = fb_off.get_pixel(20, 10);
+
+    if (on.g < 200)
+    {
+        ASSERT_FAIL("show_texture=true: expected green emissive, got G=" + std::to_string(static_cast<int>(on.g)));
+    }
+    if (off.r > 20 || off.g > 20 || off.b > 20)
+    {
+        ASSERT_FAIL(
+            "show_texture=false: emissive factor leaked through (" + std::to_string(static_cast<int>(off.r)) + "," +
+            std::to_string(static_cast<int>(off.g)) + "," + std::to_string(static_cast<int>(off.b)) +
+            "), expected near-black"
+        );
+    }
+}
+
 // F3: show_texture=false must null-out stex and nmap even when specular_tex and
 // normal_tex are set on the material.  A black specular texture would zero out all
 // specular if stex were incorrectly forwarded — that mismatch catches the bug.

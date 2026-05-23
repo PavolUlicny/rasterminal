@@ -105,6 +105,7 @@ void rasterize_phong(
     int y_min,
     int y_max,
     const Texture *mrtex =
-        nullptr,                  // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
-    const Texture *etex = nullptr // emissive texture; modulates mat.emissive when present
+        nullptr, // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
+    const Texture *etex = nullptr,           // emissive texture; modulates the emissive factor when present
+    vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f } // emissive factor (gated by caller, not read from mat)
 );

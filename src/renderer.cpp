@@ -122,9 +122,12 @@ void Renderer::worker_func(int t)
             const ShadingMode smode = m_smode;
             const bool do_cull = m_cull_backfaces;
             const bool show_tex = m_show_texture;
-            // Texture toggle suppresses the emissive/MR textures (mirrors how show_tex
-            // hides the diffuse texture); mat.emissive factor and mat.metallic still apply,
-            // matching mat.diffuse's behavior when textures are off.
+            // Texture toggle gate. For emissive this suppresses BOTH the texture and the
+            // factor — otherwise loader-promoted factors ({0,0,0} → {1,1,1} when a texture
+            // is bound, see Mesh::load_model) would render as full-strength white glow with
+            // the texture toggled off, which surprises users on the common DamagedHelmet /
+            // BoomBox-style asset. Diffuse and metallic factors still survive the toggle
+            // because they were authored, not promoted.
             const bool show_emissive = mesh->has_emissive && show_tex;
             const bool show_metallic = mesh->has_metallic && show_tex;
             Framebuffer *fb = m_fb;
@@ -219,15 +222,16 @@ void Renderer::worker_func(int t)
                                 show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
                                 show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr
+                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                show_emissive ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
                             );
                         }
                         else
                         {
-                            vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
-                                         // overwritten in Flat/Gouraud branches below
-                            vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
+                                        // overwritten in Flat/Gouraud branches below
+                            vec3 col_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            vec3 col_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                             vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
                                          // when shadow_map != nullptr; written before that read
                             vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
@@ -343,7 +347,7 @@ void Renderer::worker_func(int t)
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
                                 shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                mat.emissive
+                                show_emissive ? mat.emissive : vec3{ 0.0f, 0.0f, 0.0f }
                             );
                         }
                     }
