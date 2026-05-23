@@ -32,6 +32,7 @@ struct Mesh
     bool has_vertex_colors = false;  // true when any loader populates vertex_colors (PLY, OBJ, glTF COLOR_0)
     bool has_double_sided = false;   // true if any material in the mesh has double_sided = true
     bool has_metallic = false;       // true if any material has metallic > 0 (gates the Phong metallic path)
+    bool has_emissive = false;       // true if any material has a non-zero emissive factor or an emissive texture
 
     [[nodiscard]] const Material &mat_at(uint32_t idx) const
     {

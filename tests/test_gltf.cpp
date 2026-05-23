@@ -65,6 +65,62 @@ TEST(gltf_valid, pbr_material_mapping)
     ASSERT_NEAR(mat.roughness, 0.4f, 1e-4f);
     ASSERT_EQ(mat.metallic_roughness_tex, -1);
     ASSERT_TRUE(m.has_metallic); // metallicFactor 0.3 > 0
+    // No emissive: factor defaults to {0,0,0}, no tex, has_emissive false.
+    ASSERT_NEAR(mat.emissive.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(mat.emissive.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(mat.emissive.z, 0.0f, 1e-6f);
+    ASSERT_EQ(mat.emissive_tex, -1);
+    ASSERT_FALSE(m.has_emissive);
+}
+
+TEST(gltf_valid, emissive_factor_only_sets_has_emissive)
+{
+    // Material with only emissiveFactor (no texture).
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                       "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                       "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"emissiveFactor\":[1.0,0.5,0.0]}],"
+                       "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                       "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                       "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                       "\"buffers\":[{\"byteLength\":36}]}";
+    while (json.size() % 4 != 0)
+    {
+        json += ' ';
+    }
+    const auto jlen = static_cast<uint32_t>(json.size());
+
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    const auto blen = static_cast<uint32_t>(bin.size());
+
+    std::string glb;
+    emit_u32_le(glb, 0x46546C67u);
+    emit_u32_le(glb, 2u);
+    emit_u32_le(glb, 12u + 8u + jlen + 8u + blen);
+    emit_u32_le(glb, jlen);
+    emit_u32_le(glb, 0x4E4F534Au);
+    glb += json;
+    emit_u32_le(glb, blen);
+    emit_u32_le(glb, 0x004E4942u);
+    glb += bin;
+
+    TmpFile f(tmp_path("rast_emissive.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_NEAR(mat.emissive.x, 1.0f, 1e-4f);
+    ASSERT_NEAR(mat.emissive.y, 0.5f, 1e-4f);
+    ASSERT_NEAR(mat.emissive.z, 0.0f, 1e-4f);
+    ASSERT_EQ(mat.emissive_tex, -1);
+    ASSERT_TRUE(m.has_emissive);
 }
 
 TEST(gltf_valid, double_sided_flag_set)

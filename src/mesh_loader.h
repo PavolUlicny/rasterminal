@@ -145,5 +145,6 @@ inline void decode_textures(
         fix(m.specular_tex);
         fix(m.normal_tex);
         fix(m.metallic_roughness_tex);
+        fix(m.emissive_tex);
     }
 }

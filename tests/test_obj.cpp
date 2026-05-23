@@ -289,6 +289,38 @@ TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
     ASSERT_EQ(m.materials[1].specular_tex, -1);
 }
 
+TEST(obj_valid, mtl_ke_emissive_parsed)
+{
+    TmpFile mtl(tmp_path("rast_ke.mtl"), "newmtl M\nKe 1.0 0.5 0.25\n");
+    TmpFile obj(
+        tmp_path("rast_ke.obj"), "mtllib rast_ke.mtl\n"
+                                 "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                 "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].emissive.x, 1.0f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.y, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.materials[1].emissive.z, 0.25f, 1e-5f);
+    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_TRUE(m.has_emissive);
+}
+
+TEST(obj_valid, mtl_no_ke_means_no_emissive)
+{
+    TmpFile mtl(tmp_path("rast_noke.mtl"), "newmtl M\nKd 0.5 0.5 0.5\n");
+    TmpFile obj(
+        tmp_path("rast_noke.obj"), "mtllib rast_noke.mtl\n"
+                                   "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                   "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].emissive.x, 0.0f, 1e-6f);
+    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_FALSE(m.has_emissive);
+}
+
 TEST(obj_valid, mtl_ka_parsed)
 {
     TmpFile mtl(tmp_path("rast_ka.mtl"), "newmtl M\nKa 0.3 0.4 0.5\n");
@@ -568,6 +600,50 @@ TEST(obj_valid, mtl_map_kn_real_file_sets_normal_tex)
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
     ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+}
+
+TEST(obj_valid, mtl_map_ke_real_file_sets_emissive_tex)
+{
+    // Exercises the parallel decoder for the emissive slot — same wiring as map_Kd,
+    // proves emissive_tex flows through load_tex → decode_textures → compaction remap.
+    TmpFile bmp(tmp_path("rast_ke_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_ke_tex.mtl"), "newmtl M\nKe 1 1 1\nmap_Ke rast_ke_tex.bmp\n");
+    TmpFile obj(
+        tmp_path("rast_ke_tex.obj"), "mtllib rast_ke_tex.mtl\n"
+                                     "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                     "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].emissive_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.has_emissive);
+}
+
+TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
+{
+    // A non-existent map_Ke file fails decoding; decode_textures must compact it
+    // out and remap emissive_tex through fix(m.emissive_tex). Without that fix,
+    // emissive_tex would either stay pointing at a hole or rebind to the wrong slot.
+    TmpFile bmp(tmp_path("rast_ke_remap_kd.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(
+        tmp_path("rast_ke_remap.mtl"), "newmtl M\n"
+                                       "Kd 1 1 1\n"
+                                       "Ke 1 1 1\n"
+                                       "map_Ke rast_ke_remap_missing.bmp\n"
+                                       "map_Kd rast_ke_remap_kd.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_ke_remap.obj"), "mtllib rast_ke_remap.mtl\n"
+                                       "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                       "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    // Failed emissive decode is dropped; diffuse_tex must remap to the surviving slot 0.
+    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 

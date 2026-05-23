@@ -122,6 +122,8 @@ void Renderer::worker_func(int t)
             const ShadingMode smode = m_smode;
             const bool do_cull = m_cull_backfaces;
             const bool show_tex = m_show_texture;
+            const bool show_emissive = mesh->has_emissive && show_tex;
+            const bool show_metallic = mesh->has_metallic && show_tex;
             Framebuffer *fb = m_fb;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
@@ -213,7 +215,8 @@ void Renderer::worker_func(int t)
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
                                 show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
                                 show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                (mesh->has_metallic && show_tex) ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr
+                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
+                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr
                             );
                         }
                         else
@@ -336,7 +339,8 @@ void Renderer::worker_func(int t)
                             rasterize(
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1
+                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                mat.emissive
                             );
                         }
                     }

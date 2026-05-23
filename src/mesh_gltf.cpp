@@ -99,6 +99,11 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
         {
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
         }
+        mat.emissive = { m->emissive_factor[0], m->emissive_factor[1], m->emissive_factor[2] };
+        if (m->emissive_texture.texture)
+        {
+            mat.emissive_tex = load_tex(m->emissive_texture.texture->image);
+        }
         mat.double_sided = m->double_sided;
         if (m->alpha_mode == cgltf_alpha_mode_mask)
         {

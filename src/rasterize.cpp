@@ -260,7 +260,9 @@ void rasterize(
     float alpha_cutoff,
     const ShadowMap *shadow_map,
     int y_min,
-    int y_max
+    int y_max,
+    const Texture *etex,
+    vec3 emissive
 )
 {
     const int width = fb.width();
@@ -282,6 +284,8 @@ void rasterize(
     float bb_row = s.bb_row;
 
     const bool has_cutout = (alpha_cutoff > 0.0f && tex);
+    const bool has_emissive_factor = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
+    const bool do_emissive = (etex != nullptr) || has_emissive_factor;
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -317,13 +321,14 @@ void rasterize(
             float pwc = 0.0f;
             float w_corr = 1.0f;
             vec3 cutout_rgb;
+            vec2 uv{}; // shared by cutout pre-pass, diffuse sample, and emissive sample
             if (has_cutout)
             {
                 pwa = ba * inv_wa;
                 pwb = bb * inv_wb;
                 pwc = bc * inv_wc;
                 w_corr = 1.0f / (pwa + pwb + pwc);
-                const vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
                 const vec4 ta = tex->sample_rgba(uv.x, uv.y);
                 if (ta.w < alpha_cutoff)
                 {
@@ -350,6 +355,13 @@ void rasterize(
                 w_corr = 1.0f / (pwa + pwb + pwc);
             }
 
+            // UV needed when sampling either the diffuse or the emissive texture; skip
+            // recomputation when the cutout pre-pass already produced it.
+            if (!has_cutout && ((tex != nullptr) || (etex != nullptr)))
+            {
+                uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+            }
+
             // Per-pixel shadow test using interpolated world position.
             float sf = 0.0f;
             if (shadow_map)
@@ -371,15 +383,17 @@ void rasterize(
 
             if (tex)
             {
-                if (has_cutout)
+                col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y));
+            }
+
+            if (do_emissive)
+            {
+                vec3 e = emissive;
+                if (etex)
                 {
-                    col = col * cutout_rgb;
+                    e = e * etex->sample_rgb(uv.x, uv.y);
                 }
-                else
-                {
-                    const vec2 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                    col = col * tex->sample_rgb(uv.x, uv.y);
-                }
+                col = col + e;
             }
 
             fb.commit_pixel(idx, depth, vec3_to_color(col));
@@ -439,7 +453,8 @@ void rasterize_phong(
     const ShadowMap *shadow_map,
     int y_min,
     int y_max,
-    const Texture *mrtex
+    const Texture *mrtex,
+    const Texture *etex
 )
 {
     const int width = fb.width();
@@ -463,6 +478,8 @@ void rasterize_phong(
     const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
     // Off (false) for every dielectric and non-glTF material, so they run unchanged.
     const bool is_metallic = (mat.metallic > 0.0f);
+    const bool has_emissive_factor = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
+    const bool do_emissive = (etex != nullptr) || has_emissive_factor;
     const auto stride = static_cast<size_t>(fb.width());
 
     for (int y = s.y0; y <= s.y1; y++)
@@ -531,9 +548,9 @@ void rasterize_phong(
             const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
             vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
-            // Compute UV once — needed by both diffuse and normal map.
+            // Compute UV once — needed by diffuse, normal, specular, MR, and emissive samplers.
             // Skip when has_cutout: uv was already computed in the pre-pass above.
-            if (!has_cutout && (tex || nmap || stex || mrtex))
+            if (!has_cutout && (tex || nmap || stex || mrtex || etex))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
             }
@@ -631,6 +648,17 @@ void rasterize_phong(
                 const vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
                 color = lerp(lit, shd, sf);
             }
+
+            if (do_emissive)
+            {
+                vec3 e = mat.emissive;
+                if (etex)
+                {
+                    e = e * etex->sample_rgb(uv.x, uv.y);
+                }
+                color = color + e;
+            }
+
             fb.commit_pixel(idx, depth, vec3_to_color(color));
 
             ba += ba_dx;

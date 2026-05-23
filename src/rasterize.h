@@ -59,7 +59,9 @@ void rasterize(
     float alpha_cutoff,
     const ShadowMap *shadow_map,
     int y_min,
-    int y_max
+    int y_max,
+    const Texture *etex = nullptr,           // emissive texture (modulates emissive factor)
+    vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f } // emissive factor (added post-color)
 );
 
 // Rasterize one triangle with per-pixel Blinn-Phong lighting (Phong shading).
@@ -103,5 +105,6 @@ void rasterize_phong(
     int y_min,
     int y_max,
     const Texture *mrtex =
-        nullptr // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
+        nullptr,                  // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
+    const Texture *etex = nullptr // emissive texture; modulates mat.emissive when present
 );

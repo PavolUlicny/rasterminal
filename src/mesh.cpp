@@ -26,6 +26,7 @@ void Mesh::clear()
     has_vertex_colors = false;
     has_double_sided = false;
     has_metallic = false;
+    has_emissive = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
@@ -74,6 +75,10 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     has_double_sided =
         std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.double_sided; });
     has_metallic = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.metallic > 0.0f; });
+    has_emissive = std::any_of(
+        materials.begin(), materials.end(), [](const Material &m)
+        { return m.emissive_tex >= 0 || m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
+    );
 
     compute_tangents();
     if (ao && ext != "stl")

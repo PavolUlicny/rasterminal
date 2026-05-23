@@ -98,6 +98,8 @@ bool Mesh::load_obj(const std::string &path, int n_threads)
         mat.specular_tex = load_tex(m.specular_texname);
         // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
         mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname) : load_tex(m.bump_texname);
+        mat.emissive = { m.emission[0], m.emission[1], m.emission[2] };
+        mat.emissive_tex = load_tex(m.emissive_texname);
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
         if (!m.alpha_texname.empty())

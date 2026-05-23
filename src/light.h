@@ -47,10 +47,14 @@ struct Material
     vec3 ambient = { 1.0f, 1.0f, 1.0f }; // Ka; defaults to Kd when Ka absent in MTL
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
+    // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
+    // Modulated by emissive_tex when present. Zero default skips the per-pixel add entirely.
+    vec3 emissive = { 0.0f, 0.0f, 0.0f };
     // Texture slot indices into Mesh::textures (-1 = none).
     int diffuse_tex = -1;
     int specular_tex = -1;
     int normal_tex = -1;
+    int emissive_tex = -1;
     // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
     // per-pixel metallic work — non-glTF loaders leave these untouched).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
