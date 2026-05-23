@@ -115,6 +115,34 @@ inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v, const Light 
     }
 }
 
+// Shading-params overload: takes only the four fields used by lighting, avoiding the
+// ~88 B Material copy the Phong inner loop would otherwise pay per pixel.
+inline void apply_light(
+    vec3 &result,
+    const vec3 &n,
+    const vec3 &v,
+    const Light &light,
+    const vec3 &diffuse,
+    const vec3 &specular,
+    float shininess
+) noexcept
+{
+    const float diff = dot(n, light.direction);
+    if (diff >= 0.0f)
+    {
+        result += light.color * diffuse * diff;
+
+        const vec3 h = light.direction + v;
+        const float ndh_raw = dot(n, h);
+        if (ndh_raw > 0.0f)
+        {
+            const float hh = dot(h, h);
+            const float ndh_sq = (ndh_raw * ndh_raw) / hh;
+            result += light.color * specular * specular_pow_sq(ndh_sq, shininess);
+        }
+    }
+}
+
 // Blinn-Phong illumination summed over an array of directional lights.
 // ambient is a scene-level term added once (not per light).
 // v must be the unit view vector (normalize(eye - pos)) — precomputed by caller.
@@ -134,6 +162,32 @@ inline vec3 compute_lighting(
     for (int i = 0; i < n_lights; i++)
     {
         apply_light(result, n, v, lights[i], mat);
+    }
+    return result;
+}
+
+// Shading-params overload: mirrors the (normal, v, …, Material) variant above but takes
+// only the four fields lighting actually consumes. Used by rasterize_phong to skip the
+// per-pixel Material struct copy. Behaviour is bit-identical to the Material version
+// when called with the same diffuse/ambient/specular/shininess values.
+inline vec3 compute_lighting(
+    vec3 normal,
+    const vec3 &v,
+    const Light *lights,
+    int n_lights,
+    const vec3 &ambient_scene,
+    const vec3 &diffuse,
+    const vec3 &ambient_mat,
+    const vec3 &specular,
+    float shininess,
+    float ao = 1.0f
+) noexcept
+{
+    const vec3 n = normalize(normal);
+    vec3 result = ambient_scene * ambient_mat * ao;
+    for (int i = 0; i < n_lights; i++)
+    {
+        apply_light(result, n, v, lights[i], diffuse, specular, shininess);
     }
     return result;
 }

@@ -591,54 +591,48 @@ void rasterize_phong(
             // Precompute view vector once — reused by both shadow branches.
             const vec3 v = normalize(eye - pos);
 
-            // Only copy Material when a texture modifies it; otherwise use mat directly.
-            Material mat_tex;
-            const Material *use_mat = &mat;
-            if (tex || stex || is_metallic)
+            // Shading-params locals: avoid the ~88 B per-pixel Material copy by feeding
+            // only the four fields lighting consumes into the compute_lighting overload.
+            vec3 use_diffuse = mat.diffuse;
+            vec3 use_ambient = mat.ambient;
+            vec3 use_specular = mat.specular;
+            float use_shin = mat.shininess;
+
+            if (tex)
             {
-                mat_tex = mat;
-                if (tex)
-                {
-                    // Reuse the rgba sample from the cutout pre-pass when active.
-                    const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
-                    mat_tex.diffuse = mat_tex.diffuse * tc;
-                    mat_tex.ambient = mat_tex.ambient * tc;
-                }
-                if (stex)
-                {
-                    mat_tex.specular = mat_tex.specular * stex->sample_rgb(uv.x, uv.y);
-                }
-                use_mat = &mat_tex;
+                // Reuse the rgba sample from the cutout pre-pass when active.
+                const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
+                use_diffuse = use_diffuse * tc;
+                use_ambient = use_ambient * tc;
+            }
+            if (stex)
+            {
+                use_specular = use_specular * stex->sample_rgb(uv.x, uv.y);
             }
 
             // Vertex color tint: skip entirely when all vertices are white (common case).
             if (has_vcol)
             {
                 const vec3 vcol = (vcola * pwa + vcolb * pwb + vcolc * pwc) * w_corr;
-                if (use_mat == &mat)
-                {
-                    mat_tex = mat;
-                    use_mat = &mat_tex;
-                }
-                mat_tex.diffuse = mat_tex.diffuse * vcol;
-                mat_tex.ambient = mat_tex.ambient * vcol;
+                use_diffuse = use_diffuse * vcol;
+                use_ambient = use_ambient * vcol;
             }
 
-            // Metals tint specular reflectance (F0) toward their base colour (already
-            // in mat_tex.diffuse); dielectrics keep the 4% baseline. Diffuse is
-            // deliberately NOT zeroed as strict PBR would: with no environment map a
-            // diffuse-less metal has nothing to reflect and renders near-black.
+            // Metals tint specular reflectance (F0) toward their base colour (already in
+            // use_diffuse); dielectrics keep the 4% baseline. Diffuse is deliberately NOT
+            // zeroed as strict PBR would: with no environment map a diffuse-less metal has
+            // nothing to reflect and renders near-black.
             if (is_metallic)
             {
-                const vec3 base = mat_tex.diffuse;
+                const vec3 base = use_diffuse;
                 float metalness = mat.metallic;
                 if (mrtex)
                 {
                     const vec3 mr = mrtex->sample_rgb(uv.x, uv.y); // G=roughness, B=metallic
                     metalness *= mr.z;
-                    mat_tex.shininess = roughness_to_shininess(mat.roughness * mr.y);
+                    use_shin = roughness_to_shininess(mat.roughness * mr.y);
                 }
-                mat_tex.specular = lerp(DIELECTRIC_F0, base, metalness);
+                use_specular = lerp(DIELECTRIC_F0, base, metalness);
             }
 
             // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.
@@ -648,16 +642,24 @@ void rasterize_phong(
             vec3 color;
             if (sf <= 0.0f)
             {
-                color = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
+                color = compute_lighting(
+                    normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
+                );
             }
             else if (sf >= 1.0f)
             {
-                color = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
+                color = compute_lighting(
+                    normal, v, sl, n_shadow, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
+                );
             }
             else
             {
-                const vec3 lit = compute_lighting(normal, v, lights, n_lights, ambient, *use_mat, ao);
-                const vec3 shd = compute_lighting(normal, v, sl, n_shadow, ambient, *use_mat, ao);
+                const vec3 lit = compute_lighting(
+                    normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
+                );
+                const vec3 shd = compute_lighting(
+                    normal, v, sl, n_shadow, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
+                );
                 color = lerp(lit, shd, sf);
             }
 
