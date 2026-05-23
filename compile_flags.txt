@@ -1,7 +1,7 @@
 -isystem
 vendor/cgltf
 -isystem
-vendor/meshoptimizer
+vendor/meshoptimizer/src
 -isystem
 vendor/stb
 -isystem
