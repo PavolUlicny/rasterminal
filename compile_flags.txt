@@ -1,0 +1,12 @@
+-isystem
+vendor/cgltf
+-isystem
+vendor/meshoptimizer
+-isystem
+vendor/stb
+-isystem
+vendor/stl_reader
+-isystem
+vendor/tinyobjloader
+-isystem
+vendor/tinyply

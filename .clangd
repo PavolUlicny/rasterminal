@@ -1,5 +1,5 @@
 CompileFlags:
-  CompilationDatabase: build
   # Force C++ for standalone-opened .h files; otherwise clangd guesses
   # Objective-C++ for them and fires google-objc-* naming checks on C++ helpers.
-  Add: [-xc++]
+  Add:
+    - -xc++
