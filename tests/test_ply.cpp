@@ -1110,3 +1110,34 @@ TEST(ply_valid, ascii_face_color_with_uv_coords)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
     ASSERT_TRUE(m.has_vertex_colors);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CREASE SMOOTHING: load_ply forwards crease_cos to compute_normals
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ply_valid, crease_smoothing_splits_hard_edge)
+{
+    // No normals + a 90 deg fold: load_model's default crease angle (60) is
+    // forwarded through load_ply to compute_normals, so the shared edge splits.
+    TmpFile t(
+        tmp_path("rast_ply_crease.ply"), "ply\nformat ascii 1.0\n"
+                                         "element vertex 4\n"
+                                         "property float x\nproperty float y\nproperty float z\n"
+                                         "element face 2\n"
+                                         "property list uchar int vertex_indices\n"
+                                         "end_header\n"
+                                         "0 0 0\n1 0 0\n0 1 0\n0 0 1\n"
+                                         "3 0 1 2\n"
+                                         "3 1 0 3\n"
+    );
+    Mesh m = load_ok(t.path);
+    int at_origin = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+        }
+    }
+    ASSERT_EQ(at_origin, 2); // split because 90 deg > 60 deg default crease
+}
