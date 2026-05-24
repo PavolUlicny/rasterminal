@@ -33,6 +33,7 @@ struct Mesh
     bool has_double_sided = false;   // true if any material in the mesh has double_sided = true
     bool has_metallic = false;       // true if any material has metallic > 0 (gates the Phong metallic path)
     bool has_emissive = false;       // true if any material has a non-zero emissive factor or an emissive texture
+    bool has_normal_scale = false;   // true if any normal-mapped material has a non-unit glTF normalScale
 
     [[nodiscard]] const Material &mat_at(uint32_t idx) const
     {

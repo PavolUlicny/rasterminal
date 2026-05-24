@@ -98,6 +98,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
         if (m->normal_texture.texture)
         {
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
+            mat.normal_scale = m->normal_texture.scale;
         }
         mat.emissive = { m->emissive_factor[0], m->emissive_factor[1], m->emissive_factor[2] };
         if (m->emissive_texture.texture)

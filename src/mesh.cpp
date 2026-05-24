@@ -27,6 +27,7 @@ void Mesh::clear()
     has_double_sided = false;
     has_metallic = false;
     has_emissive = false;
+    has_normal_scale = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
@@ -75,6 +76,10 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     has_double_sided =
         std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.double_sided; });
     has_metallic = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.metallic > 0.0f; });
+    has_normal_scale = std::any_of(
+        materials.begin(), materials.end(),
+        [](const Material &m) { return m.normal_tex >= 0 && m.normal_scale != 1.0f; }
+    );
 
     // Industry-convention promotion: when an emissive texture is bound but the factor is at
     // the spec default {0,0,0}, promote to {1,1,1} so the texture actually glows (matches

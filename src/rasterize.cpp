@@ -462,7 +462,8 @@ void rasterize_phong(
     int y_max,
     const Texture *mrtex,
     const Texture *etex,
-    vec3 emissive
+    vec3 emissive,
+    bool apply_normal_scale
 )
 {
     const int width = fb.width();
@@ -573,7 +574,15 @@ void rasterize_phong(
                 const vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
-                const vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
+                vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
+                // glTF normalScale: scales X/Y of the tangent-space normal (Z unchanged) before TBN.
+                // apply_normal_scale is loop-invariant; mesh-level gate keeps default-scale paths free.
+                if (apply_normal_scale)
+                {
+                    const float ns = mat.normal_scale;
+                    nm.x *= ns;
+                    nm.y *= ns;
+                }
 
                 // Re-orthogonalize T against the interpolated N (Gram-Schmidt),
                 // then derive B so TBN is a proper orthonormal basis.
@@ -591,7 +600,7 @@ void rasterize_phong(
             // Precompute view vector once — reused by both shadow branches.
             const vec3 v = normalize(eye - pos);
 
-            // Shading-params locals: avoid the ~88 B per-pixel Material copy by feeding
+            // Shading-params locals: avoid the ~92 B per-pixel Material copy by feeding
             // only the four fields lighting consumes into the compute_lighting overload.
             vec3 use_diffuse = mat.diffuse;
             vec3 use_ambient = mat.ambient;

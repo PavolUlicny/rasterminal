@@ -62,6 +62,11 @@ struct Material
     int specular_tex = -1;
     int normal_tex = -1;
     int emissive_tex = -1;
+    // glTF normalTexture.scale: scales the X/Y components of the sampled tangent-space normal
+    // before TBN transformation (spec: scaledNormal = normalize((sample*2-1) * vec3(scale,scale,1))).
+    // Default 1.0 = no-op; non-glTF loaders never touch this. Mesh::has_normal_scale gates the
+    // per-pixel multiply so the common case (scale==1 or no normal map) pays zero.
+    float normal_scale = 1.0f;
     // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
     // per-pixel metallic work — non-glTF loaders leave these untouched).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
@@ -116,7 +121,7 @@ inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v, const Light 
 }
 
 // Shading-params overload: takes only the four fields used by lighting, avoiding the
-// ~88 B Material copy the Phong inner loop would otherwise pay per pixel.
+// ~92 B Material copy the Phong inner loop would otherwise pay per pixel.
 inline void apply_light(
     vec3 &result,
     const vec3 &n,
