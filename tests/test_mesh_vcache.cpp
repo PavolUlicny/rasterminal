@@ -256,6 +256,8 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
 {
     // 3-triangle OBJ with one shared vertex (v0) and two disconnected pairs.
     // Verifies that all geometry is preserved regardless of the optimizer's output order.
+    // Explicit normals so compute_normals is skipped — v0 is a point-share (bowtie)
+    // that crease smoothing would otherwise split, which is irrelevant to vcache.
     const std::string obj = "v  0 0 0\n" // shared by tri0 and tri2
                             "v  1 0 0\n" // only tri0
                             "v  0 1 0\n" // only tri0
@@ -264,9 +266,10 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
                             "v  3 1 0\n" // only tri1
                             "v  0 0 1\n" // only tri2
                             "v  1 0 1\n" // only tri2
-                            "f 1 2 3\n"
-                            "f 4 5 6\n"
-                            "f 1 7 8\n";
+                            "vn 0 0 1\n"
+                            "f 1//1 2//1 3//1\n"
+                            "f 4//1 5//1 6//1\n"
+                            "f 1//1 7//1 8//1\n";
     TmpFile f(tmp_path("rast_vc_order.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.triangles.size() == 3u);
@@ -292,13 +295,16 @@ TEST(vcache, cache_update_cur_zero)
     // 5-vertex mesh with one shared vertex at (0,0,0) referenced by both triangles.
     // After any correct optimizer, both triangles must reference the same index
     // for the shared vertex regardless of which triangle is emitted first.
+    // Explicit normals so compute_normals is skipped — v0 is a point-share (bowtie)
+    // that crease smoothing would otherwise split into two vertices.
     const std::string obj = "v 0 0 0\n" // shared
                             "v 1 0 0\n"
                             "v 2 0 0\n"
                             "v 3 0 0\n"
                             "v 4 0 0\n"
-                            "f 2 3 1\n"
-                            "f 1 4 5\n";
+                            "vn 0 0 1\n"
+                            "f 2//1 3//1 1//1\n"
+                            "f 1//1 4//1 5//1\n";
     TmpFile f(tmp_path("rast_vc_cur0.obj"), obj);
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.triangles.size() == 2u);
