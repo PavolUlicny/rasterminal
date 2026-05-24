@@ -134,16 +134,22 @@ void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, 
     // wedge of the same position, not a new group). The identity path (weld ==
     // nullptr; PLY/STL/glTF) skips the array entirely: grp(v) returns v, and
     // appended indices used as sort keys cluster consistently on their own.
-    const bool has_weld = (weld != nullptr);
+    // Manual copy (not vector copy-assign or range-ctor) so GCC's LTO
+    // -Wnull-dereference pass doesn't false-positive deep inside std::copy.
     std::vector<uint32_t> group_of;
-    if (has_weld)
+    if (weld != nullptr)
     {
-        group_of = *weld;
+        group_of.reserve(weld->size());
+        for (const uint32_t g : *weld)
+        {
+            group_of.push_back(g);
+        }
     }
     else
     {
         n_groups = n_verts;
     }
+    const bool has_weld = (weld != nullptr);
     auto grp = [has_weld, &group_of](uint32_t v) -> uint32_t { return has_weld ? group_of[v] : v; };
 
     // Per-face raw normal (cross product magnitude == 2x area, so summing gives
