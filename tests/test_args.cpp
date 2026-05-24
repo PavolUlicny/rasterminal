@@ -66,6 +66,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
     ASSERT_TRUE(r.args.hud);
+    ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
 }
 
 // ─── --help ───────────────────────────────────────────────────────────────────
@@ -1150,4 +1151,83 @@ TEST(args, bench_warmup_equals_form)
     ParseResult r = run({ "--bench", "50", "--bench-warmup=10", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_EQ(r.args.bench_warmup, 10);
+}
+
+// ─── --smooth-angle ───────────────────────────────────────────────────────────
+
+TEST(args, smooth_angle_valid)
+{
+    ParseResult r = run({ "--smooth-angle", "30", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.smooth_angle, 30.0f, 1e-6f);
+}
+
+TEST(args, smooth_angle_equals_form)
+{
+    ParseResult r = run({ "--smooth-angle=45.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.smooth_angle, 45.5f, 1e-6f);
+}
+
+TEST(args, smooth_angle_zero_is_valid)
+{
+    ParseResult r = run({ "--smooth-angle", "0", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.smooth_angle, 0.0f, 1e-6f);
+}
+
+TEST(args, smooth_angle_max_is_valid)
+{
+    ParseResult r = run({ "--smooth-angle", "180", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.smooth_angle, 180.0f, 1e-6f);
+}
+
+TEST(args, smooth_angle_negative_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "-1", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_above_max_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "181", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_non_numeric_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "foo", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_trailing_garbage_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "30deg", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_missing_value_is_error)
+{
+    ParseResult r = run({ "--smooth-angle" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_nan_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "nan", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, smooth_angle_inf_is_error)
+{
+    ParseResult r = run({ "--smooth-angle", "inf", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
 }
