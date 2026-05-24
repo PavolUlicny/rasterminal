@@ -1,6 +1,9 @@
 #include "loader_util.h"
 #include "inline_bmp.h"
 
+#include <cmath>
+#include <vector>
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  HAND-CRAFTED VALID OBJ — exercises specific format features in isolation
 // ═══════════════════════════════════════════════════════════════════════════
@@ -548,6 +551,230 @@ TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
         const float len_sq = (v.normal.x * v.normal.x) + (v.normal.y * v.normal.y) + (v.normal.z * v.normal.z);
         ASSERT_NEAR(len_sq, 1.0f, 0.01f);
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UV-SEAM NORMAL WELDING — normal-less OBJs split one position into several
+//  vertices by texcoord; compute_normals welds them by source position so the
+//  seam smooths like a desktop viewer, while the dihedral crease test still wins.
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace
+{
+    // Collect the normals of every vertex sitting exactly at the origin.
+    [[maybe_unused]] std::vector<vec3> origin_normals(const Mesh &m)
+    {
+        std::vector<vec3> out;
+        for (const auto &v : m.vertices)
+        {
+            if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+            {
+                out.push_back(v.normal);
+            }
+        }
+        return out;
+    }
+} // namespace
+
+TEST(obj_valid, uv_seam_below_crease_smooths)
+{
+    // Two faces share edge (0,0,0)-(1,0,0) at ~11 deg (< 60 deg crease), but the
+    // shared-edge vertices carry different vt in each face → the loader splits the
+    // origin into two vertices. Welding by source position must smooth them: both
+    // origin vertices stay (UV preserved) but share one blended normal.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 -1 0.2\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_seam_smooth.obj"), obj);
+    Mesh m = load_ok(f.path);
+    const std::vector<vec3> ns = origin_normals(m);
+    ASSERT_EQ(ns.size(), size_t{ 2 }); // UV split preserved
+    // Same welded normal on both halves, and it is the blend (not a face normal).
+    ASSERT_NEAR(ns[0].x, ns[1].x, 1e-5f);
+    ASSERT_NEAR(ns[0].y, ns[1].y, 1e-5f);
+    ASSERT_NEAR(ns[0].z, ns[1].z, 1e-5f);
+    ASSERT_TRUE(ns[0].z > 0.9f && ns[0].y > 0.0f);
+}
+
+TEST(obj_valid, uv_seam_above_crease_stays_split)
+{
+    // Same seam, but folded 90 deg (> 60 deg crease). Welding must NOT override the
+    // dihedral test: the origin keeps two vertices with distinct axis-aligned
+    // normals (+Z and +Y), exactly as a hard edge.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_seam_hard.obj"), obj);
+    Mesh m = load_ok(f.path);
+    const std::vector<vec3> ns = origin_normals(m);
+    ASSERT_EQ(ns.size(), size_t{ 2 });
+    const bool a_is_z = ns[0].z > 0.99f;
+    const vec3 &z_n = a_is_z ? ns[0] : ns[1];
+    const vec3 &y_n = a_is_z ? ns[1] : ns[0];
+    ASSERT_TRUE(z_n.z > 0.99f);
+    ASSERT_TRUE(y_n.y > 0.99f);
+}
+
+TEST(obj_valid, uv_seam_coplanar_one_wedge_spans_both_halves)
+{
+    // Two coplanar (+Z) faces share edge (0,0,0)-(0,1,0) but seam-split the origin
+    // by vt. The shared edge unions both halves into ONE wedge whose normal must
+    // broadcast to both original vertices — the core welded-materialization path.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv -1 0 0\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 1/4 3/5 4/6\n";
+    TmpFile f(tmp_path("rast_seam_coplanar.obj"), obj);
+    Mesh m = load_ok(f.path);
+    const std::vector<vec3> ns = origin_normals(m);
+    ASSERT_EQ(ns.size(), size_t{ 2 });
+    for (const vec3 &n : ns)
+    {
+        ASSERT_NEAR(n.x, 0.0f, 1e-5f);
+        ASSERT_NEAR(n.y, 0.0f, 1e-5f);
+        ASSERT_NEAR(n.z, 1.0f, 1e-5f);
+    }
+}
+
+TEST(obj_valid, no_seam_fold_merges_unchanged)
+{
+    // The common case: shared-edge sub-crease fold with the SAME vt on both faces
+    // (no seam). The shared origin must remain a single merged vertex — welding
+    // must not spuriously split or otherwise change the non-seam path.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 -1 0.2\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/2 1/1 4/4\n";
+    TmpFile f(tmp_path("rast_seam_none.obj"), obj);
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(origin_normals(m).size(), size_t{ 1 }); // merged, not split
+}
+
+TEST(obj_valid, uv_seam_bowtie_point_share_splits)
+{
+    // Two faces touch only at the origin (a point, no shared edge), seam-split by
+    // vt. Even at full smoothing they must stay split — a bowtie point is not a
+    // connected surface, and welding the position does not connect it.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\nv 0 1 1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 1/4 4/5 5/6\n";
+    TmpFile f(tmp_path("rast_seam_bowtie.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    ASSERT_EQ(origin_normals(m).size(), size_t{ 2 });
+}
+
+TEST(obj_valid, uv_seam_degenerate_face_no_corruption)
+{
+    // A zero-area face references the origin twice with distinct vt. Its corners
+    // are excluded from clustering (degenerate) and contribute no normal; the
+    // valid face must still produce finite unit normals with no crash.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 1/4 1/5 2/2\n";
+    TmpFile f(tmp_path("rast_seam_degen.obj"), obj);
+    Mesh m = load_ok(f.path);
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_TRUE(std::isfinite(v.normal.x) && std::isfinite(v.normal.y) && std::isfinite(v.normal.z));
+    }
+    // The valid face's origin corner keeps a proper +Z normal.
+    bool found_z = false;
+    for (const vec3 &n : origin_normals(m))
+    {
+        if (n.z > 0.99f)
+        {
+            found_z = true;
+        }
+    }
+    ASSERT_TRUE(found_z);
+}
+
+TEST(obj_valid, faceted_cube_appends_stay_in_bounds)
+{
+    // A normal-less, UV-less cube loaded fully faceted (crease 0) splits every
+    // shared vertex into one wedge per incident face → many appended split
+    // vertices, and later groups revisit triangles whose corners were already
+    // rewritten to those appended indices. The welded-adjacency lookup must stay
+    // in bounds for appended vertices (regression: it indexed the fixed-size weld
+    // map, overflowing once a corner pointed past the original vertex count).
+    const std::string obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\n"
+                            "v -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n"
+                            "f 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\n"
+                            "f 2 6 7 3\nf 3 7 8 4\nf 4 8 5 1\n";
+    TmpFile f(tmp_path("rast_faceted_cube.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/0.0f));
+    ASSERT_EQ(m.triangles.size(), size_t{ 12 });
+    for (const auto &v : m.vertices)
+    {
+        const float len = v.normal.length();
+        ASSERT_TRUE(std::isfinite(len));
+        ASSERT_NEAR(len, 1.0f, 1e-4f);
+    }
+}
+
+TEST(obj_valid, uv_seam_crease_split_syncs_vertex_colors)
+{
+    // OBJ vertex-color extension + a UV seam at a 90 deg fold. Each seam half
+    // lands in its own wedge (crease > threshold), so Pass B appends one split
+    // vertex per half — the has_weld branch on the vcol sync path. After:
+    //   - vertex_colors stays length-matched to vertices (parallel-array invariant);
+    //   - all four origin vertices inherit the source color, not white;
+    //   - the two +Z halves carry the +Z normal, the two +Y halves carry +Y.
+    const std::string obj = "v 0 0 0 0.8 0.2 0.1\n"
+                            "v 1 0 0 0.8 0.2 0.1\n"
+                            "v 0 1 0 0.8 0.2 0.1\n"
+                            "v 0 0 1 0.8 0.2 0.1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_seam_vcol.obj"), obj);
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size()); // parallel-array invariant
+    int origin_count = 0;
+    for (size_t i = 0; i < m.vertices.size(); i++)
+    {
+        const Vertex &v = m.vertices[i];
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            origin_count++;
+            ASSERT_NEAR(m.vertex_colors[i].x, 0.8f, 1e-5f);
+            ASSERT_NEAR(m.vertex_colors[i].y, 0.2f, 1e-5f);
+            ASSERT_NEAR(m.vertex_colors[i].z, 0.1f, 1e-5f);
+        }
+    }
+    ASSERT_EQ(origin_count, 2); // origin still split despite welding (90 deg > 60 deg crease)
+}
+
+TEST(obj_valid, uv_seam_smooth_angle_extremes)
+{
+    // 90 deg fold across a seam. --smooth-angle 0 → faceted (two distinct axis
+    // normals); 180 → fully smooth (two vertices sharing one blended normal).
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_seam_extremes.obj"), obj);
+
+    Mesh faceted;
+    ASSERT_TRUE(faceted.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/0.0f));
+    const std::vector<vec3> fn = origin_normals(faceted);
+    ASSERT_EQ(fn.size(), size_t{ 2 });
+    ASSERT_TRUE((fn[0].z > 0.99f && fn[1].y > 0.99f) || (fn[1].z > 0.99f && fn[0].y > 0.99f));
+
+    Mesh smooth;
+    ASSERT_TRUE(smooth.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    const std::vector<vec3> sn = origin_normals(smooth);
+    ASSERT_EQ(sn.size(), size_t{ 2 });
+    ASSERT_NEAR(sn[0].x, sn[1].x, 1e-5f);
+    ASSERT_NEAR(sn[0].y, sn[1].y, 1e-5f);
+    ASSERT_NEAR(sn[0].z, sn[1].z, 1e-5f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
