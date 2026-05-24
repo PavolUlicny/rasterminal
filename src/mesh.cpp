@@ -117,7 +117,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────
 
-void Mesh::compute_normals(float crease_cos)
+void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, size_t n_groups)
 {
     const size_t n_verts = vertices.size();
     const size_t n_tris = triangles.size();
@@ -125,6 +125,26 @@ void Mesh::compute_normals(float crease_cos)
     {
         return;
     }
+
+    // Adjacency is built in welded space: group_of[v] folds vertices that share a
+    // position group (e.g. OBJ UV-seam halves) onto one id, so they smooth as one
+    // surface while staying distinct output vertices. The welded path holds the
+    // map locally so it stays valid when Pass B appends split copies; each
+    // appended vertex inherits its source's group id (a split is just another
+    // wedge of the same position, not a new group). The identity path (weld ==
+    // nullptr; PLY/STL/glTF) skips the array entirely: grp(v) returns v, and
+    // appended indices used as sort keys cluster consistently on their own.
+    const bool has_weld = (weld != nullptr);
+    std::vector<uint32_t> group_of;
+    if (has_weld)
+    {
+        group_of = *weld;
+    }
+    else
+    {
+        n_groups = n_verts;
+    }
+    auto grp = [has_weld, &group_of](uint32_t v) -> uint32_t { return has_weld ? group_of[v] : v; };
 
     // Per-face raw normal (cross product magnitude == 2x area, so summing gives
     // area-weighted averaging for free) and reciprocal length (0 = degenerate).
@@ -140,20 +160,20 @@ void Mesh::compute_normals(float crease_cos)
         face_inv_len[t] = (len_sq > 1e-24f) ? (1.0f / std::sqrt(len_sq)) : 0.0f;
     }
 
-    // CSR adjacency: vertex -> incident corners. Each triangle contributes 3.
-    std::vector<uint32_t> offsets(n_verts + 1, 0);
+    // CSR adjacency: position group -> incident corners. Each triangle adds 3.
+    std::vector<uint32_t> offsets(n_groups + 1, 0);
     for (size_t t = 0; t < n_tris; t++)
     {
         for (const uint32_t vi : triangles[t].v)
         {
-            offsets[vi + 1]++;
+            offsets[grp(vi) + 1]++;
         }
     }
-    for (size_t i = 0; i < n_verts; i++)
+    for (size_t i = 0; i < n_groups; i++)
     {
         offsets[i + 1] += offsets[i];
     }
-    const size_t n_corners = offsets[n_verts]; // == 3 * n_tris
+    const size_t n_corners = offsets[n_groups]; // == 3 * n_tris
     std::vector<uint32_t> corner_tri(n_corners);
     std::vector<uint8_t> corner_c(n_corners);
     {
@@ -162,20 +182,30 @@ void Mesh::compute_normals(float crease_cos)
         {
             for (uint8_t c = 0; c < 3; c++)
             {
-                const uint32_t slot = cursor[triangles[t].v[c]]++;
+                const uint32_t slot = cursor[grp(triangles[t].v[c])]++;
                 corner_tri[slot] = static_cast<uint32_t>(t);
                 corner_c[slot] = c;
             }
         }
     }
 
-    // Per-vertex clustering: incident faces sharing a sub-threshold edge through
-    // the vertex are unioned into one "wedge" (one normal); the rest split off.
-    std::vector<uint32_t> parent;      // union-find over local incident indices
-    std::vector<uint32_t> root_to_out; // local root -> output vertex index (lazy)
-    // (endpoint vertex, local corner) pairs: the two edges each corner forms at
-    // the vertex. Sorted per vertex so corners sharing an edge land in one run.
+    // Per-group clustering: incident faces sharing a sub-threshold edge through
+    // the group are unioned into one "wedge" (one normal); the rest split off.
+    std::vector<uint32_t> parent; // union-find over local incident indices
+    std::vector<uint32_t> roots;  // find(k) cached after Pass A so Pass B reuses
+    // (endpoint group, local corner) pairs: the two edges each corner forms at
+    // the group. Sorted per group so corners sharing an edge land in one run.
     std::vector<std::pair<uint32_t, uint32_t>> edges;
+    std::vector<vec3> wedge_n; // local root -> summed (area-weighted) normal
+    // (original vertex, local root) -> output vertex; one entry per emitted
+    // wedge-vertex. Group output count is tiny (1 normally), so linear scan.
+    struct OutSlot
+    {
+        uint32_t ov;
+        uint32_t root;
+        uint32_t out;
+    };
+    std::vector<OutSlot> out_map;
     auto find = [&parent](uint32_t x) -> uint32_t
     {
         while (parent[x] != x)
@@ -186,25 +216,24 @@ void Mesh::compute_normals(float crease_cos)
         return x;
     };
 
-    const size_t orig_n_verts = n_verts;
     // Loaders that populate vertex_colors must keep it length-matched to vertices
     // (pad missing entries before calling); compute_normals only propagates colors
     // when the parallel-array invariant already holds.
-    const bool has_vcol = (vertex_colors.size() == orig_n_verts);
+    const bool has_vcol = (vertex_colors.size() == n_verts);
 
-    for (size_t v = 0; v < orig_n_verts; v++)
+    for (size_t g = 0; g < n_groups; g++)
     {
-        const uint32_t start = offsets[v];
-        const uint32_t deg = offsets[v + 1] - start;
+        const uint32_t start = offsets[g];
+        const uint32_t deg = offsets[g + 1] - start;
         if (deg == 0)
         {
-            vertices[v].normal = vec3{}; // unreferenced vertex
-            continue;
+            continue; // group has no corners (unreferenced position)
         }
 
         parent.resize(deg);
-        // Emit each non-degenerate corner's two edge-endpoints. Degenerate faces
-        // are omitted so they never union (they stay singleton wedges, as before).
+        // Emit each non-degenerate corner's two edge-endpoints (in welded space).
+        // Degenerate faces are omitted so they never union (they stay singleton
+        // wedges, as before).
         edges.clear();
         for (uint32_t k = 0; k < deg; k++)
         {
@@ -216,12 +245,12 @@ void Mesh::compute_normals(float crease_cos)
             }
             const Triangle &tri = triangles[t];
             const uint8_t c = corner_c[start + k];
-            edges.emplace_back(tri.v[(c + 1u) % 3u], k);
-            edges.emplace_back(tri.v[(c + 2u) % 3u], k);
+            edges.emplace_back(grp(tri.v[(c + 1u) % 3u]), k);
+            edges.emplace_back(grp(tri.v[(c + 2u) % 3u]), k);
         }
 
         // Group corners by shared endpoint, then union those whose dihedral stays
-        // below the crease threshold. Each run is one edge through the vertex;
+        // below the crease threshold. Each run is one edge through the group;
         // runs are size ~2 on manifold meshes, so this is O(deg log deg) (sort)
         // rather than the O(deg^2) of comparing all corner pairs — which spikes
         // on high-valence fan apices (cone tips, UV-sphere poles). A run only
@@ -258,38 +287,73 @@ void Mesh::compute_normals(float crease_cos)
             a = b;
         }
 
-        // Materialize wedges: the first reuses index v, additional ones append a
-        // split copy. Accumulate each wedge's area-weighted normal as we rewrite
-        // the triangle corners to point at their wedge's vertex.
-        root_to_out.assign(deg, UINT32_MAX);
-        bool reused_v = false;
+        // Pass A: sum each wedge's area-weighted normal across all its corners.
+        // The wedge may span several original vertices (welded seam halves); all
+        // of them must receive this same summed normal so the seam stays smooth.
+        // find() roots are cached for Pass B (otherwise we'd traverse the same
+        // union-find chains twice per corner).
+        wedge_n.assign(deg, vec3{});
+        roots.resize(deg);
         for (uint32_t k = 0; k < deg; k++)
         {
             const uint32_t r = find(k);
-            uint32_t out_v = root_to_out[r];
+            roots[k] = r;
+            wedge_n[r] += face_n[corner_tri[start + k]];
+        }
+
+        // Pass B: materialize one output vertex per (original vertex, wedge). Each
+        // original vertex reuses its own slot for its first wedge and appends a
+        // split copy (syncing vertex_colors) for any further wedge; both halves of
+        // a welded seam keep their own UV but share the wedge normal.
+        out_map.clear();
+        for (uint32_t k = 0; k < deg; k++)
+        {
+            const uint32_t t = corner_tri[start + k];
+            const uint8_t c = corner_c[start + k];
+            const uint32_t ov = triangles[t].v[c]; // original vertex (its UV/ao)
+            const uint32_t r = roots[k];
+
+            uint32_t out_v = UINT32_MAX;
+            bool ov_seen = false;
+            for (const OutSlot &slot : out_map)
+            {
+                if (slot.ov == ov)
+                {
+                    ov_seen = true;
+                    if (slot.root == r)
+                    {
+                        out_v = slot.out;
+                        break;
+                    }
+                }
+            }
             if (out_v == UINT32_MAX)
             {
-                if (!reused_v)
+                if (!ov_seen)
                 {
-                    out_v = static_cast<uint32_t>(v);
-                    reused_v = true;
+                    out_v = ov;
                 }
                 else
                 {
                     out_v = static_cast<uint32_t>(vertices.size());
-                    const Vertex split = vertices[v]; // copies pos/uv/ao
+                    const Vertex split = vertices[ov]; // copies pos/uv/ao
                     vertices.push_back(split);
                     if (has_vcol)
                     {
-                        vertex_colors.push_back(vertex_colors[v]);
+                        vertex_colors.push_back(vertex_colors[ov]);
+                    }
+                    if (has_weld)
+                    {
+                        // A split inherits its source's group id so any later
+                        // group that revisits this corner reads a valid, stable
+                        // group key. Identity path skips the array (grp(v)==v).
+                        group_of.push_back(group_of[ov]);
                     }
                 }
-                vertices[out_v].normal = vec3{};
-                root_to_out[r] = out_v;
+                vertices[out_v].normal = wedge_n[r];
+                out_map.push_back({ ov, r, out_v });
             }
-            const uint32_t t = corner_tri[start + k];
-            triangles[t].v[corner_c[start + k]] = out_v;
-            vertices[out_v].normal += face_n[t];
+            triangles[t].v[c] = out_v;
         }
     }
 

@@ -91,7 +91,17 @@ struct Mesh
     // May append new entries to `vertices` (and the parallel `vertex_colors` when
     // present) and rewrite Triangle::v[] indices to point at the split copies.
     // Called by each loader when the file provides no normal data.
-    void compute_normals(float crease_cos);
+    //
+    // weld (optional) maps each vertex index to a position-group id so adjacency
+    // is computed in welded space: distinct vertices sharing a group are treated
+    // as one position for edge-sharing and smoothing, but stay separate output
+    // vertices (each keeps its own UV) sharing the welded normal. OBJ supplies it
+    // to smooth across UV seams (the loader splits one position into several
+    // vertices by texcoord); the source OBJ vertex index is the group id, and
+    // n_groups is the upper bound on those ids (the OBJ position count). Passing
+    // weld = nullptr means identity grouping (group id == vertex index) —
+    // byte-identical to no welding, used by PLY/STL/glTF; n_groups is ignored.
+    void compute_normals(float crease_cos, const std::vector<uint32_t> *weld = nullptr, size_t n_groups = 0);
 
     // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
     // Called by load_model() after the format-specific loader returns.

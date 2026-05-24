@@ -118,6 +118,12 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
     bool all_have_normals = !attrib.normals.empty();
 
+    // Position-group id per created vertex (the source OBJ vertex_index), so
+    // compute_normals can smooth across UV seams that split one position into
+    // several vertices. Only consumed when the file lacks (full) normals.
+    std::vector<uint32_t> weld;
+    weld.reserve(n_pos);
+
     auto get_vertex = [&](const tinyobj::index_t &idx) -> uint32_t
     {
         const size_t key = (static_cast<size_t>(idx.vertex_index + 1) * size_t{ 2654435761 }) ^
@@ -152,6 +158,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
         v.ao = 1.0f;
         vertices.push_back(v);
+        weld.push_back(idx.vertex_index >= 0 ? static_cast<uint32_t>(idx.vertex_index) : 0u);
         return it->second;
     };
 
@@ -228,7 +235,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
     if (attrib.normals.empty() || !all_have_normals)
     {
-        compute_normals(crease_cos);
+        compute_normals(crease_cos, &weld, n_pos);
     }
 
     // tex_requests holds obj_dir-resolved paths, decoded in parallel.
