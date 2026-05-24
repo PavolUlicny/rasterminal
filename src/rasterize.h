@@ -108,5 +108,7 @@ void rasterize_phong(
         nullptr, // glTF metallic-roughness texture; trailing+defaulted so non-metallic callers omit it
     const Texture *etex = nullptr,            // emissive texture; modulates the emissive factor when present
     vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f }, // emissive factor (gated by caller, not read from mat)
-    bool apply_normal_scale = false           // gates the glTF normalScale per-pixel multiply (Mesh::has_normal_scale)
+    bool apply_normal_scale = false,          // gates the glTF normalScale per-pixel multiply (Mesh::has_normal_scale)
+    const Texture *octex = nullptr, // glTF occlusion texture; R channel overrides baked AO (Mesh::has_occlusion)
+    float occlusion_strength = 1.0f // occlusionTexture.strength: ao = 1 + strength*(R-1)
 );

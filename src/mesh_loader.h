@@ -146,5 +146,6 @@ inline void decode_textures(
         fix(m.normal_tex);
         fix(m.metallic_roughness_tex);
         fix(m.emissive_tex);
+        fix(m.occlusion_tex);
     }
 }

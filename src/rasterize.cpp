@@ -463,7 +463,9 @@ void rasterize_phong(
     const Texture *mrtex,
     const Texture *etex,
     vec3 emissive,
-    bool apply_normal_scale
+    bool apply_normal_scale,
+    const Texture *octex,
+    float occlusion_strength
 )
 {
     const int width = fb.width();
@@ -487,6 +489,9 @@ void rasterize_phong(
     const bool has_cutout = (mat.alpha_cutoff > 0.0f && tex);
     // Off (false) for every dielectric and non-glTF material, so they run unchanged.
     const bool is_metallic = (mat.metallic > 0.0f);
+    // ORM packing (glTF): when occlusion and metallic-roughness reference the same image,
+    // load_tex dedups them to one Texture* — sample once and reuse the AO read for metalness.
+    const bool occ_is_mr = (octex != nullptr && octex == mrtex);
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
     // The factor is passed in (not read from mat) so the caller can gate emissive entirely
@@ -563,7 +568,7 @@ void rasterize_phong(
             // Compute UV once — needed by diffuse, normal, specular, MR, and emissive samplers.
             // Skip when has_cutout: uv was already computed in the pre-pass above. Emissive
             // sample is gated on do_emissive, so a bound etex with a zero factor stays free.
-            if (!has_cutout && (tex || nmap || stex || mrtex || (do_emissive && etex)))
+            if (!has_cutout && (tex || nmap || stex || mrtex || octex || (do_emissive && etex)))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
             }
@@ -595,7 +600,15 @@ void rasterize_phong(
                 // normal will be normalized inside compute_lighting.
             }
 
-            const float ao = ((aoa * pwa) + (aob * pwb) + (aoc * pwc)) * w_corr;
+            // Authored occlusion (glTF) overrides the baked vertex AO per-pixel — both target the
+            // same scale, so multiplying would double-darken. octex is loop-invariant: free when null.
+            float ao = ((aoa * pwa) + (aob * pwb) + (aoc * pwc)) * w_corr;
+            vec3 occ_sample{}; // valid only when octex != nullptr; reused as the MR sample when occ_is_mr
+            if (octex)
+            {
+                occ_sample = octex->sample_rgb(uv.x, uv.y);
+                ao = 1.0f + (occlusion_strength * (occ_sample.x - 1.0f));
+            }
 
             // Precompute view vector once — reused by both shadow branches.
             const vec3 v = normalize(eye - pos);
@@ -637,7 +650,8 @@ void rasterize_phong(
                 float metalness = mat.metallic;
                 if (mrtex)
                 {
-                    const vec3 mr = mrtex->sample_rgb(uv.x, uv.y); // G=roughness, B=metallic
+                    // G=roughness, B=metallic. Reuse the occlusion sample when ORM-packed (same image).
+                    const vec3 mr = occ_is_mr ? occ_sample : mrtex->sample_rgb(uv.x, uv.y);
                     metalness *= mr.z;
                     use_shin = roughness_to_shininess(mat.roughness * mr.y);
                 }

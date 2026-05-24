@@ -1,5 +1,6 @@
 #include "mesh.h"
 #include "light.h"
+#include "linalg.h"
 #include "mesh_loader.h"
 #include "texture.h"
 
@@ -99,6 +100,13 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
         {
             mat.normal_tex = load_tex(m->normal_texture.texture->image);
             mat.normal_scale = m->normal_texture.scale;
+        }
+        if (m->occlusion_texture.texture)
+        {
+            mat.occlusion_tex = load_tex(m->occlusion_texture.texture->image);
+            // cgltf: scale field == occlusionTexture.strength. Spec caps it at [0,1] but cgltf
+            // does not enforce; clamp so an out-of-range value can't drive ao negative per-pixel.
+            mat.occlusion_strength = clamp(m->occlusion_texture.scale, 0.0f, 1.0f);
         }
         mat.emissive = { m->emissive_factor[0], m->emissive_factor[1], m->emissive_factor[2] };
         if (m->emissive_texture.texture)

@@ -72,6 +72,12 @@ struct Material
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
     int metallic_roughness_tex = -1; // index into Mesh::textures (G=roughness, B=metallic), or -1 if none
+    // glTF occlusionTexture (Phong path only). The R channel is authored ambient occlusion; it
+    // REPLACES the baked per-vertex AO per-pixel (both target the same scale — multiplying would
+    // double-darken). occlusion_strength is occlusionTexture.strength: ao = 1 + strength*(R-1).
+    // Mesh::has_occlusion gates the per-pixel sample; non-glTF loaders leave these untouched.
+    int occlusion_tex = -1;
+    float occlusion_strength = 1.0f;
     bool double_sided = false;
     bool emissive_was_promoted = false; // packs into the same alignment slot as double_sided
     float alpha_cutoff = 0.0f;          // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this

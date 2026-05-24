@@ -130,6 +130,7 @@ void Renderer::worker_func(int t)
             const bool show_emissive = mesh->has_emissive && show_tex;
             const bool show_metallic = mesh->has_metallic && show_tex;
             const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
+            const bool show_occlusion = mesh->has_occlusion && show_tex;
             Framebuffer *fb = m_fb;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
@@ -223,7 +224,8 @@ void Renderer::worker_func(int t)
                                 show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
                                 show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                mat.effective_emissive(show_emissive), apply_normal_scale
+                                mat.effective_emissive(show_emissive), apply_normal_scale,
+                                show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr, mat.occlusion_strength
                             );
                         }
                         else

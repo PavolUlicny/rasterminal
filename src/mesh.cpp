@@ -28,6 +28,7 @@ void Mesh::clear()
     has_metallic = false;
     has_emissive = false;
     has_normal_scale = false;
+    has_occlusion = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
@@ -80,6 +81,8 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
         materials.begin(), materials.end(),
         [](const Material &m) { return m.normal_tex >= 0 && m.normal_scale != 1.0f; }
     );
+    has_occlusion =
+        std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
 
     // Industry-convention promotion: when an emissive texture is bound but the factor is at
     // the spec default {0,0,0}, promote to {1,1,1} so the texture actually glows (matches
