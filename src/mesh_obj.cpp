@@ -15,7 +15,7 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
-bool Mesh::load_obj(const std::string &path, int n_threads)
+bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
@@ -228,7 +228,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads)
 
     if (attrib.normals.empty() || !all_have_normals)
     {
-        compute_normals();
+        compute_normals(crease_cos);
     }
 
     // tex_requests holds obj_dir-resolved paths, decoded in parallel.

@@ -15,7 +15,7 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
-bool Mesh::load_gltf(const std::string &path, int n_threads)
+bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
@@ -295,9 +295,17 @@ bool Mesh::load_gltf(const std::string &path, int n_threads)
         return false;
     }
 
+    // glTF assets may carry COLOR_0 on only part of the mesh; pad the gap white
+    // so the parallel-array invariant (vertex_colors.size() == vertices.size())
+    // holds before compute_normals splits and before tangents/AO/vcache run.
+    if (has_vertex_colors && vertex_colors.size() < vertices.size())
+    {
+        vertex_colors.resize(vertices.size(), vec3{ 1.0f, 1.0f, 1.0f });
+    }
+
     if (!has_normals)
     {
-        compute_normals();
+        compute_normals(crease_cos);
     }
 
     // Decode all registered images in parallel. data (held by guard) and dir

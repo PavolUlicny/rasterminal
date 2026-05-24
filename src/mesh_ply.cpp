@@ -104,7 +104,7 @@ namespace
 
 // ─── Mesh::load_ply ───────────────────────────────────────────────────────────
 
-bool Mesh::load_ply(const std::string &path)
+bool Mesh::load_ply(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
@@ -420,7 +420,7 @@ bool Mesh::load_ply(const std::string &path)
 
     if (!normals || use_face_colors)
     {
-        compute_normals();
+        compute_normals(crease_cos);
     }
 
     snap.commit();

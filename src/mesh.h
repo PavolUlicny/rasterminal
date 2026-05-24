@@ -48,35 +48,50 @@ struct Mesh
 
     // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
-    [[nodiscard]] bool load_model(const std::string &path, bool ao = true, int n_threads = 1);
+    // crease_angle_deg is the smoothing threshold used when a file provides no normals:
+    // adjacent faces are smoothed together below this angle and hard-edged above it.
+    [[nodiscard]] bool
+    load_model(const std::string &path, bool ao = true, int n_threads = 1, float crease_angle_deg = 60.0f);
 
     // Clear all geometry, material, and texture data.
     void clear();
 
     // Load geometry from an OBJ file; also loads the associated .mtl if present.
-    // n_threads parallelizes texture decode. Returns false on failure.
-    bool load_obj(const std::string &path, int n_threads = 1);
+    // n_threads parallelizes texture decode. crease_cos is forwarded to
+    // compute_normals() when the file has no normals. Returns false on failure.
+    bool load_obj(const std::string &path, int n_threads = 1, float crease_cos = -1.0f);
 
     // Load geometry from a PLY file (ASCII or binary little/big-endian).
     // Supports vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
+    // crease_cos is forwarded to compute_normals() when normals are absent.
     // Returns false on failure.
-    bool load_ply(const std::string &path);
+    bool load_ply(const std::string &path, float crease_cos = -1.0f);
 
     // Load geometry from an STL file (ASCII or binary).
     // No UV or material support (STL has none). Normals are always recomputed
-    // for smooth per-vertex shading. Returns false on failure.
-    bool load_stl(const std::string &path);
+    // for smooth per-vertex shading (crease_cos has no effect — STL vertices are
+    // unshared, so there is nothing to merge). Returns false on failure.
+    bool load_stl(const std::string &path, float crease_cos = -1.0f);
 
     // Load geometry from a glTF or GLB file.
     // Supports positions, normals, UVs, PBR materials, diffuse/normal textures,
-    // and node transforms. n_threads parallelizes texture decode.
+    // and node transforms. n_threads parallelizes texture decode. crease_cos is
+    // forwarded to compute_normals() when the file has no normals.
     // Returns false on failure.
-    bool load_gltf(const std::string &path, int n_threads = 1);
+    bool load_gltf(const std::string &path, int n_threads = 1, float crease_cos = -1.0f);
 
   private:
-    // Average adjacent face normals to produce smooth per-vertex normals.
+    // Compute smooth per-vertex normals from face geometry, splitting vertices
+    // across hard edges. crease_cos is the cosine of the crease-angle threshold:
+    // two faces sharing an edge are smoothed together iff the angle between their
+    // normals stays below the threshold (dot of unit normals >= crease_cos),
+    // otherwise the shared vertices split so each side keeps its own normal.
+    // crease_cos = -1 (cos 180deg) never creases across edges — full smoothing
+    // on manifold input; bowtie (point-only-shared) vertices always split.
+    // May append new entries to `vertices` (and the parallel `vertex_colors` when
+    // present) and rewrite Triangle::v[] indices to point at the split copies.
     // Called by each loader when the file provides no normal data.
-    void compute_normals();
+    void compute_normals(float crease_cos);
 
     // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
     // Called by load_model() after the format-specific loader returns.

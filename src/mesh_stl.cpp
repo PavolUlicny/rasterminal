@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-bool Mesh::load_stl(const std::string &path)
+bool Mesh::load_stl(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
@@ -121,7 +121,7 @@ bool Mesh::load_stl(const std::string &path)
         t.material_idx = 0;
         triangles.push_back(t);
     }
-    compute_normals();
+    compute_normals(crease_cos);
 
     snap.commit();
     return true;

@@ -31,9 +31,11 @@ void Mesh::clear()
     has_occlusion = false;
 }
 
-bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
+bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float crease_angle_deg)
 {
     clear();
+
+    const float crease_cos = std::cos(to_radians(crease_angle_deg));
 
     const size_t ext_pos = path.find_last_of('.');
     if (ext_pos == std::string::npos)
@@ -53,19 +55,19 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
     bool ok = false;
     if (ext == "obj")
     {
-        ok = load_obj(path, n_threads);
+        ok = load_obj(path, n_threads, crease_cos);
     }
     else if (ext == "ply")
     {
-        ok = load_ply(path);
+        ok = load_ply(path, crease_cos);
     }
     else if (ext == "stl")
     {
-        ok = load_stl(path);
+        ok = load_stl(path, crease_cos);
     }
     else if (ext == "gltf" || ext == "glb")
     {
-        ok = load_gltf(path, n_threads);
+        ok = load_gltf(path, n_threads, crease_cos);
     }
 
     if (!ok)
@@ -115,34 +117,178 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads)
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────
 
-void Mesh::compute_normals()
+void Mesh::compute_normals(float crease_cos)
 {
-    for (auto &v : vertices)
+    const size_t n_verts = vertices.size();
+    const size_t n_tris = triangles.size();
+    if (n_verts == 0 || n_tris == 0)
     {
-        v.normal = vec3{};
+        return;
     }
 
-    // Accumulate face normals. The cross product magnitude is proportional to
-    // triangle area, giving area-weighted averaging for free.
-    for (const auto &tri : triangles)
+    // Per-face raw normal (cross product magnitude == 2x area, so summing gives
+    // area-weighted averaging for free) and reciprocal length (0 = degenerate).
+    std::vector<vec3> face_n(n_tris);
+    std::vector<float> face_inv_len(n_tris);
+    for (size_t t = 0; t < n_tris; t++)
     {
-        const vec3 &p0 = vertices[tri.v[0]].pos;
-        const vec3 &p1 = vertices[tri.v[1]].pos;
-        const vec3 &p2 = vertices[tri.v[2]].pos;
-
-        const vec3 face_normal = cross(p1 - p0, p2 - p0);
-
-        vertices[tri.v[0]].normal += face_normal;
-        vertices[tri.v[1]].normal += face_normal;
-        vertices[tri.v[2]].normal += face_normal;
+        const Triangle &tri = triangles[t];
+        const vec3 fn =
+            cross(vertices[tri.v[1]].pos - vertices[tri.v[0]].pos, vertices[tri.v[2]].pos - vertices[tri.v[0]].pos);
+        face_n[t] = fn;
+        const float len_sq = fn.length_sq();
+        face_inv_len[t] = (len_sq > 1e-24f) ? (1.0f / std::sqrt(len_sq)) : 0.0f;
     }
 
-    for (auto &v : vertices)
+    // CSR adjacency: vertex -> incident corners. Each triangle contributes 3.
+    std::vector<uint32_t> offsets(n_verts + 1, 0);
+    for (size_t t = 0; t < n_tris; t++)
     {
-        const float len_sq = v.normal.length_sq();
+        for (const uint32_t vi : triangles[t].v)
+        {
+            offsets[vi + 1]++;
+        }
+    }
+    for (size_t i = 0; i < n_verts; i++)
+    {
+        offsets[i + 1] += offsets[i];
+    }
+    const size_t n_corners = offsets[n_verts]; // == 3 * n_tris
+    std::vector<uint32_t> corner_tri(n_corners);
+    std::vector<uint8_t> corner_c(n_corners);
+    {
+        std::vector<uint32_t> cursor(offsets.begin(), offsets.end() - 1);
+        for (size_t t = 0; t < n_tris; t++)
+        {
+            for (uint8_t c = 0; c < 3; c++)
+            {
+                const uint32_t slot = cursor[triangles[t].v[c]]++;
+                corner_tri[slot] = static_cast<uint32_t>(t);
+                corner_c[slot] = c;
+            }
+        }
+    }
+
+    // Per-vertex clustering: incident faces sharing a sub-threshold edge through
+    // the vertex are unioned into one "wedge" (one normal); the rest split off.
+    std::vector<uint32_t> parent;      // union-find over local incident indices
+    std::vector<uint32_t> nbr_a;       // the two other-corner vertices per incident
+    std::vector<uint32_t> nbr_b;       // (the edges this corner forms at the vertex)
+    std::vector<uint32_t> root_to_out; // local root -> output vertex index (lazy)
+    auto find = [&parent](uint32_t x) -> uint32_t
+    {
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+
+    const size_t orig_n_verts = n_verts;
+    // Loaders that populate vertex_colors must keep it length-matched to vertices
+    // (pad missing entries before calling); compute_normals only propagates colors
+    // when the parallel-array invariant already holds.
+    const bool has_vcol = (vertex_colors.size() == orig_n_verts);
+
+    for (size_t v = 0; v < orig_n_verts; v++)
+    {
+        const uint32_t start = offsets[v];
+        const uint32_t deg = offsets[v + 1] - start;
+        if (deg == 0)
+        {
+            vertices[v].normal = vec3{}; // unreferenced vertex
+            continue;
+        }
+
+        parent.resize(deg);
+        nbr_a.resize(deg);
+        nbr_b.resize(deg);
+        for (uint32_t k = 0; k < deg; k++)
+        {
+            parent[k] = k;
+            const Triangle &tri = triangles[corner_tri[start + k]];
+            const uint8_t c = corner_c[start + k];
+            nbr_a[k] = tri.v[(c + 1u) % 3u];
+            nbr_b[k] = tri.v[(c + 2u) % 3u];
+        }
+
+        // O(deg^2) pair scan; deg is typically 4-8 on manifold meshes. Spikes on
+        // fan apices (cone tips, UV-sphere poles); fine in practice on real assets.
+        for (uint32_t i = 0; i < deg; i++)
+        {
+            const uint32_t ti = corner_tri[start + i];
+            if (face_inv_len[ti] == 0.0f)
+            {
+                continue; // never smooth across a degenerate face
+            }
+            for (uint32_t j = i + 1; j < deg; j++)
+            {
+                const uint32_t tj = corner_tri[start + j];
+                if (face_inv_len[tj] == 0.0f)
+                {
+                    continue;
+                }
+                const bool shares_edge =
+                    nbr_a[i] == nbr_a[j] || nbr_a[i] == nbr_b[j] || nbr_b[i] == nbr_a[j] || nbr_b[i] == nbr_b[j];
+                if (!shares_edge)
+                {
+                    continue;
+                }
+                const float cos_a = dot(face_n[ti], face_n[tj]) * face_inv_len[ti] * face_inv_len[tj];
+                if (cos_a >= crease_cos)
+                {
+                    const uint32_t ri = find(i);
+                    const uint32_t rj = find(j);
+                    if (ri != rj)
+                    {
+                        parent[ri] = rj;
+                    }
+                }
+            }
+        }
+
+        // Materialize wedges: the first reuses index v, additional ones append a
+        // split copy. Accumulate each wedge's area-weighted normal as we rewrite
+        // the triangle corners to point at their wedge's vertex.
+        root_to_out.assign(deg, UINT32_MAX);
+        bool reused_v = false;
+        for (uint32_t k = 0; k < deg; k++)
+        {
+            const uint32_t r = find(k);
+            uint32_t out_v = root_to_out[r];
+            if (out_v == UINT32_MAX)
+            {
+                if (!reused_v)
+                {
+                    out_v = static_cast<uint32_t>(v);
+                    reused_v = true;
+                }
+                else
+                {
+                    out_v = static_cast<uint32_t>(vertices.size());
+                    const Vertex split = vertices[v]; // copies pos/uv/ao
+                    vertices.push_back(split);
+                    if (has_vcol)
+                    {
+                        vertex_colors.push_back(vertex_colors[v]);
+                    }
+                }
+                vertices[out_v].normal = vec3{};
+                root_to_out[r] = out_v;
+            }
+            const uint32_t t = corner_tri[start + k];
+            triangles[t].v[corner_c[start + k]] = out_v;
+            vertices[out_v].normal += face_n[t];
+        }
+    }
+
+    for (auto &vert : vertices)
+    {
+        const float len_sq = vert.normal.length_sq();
         if (len_sq > 1e-12f)
         {
-            v.normal = v.normal * (1.0f / std::sqrt(len_sq));
+            vert.normal = vert.normal * (1.0f / std::sqrt(len_sq));
         }
     }
 }
