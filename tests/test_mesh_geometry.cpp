@@ -1,6 +1,7 @@
 #include "loader_util.h"
 #include "test.h"
 
+#include <cmath>
 #include <string>
 
 // All three functions (compute_normals, compute_tangents, compute_ao) are private
@@ -463,6 +464,42 @@ TEST(normals, degenerate_face_in_fan_no_corruption)
         }
     }
     ASSERT_TRUE(found_real);
+}
+
+TEST(normals, high_valence_fan_apex_merges)
+{
+    // A flat disk fan: one apex shared by N triangles (apex valence = N), all
+    // coplanar in z=0. Exercises the high-valence clustering path (N edge-runs,
+    // transitive union around the fan) that low-valence tests never reach. All
+    // faces are parallel so the apex merges to a single +Z vertex with no split.
+    constexpr int N = 16;
+    std::string obj = "v 0 0 0\n"; // apex = vertex 1
+    for (int i = 0; i < N; i++)
+    {
+        const double a = 2.0 * 3.14159265358979323846 * i / N;
+        obj += "v " + std::to_string(std::cos(a)) + " " + std::to_string(std::sin(a)) + " 0\n";
+    }
+    for (int i = 0; i < N; i++)
+    {
+        const int r0 = 2 + i;
+        const int r1 = 2 + ((i + 1) % N);
+        obj += "f 1 " + std::to_string(r0) + " " + std::to_string(r1) + "\n";
+    }
+    TmpFile f(tmp_path("rast_norm_fan.obj"), obj);
+    Mesh m = load_ok(f.path);
+
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(N));
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(N + 1)); // apex + rim, nothing split
+    int apex_count = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            apex_count++;
+            ASSERT_NEAR(v.normal.z, 1.0f, 1e-5f); // all faces coplanar -> +Z
+        }
+    }
+    ASSERT_EQ(apex_count, 1); // the whole fan merged into one apex wedge
 }
 
 // ─── compute_tangents: Z-up fallback branch ───────────────────────────────────
