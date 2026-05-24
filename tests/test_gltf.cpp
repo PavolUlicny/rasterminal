@@ -1042,6 +1042,155 @@ TEST(gltf_valid, normal_scale_with_failed_decode_no_has_flag)
     ASSERT_FALSE(m.has_normal_scale);
 }
 
+// ─── glTF occlusionTexture parsing + has_occlusion gate ───────────────────────
+
+TEST(gltf_valid, occlusion_strength_read_and_sets_has_flag)
+{
+    // occlusionTexture.strength=0.5 with a valid embedded BMP → occlusion_tex >= 0,
+    // strength read into mat.occlusion_strength, and Mesh::has_occlusion armed
+    // (the gate is occlusion_tex>=0 only — strength does not factor in).
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"occlusionTexture\":{\"index\":0,\"strength\":0.5}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_occl.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].occlusion_strength, 0.5f, 1e-4f);
+    ASSERT_TRUE(m.materials[1].occlusion_tex >= 0);
+    ASSERT_TRUE(m.has_occlusion);
+}
+
+TEST(gltf_valid, occlusion_default_strength_one_still_sets_flag)
+{
+    // occlusionTexture without an explicit strength → cgltf default 1.0. Unlike
+    // normalScale, has_occlusion gates on occlusion_tex>=0 alone, so the flag still
+    // arms at default strength.
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"occlusionTexture\":{\"index\":0}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_occl_default.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].occlusion_strength, 1.0f, 1e-4f);
+    ASSERT_TRUE(m.materials[1].occlusion_tex >= 0);
+    ASSERT_TRUE(m.has_occlusion);
+}
+
+TEST(gltf_valid, occlusion_failed_decode_no_has_flag)
+{
+    // strength=0.5 is parsed (assignment lives inside if(occlusion_texture.texture)),
+    // but 4 garbage image bytes make load_tex return -1. The occlusion_tex>=0 gate
+    // must keep has_occlusion disarmed so a failed decode never costs the per-pixel path.
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"occlusionTexture\":{\"index\":0,\"strength\":0.5}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":40}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+
+    TmpFile f(tmp_path("rast_occl_faildecode.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].occlusion_strength, 0.5f, 1e-4f);
+    ASSERT_TRUE(m.materials[1].occlusion_tex < 0);
+    ASSERT_FALSE(m.has_occlusion);
+}
+
+TEST(gltf_valid, no_occlusion_texture_keeps_flag_false)
+{
+    // A material with no occlusionTexture → occlusion_tex stays -1, strength stays
+    // 1.0, has_occlusion stays false.
+    std::string bin;
+    emit_tri_verts(bin);
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+
+    TmpFile f(tmp_path("rast_occl_none.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].occlusion_tex, -1);
+    ASSERT_NEAR(m.materials[1].occlusion_strength, 1.0f, 1e-4f);
+    ASSERT_FALSE(m.has_occlusion);
+}
+
+TEST(gltf_valid, occlusion_strength_above_one_clamped)
+{
+    // glTF caps occlusionTexture.strength at 1.0; cgltf does not enforce. An out-of-range
+    // strength=2.0 must clamp to 1.0 at load so it cannot drive the per-pixel ao negative.
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"occlusionTexture\":{\"index\":0,\"strength\":2.0}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_occl_clamp.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].occlusion_strength, 1.0f, 1e-4f);
+}
+
 TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
 {
     // image[0] has uri="does_not_exist.tga" (no bufferView).
