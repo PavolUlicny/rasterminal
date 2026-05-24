@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cerrno>
 #include <climits>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -276,6 +277,20 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto parse_angle = [](const char *flag, const char *val, float &out) -> bool
+    {
+        char *end = nullptr;
+        errno = 0;
+        const float v = std::strtof(val, &end);
+        if (end == val || *end != '\0' || errno == ERANGE || !std::isfinite(v) || v < 0.0f || v > 180.0f)
+        {
+            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected a number in [0, 180])\n", flag, val);
+            return false;
+        }
+        out = v;
+        return true;
+    };
+
     bool saw_bench_size = false;
     bool saw_bench_warmup = false;
 
@@ -393,6 +408,14 @@ ParseResult parse_args(int argc, char *argv[])
             }
             saw_bench_warmup = true;
         }
+        else if (arg == "--smooth-angle")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_angle(flag, val, args.smooth_angle))
+            {
+                return fail(1);
+            }
+        }
         else if (arg == "-s" || arg == "--shading")
         {
             const char *val = get_val(i);
@@ -478,6 +501,8 @@ ParseResult parse_args(int argc, char *argv[])
                 "throughput to stderr\n"
                 "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
                 "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
+                "          --smooth-angle DEG     Crease angle for computed normals (default: 60; 0=faceted, "
+                "180=smooth)\n"
                 "          --no-shadow            Disable shadow map\n"
                 "          --no-ao                Disable ambient occlusion\n"
                 "          --no-hud               Hide the HUD status line\n"

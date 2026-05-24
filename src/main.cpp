@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
     const bool bench_mode = args.bench > 0;
     Mesh mesh;
     const auto load_t0 = std::chrono::steady_clock::now();
-    if (!mesh.load_model(args.model_path, args.ao, n_threads))
+    if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
     {
         std::fprintf(
             stderr,
