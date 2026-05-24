@@ -816,3 +816,114 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
         ASSERT_FAIL("mr-dielectric: red should stay zero, got R=" + std::to_string(static_cast<int>(mr.r)));
     }
 }
+
+// ── Group O: glTF occlusion texture overrides baked AO (Phong) ────────────────
+//
+// Isolate AO: no lights, ambient={1,0,0}, mat defaults (mat.ambient={1,1,1}), so the
+// lit colour is exactly ambient * mat.ambient * ao → R = 255 * ao. uv={0.5,0.5} hits
+// the single texel of any 1×1 occlusion map. octex R channel + strength drive ao via
+// ao = 1 + strength*(R-1); when octex is null the interpolated vertex ao is used as-is.
+
+namespace
+{
+    const vec3 g_occl_sa{ 4.0f, 2.0f, 0.5f }, g_occl_sb{ 36.0f, 2.0f, 0.5f }, g_occl_sc{ 20.0f, 18.0f, 0.5f };
+
+    void rast_occl(Framebuffer &fb, const Texture *octex, float strength, float ao_vert)
+    {
+        vec3 zero{}, normal{ 0.0f, 0.0f, -1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+        vec3 eye{ 20.0f, 10.0f, -100.0f };
+        vec3 ambient{ 1.0f, 0.0f, 0.0f };
+        vec2 uv{ 0.5f, 0.5f };
+        Material mat{};
+        rasterize_phong(
+            fb, g_occl_sa, g_occl_sb, g_occl_sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan,
+            tan, uv, uv, uv, ao_vert, ao_vert, ao_vert, white, white, white, false, eye, nullptr, 0, ambient, mat,
+            nullptr, nullptr, nullptr, nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex,
+            strength
+        );
+    }
+} // namespace
+
+// R=128 (≈0.502) at full strength darkens ambient: ao 1.0 → 0.502, R 255 → ≈128.
+TEST(rasterize_phong, occlusion_darkens_ambient)
+{
+    Texture occ = make_tex_rgba(1, 1, { 128, 128, 128, 255 });
+    Framebuffer fb_none(40, 20, /*headless=*/true), fb_occ(40, 20, /*headless=*/true);
+    rast_occl(fb_none, nullptr, 1.0f, 1.0f);
+    rast_occl(fb_occ, &occ, 1.0f, 1.0f);
+
+    ASSERT_TRUE(was_drawn(fb_none, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_occ, 20, 10));
+    assert_pixel_near(fb_none, 20, 10, Color{ 255, 0, 0 }, 3);
+    assert_pixel_near(fb_occ, 20, 10, Color{ 128, 0, 0 }, 5);
+}
+
+// strength=0 collapses the override to a no-op (ao = 1 + 0*(R-1) = 1), matching the
+// no-occlusion result regardless of the texel value.
+TEST(rasterize_phong, occlusion_strength_zero_is_noop)
+{
+    Texture occ = make_tex_rgba(1, 1, { 0, 0, 0, 255 }); // R=0 would fully occlude at strength 1
+    Framebuffer fb(40, 20, /*headless=*/true);
+    rast_occl(fb, &occ, 0.0f, 1.0f);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    assert_pixel_near(fb, 20, 10, Color{ 255, 0, 0 }, 3);
+}
+
+// Override, not multiply: a low baked vertex AO (0.2) with an occlusion map of R=1.0 at
+// full strength yields ao = 1 + 1*(1-1) = 1.0 → R≈255. Multiplying would give 0.2*1=0.2
+// → R≈51. The high R proves the texture replaces the baked AO rather than stacking.
+TEST(rasterize_phong, occlusion_replaces_not_multiplies_baked_ao)
+{
+    Texture occ_full = make_tex_rgba(1, 1, { 255, 255, 255, 255 }); // R=1.0 → ao override to 1.0
+    Framebuffer fb_baked(40, 20, /*headless=*/true), fb_occ(40, 20, /*headless=*/true);
+    rast_occl(fb_baked, nullptr, 1.0f, 0.2f); // baked-only: ao=0.2 → R≈51
+    rast_occl(fb_occ, &occ_full, 1.0f, 0.2f); // occlusion replaces baked → ao=1.0 → R≈255
+
+    ASSERT_TRUE(was_drawn(fb_baked, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_occ, 20, 10));
+    assert_pixel_near(fb_baked, 20, 10, Color{ 51, 0, 0 }, 6);
+    assert_pixel_near(fb_occ, 20, 10, Color{ 255, 0, 0 }, 3);
+}
+
+// ORM packing: when the occlusion and metallic-roughness textures are the SAME image,
+// rasterize_phong samples it once and reuses the read for both AO (R) and metalness/
+// roughness (B/G). The shared-pointer path (occ_is_mr) must match passing two distinct
+// but identical textures (two separate samples) — a wrong-channel or wrong-variable
+// reuse would diverge. Channels are distinct (R≠G≠B) so a misroute is visible.
+TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f };
+    vec3 ambient{ 0.6f, 0.6f, 0.6f }; // nonzero so the AO (R) channel affects the pixel
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    // R=64 (AO≈0.25), G=128 (roughness), B=255 (metallic 1.0): distinct so a misroute shows.
+    Texture orm_a = make_tex_rgba(1, 1, { 64, 128, 255, 255 });
+    Texture orm_b = make_tex_rgba(1, 1, { 64, 128, 255, 255 }); // identical content, different pointer
+
+    auto rph = [&](Framebuffer &fb, const Texture *octex, const Texture *mrtex)
+    {
+        Material mat{};
+        mat.diffuse = { 0.0f, 0.0f, 1.0f };
+        mat.ambient = { 1.0f, 1.0f, 1.0f };
+        mat.specular = { 0.0f, 0.0f, 0.0f };
+        mat.metallic = 1.0f;
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
+            19, mrtex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex, 1.0f
+        );
+    };
+
+    Framebuffer fb_shared(40, 20, /*headless=*/true), fb_separate(40, 20, /*headless=*/true);
+    rph(fb_shared, &orm_a, &orm_a);   // same pointer → occ_is_mr → one shared sample
+    rph(fb_separate, &orm_a, &orm_b); // distinct pointers → two separate samples
+
+    ASSERT_TRUE(was_drawn(fb_shared, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_separate, 20, 10));
+    assert_pixel_near(fb_separate, 20, 10, fb_shared.get_pixel(20, 10), 1);
+}
