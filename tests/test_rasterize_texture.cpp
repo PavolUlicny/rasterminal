@@ -389,6 +389,104 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     }
 }
 
+// ── Group D+: glTF normalScale applied to the tangent-space normal ───────────
+
+// Same D1 geometry: nmap texel (255,128,128) → nm≈(1,0,0), tan=(1,0,0),
+// light dir+color along +x. scale=0 must zero nm.x so the normal falls back to
+// N=(0,0,1); dot(N, +x)=0 → no red. Run side-by-side with apply_normal_scale=false
+// (scale ignored → full red) to isolate the gate AND prove the multiply hits
+// nm.x/nm.y, not nm.z. Catches an inverted gate or a wrong-axis multiply.
+TEST(rasterize_phong, normal_scale_zero_flattens_bump)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f };
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    Material mat{};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    Light light{};
+    light.direction = { 1.0f, 0.0f, 0.0f };
+    light.color = { 1.0f, 0.0f, 0.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    Texture nmap_tex = make_tex_rgba(1, 1, { 255, 128, 128, 255 });
+
+    auto rph = [&](Framebuffer &fb, const Material &m, bool apply_scale)
+    {
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, nullptr, 0,
+            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, apply_scale
+        );
+    };
+
+    Material mat_zero = mat;
+    mat_zero.normal_scale = 0.0f;
+    Framebuffer fb_gateoff(40, 20, /*headless=*/true), fb_zero(40, 20, /*headless=*/true);
+    rph(fb_gateoff, mat, /*apply_scale=*/false);  // scale ignored → bump intact
+    rph(fb_zero, mat_zero, /*apply_scale=*/true); // nm.x *= 0 → bump flattened
+
+    ASSERT_TRUE(was_drawn(fb_gateoff, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_zero, 20, 10));
+    if (fb_gateoff.get_pixel(20, 10).r < 240)
+    {
+        ASSERT_FAIL("gate off: scale must be ignored, redirected normal should give full red");
+    }
+    if (fb_zero.get_pixel(20, 10).r > 10)
+    {
+        ASSERT_FAIL("scale=0: nm.x zeroed, normal falls back to N=(0,0,1), dot(+x)=0, no red expected");
+    }
+}
+
+// Negative scale flips nm.x: with scale=-1 the redirected normal points -x, so
+// dot(-x, light +x)=-1 → diffuse clamped to 0 → no red. scale=+1 under the gate
+// is the no-op baseline (full red). Catches a dropped sign or a multiply replaced
+// with abs/clamp.
+TEST(rasterize_phong, normal_scale_negative_flips_bump)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f };
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+    Material mat{};
+    mat.diffuse = { 1.0f, 1.0f, 1.0f };
+    mat.ambient = { 0.0f, 0.0f, 0.0f };
+    mat.specular = { 0.0f, 0.0f, 0.0f };
+    Light light{};
+    light.direction = { 1.0f, 0.0f, 0.0f };
+    light.color = { 1.0f, 0.0f, 0.0f };
+    vec2 uv{ 0.5f, 0.5f };
+    Texture nmap_tex = make_tex_rgba(1, 1, { 255, 128, 128, 255 });
+
+    auto rph = [&](Framebuffer &fb, const Material &m)
+    {
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, nullptr, 0,
+            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, /*apply_normal_scale=*/true
+        );
+    };
+
+    Material mat_pos = mat, mat_neg = mat;
+    mat_pos.normal_scale = 1.0f; // no-op baseline under the gate
+    mat_neg.normal_scale = -1.0f;
+    Framebuffer fb_pos(40, 20, /*headless=*/true), fb_neg(40, 20, /*headless=*/true);
+    rph(fb_pos, mat_pos);
+    rph(fb_neg, mat_neg);
+
+    ASSERT_TRUE(was_drawn(fb_pos, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_neg, 20, 10));
+    if (fb_pos.get_pixel(20, 10).r < 240)
+    {
+        ASSERT_FAIL("scale=+1: no-op baseline, redirected normal +x should give full red");
+    }
+    if (fb_neg.get_pixel(20, 10).r > 10)
+    {
+        ASSERT_FAIL("scale=-1: nm.x flipped, normal points -x, dot(+x)=-1 clamps diffuse to 0, no red expected");
+    }
+}
+
 // D2: degenerate tangent (tan parallel to normal) must not crash or produce NaN.
 // When tan=(0,0,1) == N=(0,0,1): Gram-Schmidt gives T=normalize(0,0,0)=(0,0,0),
 // B=cross(N,T)=(0,0,0). Mapped normal = T*nm.x + B*nm.y + N*nm.z = N*nm.z.
