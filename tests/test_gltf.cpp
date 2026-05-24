@@ -751,6 +751,177 @@ TEST(gltf_valid, color0_sets_has_vertex_colors_and_loads_rgb)
     ASSERT_NEAR(m.vertex_colors[2].z, 1.0f, 1e-5f);
 }
 
+TEST(gltf_valid, partial_color0_split_inherits_color)
+{
+    // Two primitives, NO normals anywhere (so compute_normals runs). P0 has COLOR_0
+    // and a 90 deg fold whose shared edge splits at the default crease; P1 has no
+    // COLOR_0 and comes after, so vertex_colors ends up shorter than vertices. The
+    // split copies of the colored origin vertex must inherit its color, and
+    // vertex_colors must stay the same length as vertices.
+    // Regression: with the short-array gate, split copies were padded white instead.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+        "{\"attributes\":{\"POSITION\":0,\"COLOR_0\":1},\"indices\":2},"
+        "{\"attributes\":{\"POSITION\":3}}"
+        "]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":4,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,1]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":4,\"type\":\"VEC4\"},"
+        "{\"bufferView\":2,\"componentType\":5123,\"count\":6,\"type\":\"SCALAR\"},"
+        "{\"bufferView\":3,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[5,5,5],\"max\":[6,6,5]}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteLength\":48,\"byteOffset\":0},"
+        "{\"buffer\":0,\"byteLength\":64,\"byteOffset\":48},"
+        "{\"buffer\":0,\"byteLength\":12,\"byteOffset\":112},"
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":124}"
+        "],"
+        "\"buffers\":[{\"byteLength\":160}]}";
+    std::string bin;
+    // P0 positions: origin, +X, +Y, +Z (two tris fold 90 deg across edge 0-1)
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    // P0 colors VEC4: vertex 0 red, 1 green, 2 blue, 3 yellow (alpha discarded)
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    // P0 indices: tri A (0,1,2), tri B (1,0,3) — both contain the origin vertex 0
+    emit_u16_le(bin, 0);
+    emit_u16_le(bin, 1);
+    emit_u16_le(bin, 2);
+    emit_u16_le(bin, 1);
+    emit_u16_le(bin, 0);
+    emit_u16_le(bin, 3);
+    // P1 positions: a far, uncolored triangle
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 6.0f);
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 5.0f);
+    emit_f32_le(bin, 6.0f);
+    emit_f32_le(bin, 5.0f);
+    TmpFile f(tmp_path("rast_partial_color0.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size()); // parallel array stays in sync
+    int origin_count = 0;
+    for (size_t i = 0; i < m.vertices.size(); i++)
+    {
+        const Vertex &v = m.vertices[i];
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            origin_count++;
+            ASSERT_NEAR(m.vertex_colors[i].x, 1.0f, 1e-5f); // red, not white
+            ASSERT_NEAR(m.vertex_colors[i].y, 0.0f, 1e-5f);
+            ASSERT_NEAR(m.vertex_colors[i].z, 0.0f, 1e-5f);
+        }
+    }
+    ASSERT_EQ(origin_count, 2); // origin vertex split across the hard edge
+}
+
+TEST(gltf_valid, partial_color0_uncolored_primitive_first)
+{
+    // Reverse of the above: the UNCOLORED primitive (P0) comes FIRST, the colored
+    // one (P1) second. The colored primitive's resize(vert_base + n_verts, white)
+    // is absolute-indexed by vert_base, so it back-fills P0's leading gap with white
+    // and writes P1's colors at the correct indices — colors must NOT shift. No
+    // normals anywhere so compute_normals runs; the two triangles share nothing so
+    // there is no split. Proves the leading/middle-gap ordering, not just tail-gap.
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+        "{\"attributes\":{\"POSITION\":0}},"
+        "{\"attributes\":{\"POSITION\":1,\"COLOR_0\":2}}"
+        "]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[10,10,10],\"max\":[11,11,10]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":0},"
+        "{\"buffer\":0,\"byteLength\":36,\"byteOffset\":36},"
+        "{\"buffer\":0,\"byteLength\":48,\"byteOffset\":72}"
+        "],"
+        "\"buffers\":[{\"byteLength\":120}]}";
+    std::string bin;
+    // P0 (uncolored) positions: a far triangle at ~(10,10,10)
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 11.0f);
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 10.0f);
+    emit_f32_le(bin, 11.0f);
+    emit_f32_le(bin, 10.0f);
+    // P1 (colored) positions: triangle at the origin
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    // P1 colors VEC4: all green (alpha discarded)
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 1.0f);
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 1.0f);
+    }
+    TmpFile f(tmp_path("rast_partial_color0_rev.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size());
+    for (size_t i = 0; i < m.vertices.size(); i++)
+    {
+        const Vertex &v = m.vertices[i];
+        const vec3 &c = m.vertex_colors[i];
+        if (v.pos.z == 0.0f) // P1 (origin triangle) → green
+        {
+            ASSERT_NEAR(c.x, 0.0f, 1e-5f);
+            ASSERT_NEAR(c.y, 1.0f, 1e-5f);
+            ASSERT_NEAR(c.z, 0.0f, 1e-5f);
+        }
+        else // P0 (far triangle, z=10) → white back-fill
+        {
+            ASSERT_NEAR(c.x, 1.0f, 1e-5f);
+            ASSERT_NEAR(c.y, 1.0f, 1e-5f);
+            ASSERT_NEAR(c.z, 1.0f, 1e-5f);
+        }
+    }
+}
+
 // ─── Group I: alpha mode variants ──────────────────────────────────────────
 
 TEST(gltf_valid, alpha_mode_blend_leaves_alpha_cutoff_zero)
