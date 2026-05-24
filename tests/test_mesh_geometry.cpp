@@ -276,20 +276,193 @@ TEST(normals, winding_order_determines_sign)
 
 TEST(normals, area_weighted_averaging)
 {
-    // OBJ vertex 1 (m.vertices[0]) is shared by two triangles:
-    //   large XY triangle: face_normal magnitude ~100
-    //   small XZ triangle: face_normal magnitude ~0.01
-    // The accumulated normal is dominated by the large triangle → z > 0.99.
+    // Two triangles share edge (0,0,0)-(10,0,0) at a 45 deg fold (< 60 deg crease,
+    // so the shared-edge vertices stay merged into one normal). The +Z triangle has
+    // ~70x the area of the small tilted one, so the merged normal is dominated by
+    // +Z. Without area weighting (equal-weight unit normals) the shared normal's z
+    // would fall to ~0.92, so z > 0.99 specifically verifies area weighting.
     const std::string obj = "v 0 0 0\n"
                             "v 10 0 0\n"
                             "v 0 10 0\n"
-                            "v 0.1 0 0\n"
-                            "v 0 0 0.1\n"
+                            "v 0 -0.1 0.1\n"
                             "f 1 2 3\n"
-                            "f 1 4 5\n";
+                            "f 2 1 4\n";
     TmpFile f(tmp_path("rast_norm_awt.obj"), obj);
     Mesh m = load_ok(f.path);
-    ASSERT_TRUE(m.vertices[0].normal.z > 0.99f);
+    bool found = false;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            ASSERT_TRUE(v.normal.z > 0.99f);
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+}
+
+// ─── compute_normals: crease-angle smoothing ──────────────────────────────────
+
+TEST(normals, crease_splits_hard_edge)
+{
+    // Two faces share edge (0,0,0)-(1,0,0) at 90 deg (> 60 deg default crease).
+    // Face A lies in XY (+Z normal), face B folds into XZ (+Y normal). The shared
+    // edge vertices must split so each side keeps its own axis-aligned normal
+    // instead of averaging to a 45 deg blend.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_norm_crease_hard.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            // hard split → axis-aligned, never the (0,0.707,0.707) average
+            ASSERT_TRUE(v.normal.z > 0.99f || v.normal.y > 0.99f);
+        }
+    }
+    ASSERT_EQ(at_origin, 2); // the shared origin vertex split in two
+}
+
+TEST(normals, shallow_fold_stays_smooth)
+{
+    // Two faces share edge (0,0,0)-(1,0,0) at ~11 deg (< 60 deg crease) → they stay
+    // merged: one vertex at the shared origin with a blended (averaged) normal.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 -1 0.2\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_norm_crease_soft.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    vec3 n{};
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            n = v.normal;
+        }
+    }
+    ASSERT_EQ(at_origin, 1); // not split
+    ASSERT_NEAR(n.length(), 1.0f, 1e-5f);
+    ASSERT_TRUE(n.z > 0.9f && n.y > 0.0f); // blend of +Z and the tilted face
+}
+
+TEST(normals, crease_threshold_controls_split)
+{
+    // Same 90 deg fold; the crease angle decides whether the shared edge splits.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_norm_crease_thresh.obj"), obj);
+
+    auto count_origin = [](const Mesh &m) -> int
+    {
+        int c = 0;
+        for (const auto &v : m.vertices)
+        {
+            if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+            {
+                c++;
+            }
+        }
+        return c;
+    };
+
+    Mesh smooth;
+    ASSERT_TRUE(smooth.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    ASSERT_EQ(count_origin(smooth), 1); // 90 deg < 180 deg threshold → merged
+
+    Mesh hard;
+    ASSERT_TRUE(hard.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/45.0f));
+    ASSERT_EQ(count_origin(hard), 2); // 90 deg > 45 deg threshold → split
+}
+
+TEST(normals, bowtie_point_share_splits)
+{
+    // Two triangles meet at ONLY vertex 0 (a point, no shared edge). They must
+    // split into separate normals even at full smoothing (crease 180), because a
+    // bowtie point is not a connected surface.
+    const std::string obj = "v 0 0 0\n" // shared point (index 0)
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "v 0 1 1\n"
+                            "f 1 2 3\n"  // +Z
+                            "f 1 4 5\n"; // -X
+    TmpFile f(tmp_path("rast_norm_bowtie.obj"), obj);
+    Mesh m;
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    int at_origin = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+        }
+    }
+    ASSERT_EQ(at_origin, 2); // bowtie split despite full-smooth threshold
+}
+
+TEST(normals, crease_split_syncs_vertex_colors)
+{
+    // 90 deg fold with per-vertex colors. The shared edge splits, and the split
+    // copies must inherit the source color so vertex_colors stays the same length
+    // as the (now larger) vertices array.
+    const std::string obj = "v 0 0 0 0.2 0.4 0.6\n"
+                            "v 1 0 0 0.2 0.4 0.6\n"
+                            "v 0 1 0 0.2 0.4 0.6\n"
+                            "v 0 0 1 0.2 0.4 0.6\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_norm_crease_vcol.obj"), obj);
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size());
+    ASSERT_TRUE(m.vertices.size() > 4u); // a split occurred
+    for (const auto &c : m.vertex_colors)
+    {
+        ASSERT_NEAR(c.x, 0.2f, 1e-4f);
+        ASSERT_NEAR(c.y, 0.4f, 1e-4f);
+        ASSERT_NEAR(c.z, 0.6f, 1e-4f);
+    }
+}
+
+TEST(normals, degenerate_face_in_fan_no_corruption)
+{
+    // A real +Z triangle shares edge (0,0,0)-(1,0,0) with a zero-area (collinear)
+    // triangle. The degenerate face must not be smoothed into the real one and
+    // must not produce NaN; the real wedge keeps its +Z normal.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 2 0 0\n" // collinear with 0,1 → degenerate tri
+                            "f 1 2 3\n"
+                            "f 1 2 4\n";
+    TmpFile f(tmp_path("rast_norm_degen_fan.obj"), obj);
+    Mesh m = load_ok(f.path);
+    bool found_real = false;
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_TRUE(std::isfinite(v.normal.x) && std::isfinite(v.normal.y) && std::isfinite(v.normal.z));
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f && v.normal.z > 0.99f)
+        {
+            found_real = true;
+        }
+    }
+    ASSERT_TRUE(found_real);
 }
 
 // ─── compute_tangents: Z-up fallback branch ───────────────────────────────────
@@ -346,7 +519,9 @@ TEST(ao, concave_vertex_darkened)
                             "f 1 5 2\n";
     TmpFile f(tmp_path("rast_ao_concave.obj"), obj);
     Mesh m;
-    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    // crease_angle 180 = full smoothing: the pit's faces stay merged at v0 so its
+    // averaged normal is (0,0,1) and the curvature/AO calc matches the comment.
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
     ASSERT_NEAR(m.vertices[0].ao, 0.85f, 1e-4f);
 }
 
@@ -433,7 +608,8 @@ TEST(ao, ply_load_runs_compute_ao)
                             "3 0 4 1\n";
     TmpFile f(tmp_path("rast_ao_ply_concave.ply"), ply);
     Mesh m;
-    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
+    // crease_angle 180 = full smoothing so v0's pit faces stay merged (see above).
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
     ASSERT_NEAR(m.vertices[0].ao, 0.85f, 1e-4f);
 }
 
