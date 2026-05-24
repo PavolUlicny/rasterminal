@@ -172,9 +172,10 @@ void Mesh::compute_normals(float crease_cos)
     // Per-vertex clustering: incident faces sharing a sub-threshold edge through
     // the vertex are unioned into one "wedge" (one normal); the rest split off.
     std::vector<uint32_t> parent;      // union-find over local incident indices
-    std::vector<uint32_t> nbr_a;       // the two other-corner vertices per incident
-    std::vector<uint32_t> nbr_b;       // (the edges this corner forms at the vertex)
     std::vector<uint32_t> root_to_out; // local root -> output vertex index (lazy)
+    // (endpoint vertex, local corner) pairs: the two edges each corner forms at
+    // the vertex. Sorted per vertex so corners sharing an edge land in one run.
+    std::vector<std::pair<uint32_t, uint32_t>> edges;
     auto find = [&parent](uint32_t x) -> uint32_t
     {
         while (parent[x] != x)
@@ -202,50 +203,59 @@ void Mesh::compute_normals(float crease_cos)
         }
 
         parent.resize(deg);
-        nbr_a.resize(deg);
-        nbr_b.resize(deg);
+        // Emit each non-degenerate corner's two edge-endpoints. Degenerate faces
+        // are omitted so they never union (they stay singleton wedges, as before).
+        edges.clear();
         for (uint32_t k = 0; k < deg; k++)
         {
             parent[k] = k;
-            const Triangle &tri = triangles[corner_tri[start + k]];
+            const uint32_t t = corner_tri[start + k];
+            if (face_inv_len[t] == 0.0f)
+            {
+                continue;
+            }
+            const Triangle &tri = triangles[t];
             const uint8_t c = corner_c[start + k];
-            nbr_a[k] = tri.v[(c + 1u) % 3u];
-            nbr_b[k] = tri.v[(c + 2u) % 3u];
+            edges.emplace_back(tri.v[(c + 1u) % 3u], k);
+            edges.emplace_back(tri.v[(c + 2u) % 3u], k);
         }
 
-        // O(deg^2) pair scan; deg is typically 4-8 on manifold meshes. Spikes on
-        // fan apices (cone tips, UV-sphere poles); fine in practice on real assets.
-        for (uint32_t i = 0; i < deg; i++)
+        // Group corners by shared endpoint, then union those whose dihedral stays
+        // below the crease threshold. Each run is one edge through the vertex;
+        // runs are size ~2 on manifold meshes, so this is O(deg log deg) (sort)
+        // rather than the O(deg^2) of comparing all corner pairs — which spikes
+        // on high-valence fan apices (cone tips, UV-sphere poles). A run only
+        // grows large for a non-manifold edge shared by many faces, where the
+        // pairwise work matches what the all-pairs scan did anyway.
+        std::sort(edges.begin(), edges.end());
+        for (size_t a = 0; a < edges.size();)
         {
-            const uint32_t ti = corner_tri[start + i];
-            if (face_inv_len[ti] == 0.0f)
+            size_t b = a + 1;
+            while (b < edges.size() && edges[b].first == edges[a].first)
             {
-                continue; // never smooth across a degenerate face
+                b++;
             }
-            for (uint32_t j = i + 1; j < deg; j++)
+            for (size_t p = a; p < b; p++)
             {
-                const uint32_t tj = corner_tri[start + j];
-                if (face_inv_len[tj] == 0.0f)
+                const uint32_t ci = edges[p].second;
+                const uint32_t ti = corner_tri[start + ci];
+                for (size_t q = p + 1; q < b; q++)
                 {
-                    continue;
-                }
-                const bool shares_edge =
-                    nbr_a[i] == nbr_a[j] || nbr_a[i] == nbr_b[j] || nbr_b[i] == nbr_a[j] || nbr_b[i] == nbr_b[j];
-                if (!shares_edge)
-                {
-                    continue;
-                }
-                const float cos_a = dot(face_n[ti], face_n[tj]) * face_inv_len[ti] * face_inv_len[tj];
-                if (cos_a >= crease_cos)
-                {
-                    const uint32_t ri = find(i);
-                    const uint32_t rj = find(j);
-                    if (ri != rj)
+                    const uint32_t cj = edges[q].second;
+                    const uint32_t tj = corner_tri[start + cj];
+                    const float cos_a = dot(face_n[ti], face_n[tj]) * face_inv_len[ti] * face_inv_len[tj];
+                    if (cos_a >= crease_cos)
                     {
-                        parent[ri] = rj;
+                        const uint32_t ri = find(ci);
+                        const uint32_t rj = find(cj);
+                        if (ri != rj)
+                        {
+                            parent[ri] = rj;
+                        }
                     }
                 }
             }
+            a = b;
         }
 
         // Materialize wedges: the first reuses index v, additional ones append a
