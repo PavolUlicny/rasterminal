@@ -945,6 +945,103 @@ TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
     ASSERT_TRUE(m.materials[1].normal_tex < 0);
 }
 
+// ─── Group N+: glTF normalTexture.scale parsing + has_normal_scale gate ────────
+
+TEST(gltf_valid, normal_scale_read_and_sets_has_flag)
+{
+    // normalTexture.scale=0.5 with a valid embedded BMP → normal_tex >= 0 and the
+    // scale is read into mat.normal_scale; the != 1.0 + normal_tex>=0 predicate
+    // arms Mesh::has_normal_scale.
+    std::string bin;
+    emit_tri_verts(bin); // 36 bytes geometry at offset 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"normalTexture\":{\"index\":0,\"scale\":0.5}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_nscale.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].normal_scale, 0.5f, 1e-4f);
+    ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_TRUE(m.has_normal_scale);
+}
+
+TEST(gltf_valid, normal_scale_default_one_no_has_flag)
+{
+    // normalTexture without an explicit scale → cgltf default 1.0 → mat.normal_scale
+    // stays 1.0 and has_normal_scale stays false (predicate filters scale != 1.0).
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"normalTexture\":{\"index\":0}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+
+    TmpFile f(tmp_path("rast_nscale_default.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].normal_scale, 1.0f, 1e-4f);
+    ASSERT_FALSE(m.has_normal_scale);
+}
+
+TEST(gltf_valid, normal_scale_with_failed_decode_no_has_flag)
+{
+    // scale=0.5 is parsed (assignment lives inside if(normal_texture.texture),
+    // which is truthy whenever the JSON binds a texture — independent of decode),
+    // but the 4 garbage image bytes make load_tex return -1. The has_normal_scale
+    // predicate's normal_tex>=0 guard must keep the gate disarmed despite the
+    // non-unit scale, so a failed normal-map decode never costs the per-pixel path.
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"normalTexture\":{\"index\":0,\"scale\":0.5}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"bufferView\":1}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":4}"
+                             "],"
+                             "\"buffers\":[{\"byteLength\":40}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0);
+    bin.push_back(0); // 4 bytes garbage image data
+
+    TmpFile f(tmp_path("rast_nscale_faildecode.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_NEAR(m.materials[1].normal_scale, 0.5f, 1e-4f);
+    ASSERT_TRUE(m.materials[1].normal_tex < 0);
+    ASSERT_FALSE(m.has_normal_scale);
+}
+
 TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
 {
     // image[0] has uri="does_not_exist.tga" (no bufferView).
