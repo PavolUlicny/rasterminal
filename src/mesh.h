@@ -101,7 +101,20 @@ struct Mesh
     // n_groups is the upper bound on those ids (the OBJ position count). Passing
     // weld = nullptr means identity grouping (group id == vertex index) —
     // byte-identical to no welding, used by PLY/STL/glTF; n_groups is ignored.
-    void compute_normals(float crease_cos, const std::vector<uint32_t> *weld = nullptr, size_t n_groups = 0);
+    //
+    // smooth_groups (optional, OBJ only) carries one smoothing-group id per
+    // triangle (parallel to `triangles`). When non-null, groups are authoritative
+    // and crease_cos is ignored: two faces sharing an edge smooth iff they share
+    // the same non-zero group id; id 0 (OBJ `s off`/`s 0`) never smooths, even
+    // with another id-0 face. Composes with weld — a welded UV seam smooths iff
+    // both halves share a position group AND the faces share a smoothing group.
+    // nullptr selects the crease-angle path above (PLY/STL/glTF and group-less OBJs).
+    void compute_normals(
+        float crease_cos,
+        const std::vector<uint32_t> *weld = nullptr,
+        size_t n_groups = 0,
+        const std::vector<uint32_t> *smooth_groups = nullptr
+    );
 
     // Compute per-vertex tangent vectors from UV layout (needed for normal mapping).
     // Called by load_model() after the format-specific loader returns.

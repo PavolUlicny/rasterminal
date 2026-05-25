@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -117,7 +118,9 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────
 
-void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, size_t n_groups)
+void Mesh::compute_normals(
+    float crease_cos, const std::vector<uint32_t> *weld, size_t n_groups, const std::vector<uint32_t> *smooth_groups
+)
 {
     const size_t n_verts = vertices.size();
     const size_t n_tris = triangles.size();
@@ -125,6 +128,11 @@ void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, 
     {
         return;
     }
+
+    // smooth_groups holds one id per triangle. The loader builds it by mirroring its
+    // triangle-build loop exactly (per-face, gated on the same fv >= 3); this guards
+    // against a future desync if that mirroring ever breaks (e.g. manual fan splits).
+    assert(smooth_groups == nullptr || smooth_groups->size() == n_tris);
 
     // Adjacency is built in welded space: group_of[v] folds vertices that share a
     // position group (e.g. OBJ UV-seam halves) onto one id, so they smooth as one
@@ -151,6 +159,11 @@ void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, 
     }
     const bool has_weld = (weld != nullptr);
     auto grp = [has_weld, &group_of](uint32_t v) -> uint32_t { return has_weld ? group_of[v] : v; };
+
+    // When smoothing groups are present they are authoritative: two faces smooth
+    // iff they share the same non-zero group id, and crease_cos is not consulted.
+    // Loop-invariant, hoisted above the per-group clustering below.
+    const bool has_groups = (smooth_groups != nullptr);
 
     // Per-face raw normal (cross product magnitude == 2x area, so summing gives
     // area-weighted averaging for free) and reciprocal length (0 = degenerate).
@@ -278,8 +291,18 @@ void Mesh::compute_normals(float crease_cos, const std::vector<uint32_t> *weld, 
                 {
                     const uint32_t cj = edges[q].second;
                     const uint32_t tj = corner_tri[start + cj];
-                    const float cos_a = dot(face_n[ti], face_n[tj]) * face_inv_len[ti] * face_inv_len[tj];
-                    if (cos_a >= crease_cos)
+                    bool unite = false;
+                    if (has_groups)
+                    {
+                        const uint32_t gi = (*smooth_groups)[ti];
+                        unite = (gi != 0u) && (gi == (*smooth_groups)[tj]);
+                    }
+                    else
+                    {
+                        const float cos_a = dot(face_n[ti], face_n[tj]) * face_inv_len[ti] * face_inv_len[tj];
+                        unite = (cos_a >= crease_cos);
+                    }
+                    if (unite)
                     {
                         const uint32_t ri = find(ci);
                         const uint32_t rj = find(cj);
