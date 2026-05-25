@@ -417,6 +417,133 @@ TEST(normals, bowtie_point_share_splits)
     ASSERT_EQ(at_origin, 2); // bowtie split despite full-smooth threshold
 }
 
+// ─── compute_normals: smoothing groups (OBJ) ──────────────────────────────────
+// When an OBJ authors `s` directives they are authoritative over the crease angle:
+// faces smooth iff they share the same non-zero group; `s off`/`s 0` is faceted.
+// Each test below uses geometry whose crease-angle outcome is the OPPOSITE of the
+// group outcome, isolating the override.
+
+TEST(normals, smoothing_group_splits_where_angle_would_merge)
+{
+    // Shallow ~11 deg fold (< 60 deg crease → angle alone keeps it merged), but the
+    // two faces are in different smoothing groups → the shared origin must split.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 -1 0.2\n"
+                            "s 1\n"
+                            "f 1 2 3\n"
+                            "s 2\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_sg_split.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    bool saw_z = false;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            if (v.normal.z > 0.9999f)
+            {
+                saw_z = true;
+            }
+        }
+    }
+    ASSERT_EQ(at_origin, 2); // different groups override the shallow angle → split
+    ASSERT_TRUE(saw_z);      // unblended +Z face normal (a merge would blend z down to ~0.995)
+}
+
+TEST(normals, smoothing_group_merges_where_angle_would_split)
+{
+    // 90 deg fold (> 60 deg crease → angle alone would split), but both faces share
+    // group 1 → the shared origin stays a single vertex with a blended normal.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "s 1\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_sg_merge.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    vec3 n{};
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            n = v.normal;
+        }
+    }
+    ASSERT_EQ(at_origin, 1); // same group overrides the steep angle → merged
+    ASSERT_NEAR(n.length(), 1.0f, 1e-5f);
+    ASSERT_TRUE(n.y > 0.4f && n.z > 0.4f); // blend of +Z and +Y, not axis-aligned
+}
+
+TEST(normals, smoothing_off_facets_below_crease)
+{
+    // Shallow ~11 deg fold (angle alone would merge), but `s off` on both faces is
+    // explicit faceting → the origin splits. Exercises the directive scan: every
+    // face id is 0, yet the file must be treated as group mode, not angle fallback.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 -1 0.2\n"
+                            "s off\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_sg_off.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+        }
+    }
+    ASSERT_EQ(at_origin, 2); // `s off` facets despite the shallow angle
+}
+
+TEST(normals, smoothing_group_smooths_across_uv_seam)
+{
+    // 90 deg fold (angle alone would split) with a UV seam splitting the origin by
+    // vt, and both faces in group 1. Groups override the angle AND weld across the
+    // seam: both origin halves stay (UV preserved) sharing one blended normal.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "s 1\n"
+                            "f 1/1 2/2 3/3\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_sg_seam.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    vec3 first{};
+    vec3 second{};
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            if (at_origin == 0)
+            {
+                first = v.normal;
+            }
+            else
+            {
+                second = v.normal;
+            }
+            at_origin++;
+        }
+    }
+    ASSERT_EQ(at_origin, 2);               // UV split preserved
+    ASSERT_NEAR(first.x, second.x, 1e-5f); // both halves share the welded normal
+    ASSERT_NEAR(first.y, second.y, 1e-5f);
+    ASSERT_NEAR(first.z, second.z, 1e-5f);
+    ASSERT_TRUE(first.y > 0.4f && first.z > 0.4f); // blended, not a single face normal
+}
+
 TEST(normals, crease_split_syncs_vertex_colors)
 {
     // 90 deg fold with per-vertex colors. The shared edge splits, and the split
