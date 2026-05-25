@@ -1945,3 +1945,51 @@ TEST(gltf_valid, negative_determinant_flips_triangle_winding)
     const vec3 face_n = cross(e1, e2);
     ASSERT_TRUE(face_n.z > 0.0f);
 }
+
+TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
+{
+    // Same setup as the non-indexed mirror test, but with an indices accessor —
+    // covers the indexed branch in load_gltf (the flip is duplicated in both
+    // branches, so the non-indexed test alone wouldn't catch a regression here).
+    std::string bin;
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    // Index buffer: 0,1,2 as UNSIGNED_SHORT (componentType 5123); padded to 4-byte align.
+    emit_u16_le(bin, 0);
+    emit_u16_le(bin, 1);
+    emit_u16_le(bin, 2);
+    bin.push_back('\0');
+    bin.push_back('\0');
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0,\"scale\":[-1.0,1.0,1.0]}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5123,\"count\":3,\"type\":\"SCALAR\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":6}"
+        "],"
+        "\"buffers\":[{\"byteLength\":44}]}";
+
+    TmpFile f(tmp_path("rast_mirror_indexed.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+
+    const Triangle &t = m.triangles[0];
+    const vec3 &a = m.vertices[t.v[0]].pos;
+    const vec3 &b = m.vertices[t.v[1]].pos;
+    const vec3 &c = m.vertices[t.v[2]].pos;
+    const vec3 face_n = cross(b - a, c - a);
+    ASSERT_TRUE(face_n.z > 0.0f);
+}
