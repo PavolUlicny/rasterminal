@@ -1845,3 +1845,103 @@ TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
     Mesh m = load_ok(f.path);
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
 }
+
+// ─── Group X: non-uniform node scale → inverse-transpose for normals ─────────
+
+TEST(gltf_valid, non_uniform_scale_uses_inverse_transpose_for_normals)
+{
+    // Triangle in local space with surface normal n = (1,0,1)/sqrt(2):
+    //   p0=(0,0,0)  p1=(1,0,-1)/sqrt(2)  p2=(0,1,0)
+    // Node scale [2,1,1]. The naive upper-3x3 transform gives (2,0,1)/sqrt(5);
+    // the correct inverse-transpose gives (1,0,2)/sqrt(5). Geometric check:
+    // after scaling, edges (sqrt(2),0,-sqrt(2)/2) and (0,1,0) cross to
+    // (sqrt(2)/2, 0, sqrt(2)) ∝ (1,0,2). The supplied normals are identical
+    // on every vertex, so any vertex-cache permutation preserves the test.
+    const float s = 0.70710678f; // 1/sqrt(2)
+
+    std::string bin;
+    // POSITION (accessor 0, bufferView 0, 36 bytes)
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, s);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, -s);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    // NORMAL (accessor 1, bufferView 1, 36 bytes) — all three vertices = (1,0,1)/sqrt(2)
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(bin, s);
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, s);
+    }
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0,\"scale\":[2.0,1.0,1.0]}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1}}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,-1],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,0,1]}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}"
+        "],"
+        "\"buffers\":[{\"byteLength\":72}]}";
+
+    TmpFile f(tmp_path("rast_nonuniform.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
+
+    const float inv_sqrt5 = 0.4472136f;
+    for (const Vertex &v : m.vertices)
+    {
+        ASSERT_NEAR(v.normal.x, 1.0f * inv_sqrt5, 1e-4f);
+        ASSERT_NEAR(v.normal.y, 0.0f, 1e-4f);
+        ASSERT_NEAR(v.normal.z, 2.0f * inv_sqrt5, 1e-4f);
+    }
+}
+
+// ─── Group Y: negative-determinant node scale → triangle winding flips ───────
+
+TEST(gltf_valid, negative_determinant_flips_triangle_winding)
+{
+    // Triangle p0=(0,0,0) p1=(1,0,0) p2=(0,1,0); winding gives normal +Z.
+    // Node scale [-1,1,1] mirrors X (det = -1). Without a winding flip the
+    // world-space triangle's edge cross would point at -Z (backface-culled);
+    // the loader must swap v[1]/v[2] so the geometric normal stays at +Z.
+    std::string bin;
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0,\"scale\":[-1.0,1.0,1.0]}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0}}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[0,0,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+
+    TmpFile f(tmp_path("rast_mirror.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
+
+    const Triangle &t = m.triangles[0];
+    const vec3 &a = m.vertices[t.v[0]].pos;
+    const vec3 &b = m.vertices[t.v[1]].pos;
+    const vec3 &c = m.vertices[t.v[2]].pos;
+    const vec3 e1 = b - a;
+    const vec3 e2 = c - a;
+    const vec3 face_n = cross(e1, e2);
+    ASSERT_TRUE(face_n.z > 0.0f);
+}

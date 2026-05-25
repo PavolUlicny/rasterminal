@@ -4,6 +4,8 @@
 #include "mesh_loader.h"
 #include "texture.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -133,9 +135,50 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             float w[16];
             cgltf_node_transform_world(node, w);
             // w is column-major: element [col*4+row].
-            // Position transform: p' = w * [px, py, pz, 1]
-            // Normal transform:   n' = normalize(w * [nx, ny, nz, 0])
-            // Correct for uniform scale; sufficient for a viewer.
+            // Position transform: p' = w * [px, py, pz, 1].
+            // Normals need the inverse-transpose of the upper-3x3 under
+            // non-uniform scale, otherwise they stop being perpendicular to
+            // their surface. Build it once per node; fast-path
+            // rotation/uniform-scale (column lengths equal and orthogonal) so
+            // those assets stay bit-identical to the pre-fix path.
+
+            const float c0[3] = { w[0], w[1], w[2] };
+            const float c1[3] = { w[4], w[5], w[6] };
+            const float c2[3] = { w[8], w[9], w[10] };
+            const float det3 = (c0[0] * ((c1[1] * c2[2]) - (c1[2] * c2[1]))) -
+                               (c1[0] * ((c0[1] * c2[2]) - (c0[2] * c2[1]))) +
+                               (c2[0] * ((c0[1] * c1[2]) - (c0[2] * c1[1])));
+            const bool flip_winding = det3 < 0.0f;
+
+            const float l0sq = (c0[0] * c0[0]) + (c0[1] * c0[1]) + (c0[2] * c0[2]);
+            const float l1sq = (c1[0] * c1[0]) + (c1[1] * c1[1]) + (c1[2] * c1[2]);
+            const float l2sq = (c2[0] * c2[0]) + (c2[1] * c2[1]) + (c2[2] * c2[2]);
+            const float d01 = (c0[0] * c1[0]) + (c0[1] * c1[1]) + (c0[2] * c1[2]);
+            const float d02 = (c0[0] * c2[0]) + (c0[1] * c2[1]) + (c0[2] * c2[2]);
+            const float d12 = (c1[0] * c2[0]) + (c1[1] * c2[1]) + (c1[2] * c2[2]);
+            const float tol = 1e-5f * std::max({ l0sq, l1sq, l2sq });
+            const bool orthogonal = std::fabs(d01) <= tol && std::fabs(d02) <= tol && std::fabs(d12) <= tol;
+            const bool equal_scale = std::fabs(l0sq - l1sq) <= tol && std::fabs(l1sq - l2sq) <= tol;
+            // Degenerate (|det| ~ 0): no usable inverse — fall back to the
+            // upper-3x3 path so we don't divide by zero. Asset is broken; no
+            // shading is right, but we don't crash.
+            const bool uniform_scale = (orthogonal && equal_scale) || std::fabs(det3) <= 1e-12f;
+
+            float nm[9];
+            if (!uniform_scale)
+            {
+                // nm = transpose(inverse(upper3x3(w))), via adjugate / det.
+                const float inv_det = 1.0f / det3;
+                nm[0] = ((c1[1] * c2[2]) - (c1[2] * c2[1])) * inv_det;
+                nm[1] = ((c1[2] * c2[0]) - (c1[0] * c2[2])) * inv_det;
+                nm[2] = ((c1[0] * c2[1]) - (c1[1] * c2[0])) * inv_det;
+                nm[3] = ((c0[2] * c2[1]) - (c0[1] * c2[2])) * inv_det;
+                nm[4] = ((c0[0] * c2[2]) - (c0[2] * c2[0])) * inv_det;
+                nm[5] = ((c0[1] * c2[0]) - (c0[0] * c2[1])) * inv_det;
+                nm[6] = ((c0[1] * c1[2]) - (c0[2] * c1[1])) * inv_det;
+                nm[7] = ((c0[2] * c1[0]) - (c0[0] * c1[2])) * inv_det;
+                nm[8] = ((c0[0] * c1[1]) - (c0[1] * c1[0])) * inv_det;
+            }
 
             for (size_t pi = 0; pi < node->mesh->primitives_count; pi++)
             {
@@ -205,9 +248,18 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     {
                         float n[3];
                         cgltf_accessor_read_float(norm_acc, i, n, 3);
-                        v.normal.x = (w[0] * n[0]) + (w[4] * n[1]) + (w[8] * n[2]);
-                        v.normal.y = (w[1] * n[0]) + (w[5] * n[1]) + (w[9] * n[2]);
-                        v.normal.z = (w[2] * n[0]) + (w[6] * n[1]) + (w[10] * n[2]);
+                        if (uniform_scale)
+                        {
+                            v.normal.x = (w[0] * n[0]) + (w[4] * n[1]) + (w[8] * n[2]);
+                            v.normal.y = (w[1] * n[0]) + (w[5] * n[1]) + (w[9] * n[2]);
+                            v.normal.z = (w[2] * n[0]) + (w[6] * n[1]) + (w[10] * n[2]);
+                        }
+                        else
+                        {
+                            v.normal.x = (nm[0] * n[0]) + (nm[3] * n[1]) + (nm[6] * n[2]);
+                            v.normal.y = (nm[1] * n[0]) + (nm[4] * n[1]) + (nm[7] * n[2]);
+                            v.normal.z = (nm[2] * n[0]) + (nm[5] * n[1]) + (nm[8] * n[2]);
+                        }
                         const float len = v.normal.length();
                         if (len > 1e-6f)
                         {
@@ -254,6 +306,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                         t.v[0] = static_cast<uint32_t>(vert_base + cgltf_accessor_read_index(prim.indices, i));
                         t.v[1] = static_cast<uint32_t>(vert_base + cgltf_accessor_read_index(prim.indices, i + 1));
                         t.v[2] = static_cast<uint32_t>(vert_base + cgltf_accessor_read_index(prim.indices, i + 2));
+                        if (flip_winding)
+                        {
+                            std::swap(t.v[1], t.v[2]);
+                        }
                         t.material_idx = mat_idx;
                         triangles.push_back(t);
                     }
@@ -268,6 +324,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                         t.v[0] = static_cast<uint32_t>(vert_base + i);
                         t.v[1] = static_cast<uint32_t>(vert_base + i + 1);
                         t.v[2] = static_cast<uint32_t>(vert_base + i + 2);
+                        if (flip_winding)
+                        {
+                            std::swap(t.v[1], t.v[2]);
+                        }
                         t.material_idx = mat_idx;
                         triangles.push_back(t);
                     }
