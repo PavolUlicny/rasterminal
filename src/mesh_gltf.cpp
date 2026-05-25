@@ -164,7 +164,9 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             // shading is right, but we don't crash.
             const bool uniform_scale = (orthogonal && equal_scale) || std::fabs(det3) <= 1e-12f;
 
-            float nm[9];
+            // Zero-init: GCC LTO can't prove the uniform_scale gate correlates
+            // between fill and read, and warns -Wmaybe-uninitialized on the read.
+            float nm[9]{};
             if (!uniform_scale)
             {
                 // nm = transpose(inverse(upper3x3(w))), via adjugate / det.
