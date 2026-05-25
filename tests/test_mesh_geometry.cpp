@@ -544,6 +544,66 @@ TEST(normals, smoothing_group_smooths_across_uv_seam)
     ASSERT_TRUE(first.y > 0.4f && first.z > 0.4f); // blended, not a single face normal
 }
 
+TEST(normals, smoothing_group_smooths_across_object_boundary)
+{
+    // The same group 1 spans two `g` shapes. OBJ smoothing-group ids are file-global
+    // (tinyobj keeps the active id across `g`/`o`), and the loader builds the
+    // per-triangle id array across all shapes — so two same-group faces in different
+    // shapes sharing an edge must merge at a 90 deg fold (where the angle would
+    // split). Guards both the cross-shape semantics and the multi-shape build loop.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "s 1\n"
+                            "g shapeA\n"
+                            "f 1 2 3\n"
+                            "g shapeB\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_sg_obj_boundary.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    vec3 n{};
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            n = v.normal;
+        }
+    }
+    ASSERT_EQ(at_origin, 1); // same global group across `g` → merged, not split
+    ASSERT_NEAR(n.length(), 1.0f, 1e-5f);
+    ASSERT_TRUE(n.y > 0.4f && n.z > 0.4f); // blend of +Z and +Y
+}
+
+TEST(normals, smoothing_scan_ignores_comments_and_bare_s)
+{
+    // A `# s 1` comment and a value-less bare `s` are NOT smoothing directives, so
+    // the file authors no groups → the crease-angle fallback must run. At a shallow
+    // ~11 deg fold (< 60 deg) the origin stays merged. If the scan false-positived
+    // into group mode, every id would be 0 and the origin would facet (split) → 2.
+    const std::string obj = "# s 1\n"
+                            "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 -1 0.2\n"
+                            "s\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_sg_scan_noise.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+        }
+    }
+    ASSERT_EQ(at_origin, 1); // angle fallback merged the shallow fold (no group mode)
+}
+
 TEST(normals, crease_split_syncs_vertex_colors)
 {
     // 90 deg fold with per-vertex colors. The shared edge splits, and the split
