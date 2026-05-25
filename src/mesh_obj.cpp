@@ -147,10 +147,22 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         mat.specular_tex = load_tex(m.specular_texname);
         // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
         mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname) : load_tex(m.bump_texname);
-        mat.emissive = { m.emission[0], m.emission[1], m.emission[2] };
-        mat.emissive_tex = load_tex(m.emissive_texname);
-        // Industry-convention factor promotion (Ke unset + map_Ke present ⇒ {1,1,1}) happens
-        // in Mesh::load_model() after decode_textures, so a failed map_Ke decode doesn't promote.
+        // Clamp Ke to [0, 1e6] per channel: emission is physically non-negative (glTF enforces
+        // the same via emissiveFactor's `minimum: 0.0`). Lower bound stops a negative from
+        // subtracting from lit colour; upper bound stops a hostile +Inf at the source, before
+        // it can produce a per-pixel NaN via `Inf * 0` on a zero texel channel (uint8_t cast on
+        // NaN is UB). Symmetric with the glTF emissiveFactor clamp.
+        mat.emissive = { std::clamp(m.emission[0], 0.0f, 1e6f), std::clamp(m.emission[1], 0.0f, 1e6f),
+                         std::clamp(m.emission[2], 0.0f, 1e6f) };
+        // Spec-literal: emissive = Ke × map_Ke. A zero Ke means map_Ke cannot contribute
+        // (do_emissive gated on factor>0), so skip the decode — saves a stb_image_load (often
+        // multi-MB) and permanent RAM. Dedup unaffected: if the same image is bound as e.g.
+        // map_Kd, that call still registers and decodes it.
+        const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
+        if (emissive_active)
+        {
+            mat.emissive_tex = load_tex(m.emissive_texname);
+        }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
         if (!m.alpha_texname.empty())

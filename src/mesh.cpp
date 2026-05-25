@@ -87,23 +87,13 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     has_occlusion =
         std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
 
-    // Industry-convention promotion: when an emissive texture is bound but the factor is at
-    // the spec default {0,0,0}, promote to {1,1,1} so the texture actually glows (matches
-    // Unreal, Sketchfab, MSFS, Blender's PBR importer). Run AFTER the loader's decode pass
-    // so emissive_tex reflects successful decodes — a failed decode (remapped to -1) must
-    // NOT trigger promotion, otherwise the material would render uniform white.
-    for (Material &m : materials)
-    {
-        if (m.emissive_tex >= 0 && m.emissive.x == 0.0f && m.emissive.y == 0.0f && m.emissive.z == 0.0f)
-        {
-            m.emissive = { 1.0f, 1.0f, 1.0f };
-            m.emissive_was_promoted = true;
-        }
-    }
-
+    // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
+    // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
+    // Mesh-level flag drops materials whose factor is zero — emissive_tex without a non-zero
+    // factor cannot contribute and would only waste per-frame setup work.
     has_emissive = std::any_of(
-        materials.begin(), materials.end(), [](const Material &m)
-        { return m.emissive_tex >= 0 || m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
+        materials.begin(), materials.end(),
+        [](const Material &m) { return m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
     );
 
     compute_tangents();

@@ -392,7 +392,8 @@ void rasterize(
             // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
             // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
             // emissive contribution saturates invisibly — visible only where the lit colour
-            // has headroom. Real HDR (KHR_materials_emissive_strength + tonemap) would fix it.
+            // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
+            // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
             if (do_emissive)
             {
                 vec3 e = emissive;
@@ -494,8 +495,8 @@ void rasterize_phong(
     const bool occ_is_mr = (octex != nullptr && octex == mrtex);
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
-    // The factor is passed in (not read from mat) so the caller can gate emissive entirely
-    // on the texture-toggle UI flag — see show_emissive in renderer.cpp.
+    // The factor is passed in so callers can override it (e.g. tests); the UI texture
+    // toggle only controls whether etex is sampled (see show_emissive in renderer.cpp).
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
@@ -689,7 +690,8 @@ void rasterize_phong(
             // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
             // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
             // emissive contribution saturates invisibly — visible only where the lit colour
-            // has headroom. Real HDR (KHR_materials_emissive_strength + tonemap) would fix it.
+            // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
+            // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
             if (do_emissive)
             {
                 vec3 e = emissive;

@@ -110,12 +110,35 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             // does not enforce; clamp so an out-of-range value can't drive ao negative per-pixel.
             mat.occlusion_strength = clamp(m->occlusion_texture.scale, 0.0f, 1.0f);
         }
-        mat.emissive = { m->emissive_factor[0], m->emissive_factor[1], m->emissive_factor[2] };
-        if (m->emissive_texture.texture)
+        // Clamp emissiveFactor to [0, 1e6] per channel. Lower bound: spec sets `minimum: 0.0`
+        // but cgltf doesn't enforce, and a negative would subtract from lit colour. Upper
+        // bound: a hostile JSON literal like `1e400` parses to +Inf, which downstream produces
+        // NaN via the per-pixel `Inf * 0` on a zero texel channel; since every consumer gates
+        // on `> 0.0f` and vec3_to_color's clamp both mishandle NaN (uint8_t cast on NaN is UB),
+        // we stop the +Inf at the source so the NaN can never arise. cgltf can't emit NaN
+        // directly, so no NaN reaches this line.
+        mat.emissive = { std::clamp(m->emissive_factor[0], 0.0f, 1e6f), std::clamp(m->emissive_factor[1], 0.0f, 1e6f),
+                         std::clamp(m->emissive_factor[2], 0.0f, 1e6f) };
+        if (m->has_emissive_strength)
+        {
+            // KHR_materials_emissive_strength: bake strength into the factor at load.
+            // Rasterminal has no HDR/tonemap, so a load-time multiply is equivalent to the
+            // per-frame intensity multiply real-time engines do in their shader. Clamp the
+            // strength to [0, 1e6] for the same reason as the factor above (kill +Inf at the
+            // source). Each input is bounded; the baked product can exceed 1e6 (up to ~1e12),
+            // which is fine — the point is staying finite, and vec3_to_color saturates it.
+            const float s = std::clamp(m->emissive_strength.emissive_strength, 0.0f, 1e6f);
+            mat.emissive = mat.emissive * s;
+        }
+        // Spec-literal: emissive = factor × texture. A zero factor means the texture cannot
+        // contribute (do_emissive in the rasterizer is gated on factor>0), so skip the decode
+        // entirely — saves a stb_image_load (often multi-MB) and the permanent RAM footprint
+        // for a texture no fragment will ever sample. dedup is unaffected: if the same image
+        // is also bound as e.g. diffuse, that call still registers and decodes it.
+        const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
+        if (emissive_active && m->emissive_texture.texture)
         {
             mat.emissive_tex = load_tex(m->emissive_texture.texture->image);
-            // Industry-convention factor promotion (emissiveFactor=0 + bound texture ⇒ {1,1,1})
-            // happens in Mesh::load_model() after decode_textures, so failed decodes don't promote.
         }
         mat.double_sided = m->double_sided;
         if (m->alpha_mode == cgltf_alpha_mode_mask)

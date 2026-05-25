@@ -48,14 +48,9 @@ struct Material
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
     // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
-    // Modulated by emissive_tex when present. A zero factor skips the per-pixel add and any
-    // emissive_tex sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0).
-    // NOTE: Mesh::load_model promotes a zero factor to {1,1,1} when emissive_tex >= 0 after
-    // decode (industry convention for "author bound a texture but forgot the factor"); a
-    // legitimate explicit-zero-with-texture material cannot be distinguished from default-zero.
-    // emissive_was_promoted (declared below alongside double_sided to pack the two bools into
-    // a single slot) tags promoted materials so the renderer can suppress the factor under
-    // the texture toggle without affecting authored factors.
+    // Modulated by emissive_tex when present. A zero factor skips the per-pixel add and the
+    // emissive_tex sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0). For
+    // glTF, mesh_gltf bakes KHR_materials_emissive_strength into this factor at load.
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
     // Texture slot indices into Mesh::textures (-1 = none).
     int diffuse_tex = -1;
@@ -79,18 +74,7 @@ struct Material
     int occlusion_tex = -1;
     float occlusion_strength = 1.0f;
     bool double_sided = false;
-    bool emissive_was_promoted = false; // packs into the same alignment slot as double_sided
-    float alpha_cutoff = 0.0f;          // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
-
-    // Emissive factor to feed the rasterizer given the current texture toggle:
-    // authored factors always pass; loader-promoted {1,1,1} factors are zeroed when textures
-    // are off (otherwise toggling textures off on a BoomBox/DamagedHelmet-style asset would
-    // render solid white from the leftover factor add). Encapsulated here so the gate stays
-    // in one place across the Flat/Gouraud and Phong call sites in renderer.cpp.
-    [[nodiscard]] vec3 effective_emissive(bool show_emissive) const noexcept
-    {
-        return (!emissive_was_promoted || show_emissive) ? emissive : vec3{ 0.0f, 0.0f, 0.0f };
-    }
+    float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
 };
 
 struct Light

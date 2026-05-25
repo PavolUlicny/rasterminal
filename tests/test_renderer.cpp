@@ -405,62 +405,128 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     }
 }
 
-// F2b: show_texture=false must suppress the emissive factor on materials with a bound
-// emissive texture (the factor may have been loader-promoted from {0,0,0} → {1,1,1} —
-// keeping it would render solid white on common PBR assets like DamagedHelmet).
-TEST(renderer, show_texture_toggle_suppresses_promoted_emissive_factor)
+// F2b: spec-literal emissive — a zero emissiveFactor + bound emissive texture must render
+// dark (emissive = factor × texture = 0), matching three.js / Khronos Sample Viewer. This
+// pins the rasterizer's do_emissive gate end-to-end: has_emissive is forced true so the
+// renderer DOES forward the bright texture to the rasterizer, isolating do_emissive as the
+// only thing keeping the pixel dark. A future change to do_emissive = (factor>0 || etex)
+// would make this glow green and fail here.
+TEST(renderer, zero_factor_with_emissive_texture_renders_dark)
 {
     Renderer r(1);
     r.mode = ShadingMode::Phong;
 
     Mesh mesh = make_unit_triangle();
-    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // emissive texture: green
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // bright green emissive texture
     mesh.materials[0].emissive_tex = 0;
-    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f }; // simulates loader-promoted factor
-    mesh.materials[0].emissive_was_promoted = true;    // matches what load_model would set
+    mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f }; // spec default: no emission
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-    mesh.has_emissive = true; // hand-crafted mesh skips load_model's derivation
+    // Force the flag true so the renderer forwards the emissive texture — load_model would
+    // derive false for a zero factor, but here we want the texture to reach the rasterizer so
+    // do_emissive (factor-only) is the gate under test, not the mesh-level has_emissive prune.
+    mesh.has_emissive = true;
 
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f }); // no lighting contribution
     vec3 ambient{ 0.0f, 0.0f, 0.0f };
 
-    Framebuffer fb_on(40, 20, /*headless=*/true);
-    fb_on.clear();
-    r.show_texture = true;
-    r.render(mesh, cam, &light, 1, ambient, fb_on);
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = true; // textures on: the only thing keeping it dark is the zero factor
+    r.render(mesh, cam, &light, 1, ambient, fb);
 
-    Framebuffer fb_off(40, 20, /*headless=*/true);
-    fb_off.clear();
-    r.show_texture = false;
-    r.render(mesh, cam, &light, 1, ambient, fb_off);
-
-    ASSERT_TRUE(was_drawn(fb_on, 20, 10));
-    ASSERT_TRUE(was_drawn(fb_off, 20, 10));
-
-    Color on = fb_on.get_pixel(20, 10);
-    Color off = fb_off.get_pixel(20, 10);
-
-    if (on.g < 200)
-    {
-        ASSERT_FAIL("show_texture=true: expected green emissive, got G=" + std::to_string(static_cast<int>(on.g)));
-    }
-    if (off.r > 20 || off.g > 20 || off.b > 20)
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 20 || c.g > 20 || c.b > 20)
     {
         ASSERT_FAIL(
-            "show_texture=false: emissive factor leaked through (" + std::to_string(static_cast<int>(off.r)) + "," +
-            std::to_string(static_cast<int>(off.g)) + "," + std::to_string(static_cast<int>(off.b)) +
-            "), expected near-black"
+            "zero factor + emissive texture: expected near-black, got (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }
 
-// F2c: show_texture=false must NOT suppress authored factor-only emissive (no bound
-// texture means promotion was impossible — the factor is necessarily author-intended).
-// Without this guarantee, a model with `Ke 1 0 0` and no `map_Ke` would lose its red glow
-// under the texture toggle, divergent from mat.diffuse's behavior.
+// F2b-Flat: Flat-mode parity for F2b. rasterize() (Flat/Gouraud) and rasterize_phong() are
+// textually independent hand-typed do_emissive gates (rasterize.cpp:289 and :500), so each
+// shading path needs its own coverage against a future `factor>0 || etex` regression.
+TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Flat;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // bright green emissive texture
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true; // force the texture to reach the rasterizer
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = true;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 20 || c.g > 20 || c.b > 20)
+    {
+        ASSERT_FAIL(
+            "Flat zero factor + emissive texture: expected near-black, got (" + std::to_string(static_cast<int>(c.r)) +
+            "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
+// F2b-Gouraud: Gouraud-mode parity for F2b. Same rasterize() call site as Flat but with
+// per-vertex lighting upstream; pinned separately so a future Gouraud-only rewire can't
+// silently drop the do_emissive gate.
+TEST(renderer, gouraud_zero_factor_with_emissive_texture_renders_dark)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Gouraud;
+
+    Mesh mesh = make_unit_triangle();
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
+    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    mesh.has_emissive = true;
+
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
+
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.show_texture = true;
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.r > 20 || c.g > 20 || c.b > 20)
+    {
+        ASSERT_FAIL(
+            "Gouraud zero factor + emissive texture: expected near-black, got (" +
+            std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," +
+            std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
+// F2c: show_texture=false must NOT suppress the authored emissive factor. By analogy with
+// mat.diffuse (which stays in effect when diffuse_tex is hidden by the toggle), the
+// authored emissive factor must survive — a model with `Ke 1 0 0` should keep its red glow
+// even with textures off.
 TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
 {
     Renderer r(1);
@@ -502,9 +568,8 @@ TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
 }
 
 // F2d: authored factor + bound emissive texture must keep the factor across the toggle.
-// emissive_was_promoted=false distinguishes this from the loader-promoted case (F2b).
-// The texture is suppressed by show_emissive but the authored factor survives — only the
-// promotion-derived white-out is what needs zeroing.
+// The texture is suppressed by show_emissive (consistent with diffuse_tex behavior) but the
+// authored factor survives.
 TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
 {
     Renderer r(1);
@@ -514,7 +579,6 @@ TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // emissive texture: blue
     mesh.materials[0].emissive_tex = 0;
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
-    mesh.materials[0].emissive_was_promoted = false;   // NOT promoted — author wrote this
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
@@ -547,44 +611,6 @@ TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
     }
 }
 
-// F2e: Flat-mode parity for F2b — promoted factor must be suppressed under the toggle.
-// renderer.cpp's Flat/Gouraud dispatch is a separate call site from the Phong dispatch;
-// the emissive gate is hand-typed at both, so each one needs renderer-level coverage.
-TEST(renderer, flat_show_texture_toggle_suppresses_promoted_emissive_factor)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Flat;
-
-    Mesh mesh = make_unit_triangle();
-    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
-    mesh.materials[0].emissive_tex = 0;
-    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f };
-    mesh.materials[0].emissive_was_promoted = true;
-    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-    mesh.has_emissive = true;
-
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
-    vec3 ambient{ 0.0f, 0.0f, 0.0f };
-
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.show_texture = false;
-    r.render(mesh, cam, &light, 1, ambient, fb);
-
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r > 20 || c.g > 20 || c.b > 20)
-    {
-        ASSERT_FAIL(
-            "Flat show_texture=false: promoted emissive leaked (" + std::to_string(static_cast<int>(c.r)) + "," +
-            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
-        );
-    }
-}
-
 // F2f: Flat-mode parity for F2d — authored factor + bound texture must survive the toggle.
 TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
 {
@@ -595,7 +621,6 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255));
     mesh.materials[0].emissive_tex = 0;
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f };
-    mesh.materials[0].emissive_was_promoted = false;
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
@@ -624,20 +649,19 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
     }
 }
 
-// F2g: Gouraud-mode parity — Flat and Gouraud share the rasterize() call site in the
-// renderer, but Gouraud has a different upstream branch (per-vertex lighting). A future
-// refactor that splits or rewires Gouraud should fail this test rather than silently lose
-// emissive on per-vertex-shaded surfaces.
-TEST(renderer, gouraud_show_texture_toggle_suppresses_promoted_emissive_factor)
+// F2g: Gouraud-mode parity for F2d/F2f — authored factor + bound texture must survive the
+// toggle. Gouraud shares rasterize()'s emissive forwarding with Flat but reaches it via a
+// distinct per-vertex-lighting branch in the renderer, so pin it independently against a
+// future change that re-couples the factor to the texture toggle on the Gouraud path.
+TEST(renderer, gouraud_show_texture_toggle_preserves_authored_factor_with_texture)
 {
     Renderer r(1);
     r.mode = ShadingMode::Gouraud;
 
     Mesh mesh = make_unit_triangle();
-    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
+    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // blue emissive texture
     mesh.materials[0].emissive_tex = 0;
-    mesh.materials[0].emissive = { 1.0f, 1.0f, 1.0f };
-    mesh.materials[0].emissive_was_promoted = true;
+    mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
@@ -654,11 +678,17 @@ TEST(renderer, gouraud_show_texture_toggle_suppresses_promoted_emissive_factor)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r > 20 || c.g > 20 || c.b > 20)
+    if (c.r < 200)
     {
         ASSERT_FAIL(
-            "Gouraud show_texture=false: promoted emissive leaked (" + std::to_string(static_cast<int>(c.r)) + "," +
-            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+            "Gouraud show_texture=false with authored factor: expected red, got R=" +
+            std::to_string(static_cast<int>(c.r))
+        );
+    }
+    if (c.b > 20)
+    {
+        ASSERT_FAIL(
+            "Gouraud show_texture=false: blue texture leaked (B=" + std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }

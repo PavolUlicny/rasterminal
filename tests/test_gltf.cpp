@@ -123,6 +123,162 @@ TEST(gltf_valid, emissive_factor_only_sets_has_emissive)
     ASSERT_TRUE(m.has_emissive);
 }
 
+// Inline GLB assembly helper local to the emissive-strength tests (make_glb is defined
+// further down the file for primitive-coverage tests).
+static std::string build_minimal_glb(std::string json)
+{
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    while (json.size() % 4 != 0)
+    {
+        json += ' ';
+    }
+    const auto jlen = static_cast<uint32_t>(json.size());
+    const auto blen = static_cast<uint32_t>(bin.size());
+    std::string glb;
+    emit_u32_le(glb, 0x46546C67u);
+    emit_u32_le(glb, 2u);
+    emit_u32_le(glb, 12u + 8u + jlen + 8u + blen);
+    emit_u32_le(glb, jlen);
+    emit_u32_le(glb, 0x4E4F534Au);
+    glb += json;
+    emit_u32_le(glb, blen);
+    emit_u32_le(glb, 0x004E4942u);
+    glb += bin;
+    return glb;
+}
+
+TEST(gltf_valid, emissive_strength_multiplies_factor)
+{
+    // KHR_materials_emissive_strength: emissive = emissiveFactor × emissiveStrength.
+    // Baked into mat.emissive at load (rasterminal has no per-frame intensity uniform).
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"emissiveFactor\":[0.5,0.25,0.1],"
+                             "\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":4.0}}}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    TmpFile f(tmp_path("rast_emissive_strength.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_NEAR(mat.emissive.x, 2.0f, 1e-4f);
+    ASSERT_NEAR(mat.emissive.y, 1.0f, 1e-4f);
+    ASSERT_NEAR(mat.emissive.z, 0.4f, 1e-4f);
+    ASSERT_TRUE(m.has_emissive);
+}
+
+TEST(gltf_valid, emissive_strength_negative_clamped_to_zero)
+{
+    // Spec sets `minimum: 0.0` but cgltf doesn't validate; a negative would subtract from lit
+    // colour before vec3_to_color. Loader clamps strength to ≥0 — assert the multiply zeros.
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"emissiveFactor\":[1.0,1.0,1.0],"
+                             "\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":-2.0}}}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    TmpFile f(tmp_path("rast_emissive_neg.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_NEAR(mat.emissive.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(mat.emissive.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(mat.emissive.z, 0.0f, 1e-6f);
+    ASSERT_FALSE(m.has_emissive);
+}
+
+TEST(gltf_valid, emissive_factor_infinity_clamped)
+{
+    // Hostile asset: emissiveFactor=1e400 parses as +Inf via cgltf. Without an upper clamp,
+    // +Inf reaches mat.emissive and a per-pixel `Inf * 0` from a zero texel channel produces
+    // NaN — vec3_to_color's clamp is not NaN-safe and the uint8_t cast on NaN is UB. Symmetric
+    // with the emissive_strength clamp.
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"emissiveFactor\":[1e400,1e400,1e400]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    TmpFile f(tmp_path("rast_emissive_factor_inf.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_TRUE(std::isfinite(mat.emissive.x));
+    ASSERT_TRUE(std::isfinite(mat.emissive.y));
+    ASSERT_TRUE(std::isfinite(mat.emissive.z));
+    ASSERT_NEAR(mat.emissive.x, 1e6f, 1.0f);
+}
+
+TEST(gltf_valid, emissive_strength_infinity_clamped)
+{
+    // Hostile asset: emissiveStrength=1e400 parses as +Inf via cgltf. Without an upper
+    // clamp, +Inf reaches mat.emissive, and a per-pixel `Inf * 0` from a zero texel channel
+    // produces NaN — vec3_to_color's clamp is not NaN-safe and the uint8_t cast is UB.
+    // Upper clamp at 1e6 keeps the result finite (and post-saturation in vec3_to_color it
+    // looks identical to any other very-high LDR strength).
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"emissiveFactor\":[1.0,1.0,1.0],"
+                             "\"extensions\":{\"KHR_materials_emissive_strength\":{\"emissiveStrength\":1e400}}}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    TmpFile f(tmp_path("rast_emissive_inf.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    // Each channel = 1.0 * clamp(1e400 → +Inf, 0, 1e6) = 1e6 — finite, no NaN downstream.
+    ASSERT_TRUE(std::isfinite(mat.emissive.x));
+    ASSERT_TRUE(std::isfinite(mat.emissive.y));
+    ASSERT_TRUE(std::isfinite(mat.emissive.z));
+    ASSERT_NEAR(mat.emissive.x, 1e6f, 1.0f);
+}
+
+TEST(gltf_valid, emissive_factor_negative_clamped_to_zero)
+{
+    // Spec sets emissiveFactor `minimum: 0.0` per channel but cgltf doesn't enforce; a
+    // negative would subtract from lit colour before vec3_to_color. Loader clamps per
+    // channel — mirrors the OBJ Ke clamp and the emissive_strength clamp.
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"emissiveFactor\":[0.5,-1.0,-0.25]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    TmpFile f(tmp_path("rast_emissive_factor_neg.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Material &mat = m.materials[1];
+    ASSERT_NEAR(mat.emissive.x, 0.5f, 1e-4f);
+    ASSERT_NEAR(mat.emissive.y, 0.0f, 1e-6f);
+    ASSERT_NEAR(mat.emissive.z, 0.0f, 1e-6f);
+    ASSERT_TRUE(m.has_emissive); // R survives the clamp
+}
+
 TEST(gltf_valid, double_sided_flag_set)
 {
     // Minimal GLB: one triangle, material with doubleSided:true.
@@ -1114,6 +1270,42 @@ TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
     ASSERT_TRUE(m.materials.size() >= 2);
     ASSERT_TRUE(m.materials[1].normal_tex < 0);
+}
+
+TEST(gltf_valid, zero_emissive_factor_with_texture_skips_decode)
+{
+    // Spec-literal: emissive = factor × texture. A zero factor means no fragment can sample
+    // the texture (do_emissive is gated on factor>0), so the loader skips load_tex entirely.
+    // Saves a stb_image_load + permanent RAM footprint for a texture nothing will read.
+    // Uses a valid 1×1 BMP so the texture WOULD have decoded successfully if we'd asked.
+    std::string bin;
+    emit_tri_verts(bin); // 36 bytes geometry
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+    const auto img_len = static_cast<uint32_t>(sizeof(k1x1_red_bmp));
+
+    std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                       "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                       "{\"POSITION\":0},\"material\":0}]}],"
+                       "\"materials\":[{\"emissiveTexture\":{\"index\":0}}]," // no emissiveFactor → default {0,0,0}
+                       "\"textures\":[{\"source\":0}],"
+                       "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                       "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                       "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                       "\"bufferViews\":["
+                       "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                       "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":" +
+                       std::to_string(img_len) +
+                       "}"
+                       "],"
+                       "\"buffers\":[{\"byteLength\":" +
+                       std::to_string(36u + img_len) + "}]}";
+
+    TmpFile f(tmp_path("rast_emissive_skip_decode.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_TRUE(m.textures.empty());
+    ASSERT_FALSE(m.has_emissive);
 }
 
 // ─── Group N+: glTF normalTexture.scale parsing + has_normal_scale gate ────────
