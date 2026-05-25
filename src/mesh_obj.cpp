@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -14,6 +16,53 @@
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
+
+namespace
+{
+    // True if the OBJ contains any `s` (smoothing-group) directive with a value, e.g.
+    // `s 1` or `s off`. tinyobjloader collapses "no directive", `s 0`, and `s off` all
+    // to group id 0, so the per-face ids alone can't distinguish "no smoothing info"
+    // (→ crease-angle fallback) from "explicitly faceted" (`s off`). This scan decides
+    // whether compute_normals runs in smoothing-group mode at all; it runs only when
+    // the file lacks normals, and early-outs on the first directive.
+    bool obj_has_smoothing_directive(const std::string &path)
+    {
+        std::ifstream in(path);
+        if (!in)
+        {
+            return false;
+        }
+        std::string line;
+        while (std::getline(in, line))
+        {
+            size_t i = 0;
+            while (i < line.size() && (std::isspace(static_cast<unsigned char>(line[i])) != 0))
+            {
+                i++;
+            }
+            // First token must be exactly `s` followed by whitespace (not `surf` etc.).
+            if (i >= line.size() || line[i] != 's')
+            {
+                continue;
+            }
+            size_t j = i + 1;
+            if (j < line.size() && (std::isspace(static_cast<unsigned char>(line[j])) == 0))
+            {
+                continue;
+            }
+            // Require a following non-whitespace value token (skip a malformed bare `s`).
+            while (j < line.size() && (std::isspace(static_cast<unsigned char>(line[j])) != 0))
+            {
+                j++;
+            }
+            if (j < line.size())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+} // namespace
 
 bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 {
@@ -235,7 +284,42 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
     if (attrib.normals.empty() || !all_have_normals)
     {
-        compute_normals(crease_cos, &weld, n_pos);
+        // OBJ smoothing groups, when authored, are authoritative over the crease
+        // angle. Build a per-triangle group id (parallel to `triangles`) mirroring
+        // the triangle-build loop's order exactly so the indices line up. Only
+        // built when the file actually authors `s` directives — otherwise the
+        // crease-angle path runs byte-identically (nullptr).
+        //
+        // Any non-zero id proves a directive exists, so the disk rescan is needed
+        // only to disambiguate the all-zero case (no directive vs. explicit `s off`,
+        // which tinyobjloader both map to 0): the former is the angle fallback, the
+        // latter is faceted group mode.
+        std::vector<uint32_t> smooth_groups;
+        const bool any_nonzero = std::any_of(
+            shapes.begin(), shapes.end(),
+            [](const tinyobj::shape_t &s)
+            {
+                return std::any_of(
+                    s.mesh.smoothing_group_ids.begin(), s.mesh.smoothing_group_ids.end(),
+                    [](unsigned int id) { return id != 0u; }
+                );
+            }
+        );
+        const bool use_groups = any_nonzero || obj_has_smoothing_directive(path);
+        if (use_groups)
+        {
+            for (const auto &shape : shapes)
+            {
+                for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++)
+                {
+                    if (shape.mesh.num_face_vertices[f] >= 3)
+                    {
+                        smooth_groups.push_back(shape.mesh.smoothing_group_ids[f]);
+                    }
+                }
+            }
+        }
+        compute_normals(crease_cos, &weld, n_pos, use_groups ? &smooth_groups : nullptr);
     }
 
     // tex_requests holds obj_dir-resolved paths, decoded in parallel.

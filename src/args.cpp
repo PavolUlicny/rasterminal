@@ -502,7 +502,7 @@ ParseResult parse_args(int argc, char *argv[])
                 "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
                 "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
                 "          --smooth-angle DEG     Crease angle for computed normals (default: 60; 0=faceted, "
-                "180=smooth)\n"
+                "180=smooth; ignored when an OBJ authors smoothing groups)\n"
                 "          --no-shadow            Disable shadow map\n"
                 "          --no-ao                Disable ambient occlusion\n"
                 "          --no-hud               Hide the HUD status line\n"
