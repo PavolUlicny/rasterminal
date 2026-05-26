@@ -442,16 +442,16 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
             vert.pos = { rd_f(pb, positions->t, p3), rd_f(pb, positions->t, p3 + 1), rd_f(pb, positions->t, p3 + 2) };
             if (nb)
             {
-                vert.normal = { rd_f(nb, normals->t, p3), rd_f(nb, normals->t, p3 + 1),
-                                rd_f(nb, normals->t, p3 + 2) };
+                vert.normal = { rd_f(nb, normals->t, p3), rd_f(nb, normals->t, p3 + 1), rd_f(nb, normals->t, p3 + 2) };
             }
             vert.uv = { u, v };
             vert.ao = 1.0f;
             vertices.push_back(vert);
             if (cb)
             {
-                vertex_colors.emplace_back(rd_col(cb, vcolors->t, p3), rd_col(cb, vcolors->t, p3 + 1),
-                                           rd_col(cb, vcolors->t, p3 + 2));
+                vertex_colors.emplace_back(
+                    rd_col(cb, vcolors->t, p3), rd_col(cb, vcolors->t, p3 + 1), rd_col(cb, vcolors->t, p3 + 2)
+                );
             }
             if (need_weld)
             {
