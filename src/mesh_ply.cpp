@@ -437,22 +437,21 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
             {
                 return it->second;
             }
+            const size_t p3 = static_cast<size_t>(pos_idx) * 3;
             Vertex vert{};
-            vert.pos = { rd_f(pb, positions->t, pos_idx * 3), rd_f(pb, positions->t, (pos_idx * 3) + 1),
-                         rd_f(pb, positions->t, (pos_idx * 3) + 2) };
+            vert.pos = { rd_f(pb, positions->t, p3), rd_f(pb, positions->t, p3 + 1), rd_f(pb, positions->t, p3 + 2) };
             if (nb)
             {
-                vert.normal = { rd_f(nb, normals->t, pos_idx * 3), rd_f(nb, normals->t, (pos_idx * 3) + 1),
-                                rd_f(nb, normals->t, (pos_idx * 3) + 2) };
+                vert.normal = { rd_f(nb, normals->t, p3), rd_f(nb, normals->t, p3 + 1),
+                                rd_f(nb, normals->t, p3 + 2) };
             }
             vert.uv = { u, v };
             vert.ao = 1.0f;
             vertices.push_back(vert);
             if (cb)
             {
-                vertex_colors.push_back({ rd_col(cb, vcolors->t, pos_idx * 3),
-                                          rd_col(cb, vcolors->t, (pos_idx * 3) + 1),
-                                          rd_col(cb, vcolors->t, (pos_idx * 3) + 2) });
+                vertex_colors.emplace_back(rd_col(cb, vcolors->t, p3), rd_col(cb, vcolors->t, p3 + 1),
+                                           rd_col(cb, vcolors->t, p3 + 2));
             }
             if (need_weld)
             {
