@@ -2,12 +2,14 @@
 #include "light.h"
 #include "mesh_loader.h"
 
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <ios>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #define TINYPLY_IMPLEMENTATION
@@ -99,6 +101,37 @@ namespace
             return 4;
         }
     }
+
+    uint32_t float_bits(float f)
+    {
+        uint32_t b = 0;
+        std::memcpy(&b, &f, sizeof(b));
+        return b;
+    }
+
+    // Vertex-dedup key for the PLY split-by-UV path: source position index plus
+    // bit-exact U and V. Stored as the map key (not just its hash) so that on a
+    // hash collision unordered_map falls back to operator== and the distinct
+    // tuples stay separate — silent merging on collision would be a one-vertex
+    // texturing artifact at 1/2^64 probability per pair, which we don't accept.
+    struct UVKey
+    {
+        uint32_t pos;
+        uint32_t u;
+        uint32_t v;
+        bool operator==(const UVKey &o) const noexcept { return pos == o.pos && u == o.u && v == o.v; }
+    };
+
+    struct UVKeyHash
+    {
+        size_t operator()(const UVKey &k) const noexcept
+        {
+            const uint64_t h = (static_cast<uint64_t>(k.pos) * 0x9E3779B185EBCA87ull) ^
+                               (static_cast<uint64_t>(k.u) * 0xC2B2AE3D27D4EB4Full) ^
+                               (static_cast<uint64_t>(k.v) * 0x165667B19E3779F9ull);
+            return static_cast<size_t>(h);
+        }
+    };
 
 } // namespace
 
@@ -232,6 +265,30 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
+    // Face-list texcoords (per-corner UVs). Photogrammetry / scanner PLYs put
+    // UVs here, not on vertices, because face-list UVs can represent UV seams
+    // (one position with distinct UVs on different faces) and per-vertex UVs
+    // cannot. When present, they win over any per-vertex UV aliases — matches
+    // MeshLab. `texcoord` is the canonical name; `texture_uv` is an older alias.
+    std::shared_ptr<tinyply::PlyData> tc;
+    try
+    {
+        tc = file.request_properties_from_element("face", { "texcoord" });
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
+    if (!tc)
+    {
+        try
+        {
+            tc = file.request_properties_from_element("face", { "texture_uv" });
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+    }
+
     // Per-face colors only when vertex colors are absent (vertex colors take priority).
     if (!vcolors)
     {
@@ -270,7 +327,16 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
-    // Compute indices-per-face from buffer size (tinyply enforces uniform list length).
+    // Mixed n-gon faces (tinyply populates list_sizes only when per-face index
+    // counts differ) leave ipf undefined — total_idx / n_faces rounds and every
+    // per-face stride below is then wrong. Reject rather than silently mis-index,
+    // consistent with the loader's fail-loud strictness.
+    if (!faces->list_sizes.empty())
+    {
+        return false;
+    }
+
+    // Uniform list length is now guaranteed, so ipf = total_idx / n_faces is exact.
     const size_t idx_stride = type_stride(faces->t);
     const size_t total_idx = faces->buffer.size_bytes() / idx_stride;
     const size_t ipf = total_idx / n_faces;
@@ -279,12 +345,155 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
+    // Validate face-list texcoord against the uniform-ipf assumption the index
+    // path also relies on. Mixed n-gon counts (non-empty list_sizes), wrong
+    // float count per face, or a non-float element type make per-corner indexing
+    // ambiguous — hard-reject the file, consistent with the loader's strictness.
+    if (tc)
+    {
+        const bool float_type = (tc->t == tinyply::Type::FLOAT32 || tc->t == tinyply::Type::FLOAT64);
+        if (!float_type || !tc->list_sizes.empty() || tc->count != n_faces)
+        {
+            return false;
+        }
+        // Per-face float count must be exactly 2 * ipf. Checked via division, not
+        // a `n_faces * ipf * 2 * tc_stride` multiply: that product is computed in
+        // size_t and on a crafted multi-GB file could wrap to match the actual
+        // buffer size, letting later rd_f() reads run past the buffer. The file's
+        // security model is file-size-based bounds, so the gate must not overflow.
+        const size_t tc_stride = type_stride(tc->t);
+        const size_t tc_bytes = tc->buffer.size_bytes();
+        if (tc_bytes % tc_stride != 0)
+        {
+            return false;
+        }
+        const size_t tc_floats = tc_bytes / tc_stride;
+        if (tc_floats % n_faces != 0 || tc_floats / n_faces != ipf * 2)
+        {
+            return false;
+        }
+    }
+
     const bool use_face_colors = (fcolors != nullptr);
+    const bool use_face_texcoord = (tc != nullptr);
 
     materials.push_back(Material{});
 
+    // Captured by the split-by-UV path; consumed by the post-load compute_normals
+    // call so UV-seam halves smooth across the seam (mirrors the OBJ loader).
+    std::vector<uint32_t> ply_weld;
+    bool use_weld = false;
+
+    // ── Split-by-UV path: per-face texcoord lists, no face colors ────────────
+    // Hash-dedups vertices by (pos_idx, u, v) so corners that genuinely share
+    // position+UV collapse to one vertex, but distinct UVs at the same position
+    // (UV seams) become separate vertices. The weld map records the source
+    // position id per output vertex so compute_normals smooths seams as one
+    // surface. Mirrors the OBJ loader.
+    if (use_face_texcoord && !use_face_colors)
+    {
+        const uint8_t *pb = positions->buffer.get();
+        const uint8_t *nb = normals ? normals->buffer.get() : nullptr;
+        const uint8_t *cb = vcolors ? vcolors->buffer.get() : nullptr;
+        const uint8_t *tcb = tc->buffer.get();
+        const tinyply::Type tct = tc->t;
+        const uint8_t *fb = faces->buffer.get();
+
+        // Reserve to the realistic floor (n_verts), not the no-sharing worst case
+        // (n_faces * ipf). The typical photogrammetry scan has one UV seam per
+        // ~20 positions, so unique-tuple count is close to n_verts; sizing to the
+        // worst case wastes 3–6× memory for the program lifetime (vertices keeps
+        // its capacity) and forces a giant bucket array we never use. Vector and
+        // hashmap growth handles the seam-split overshoot in amortized O(1).
+        // The weld map is only consumed by compute_normals, which the post-load
+        // block below skips when the file authored its own normals. Skip the
+        // allocate-and-fill when it would be discarded — for a multi-million-
+        // vertex authored-normal scan, that's the difference between ~20 MB of
+        // throwaway weld work and zero.
+        const bool need_weld = !normals;
+
+        std::unordered_map<UVKey, uint32_t, UVKeyHash> vert_cache;
+        vert_cache.reserve(n_verts);
+        vertices.reserve(n_verts);
+        if (need_weld)
+        {
+            ply_weld.reserve(n_verts);
+        }
+        if (vcolors)
+        {
+            vertex_colors.reserve(n_verts);
+        }
+
+        auto get_vertex = [&](uint32_t pos_idx, size_t corner_float_off) -> uint32_t
+        {
+            const float u = rd_f(tcb, tct, corner_float_off);
+            const float v = rd_f(tcb, tct, corner_float_off + 1);
+            // Bit-exact float dedup: legitimately-shared corners are written with
+            // identical bytes by every exporter; any non-bit-equal pair is a
+            // genuine seam and stays split.
+            const UVKey key{ pos_idx, float_bits(u), float_bits(v) };
+            const auto [it, inserted] = vert_cache.emplace(key, static_cast<uint32_t>(vertices.size()));
+            if (!inserted)
+            {
+                return it->second;
+            }
+            Vertex vert{};
+            vert.pos = { rd_f(pb, positions->t, pos_idx * 3), rd_f(pb, positions->t, (pos_idx * 3) + 1),
+                         rd_f(pb, positions->t, (pos_idx * 3) + 2) };
+            if (nb)
+            {
+                vert.normal = { rd_f(nb, normals->t, pos_idx * 3), rd_f(nb, normals->t, (pos_idx * 3) + 1),
+                                rd_f(nb, normals->t, (pos_idx * 3) + 2) };
+            }
+            vert.uv = { u, v };
+            vert.ao = 1.0f;
+            vertices.push_back(vert);
+            if (cb)
+            {
+                vertex_colors.push_back({ rd_col(cb, vcolors->t, pos_idx * 3),
+                                          rd_col(cb, vcolors->t, (pos_idx * 3) + 1),
+                                          rd_col(cb, vcolors->t, (pos_idx * 3) + 2) });
+            }
+            if (need_weld)
+            {
+                ply_weld.push_back(pos_idx);
+            }
+            return it->second;
+        };
+
+        triangles.reserve(n_faces * (ipf - 2));
+        for (size_t f = 0; f < n_faces; f++)
+        {
+            const size_t face_uv_base = f * ipf * 2;
+            const uint32_t i0_raw = rd_idx(fb, faces->t, f * ipf);
+            for (size_t v = 1; v + 1 < ipf; v++)
+            {
+                const uint32_t iv_raw = rd_idx(fb, faces->t, (f * ipf) + v);
+                const uint32_t iw_raw = rd_idx(fb, faces->t, (f * ipf) + v + 1);
+                if (i0_raw >= n_verts || iv_raw >= n_verts || iw_raw >= n_verts)
+                {
+                    continue;
+                }
+                const uint32_t v0 = get_vertex(i0_raw, face_uv_base);
+                const uint32_t vi = get_vertex(iv_raw, face_uv_base + (v * 2));
+                const uint32_t vj = get_vertex(iw_raw, face_uv_base + ((v + 1) * 2));
+                Triangle t;
+                t.v[0] = v0;
+                t.v[1] = vi;
+                t.v[2] = vj;
+                t.material_idx = 0;
+                triangles.push_back(t);
+            }
+        }
+
+        if (vcolors)
+        {
+            has_vertex_colors = true;
+        }
+        use_weld = need_weld;
+    }
     // ── Standard path: shared vertices ───────────────────────────────────────
-    if (!use_face_colors)
+    else if (!use_face_colors)
     {
         const uint8_t *pb = positions->buffer.get();
         const uint8_t *nb = normals ? normals->buffer.get() : nullptr;
@@ -372,9 +581,22 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 
         const uint8_t *fb = faces->buffer.get();
         const uint8_t *fcb = fcolors->buffer.get();
+        const uint8_t *tcb = tc ? tc->buffer.get() : nullptr;
+        const tinyply::Type tct = tc ? tc->t : tinyply::Type::FLOAT32;
         triangles.reserve(n_faces * (ipf - 2));
         vertices.reserve(n_faces * (ipf - 2) * 3);
         vertex_colors.reserve(n_faces * (ipf - 2) * 3);
+        // When face-list texcoord is bundled with face colors, the path stays
+        // fully-unshared (3 verts per triangle) but every emitted vertex still
+        // has a source position id (`pi`). Threading a weld map keeps seam-shared
+        // positions smoothing across the seam in compute_normals — without it,
+        // every corner would be its own group and the surface would render
+        // faceted. Plain face-color PLYs (no `tc`) keep their previous faceted
+        // behavior — `tcb == nullptr` skips the weld.
+        if (tcb)
+        {
+            ply_weld.reserve(n_faces * (ipf - 2) * 3);
+        }
 
         for (size_t f = 0; f < n_faces; f++)
         {
@@ -392,15 +614,30 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
                 }
 
                 const auto base = static_cast<uint32_t>(vertices.size());
-                for (const uint32_t pi : { i0, iv, iw })
+                const std::array<uint32_t, 3> pis = { i0, iv, iw };
+                const std::array<size_t, 3> corner_in_face = { 0, v, v + 1 };
+                for (size_t k = 0; k < 3; k++)
                 {
+                    const uint32_t pi = pis[k];
                     Vertex vert{};
                     vert.pos = pool[pi].pos;
                     vert.normal = pool[pi].normal;
-                    vert.uv = pool[pi].uv;
+                    if (tcb)
+                    {
+                        const size_t off = (f * ipf * 2) + (corner_in_face[k] * 2);
+                        vert.uv = { rd_f(tcb, tct, off), rd_f(tcb, tct, off + 1) };
+                    }
+                    else
+                    {
+                        vert.uv = pool[pi].uv;
+                    }
                     vert.ao = 1.0f;
                     vertices.push_back(vert);
                     vertex_colors.push_back(col);
+                    if (tcb)
+                    {
+                        ply_weld.push_back(pi);
+                    }
                 }
                 Triangle t;
                 t.v[0] = base;
@@ -411,6 +648,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
             }
         }
         has_vertex_colors = true;
+        if (tcb)
+        {
+            use_weld = true;
+        }
     }
 
     if (vertices.empty() || triangles.empty())
@@ -420,7 +661,14 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 
     if (!normals || use_face_colors)
     {
-        compute_normals(crease_cos);
+        if (use_weld)
+        {
+            compute_normals(crease_cos, &ply_weld, n_verts);
+        }
+        else
+        {
+            compute_normals(crease_cos);
+        }
     }
 
     snap.commit();

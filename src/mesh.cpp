@@ -124,6 +124,12 @@ void Mesh::compute_normals(
     // against a future desync if that mirroring ever breaks (e.g. manual fan splits).
     assert(smooth_groups == nullptr || smooth_groups->size() == n_tris);
 
+    // weld holds one group id per output vertex. Every loader path that supplies
+    // it pushes a weld entry adjacent to each vertex push, so the lengths match;
+    // this guards against a future path that appends a vertex without its group
+    // id, which would otherwise read OOB silently when group_of is built below.
+    assert(weld == nullptr || weld->size() == n_verts);
+
     // Adjacency is built in welded space: group_of[v] folds vertices that share a
     // position group (e.g. OBJ UV-seam halves) onto one id, so they smooth as one
     // surface while staying distinct output vertices. The welded path holds the

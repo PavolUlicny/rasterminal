@@ -1141,3 +1141,579 @@ TEST(ply_valid, crease_smoothing_splits_hard_edge)
     }
     ASSERT_EQ(at_origin, 2); // split because 90 deg > 60 deg default crease
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FACE-LIST TEXCOORD (per-corner UVs, photogrammetry / scanner PLYs)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Count split copies of a target position in the loaded mesh.
+[[maybe_unused]] static int count_at(const Mesh &m, float x, float y, float z)
+{
+    int n = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == x && v.pos.y == y && v.pos.z == z)
+        {
+            n++;
+        }
+    }
+    return n;
+}
+
+TEST(ply_valid, ascii_face_texcoord_basic_triangle)
+{
+    // Single triangle, face-list texcoord. UVs should land on the right vertices
+    // in file-corner order.
+    TmpFile t(
+        tmp_path("rast_ftc_tri.ply"), "ply\nformat ascii 1.0\n"
+                                      "element vertex 3\n"
+                                      "property float x\nproperty float y\nproperty float z\n"
+                                      "element face 1\n"
+                                      "property list uchar int vertex_indices\n"
+                                      "property list uchar float texcoord\n"
+                                      "end_header\n"
+                                      "0 0 0\n1 0 0\n0 1 0\n"
+                                      "3 0 1 2  6 0.1 0.2 0.3 0.4 0.5 0.6\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+    // Walk the triangle's corners to locate each vertex by its UV (split-by-UV
+    // path may reorder by hash insertion order).
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.y, 0.2f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[1]].uv.x, 0.3f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[1]].uv.y, 0.4f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.x, 0.5f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
+}
+
+TEST(ply_valid, ascii_face_texcoord_quad_fan_triangulates)
+{
+    // Quad with 8 face-list UVs fan-triangulates into 2 triangles. Each corner's
+    // UV must survive (no dedup needed — corners have distinct UVs).
+    TmpFile t(
+        tmp_path("rast_ftc_quad.ply"), "ply\nformat ascii 1.0\n"
+                                       "element vertex 4\n"
+                                       "property float x\nproperty float y\nproperty float z\n"
+                                       "element face 1\n"
+                                       "property list uchar int vertex_indices\n"
+                                       "property list uchar float texcoord\n"
+                                       "end_header\n"
+                                       "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                       "4 0 1 2 3  8 0 0 1 0 1 1 0 1\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
+    ASSERT_EQ(m.vertices.size(), size_t{ 4 });
+}
+
+TEST(ply_valid, ascii_face_texcoord_no_seam_dedupes)
+{
+    // Two adjacent triangles sharing positions v0 and v2 with IDENTICAL UVs at
+    // the shared corners → hash-dedup collapses them; total vertex count == 4.
+    TmpFile t(
+        tmp_path("rast_ftc_noseam.ply"), "ply\nformat ascii 1.0\n"
+                                         "element vertex 4\n"
+                                         "property float x\nproperty float y\nproperty float z\n"
+                                         "element face 2\n"
+                                         "property list uchar int vertex_indices\n"
+                                         "property list uchar float texcoord\n"
+                                         "end_header\n"
+                                         "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                         "3 0 1 2  6 0 0 1 0 1 1\n"
+                                         "3 0 2 3  6 0 0 1 1 0 1\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
+    ASSERT_EQ(m.vertices.size(), size_t{ 4 });
+    ASSERT_EQ(count_at(m, 0, 0, 0), 1);
+    ASSERT_EQ(count_at(m, 1, 1, 0), 1);
+}
+
+TEST(ply_valid, ascii_face_texcoord_seam_splits)
+{
+    // Same topology as above, but the shared positions v0 and v2 carry DIFFERENT
+    // UVs across the seam → each splits into 2 vertices; total = 6.
+    TmpFile t(
+        tmp_path("rast_ftc_seam.ply"), "ply\nformat ascii 1.0\n"
+                                       "element vertex 4\n"
+                                       "property float x\nproperty float y\nproperty float z\n"
+                                       "element face 2\n"
+                                       "property list uchar int vertex_indices\n"
+                                       "property list uchar float texcoord\n"
+                                       "end_header\n"
+                                       "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                       "3 0 1 2  6 0.0 0.0 1.0 0.0 1.0 1.0\n"
+                                       "3 0 2 3  6 0.5 0.5 0.5 0.5 0.0 1.0\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
+    ASSERT_EQ(m.vertices.size(), size_t{ 6 });
+    ASSERT_EQ(count_at(m, 0, 0, 0), 2); // v0 split
+    ASSERT_EQ(count_at(m, 1, 1, 0), 2); // v2 split
+    ASSERT_EQ(count_at(m, 1, 0, 0), 1); // v1 not shared
+    ASSERT_EQ(count_at(m, 0, 1, 0), 1); // v3 not shared
+}
+
+TEST(ply_valid, ascii_face_texcoord_seam_below_crease_smooths)
+{
+    // Coplanar quad, UV seam at the shared edge. With no input normals,
+    // compute_normals runs and the weld map groups split halves of v0 and v2
+    // so the seam smooths as one surface → every vertex normal = (0, 0, 1).
+    TmpFile t(
+        tmp_path("rast_ftc_seam_smooth.ply"), "ply\nformat ascii 1.0\n"
+                                              "element vertex 4\n"
+                                              "property float x\nproperty float y\nproperty float z\n"
+                                              "element face 2\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "property list uchar float texcoord\n"
+                                              "end_header\n"
+                                              "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                              "3 0 1 2  6 0.0 0.0 1.0 0.0 1.0 1.0\n"
+                                              "3 0 2 3  6 0.5 0.5 0.5 0.5 0.0 1.0\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 6 });
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_NEAR(v.normal.x, 0.0f, 1e-5f);
+        ASSERT_NEAR(v.normal.y, 0.0f, 1e-5f);
+        ASSERT_NEAR(v.normal.z, 1.0f, 1e-5f);
+    }
+}
+
+TEST(ply_valid, ascii_face_texcoord_seam_above_crease_stays_split)
+{
+    // Two triangles sharing edge v0-v1, 90 deg fold. UV seam at the shared
+    // corners. Crease angle (60 deg default) splits the geometric edge even in
+    // welded space → normals at v0 differ between the two faces.
+    TmpFile t(
+        tmp_path("rast_ftc_seam_crease.ply"), "ply\nformat ascii 1.0\n"
+                                              "element vertex 4\n"
+                                              "property float x\nproperty float y\nproperty float z\n"
+                                              "element face 2\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "property list uchar float texcoord\n"
+                                              "end_header\n"
+                                              "0 0 0\n1 0 0\n0 1 0\n0 0 1\n"
+                                              "3 0 1 2  6 0 0 1 0 0 1\n"
+                                              "3 1 0 3  6 0.5 0.5 0.5 0.5 0 1\n"
+    );
+    Mesh m = load_ok(t.path);
+    // v0=(0,0,0): UVs differ across the seam → split → 2 vertices.
+    ASSERT_EQ(count_at(m, 0, 0, 0), 2);
+    // The two halves should have different normals (one ~(0,0,1), one ~(0,1,0)).
+    vec3 n0{}, n1{};
+    int found = 0;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            if (found == 0)
+            {
+                n0 = v.normal;
+            }
+            else
+            {
+                n1 = v.normal;
+            }
+            found++;
+        }
+    }
+    ASSERT_EQ(found, 2);
+    // Normals must not be coincident — the 90 deg fold breaks weld smoothing.
+    const float dot = (n0.x * n1.x) + (n0.y * n1.y) + (n0.z * n1.z);
+    ASSERT_TRUE(dot < 0.5f);
+}
+
+TEST(ply_valid, ascii_face_texcoord_with_authored_normals_skip_recompute)
+{
+    // File supplies normals + face-list texcoord with a seam → no normal
+    // recompute; both split halves at the shared position copy the authored
+    // normal from that source vertex (no smoothing path engaged).
+    TmpFile t(
+        tmp_path("rast_ftc_with_norms.ply"), "ply\nformat ascii 1.0\n"
+                                             "element vertex 4\n"
+                                             "property float x\nproperty float y\nproperty float z\n"
+                                             "property float nx\nproperty float ny\nproperty float nz\n"
+                                             "element face 2\n"
+                                             "property list uchar int vertex_indices\n"
+                                             "property list uchar float texcoord\n"
+                                             "end_header\n"
+                                             "0 0 0  0 0 1\n1 0 0  0 0 1\n1 1 0  0 0 1\n0 1 0  0 0 1\n"
+                                             "3 0 1 2  6 0.0 0.0 1.0 0.0 1.0 1.0\n"
+                                             "3 0 2 3  6 0.5 0.5 0.5 0.5 0.0 1.0\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 6 }); // seam splits still happen
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_NEAR(v.normal.z, 1.0f, 1e-5f);
+    }
+}
+
+TEST(ply_valid, ascii_texture_uv_alias_accepted)
+{
+    // Older exporters use "texture_uv" instead of "texcoord". Same payload.
+    TmpFile t(
+        tmp_path("rast_ftc_alias.ply"), "ply\nformat ascii 1.0\n"
+                                        "element vertex 3\n"
+                                        "property float x\nproperty float y\nproperty float z\n"
+                                        "element face 1\n"
+                                        "property list uchar int vertex_indices\n"
+                                        "property list uchar float texture_uv\n"
+                                        "end_header\n"
+                                        "0 0 0\n1 0 0\n0 1 0\n"
+                                        "3 0 1 2  6 0.25 0.75 0.5 0.5 0.75 0.25\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.25f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.x, 0.75f, 1e-5f);
+}
+
+TEST(ply_valid, ascii_face_texcoord_overrides_per_vertex_uv)
+{
+    // File authors BOTH per-vertex s/t AND face-list texcoord with deliberately
+    // distinct values. Face-list must win (MeshLab convention).
+    TmpFile t(
+        tmp_path("rast_ftc_override.ply"), "ply\nformat ascii 1.0\n"
+                                           "element vertex 3\n"
+                                           "property float x\nproperty float y\nproperty float z\n"
+                                           "property float s\nproperty float t\n"
+                                           "element face 1\n"
+                                           "property list uchar int vertex_indices\n"
+                                           "property list uchar float texcoord\n"
+                                           "end_header\n"
+                                           "0 0 0  0.9 0.9\n"
+                                           "1 0 0  0.9 0.9\n"
+                                           "0 1 0  0.9 0.9\n"
+                                           "3 0 1 2  6 0.1 0.2 0.3 0.4 0.5 0.6\n"
+    );
+    Mesh m = load_ok(t.path);
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_TRUE(v.uv.x < 0.7f); // face-list (0.1..0.5), not per-vertex (0.9)
+        ASSERT_TRUE(v.uv.y < 0.7f);
+    }
+}
+
+TEST(ply_valid, ascii_face_texcoord_seam_split_carries_vertex_colors)
+{
+    // Per-vertex red/green/blue + UV seam. Both split halves of v0 must inherit
+    // v0's source color, not a default or zero color.
+    TmpFile t(
+        tmp_path("rast_ftc_seam_colors.ply"), "ply\nformat ascii 1.0\n"
+                                              "element vertex 4\n"
+                                              "property float x\nproperty float y\nproperty float z\n"
+                                              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+                                              "element face 2\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "property list uchar float texcoord\n"
+                                              "end_header\n"
+                                              "0 0 0  255 0 0\n1 0 0  0 255 0\n1 1 0  0 0 255\n0 1 0  255 255 0\n"
+                                              "3 0 1 2  6 0 0 1 0 1 1\n"
+                                              "3 0 2 3  6 0.5 0.5 0.5 0.5 0 1\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), m.vertices.size());
+    // Both halves of v0 should be red. Both halves of v2 should be blue.
+    for (size_t i = 0; i < m.vertices.size(); i++)
+    {
+        const auto &v = m.vertices[i];
+        const auto &c = m.vertex_colors[i];
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            ASSERT_NEAR(c.x, 1.0f, 1e-4f);
+            ASSERT_NEAR(c.y, 0.0f, 1e-4f);
+            ASSERT_NEAR(c.z, 0.0f, 1e-4f);
+        }
+        else if (v.pos.x == 1.0f && v.pos.y == 1.0f && v.pos.z == 0.0f)
+        {
+            ASSERT_NEAR(c.x, 0.0f, 1e-4f);
+            ASSERT_NEAR(c.y, 0.0f, 1e-4f);
+            ASSERT_NEAR(c.z, 1.0f, 1e-4f);
+        }
+    }
+}
+
+TEST(ply_valid, ascii_face_texcoord_with_face_colors)
+{
+    // Combo: face-list texcoord + face colors. Face-color path engages (full
+    // unshare, 3 verts per triangle), but UVs come from the face-list buffer
+    // (not the per-vertex pool). Each triangle has 3 unique vertices, each with
+    // its own face-list UV.
+    TmpFile t(
+        tmp_path("rast_ftc_fcol.ply"), "ply\nformat ascii 1.0\n"
+                                       "element vertex 3\n"
+                                       "property float x\nproperty float y\nproperty float z\n"
+                                       "element face 1\n"
+                                       "property list uchar int vertex_indices\n"
+                                       "property list uchar float texcoord\n"
+                                       "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+                                       "end_header\n"
+                                       "0 0 0\n1 0 0\n0 1 0\n"
+                                       "3 0 1 2  6 0.1 0.2 0.3 0.4 0.5 0.6  255 0 0\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 }); // full unshare on 1 triangle
+    ASSERT_TRUE(m.has_vertex_colors);
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.y, 0.2f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[1]].uv.x, 0.3f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.x, 0.5f, 1e-5f);
+    for (const auto &c : m.vertex_colors)
+    {
+        ASSERT_NEAR(c.x, 1.0f, 1e-4f);
+        ASSERT_NEAR(c.y, 0.0f, 1e-4f);
+        ASSERT_NEAR(c.z, 0.0f, 1e-4f);
+    }
+}
+
+TEST(ply_valid, binary_le_face_texcoord)
+{
+    std::string s = "ply\n"
+                    "format binary_little_endian 1.0\n"
+                    "element vertex 3\n"
+                    "property float x\nproperty float y\nproperty float z\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "property list uchar float texcoord\n"
+                    "end_header\n";
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    s.push_back(6); // texcoord list count
+    emit_f32_le(s, 0.1f);
+    emit_f32_le(s, 0.2f);
+    emit_f32_le(s, 0.3f);
+    emit_f32_le(s, 0.4f);
+    emit_f32_le(s, 0.5f);
+    emit_f32_le(s, 0.6f);
+    TmpFile t(tmp_path("rast_ftc_le.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
+}
+
+TEST(ply_valid, binary_be_face_texcoord)
+{
+    std::string s = "ply\n"
+                    "format binary_big_endian 1.0\n"
+                    "element vertex 3\n"
+                    "property float x\nproperty float y\nproperty float z\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "property list uchar float texcoord\n"
+                    "end_header\n";
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 1);
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 0);
+    emit_f32_be(s, 1);
+    emit_f32_be(s, 0);
+    s.push_back(3);
+    emit_u32_be(s, 0);
+    emit_u32_be(s, 1);
+    emit_u32_be(s, 2);
+    s.push_back(6);
+    emit_f32_be(s, 0.1f);
+    emit_f32_be(s, 0.2f);
+    emit_f32_be(s, 0.3f);
+    emit_f32_be(s, 0.4f);
+    emit_f32_be(s, 0.5f);
+    emit_f32_be(s, 0.6f);
+    TmpFile t(tmp_path("rast_ftc_be.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
+}
+
+TEST(reject, ply_face_texcoord_wrong_corner_count)
+{
+    // Triangle face declares 5 UV floats — must be 2 * 3 = 6. Reject.
+    TmpFile t(
+        tmp_path("rast_ftc_bad_count.ply"), "ply\nformat ascii 1.0\n"
+                                            "element vertex 3\n"
+                                            "property float x\nproperty float y\nproperty float z\n"
+                                            "element face 1\n"
+                                            "property list uchar int vertex_indices\n"
+                                            "property list uchar float texcoord\n"
+                                            "end_header\n"
+                                            "0 0 0\n1 0 0\n0 1 0\n"
+                                            "3 0 1 2  5 0 0 1 0 1\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_face_texcoord_mixed_face_sizes)
+{
+    // One triangle + one quad → list_sizes populated → reject (the uniform-ipf
+    // assumption that per-corner indexing relies on no longer holds).
+    TmpFile t(
+        tmp_path("rast_ftc_mixed.ply"), "ply\nformat ascii 1.0\n"
+                                        "element vertex 4\n"
+                                        "property float x\nproperty float y\nproperty float z\n"
+                                        "element face 2\n"
+                                        "property list uchar int vertex_indices\n"
+                                        "property list uchar float texcoord\n"
+                                        "end_header\n"
+                                        "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                        "3 0 1 2  6 0 0 1 0 1 1\n"
+                                        "4 0 1 2 3  8 0 0 1 0 1 1 0 1\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(ply_valid, face_texcoord_with_face_colors_smooths_seam)
+{
+    // Combo: face-list texcoord + face colors. The face-color path stays fully
+    // unshared, but a weld map (one source position id per emitted vertex) is
+    // threaded into compute_normals so a UV-seam shared position smooths as
+    // one surface — without the weld, every corner would be its own group and
+    // the surface would render faceted. Two coplanar triangles sharing v0 and
+    // v2 with a UV seam at both shared corners → every vertex normal = (0,0,1).
+    TmpFile t(
+        tmp_path("rast_ftc_fcol_smooth.ply"), "ply\nformat ascii 1.0\n"
+                                              "element vertex 4\n"
+                                              "property float x\nproperty float y\nproperty float z\n"
+                                              "element face 2\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "property list uchar float texcoord\n"
+                                              "property uchar red\nproperty uchar green\nproperty uchar blue\n"
+                                              "end_header\n"
+                                              "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                              "3 0 1 2  6 0.0 0.0 1.0 0.0 1.0 1.0  255 0 0\n"
+                                              "3 0 2 3  6 0.5 0.5 0.5 0.5 0.0 1.0  0 255 0\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    for (const auto &v : m.vertices)
+    {
+        ASSERT_NEAR(v.normal.x, 0.0f, 1e-4f);
+        ASSERT_NEAR(v.normal.y, 0.0f, 1e-4f);
+        ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+    }
+}
+
+TEST(reject, ply_face_texcoord_all_oob_indices)
+{
+    // Face-list texcoord present but every index is OOB → all triangles skipped
+    // → empty triangle list → load_ply returns false (existing OOB guard still
+    // fires in the new path).
+    TmpFile t(
+        tmp_path("rast_ftc_oob.ply"), "ply\nformat ascii 1.0\n"
+                                      "element vertex 3\n"
+                                      "property float x\nproperty float y\nproperty float z\n"
+                                      "element face 1\n"
+                                      "property list uchar int vertex_indices\n"
+                                      "property list uchar float texcoord\n"
+                                      "end_header\n"
+                                      "0 0 0\n1 0 0\n0 1 0\n"
+                                      "3 0 1 99  6 0 0 1 0 0 1\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_mixed_size_index_lists)
+{
+    // Mixed n-gon index lists (a triangle + a quad) leave ipf undefined:
+    // total_idx/n_faces = 7/2 = 3 rounds, and the per-face stride is then wrong.
+    // The texcoord lists are coincidentally uniform (6 floats each) so the
+    // texcoord gate alone would pass — only the faces->list_sizes guard rejects.
+    TmpFile t(
+        tmp_path("rast_mixed_idx.ply"), "ply\nformat ascii 1.0\n"
+                                        "element vertex 4\n"
+                                        "property float x\nproperty float y\nproperty float z\n"
+                                        "element face 2\n"
+                                        "property list uchar int vertex_indices\n"
+                                        "property list uchar float texcoord\n"
+                                        "end_header\n"
+                                        "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                        "3 0 1 2  6 0 0 1 0 1 1\n"
+                                        "4 0 1 2 3  6 0 0 1 0 1 1\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_mixed_size_index_lists_no_texcoord)
+{
+    // Same mixed n-gon index lists, no texcoord at all. Pins that the
+    // faces->list_sizes guard rejects independently of the texcoord path
+    // (previously these loaded with silently mis-derived ipf).
+    TmpFile t(
+        tmp_path("rast_mixed_idx_notc.ply"), "ply\nformat ascii 1.0\n"
+                                             "element vertex 4\n"
+                                             "property float x\nproperty float y\nproperty float z\n"
+                                             "element face 2\n"
+                                             "property list uchar int vertex_indices\n"
+                                             "end_header\n"
+                                             "0 0 0\n1 0 0\n1 1 0\n0 1 0\n"
+                                             "3 0 1 2\n"
+                                             "4 0 1 2 3\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(ply_valid, binary_le_face_texcoord_float64)
+{
+    // FLOAT64 (double) texcoord list exercises the stride-8 path in the size
+    // gate and rd_f. All other texcoord tests use FLOAT32.
+    std::string s = "ply\n"
+                    "format binary_little_endian 1.0\n"
+                    "element vertex 3\n"
+                    "property float x\nproperty float y\nproperty float z\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "property list uchar double texcoord\n"
+                    "end_header\n";
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    s.push_back(6); // texcoord list count
+    emit_f64_le(s, 0.1);
+    emit_f64_le(s, 0.2);
+    emit_f64_le(s, 0.3);
+    emit_f64_le(s, 0.4);
+    emit_f64_le(s, 0.5);
+    emit_f64_le(s, 0.6);
+    TmpFile t(tmp_path("rast_ftc_f64.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+    const Triangle &tri = m.triangles[0];
+    ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
+    ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
+}
