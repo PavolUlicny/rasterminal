@@ -189,8 +189,8 @@ jobs:
           --header-filter='src/.*'
           src/main.cpp src/args.cpp src/framebuffer.cpp src/mesh.cpp
           src/mesh_obj.cpp src/mesh_ply.cpp src/mesh_stl.cpp src/mesh_gltf.cpp
-          src/camera.cpp src/shadow.cpp src/rasterize.cpp src/renderer.cpp
-          src/texture.cpp
+          src/draco_decode.cpp src/camera.cpp src/shadow.cpp src/rasterize.cpp
+          src/renderer.cpp src/texture.cpp
 
       - name: Run clang-tidy (tests)
         run: >

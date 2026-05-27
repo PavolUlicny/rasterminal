@@ -9,10 +9,14 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
+#include "draco/attributes/geometry_indices.h"
+#include "draco/attributes/point_attribute.h"
 #include "draco/compression/decode.h"
 #include "draco/core/decoder_buffer.h"
 #include "draco/mesh/mesh.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory> // IWYU pragma: keep — std::unique_ptr<draco::Mesh> below; clangd can't trace it through Draco's StatusOr::value()
 #include <utility>
 
