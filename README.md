@@ -138,3 +138,4 @@ Vendored under `vendor/` — see `THIRD_PARTY_NOTICES` for full licence texts.
 | [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | 2.0.0rc13 | MIT | OBJ / MTL parsing |
 | [tinyply](https://github.com/ddiakopoulos/tinyply) | 3.0 | Public domain | PLY parsing |
 | [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1 | MIT | Vertex cache / overdraw / fetch optimisation |
+| [draco](https://github.com/google/draco) | 1.5.7 | Apache-2.0 | Draco mesh decompression (`KHR_draco_mesh_compression`) |

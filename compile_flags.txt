@@ -10,3 +10,5 @@ vendor/stl_reader
 vendor/tinyobjloader
 -isystem
 vendor/tinyply
+-isystem
+vendor/draco/src

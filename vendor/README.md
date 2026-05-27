@@ -1,6 +1,6 @@
 # Vendored libraries
 
-All libraries are single-header (or minimal) and vendored directly. Do not edit these files manually — they are formatting-disabled via `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
+All libraries are single-header, a small source set, or a vendored source subset, and vendored directly. Do not edit these files manually — they are formatting-disabled via `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
 
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
@@ -10,6 +10,7 @@ All libraries are single-header (or minimal) and vendored directly. Do not edit 
 | tinyobjloader | v2.0.0rc13 | `2945a967c5303b2c8c14174117c45f3302591150` | <https://github.com/tinyobjloader/tinyobjloader> | MIT |
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 | meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
+| draco | v1.5.7 | `8786740086a9f4d83f44aa83badfbea4dce7a1b5` | <https://github.com/google/draco> | Apache-2.0 |
 
 ## Refresh recipe
 
@@ -51,3 +52,34 @@ done
 git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
 # Update the commit and version in this table, update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
 ```
+
+For draco (decode-only glTF-bitstream subset, compiled via unity shim `draco_impl.cpp`):
+Draco ships no single-header form, so we vendor only the source files the decoder
+pulls. The subset is *derived mechanically* from an upstream checkout rather than
+hand-listed — regenerate it on every version bump:
+
+```sh
+TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/google/draco.git /tmp/draco && cd /tmp/draco
+# 1. Build draco_decoder with the glTF-bitstream feature set; this also generates draco_features.h.
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDRACO_GLTF_BITSTREAM=ON -DDRACO_TESTS=OFF
+cmake --build build --target draco_decoder -j
+
+# 2. Candidate decode sources = all .cc minus encoders/io/scene/tools/tests.
+find src/draco -name '*.cc' \
+  | grep -vE '_test\.cc$|/testing/|/tools/|/io/|/javascript/|/maya/|/unity/|/scene/|/texture/|/material/|/animation/' \
+  | grep -viE 'encode|encoder|_enc' > /tmp/cand.txt
+
+# 3. Compile candidates into an archive; link a minimal DecodeMeshFromBuffer program;
+#    the linker pulls exactly the needed members. Read them from the map, then take the
+#    `c++ -M` header closure of that .cc set. Copy both into vendor/draco/ preserving the
+#    src/draco/... layout. (See the phase-1 spike notes for the exact extraction script.)
+
+# 4. License + provenance, then hand-author the generated features header:
+cp LICENSE AUTHORS /path/to/vendor/draco/
+cp build/draco/draco_features.h /path/to/vendor/draco/src/draco/draco_features.h   # then strip the "GENERATED" banner
+git rev-parse HEAD   # record the commit SHA in the table above
+```
+
+Update the commit and version in this table; verify `vendor/draco/src/draco/draco_features.h`
+still matches what `DRACO_GLTF_BITSTREAM=ON` generates; update `THIRD_PARTY_NOTICES` if the
+license changed; then test: `make clean && make && make test`.

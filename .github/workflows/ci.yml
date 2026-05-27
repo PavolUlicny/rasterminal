@@ -222,6 +222,7 @@ jobs:
           -I vendor/stl_reader
           -I vendor/tinyobjloader
           -I vendor/tinyply
+          -I vendor/draco/src
           src/*.cpp
 
   # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────

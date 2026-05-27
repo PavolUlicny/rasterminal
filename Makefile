@@ -21,10 +21,10 @@ endif
 
 VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
-              -isystem vendor/meshoptimizer/src
+              -isystem vendor/meshoptimizer/src -isystem vendor/draco/src
 VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
               vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h \
-              vendor/meshoptimizer/src/meshoptimizer.h
+              vendor/meshoptimizer/src/meshoptimizer.h vendor/draco/src/draco/draco_features.h
 
 # Tier 1: fast flags safe for any CPU (both release and portable).
 OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only \
@@ -56,7 +56,8 @@ SRCS = src/main.cpp \
        src/rasterize.cpp \
        src/renderer.cpp \
        src/texture.cpp \
-       vendor/meshoptimizer/meshoptimizer_impl.cpp
+       vendor/meshoptimizer/meshoptimizer_impl.cpp \
+       vendor/draco/draco_impl.cpp
 
 HDRS = src/args.h \
        src/clip.h \
@@ -128,7 +129,8 @@ TEST_SRCS   = tests/test_main.cpp \
               src/rasterize.cpp \
               src/framebuffer.cpp \
               src/shadow.cpp \
-              vendor/meshoptimizer/meshoptimizer_impl.cpp
+              vendor/meshoptimizer/meshoptimizer_impl.cpp \
+              vendor/draco/draco_impl.cpp
 
 $(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h
 	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
