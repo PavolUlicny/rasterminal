@@ -1,4 +1,5 @@
 #include "mesh.h"
+#include "draco_decode.h"
 #include "light.h"
 #include "linalg.h"
 #include "mesh_loader.h"
@@ -16,6 +17,41 @@
 
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
+
+namespace
+{
+    // Apply the node world matrix (column-major) to a position. Shared by the
+    // uncompressed accessor path and the Draco decode path so both stay identical.
+    vec3 apply_world_pos(const float w[16], const float p[3])
+    {
+        return { (w[0] * p[0]) + (w[4] * p[1]) + (w[8] * p[2]) + w[12],
+                 (w[1] * p[0]) + (w[5] * p[1]) + (w[9] * p[2]) + w[13],
+                 (w[2] * p[0]) + (w[6] * p[1]) + (w[10] * p[2]) + w[14] };
+    }
+
+    // Transform a normal by the upper-3x3 of w (rotation / uniform scale) or the
+    // precomputed inverse-transpose nm (non-uniform scale), then normalize.
+    vec3 apply_world_normal(bool uniform_scale, const float w[16], const float nm[9], const float n[3])
+    {
+        vec3 r;
+        if (uniform_scale)
+        {
+            r = { (w[0] * n[0]) + (w[4] * n[1]) + (w[8] * n[2]), (w[1] * n[0]) + (w[5] * n[1]) + (w[9] * n[2]),
+                  (w[2] * n[0]) + (w[6] * n[1]) + (w[10] * n[2]) };
+        }
+        else
+        {
+            r = { (nm[0] * n[0]) + (nm[3] * n[1]) + (nm[6] * n[2]), (nm[1] * n[0]) + (nm[4] * n[1]) + (nm[7] * n[2]),
+                  (nm[2] * n[0]) + (nm[5] * n[1]) + (nm[8] * n[2]) };
+        }
+        const float len = r.length();
+        if (len > 1e-6f)
+        {
+            r = r * (1.0f / len);
+        }
+        return r;
+    }
+} // namespace
 
 bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 {
@@ -149,6 +185,9 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     };
 
     bool has_normals = false;
+    // Set by visit() when a Draco primitive fails to decode; checked after the
+    // walk so a corrupt bitstream fails the whole load (visit() returns void).
+    bool draco_error = false;
 
     // Walk the scene graph recursively, applying world transforms.
     std::function<void(const cgltf_node *)> visit = [&](const cgltf_node *node)
@@ -224,6 +263,144 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     return idx;
                 }();
 
+                // KHR_draco_mesh_compression: cgltf parses the extension but never
+                // decodes. The real geometry is a compressed bitstream in the draco
+                // buffer view; cgltf stores each Draco attribute's unique-id as
+                // accessors[id], so we recover the id by pointer arithmetic and hand
+                // the ids to decode_draco_mesh (which confines the Draco headers). The
+                // decoded vertices go through the same world transform + winding flip
+                // as the accessor path.
+                if (prim.has_draco_mesh_compression)
+                {
+                    const cgltf_draco_mesh_compression &dc = prim.draco_mesh_compression;
+                    if (!dc.buffer_view)
+                    {
+                        draco_error = true;
+                        return;
+                    }
+                    // The unique-id recovery below subtracts attr.data (an accessor
+                    // pointer) from data->accessors. Pointer subtraction with a null
+                    // base is UB — a malformed glTF can omit the top-level "accessors"
+                    // array (legal JSON, cgltf accepts it) which leaves data->accessors
+                    // null. Fail-loud rather than risk UB.
+                    if (!data->accessors)
+                    {
+                        draco_error = true;
+                        return;
+                    }
+                    int pos_id = -1;
+                    int norm_id = -1;
+                    int uv_id = -1;
+                    int color_id = -1;
+                    for (size_t k = 0; k < dc.attributes_count; k++)
+                    {
+                        const cgltf_attribute &attr = dc.attributes[k];
+                        const int uid = static_cast<int>(attr.data - data->accessors);
+                        if (attr.type == cgltf_attribute_type_position)
+                        {
+                            pos_id = uid;
+                        }
+                        else if (attr.type == cgltf_attribute_type_normal)
+                        {
+                            norm_id = uid;
+                        }
+                        else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
+                        {
+                            uv_id = uid;
+                        }
+                        else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
+                        {
+                            color_id = uid;
+                        }
+                    }
+                    if (pos_id < 0)
+                    {
+                        draco_error = true;
+                        return;
+                    }
+
+                    // cgltf_buffer_view_data handles EXT_meshopt_compression / sparse / offset
+                    // indirection and can return null when the underlying buffer data was never
+                    // populated; gate at the cgltf boundary so a null pointer can't reach Draco's
+                    // DecoderBuffer::Init (which would happily read it as a valid range).
+                    const uint8_t *cbytes = cgltf_buffer_view_data(dc.buffer_view);
+                    if (!cbytes)
+                    {
+                        draco_error = true;
+                        return;
+                    }
+
+                    DracoMesh dm;
+                    if (!decode_draco_mesh(
+                            cbytes, dc.buffer_view->size, static_cast<uint32_t>(pos_id), norm_id, uv_id, color_id, dm
+                        ))
+                    {
+                        draco_error = true;
+                        return;
+                    }
+
+                    const size_t n_verts = dm.num_points;
+                    const size_t vert_base = vertices.size();
+                    const bool has_dn = !dm.normals.empty();
+                    const bool has_du = !dm.uvs.empty();
+                    const bool has_dc = !dm.colors.empty();
+                    vertices.reserve(vertices.size() + n_verts);
+                    if (has_dc)
+                    {
+                        vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
+                    }
+                    for (size_t i = 0; i < n_verts; i++)
+                    {
+                        Vertex v{};
+                        v.pos = apply_world_pos(w, &dm.positions[i * 3]);
+                        if (has_dn)
+                        {
+                            v.normal = apply_world_normal(uniform_scale, w, nm, &dm.normals[i * 3]);
+                        }
+                        if (has_du)
+                        {
+                            v.uv = { dm.uvs[(i * 2) + 0], 1.0f - dm.uvs[(i * 2) + 1] };
+                        }
+                        v.ao = 1.0f;
+                        vertices.push_back(v);
+                        if (has_dc)
+                        {
+                            vertex_colors[vert_base + i] = { dm.colors[(i * 3) + 0], dm.colors[(i * 3) + 1],
+                                                             dm.colors[(i * 3) + 2] };
+                        }
+                    }
+                    if (has_dn)
+                    {
+                        has_normals = true;
+                    }
+                    if (has_dc)
+                    {
+                        has_vertex_colors = true;
+                    }
+
+                    // Connectivity comes from the Draco bitstream itself
+                    // (dm.indices), so prim.indices and the accessor-path's
+                    // non-indexed branch are both intentionally bypassed — a Draco
+                    // primitive's glTF-level indices accessor is metadata only per
+                    // the KHR_draco_mesh_compression spec.
+                    const size_t n_tris = dm.indices.size() / 3;
+                    triangles.reserve(triangles.size() + n_tris);
+                    for (size_t f = 0; f < n_tris; f++)
+                    {
+                        Triangle t;
+                        t.v[0] = static_cast<uint32_t>(vert_base + dm.indices[(f * 3) + 0]);
+                        t.v[1] = static_cast<uint32_t>(vert_base + dm.indices[(f * 3) + 1]);
+                        t.v[2] = static_cast<uint32_t>(vert_base + dm.indices[(f * 3) + 2]);
+                        if (flip_winding)
+                        {
+                            std::swap(t.v[1], t.v[2]);
+                        }
+                        t.material_idx = mat_idx;
+                        triangles.push_back(t);
+                    }
+                    continue;
+                }
+
                 const cgltf_accessor *pos_acc = nullptr;
                 const cgltf_accessor *norm_acc = nullptr;
                 const cgltf_accessor *uv_acc = nullptr;
@@ -265,31 +442,13 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 
                     float p[3];
                     cgltf_accessor_read_float(pos_acc, i, p, 3);
-                    v.pos.x = (w[0] * p[0]) + (w[4] * p[1]) + (w[8] * p[2]) + w[12];
-                    v.pos.y = (w[1] * p[0]) + (w[5] * p[1]) + (w[9] * p[2]) + w[13];
-                    v.pos.z = (w[2] * p[0]) + (w[6] * p[1]) + (w[10] * p[2]) + w[14];
+                    v.pos = apply_world_pos(w, p);
 
                     if (norm_acc)
                     {
                         float n[3];
                         cgltf_accessor_read_float(norm_acc, i, n, 3);
-                        if (uniform_scale)
-                        {
-                            v.normal.x = (w[0] * n[0]) + (w[4] * n[1]) + (w[8] * n[2]);
-                            v.normal.y = (w[1] * n[0]) + (w[5] * n[1]) + (w[9] * n[2]);
-                            v.normal.z = (w[2] * n[0]) + (w[6] * n[1]) + (w[10] * n[2]);
-                        }
-                        else
-                        {
-                            v.normal.x = (nm[0] * n[0]) + (nm[3] * n[1]) + (nm[6] * n[2]);
-                            v.normal.y = (nm[1] * n[0]) + (nm[4] * n[1]) + (nm[7] * n[2]);
-                            v.normal.z = (nm[2] * n[0]) + (nm[5] * n[1]) + (nm[8] * n[2]);
-                        }
-                        const float len = v.normal.length();
-                        if (len > 1e-6f)
-                        {
-                            v.normal = v.normal * (1.0f / len);
-                        }
+                        v.normal = apply_world_normal(uniform_scale, w, nm, n);
                     }
 
                     if (uv_acc)
@@ -373,6 +532,11 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         {
             visit(scene->nodes[i]);
         }
+    }
+
+    if (draco_error)
+    {
+        return false;
     }
 
     if (vertices.empty() || triangles.empty())

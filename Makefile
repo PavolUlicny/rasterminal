@@ -51,6 +51,7 @@ SRCS = src/main.cpp \
        src/mesh_ply.cpp \
        src/mesh_stl.cpp \
        src/mesh_gltf.cpp \
+       src/draco_decode.cpp \
        src/camera.cpp \
        src/shadow.cpp \
        src/rasterize.cpp \
@@ -65,6 +66,7 @@ HDRS = src/args.h \
        src/framebuffer.h \
        src/mesh.h \
        src/mesh_loader.h \
+       src/draco_decode.h \
        src/camera.h \
        src/light.h \
        src/shadow.h \
@@ -73,20 +75,17 @@ HDRS = src/args.h \
        src/platform.h \
        src/texture.h
 
-$(TARGET): $(SRCS) $(HDRS) $(VENDOR_HDRS)
-	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
-
-release: $(TARGET)
-
-portable: CXXFLAGS = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
-portable: $(TARGET)
-
-debug: CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
-debug: $(TARGET)
-
-# ─── tests ────────────────────────────────────────────────────────────────────
-# Only links sources the tests actually exercise — no renderer/main.
-# Run from repo root so models/ paths in test_loaders resolve.
+# LTO_SUPPRESS: GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker
+# templates during the link step's recompile, and per-TU pragma context (in
+# src/draco_decode.cpp + vendor/draco/draco_impl.cpp) doesn't survive that re-emit.
+# The suppression is needed only at link time — keeping compile-time warnings active
+# for every other TU so real uninitialized-read bugs are still caught by -Werror.
+# Clang has no equivalent warning name; leave empty there.
+ifeq ($(IS_CLANG),clang)
+LTO_SUPPRESS =
+else
+LTO_SUPPRESS = -Wno-maybe-uninitialized
+endif
 
 TEST_TARGET = rasterminal_tests
 TEST_SRCS   = tests/test_main.cpp \
@@ -112,6 +111,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_rasterize_alpha.cpp \
               tests/test_rasterize_emissive.cpp \
               tests/test_gltf.cpp \
+              tests/test_gltf_draco.cpp \
               tests/test_renderer.cpp \
               tests/test_renderer_ao_clip.cpp \
               tests/test_renderer_shadow_depth.cpp \
@@ -124,6 +124,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/mesh_ply.cpp \
               src/mesh_stl.cpp \
               src/mesh_gltf.cpp \
+              src/draco_decode.cpp \
               src/texture.cpp \
               src/camera.cpp \
               src/rasterize.cpp \
@@ -132,13 +133,57 @@ TEST_SRCS   = tests/test_main.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
               vendor/draco/draco_impl.cpp
 
-$(TEST_TARGET): $(TEST_SRCS) $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h
-	$(CXX) $(TEST_CXXFLAGS) -o $@ $(TEST_SRCS)
+# Per-build-type object caches. Mtime alone can't tell which variant produced
+# $(TARGET), so each variant has its own subdir of objects and is phony — the
+# resulting $(TARGET) always matches the variant just invoked. Without this,
+# `make` after `make portable` (or any flag-changing variant) silently mixes a
+# portable/debug binary with stale release objects. Trade-off: the link runs on
+# every `make` invocation (not cheap under -flto=auto + -fipa-pta — typically a
+# few seconds on no-change rebuilds); the per-variant .o cache still avoids
+# unnecessary recompiles, so source edits stay incremental.
+OBJDIR             = obj
+PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
+DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
+
+RELEASE_OBJS  = $(patsubst %.cpp,$(OBJDIR)/release/%.o,$(SRCS))
+PORTABLE_OBJS = $(patsubst %.cpp,$(OBJDIR)/portable/%.o,$(SRCS))
+DEBUG_OBJS    = $(patsubst %.cpp,$(OBJDIR)/debug/%.o,$(SRCS))
+TEST_OBJS     = $(patsubst %.cpp,$(OBJDIR)/test/%.o,$(TEST_SRCS))
+
+$(OBJDIR)/release/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
+	@mkdir -p $(@D)
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
+
+$(OBJDIR)/portable/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
+	@mkdir -p $(@D)
+	$(CXX) -c $(PORTABLE_CXXFLAGS) -o $@ $<
+
+$(OBJDIR)/debug/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
+	@mkdir -p $(@D)
+	$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
+
+$(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h
+	@mkdir -p $(@D)
+	$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
+
+.DEFAULT_GOAL := release
+
+release: $(RELEASE_OBJS)
+	$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+
+portable: $(PORTABLE_OBJS)
+	$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+
+debug: $(DEBUG_OBJS)
+	$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
+
+$(TEST_TARGET): $(TEST_OBJS)
+	$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) -o $@ $^
 
 test: $(TEST_TARGET)
 	./$(TEST_TARGET)
 
 clean:
-	rm -f $(TARGET) $(TEST_TARGET)
+	rm -rf $(TARGET) $(TEST_TARGET) $(OBJDIR)
 
 .PHONY: release portable debug test clean

@@ -70,6 +70,7 @@ add_executable(rasterminal
   src/mesh_ply.cpp
   src/mesh_stl.cpp
   src/mesh_gltf.cpp
+  src/draco_decode.cpp
   src/camera.cpp
   src/shadow.cpp
   src/rasterize.cpp
@@ -82,6 +83,12 @@ target_link_libraries(rasterminal PRIVATE
   rasterminal_warnings
   rasterminal_release_opts
   Threads::Threads)
+# GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
+# the link-step recompile, where per-TU pragma context (src/draco_decode.cpp +
+# vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
+# TUs keep -Wmaybe-uninitialized active at compile.
+target_link_options(rasterminal PRIVATE
+  $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
 if(ipo_ok)
   set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
   set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
@@ -126,6 +133,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_rasterize_alpha.cpp
     tests/test_rasterize_emissive.cpp
     tests/test_gltf.cpp
+    tests/test_gltf_draco.cpp
     tests/test_renderer.cpp
     tests/test_renderer_ao_clip.cpp
     tests/test_renderer_shadow_depth.cpp
@@ -138,6 +146,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/mesh_ply.cpp
     src/mesh_stl.cpp
     src/mesh_gltf.cpp
+    src/draco_decode.cpp
     src/texture.cpp
     src/camera.cpp
     src/rasterize.cpp
@@ -150,6 +159,8 @@ if(RASTERMINAL_BUILD_TESTS)
     rasterminal_warnings
     rasterminal_test_opts
     Threads::Threads)
+  target_link_options(rasterminal_tests PRIVATE
+    $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
   if(ipo_ok)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
