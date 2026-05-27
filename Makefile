@@ -145,6 +145,18 @@ OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
 DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
 
+# Terse output by default (one short line per compile/link); `make V=1` echoes the
+# full g++ commands. Q silences the recipe-line echo; E prints the short progress line
+# (and becomes a shell no-op under V=1 so the full command isn't doubled).
+V ?= 0
+ifeq ($(V),0)
+Q = @
+E = @printf '  %-5s %s\n'
+else
+Q =
+E = @:
+endif
+
 RELEASE_OBJS  = $(patsubst %.cpp,$(OBJDIR)/release/%.o,$(SRCS))
 PORTABLE_OBJS = $(patsubst %.cpp,$(OBJDIR)/portable/%.o,$(SRCS))
 DEBUG_OBJS    = $(patsubst %.cpp,$(OBJDIR)/debug/%.o,$(SRCS))
@@ -152,37 +164,45 @@ TEST_OBJS     = $(patsubst %.cpp,$(OBJDIR)/test/%.o,$(TEST_SRCS))
 
 $(OBJDIR)/release/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	@mkdir -p $(@D)
-	$(CXX) -c $(CXXFLAGS) -o $@ $<
+	$(E) CXX $<
+	$(Q)$(CXX) -c $(CXXFLAGS) -o $@ $<
 
 $(OBJDIR)/portable/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	@mkdir -p $(@D)
-	$(CXX) -c $(PORTABLE_CXXFLAGS) -o $@ $<
+	$(E) CXX $<
+	$(Q)$(CXX) -c $(PORTABLE_CXXFLAGS) -o $@ $<
 
 $(OBJDIR)/debug/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	@mkdir -p $(@D)
-	$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
+	$(E) CXX $<
+	$(Q)$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
 
 $(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h \
                     tests/draco_cube_bitstream.h tests/draco_cube_color.h
 	@mkdir -p $(@D)
-	$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
+	$(E) CXX $<
+	$(Q)$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
 
 .DEFAULT_GOAL := release
 
 release: $(RELEASE_OBJS)
-	$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+	$(E) LINK $(TARGET)
+	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
 
 portable: $(PORTABLE_OBJS)
-	$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+	$(E) LINK $(TARGET)
+	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
 
 debug: $(DEBUG_OBJS)
-	$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
+	$(E) LINK $(TARGET)
+	$(Q)$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
 
 $(TEST_TARGET): $(TEST_OBJS)
-	$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) -o $@ $^
+	$(E) LINK $@
+	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) -o $@ $^
 
 test: $(TEST_TARGET)
-	./$(TEST_TARGET)
+	$(Q)./$(TEST_TARGET)
 
 clean:
 	rm -rf $(TARGET) $(TEST_TARGET) $(OBJDIR)
