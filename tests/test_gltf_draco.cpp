@@ -413,3 +413,8 @@ TEST(gltf_draco, missing_accessors_array_fails)
 //     implausible counts; not constructible without an adversarial/pathologically-
 //     compressible input, and the size==0 sub-branch is unreachable (an empty buffer
 //     fails the decode first). Covered by reasoning, not a unit test.
+//   • COLOR_0 with >4 components — decode_draco_mesh clamps the ConvertValue out-count
+//     to the 4-float buffer, so a malformed attribute declaring up to 255 components
+//     can't overflow it. draco_encoder won't emit a >4-component COLOR attribute from
+//     standard input (it'd require a hand-crafted generic attribute), so the guard is
+//     reasoning-covered rather than fixture-tested; the clamp makes it safe regardless.

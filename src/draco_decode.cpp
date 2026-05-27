@@ -15,6 +15,7 @@
 #include "draco/core/decoder_buffer.h"
 #include "draco/mesh/mesh.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory> // IWYU pragma: keep — std::unique_ptr<draco::Mesh> below; clangd can't trace it through Draco's StatusOr::value()
@@ -100,8 +101,14 @@ bool decode_draco_mesh(
         }
         if (col)
         {
+            // num_components() is an unconstrained uint8_t straight from the bitstream
+            // (1-255), and ConvertValue writes that many floats into the output. Clamp
+            // to the 4-float destination so a malformed COLOR_0 attribute declaring >4
+            // components can't overflow this stack buffer (we only use RGB anyway). The
+            // clamp also keeps the int8_t cast lossless.
             float c[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-            col->ConvertValue<float>(col->mapped_index(pi), static_cast<int8_t>(col->num_components()), c);
+            const auto nc = static_cast<int8_t>(std::min<uint32_t>(col->num_components(), 4u));
+            col->ConvertValue<float>(col->mapped_index(pi), nc, c);
             out.colors[(i * 3) + 0] = c[0];
             out.colors[(i * 3) + 1] = c[1];
             out.colors[(i * 3) + 2] = c[2];
