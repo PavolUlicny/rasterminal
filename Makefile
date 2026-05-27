@@ -162,7 +162,8 @@ $(OBJDIR)/debug/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	@mkdir -p $(@D)
 	$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
 
-$(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h
+$(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h \
+                    tests/draco_cube_bitstream.h tests/draco_cube_color.h
 	@mkdir -p $(@D)
 	$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
 
