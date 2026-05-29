@@ -18,6 +18,8 @@
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
+#include "meshoptimizer.h"
+
 namespace
 {
     // Apply the node world matrix (column-major) to a position. Shared by the
@@ -83,6 +85,92 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     if (cgltf_validate(data) != cgltf_result_success)
     {
         return false;
+    }
+
+    // EXT_meshopt_compression: cgltf parses the extension but decodes nothing.
+    // Decompress each compressed buffer view in place: allocate with cgltf's own
+    // allocator, decode into it, then assign view->data. cgltf_buffer_view_data()
+    // then transparently returns the decoded bytes to every accessor read, the
+    // Draco path, and the texture loader. Ownership transfers to cgltf — cgltf_free
+    // frees view->data (cgltf.h), so it MUST come from data->memory.alloc_func,
+    // never new/malloc, or the two allocators disagree and double-free. Runs after
+    // cgltf_validate, so its meshopt invariants (mc.buffer non-null, buffer size >=
+    // offset+size, bv.size == stride*count, valid mode, per-mode/filter stride)
+    // already hold here. view->data is assigned right after alloc, so any early
+    // return below is cleaned up by the cgltf_free guard — no manual free path.
+    for (size_t i = 0; i < data->buffer_views_count; i++)
+    {
+        cgltf_buffer_view &bv = data->buffer_views[i];
+        if (!bv.has_meshopt_compression)
+        {
+            continue;
+        }
+        const cgltf_meshopt_compression &mc = bv.meshopt_compression;
+        // Defensive: cgltf checked bv.size == stride*count, but if that product
+        // overflowed size_t and wrapped to a small bv.size the check still passes —
+        // then meshopt would write count*stride (huge) into our small buffer. Reject
+        // the overflow before allocating. Not reachable via a well-formed file
+        // (cgltf_validate covers the normal file-size bound); this guards the wrap.
+        if (mc.stride != 0 && mc.count > SIZE_MAX / mc.stride)
+        {
+            return false;
+        }
+        const size_t dst_size = mc.count * mc.stride;
+        if (dst_size == 0)
+        {
+            continue; // empty view: nothing to decode, leave the override unset
+        }
+        const auto *src = static_cast<const uint8_t *>(mc.buffer->data);
+        if (!src)
+        {
+            return false; // buffer never populated (load_buffers gap)
+        }
+        src += mc.offset;
+        void *dst = data->memory.alloc_func(data->memory.user_data, dst_size);
+        if (!dst)
+        {
+            return false;
+        }
+        bv.data = dst; // hand ownership to cgltf now; the guard frees it on any early return
+        int rc = 0;
+        switch (mc.mode)
+        {
+        case cgltf_meshopt_compression_mode_attributes:
+            rc = meshopt_decodeVertexBuffer(dst, mc.count, mc.stride, src, mc.size);
+            break;
+        case cgltf_meshopt_compression_mode_triangles:
+            rc = meshopt_decodeIndexBuffer(dst, mc.count, mc.stride, src, mc.size);
+            break;
+        case cgltf_meshopt_compression_mode_indices:
+            rc = meshopt_decodeIndexSequence(dst, mc.count, mc.stride, src, mc.size);
+            break;
+        default:
+            return false; // mode_invalid / max_enum
+        }
+        if (rc != 0)
+        {
+            return false; // corrupt / truncated stream — fail loud
+        }
+        // Filters are applied in place after the vertex decode. cgltf maps any
+        // unrecognized filter string to filter_none (zero-init default), so the
+        // none/default arm also covers a hypothetical future filter parsed by an
+        // older cgltf — it would skip filtering rather than fail. Harmless today:
+        // the spec defines exactly these three filters and cgltf knows all of them.
+        switch (mc.filter)
+        {
+        case cgltf_meshopt_compression_filter_octahedral:
+            meshopt_decodeFilterOct(dst, mc.count, mc.stride);
+            break;
+        case cgltf_meshopt_compression_filter_quaternion:
+            meshopt_decodeFilterQuat(dst, mc.count, mc.stride);
+            break;
+        case cgltf_meshopt_compression_filter_exponential:
+            meshopt_decodeFilterExp(dst, mc.count, mc.stride);
+            break;
+        case cgltf_meshopt_compression_filter_none:
+        default:
+            break;
+        }
     }
 
     // Default white material at index 0.
