@@ -2,7 +2,9 @@
 
 [![CI](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml)
 
-> **Pre-release:** the API and CLI flags may change without notice until v1.0.0.
+> **Pre-v1.0.0 — under active development.** Rasterminal works and is fun to play with today,
+> but it's still maturing: expect some rough edges, and CLI flags or controls may change before
+> v1.0.0. For a stable, polished experience, keep an eye out for the v1.0.0 release.
 
 A software 3D rasterizer that renders entirely in the terminal. No GPU, no windowing system — just Unicode half-block characters (▀) and 24-bit ANSI colour, one cell per two vertical pixels.
 
