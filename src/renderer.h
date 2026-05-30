@@ -57,7 +57,7 @@ struct Renderer
     );
 
   private:
-    void worker_func(int t);
+    void worker_func();
 
     int m_n_workers = 0; // total thread pool size, fixed at construction
     std::vector<std::thread> m_threads;

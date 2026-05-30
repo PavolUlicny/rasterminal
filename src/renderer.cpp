@@ -64,7 +64,7 @@ Renderer::Renderer(int n_threads)
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
     {
-        m_threads.emplace_back(&Renderer::worker_func, this, t);
+        m_threads.emplace_back(&Renderer::worker_func, this);
     }
 }
 
@@ -84,9 +84,8 @@ Renderer::~Renderer()
 
 // ─── Renderer::worker_func ────────────────────────────────────────────────────
 
-void Renderer::worker_func(int t)
+void Renderer::worker_func()
 {
-    (void)t; // worker identity no longer drives band ownership
     int my_gen = 0;
     while (true)
     {
