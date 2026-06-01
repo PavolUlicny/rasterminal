@@ -24,6 +24,12 @@ struct Texture
     // Returns false and leaves the object unchanged on error.
     [[nodiscard]] bool load_from_memory(const uint8_t *data, size_t size);
 
+    // Load a KTX2 / Basis Universal texture from a memory buffer (glTF
+    // KHR_texture_basisu). stb_image cannot decode KTX2, so this is a separate entry
+    // point that transcodes via the basis_universal transcoder (see ktx2_decode.h).
+    // Returns false and leaves the object unchanged on error.
+    [[nodiscard]] bool load_ktx2_from_memory(const uint8_t *data, size_t size);
+
     [[nodiscard]] bool valid() const { return width > 0 && height > 0; }
 
     // Sample the texture at normalised (u, v) with bilinear interpolation.

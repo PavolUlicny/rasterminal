@@ -1,9 +1,13 @@
 #include "texture.h"
 
+#include "ktx2_decode.h"
+
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -49,5 +53,22 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     height = h;
     pixels.assign(img, img + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
     stbi_image_free(img);
+    return true;
+}
+
+// ─── Texture::load_ktx2_from_memory ──────────────────────────────────────────
+
+bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
+{
+    std::vector<uint8_t> rgba;
+    int w = 0;
+    int h = 0;
+    if (!decode_ktx2_rgba(data, size, rgba, w, h))
+    {
+        return false;
+    }
+    width = w;
+    height = h;
+    pixels = std::move(rgba);
     return true;
 }

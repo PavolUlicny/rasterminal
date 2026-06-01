@@ -59,6 +59,7 @@ SRCS = src/main.cpp \
        src/rasterize.cpp \
        src/renderer.cpp \
        src/texture.cpp \
+       src/ktx2_decode.cpp \
        vendor/meshoptimizer/meshoptimizer_impl.cpp \
        vendor/draco/draco_impl.cpp \
        vendor/basisu/basisu_impl.cpp
@@ -80,7 +81,8 @@ HDRS = src/args.h \
        src/rasterize.h \
        src/renderer.h \
        src/platform.h \
-       src/texture.h
+       src/texture.h \
+       src/ktx2_decode.h
 
 # LTO_SUPPRESS: GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker
 # templates during the link step's recompile, and per-TU pragma context (in
@@ -106,6 +108,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_camera.cpp \
               tests/test_clip_near.cpp \
               tests/test_texture.cpp \
+              tests/test_ktx2.cpp \
               tests/test_framebuffer.cpp \
               tests/test_mesh_geometry.cpp \
               tests/test_mesh_vcache.cpp \
@@ -134,6 +137,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/mesh_gltf.cpp \
               src/draco_decode.cpp \
               src/texture.cpp \
+              src/ktx2_decode.cpp \
               src/camera.cpp \
               src/rasterize.cpp \
               src/framebuffer.cpp \
@@ -202,7 +206,7 @@ $(OBJDIR)/debug/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	$(Q)$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
 
 $(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h \
-                    tests/draco_cube_bitstream.h tests/draco_cube_color.h
+                    tests/draco_cube_bitstream.h tests/draco_cube_color.h tests/ktx2_fixtures.h
 	@mkdir -p $(@D)
 	$(E) CXX $<
 	$(Q)$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
