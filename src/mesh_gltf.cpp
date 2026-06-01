@@ -8,11 +8,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <new>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #define CGLTF_IMPLEMENTATION
@@ -52,6 +55,68 @@ namespace
             r = r * (1.0f / len);
         }
         return r;
+    }
+
+    // The 12-byte KTX2 file identifier. KHR_texture_basisu images are KTX2 containers,
+    // which stb_image cannot decode — they are routed to the basisu transcoder instead.
+    bool is_ktx2(const uint8_t *data, size_t size)
+    {
+        static const uint8_t magic[12] = { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
+        return data && size >= sizeof(magic) && std::memcmp(data, magic, sizeof(magic)) == 0;
+    }
+
+    // Read an entire file into out. Returns false (out untouched) on any error. Used to
+    // slurp external image files so they can be content-sniffed and routed uniformly,
+    // the same way embedded (buffer_view) images already are. Uses the FILE idiom from
+    // mesh_stl.cpp (fread takes void*, so no byte-pointer cast; unique_ptr owns the
+    // handle; fseek/ftell instead of rewind).
+    bool read_file(const std::string &path, std::vector<uint8_t> &out)
+    {
+        const auto fp = std::unique_ptr<std::FILE, int (*)(std::FILE *)>(std::fopen(path.c_str(), "rb"), std::fclose);
+        if (!fp || std::fseek(fp.get(), 0, SEEK_END) != 0)
+        {
+            return false;
+        }
+        const long len = std::ftell(fp.get());
+        if (len < 0 || std::fseek(fp.get(), 0, SEEK_SET) != 0)
+        {
+            return false;
+        }
+        // The file size is unbounded (arbitrary external sidecar). Decode runs on worker
+        // threads with no exception boundary at the load site, so a bad_alloc here would
+        // terminate the process; fail loud instead, matching decode_ktx2_rgba's guard.
+        std::vector<uint8_t> buf;
+        try
+        {
+            buf.resize(static_cast<size_t>(len));
+        }
+        catch (const std::bad_alloc &)
+        {
+            return false;
+        }
+        if (len > 0 && std::fread(buf.data(), 1, static_cast<size_t>(len), fp.get()) != static_cast<size_t>(len))
+        {
+            return false;
+        }
+        out = std::move(buf);
+        return true;
+    }
+
+    // Resolve the image a texture should sample. KHR_texture_basisu carries a separate
+    // KTX2 image (basisu_image) alongside the standard fallback (image); prefer the KTX2
+    // source when present so we decode the intended texture, not the optional PNG/JPEG
+    // fallback (which may be absent).
+    const cgltf_image *pick_image(const cgltf_texture *tex)
+    {
+        if (!tex)
+        {
+            return nullptr;
+        }
+        if (tex->has_basisu && tex->basisu_image)
+        {
+            return tex->basisu_image;
+        }
+        return tex->image;
     }
 } // namespace
 
@@ -176,25 +241,54 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // Default white material at index 0.
     materials.push_back(Material{});
 
-    // Register a texture by cgltf_image, returning its slot index. Each distinct
-    // image is registered once (dedup); the actual decode is deferred and run in
-    // parallel after the scene walk. Slot order follows first-encounter order.
-    std::unordered_map<const cgltf_image *, int> tex_cache;
-    std::vector<const cgltf_image *> tex_requests;
-    auto load_tex = [&](const cgltf_image *img) -> int
+    // A deferred texture decode: the preferred image, plus an optional fallback tried
+    // if the preferred one fails to decode. For KHR_texture_basisu the preferred image
+    // is the KTX2 and the fallback is the texture's ordinary source — the extension
+    // provides it precisely so a renderer that can't transcode a given KTX2 can degrade
+    // to the plain image instead of rendering untextured.
+    struct TexRequest
     {
-        if (!img)
+        const cgltf_image *primary;
+        const cgltf_image *fallback; // nullptr when none
+    };
+
+    // Register a texture, returning its slot index. Each distinct decode is registered
+    // once; the actual decode is deferred and run in parallel after the scene walk. Slot
+    // order follows first-encounter order. Dedup is keyed on the (primary, fallback) pair,
+    // not the primary alone: two basisu textures can share one KTX2 source yet declare
+    // different ordinary-source fallbacks, and each must keep its own fallback. (Trade-off:
+    // that rare same-source/different-fallback pattern then transcodes the shared KTX2
+    // twice; the common no-fallback / identical-fallback cases still dedup to one decode.)
+    using TexKey = std::pair<const cgltf_image *, const cgltf_image *>;
+    struct TexKeyHash
+    {
+        size_t operator()(const TexKey &k) const
+        {
+            return (std::hash<const void *>{}(k.first) * 1099511628211ULL) ^ std::hash<const void *>{}(k.second);
+        }
+    };
+    std::unordered_map<TexKey, int, TexKeyHash> tex_cache;
+    std::vector<TexRequest> tex_requests;
+    auto load_tex = [&](const cgltf_texture *tex) -> int
+    {
+        const cgltf_image *primary = pick_image(tex);
+        if (!primary)
         {
             return -1;
         }
-        const auto it = tex_cache.find(img);
+        // Fallback applies only when the KTX2 source was preferred over a distinct
+        // ordinary source on the same texture.
+        const cgltf_image *fallback =
+            (primary == tex->basisu_image && tex->image && tex->image != primary) ? tex->image : nullptr;
+        const TexKey key{ primary, fallback };
+        const auto it = tex_cache.find(key);
         if (it != tex_cache.end())
         {
             return it->second;
         }
         const int idx = static_cast<int>(tex_requests.size());
-        tex_requests.push_back(img);
-        tex_cache.emplace(img, idx);
+        tex_requests.push_back({ primary, fallback });
+        tex_cache.emplace(key, idx);
         return idx;
     };
 
@@ -216,20 +310,20 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         mat.roughness = pbr.roughness_factor;
         if (pbr.metallic_roughness_texture.texture)
         {
-            mat.metallic_roughness_tex = load_tex(pbr.metallic_roughness_texture.texture->image);
+            mat.metallic_roughness_tex = load_tex(pbr.metallic_roughness_texture.texture);
         }
         if (pbr.base_color_texture.texture)
         {
-            mat.diffuse_tex = load_tex(pbr.base_color_texture.texture->image);
+            mat.diffuse_tex = load_tex(pbr.base_color_texture.texture);
         }
         if (m->normal_texture.texture)
         {
-            mat.normal_tex = load_tex(m->normal_texture.texture->image);
+            mat.normal_tex = load_tex(m->normal_texture.texture);
             mat.normal_scale = m->normal_texture.scale;
         }
         if (m->occlusion_texture.texture)
         {
-            mat.occlusion_tex = load_tex(m->occlusion_texture.texture->image);
+            mat.occlusion_tex = load_tex(m->occlusion_texture.texture);
             // cgltf: scale field == occlusionTexture.strength. Spec caps it at [0,1] but cgltf
             // does not enforce; clamp so an out-of-range value can't drive ao negative per-pixel.
             mat.occlusion_strength = clamp(m->occlusion_texture.scale, 0.0f, 1.0f);
@@ -262,7 +356,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
         if (emissive_active && m->emissive_texture.texture)
         {
-            mat.emissive_tex = load_tex(m->emissive_texture.texture->image);
+            mat.emissive_tex = load_tex(m->emissive_texture.texture);
         }
         mat.double_sided = m->double_sided;
         if (m->alpha_mode == cgltf_alpha_mode_mask)
@@ -645,23 +739,57 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         compute_normals(crease_cos);
     }
 
-    // Decode all registered images in parallel. data (held by guard) and dir
-    // outlive the join, so worker reads of buffer_view->buffer->data are valid.
+    // Decode one image (external uri or embedded buffer_view), routing KTX2 vs stb by
+    // content sniff. Returns an invalid Texture on any failure.
+    auto decode_one = [&](const cgltf_image *img) -> Texture
+    {
+        Texture tex;
+        if (img->uri && img->uri[0] != '\0')
+        {
+            // Slurp external files so KTX2 and stb-decodable formats route the same way
+            // (by content), independent of the file extension.
+            std::vector<uint8_t> bytes;
+            if (read_file(dir + img->uri, bytes))
+            {
+                if (is_ktx2(bytes.data(), bytes.size()))
+                {
+                    (void)tex.load_ktx2_from_memory(bytes.data(), bytes.size());
+                }
+                else
+                {
+                    (void)tex.load_from_memory(bytes.data(), bytes.size());
+                }
+            }
+        }
+        else if (img->buffer_view)
+        {
+            // cgltf_buffer_view_data honours EXT_meshopt_compression overrides.
+            const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
+            const size_t size = img->buffer_view->size;
+            if (is_ktx2(ptr, size))
+            {
+                (void)tex.load_ktx2_from_memory(ptr, size);
+            }
+            else
+            {
+                (void)tex.load_from_memory(ptr, size);
+            }
+        }
+        return tex;
+    };
+
+    // Decode all registered images in parallel. data (held by guard) and dir outlive
+    // the join, so worker reads of buffer_view->buffer->data are valid. On a failed
+    // KTX2 transcode, fall back to the texture's ordinary source if it provided one.
     decode_textures(
         textures, materials, tex_requests.size(), n_threads,
         [&](size_t i) -> Texture
         {
-            const cgltf_image *img = tex_requests[i];
-            Texture tex;
-            if (img->uri && img->uri[0] != '\0')
+            const TexRequest &req = tex_requests[i];
+            Texture tex = decode_one(req.primary);
+            if (!tex.valid() && req.fallback)
             {
-                (void)tex.load(dir + img->uri);
-            }
-            else if (img->buffer_view)
-            {
-                // cgltf_buffer_view_data honours EXT_meshopt_compression overrides.
-                const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
-                (void)tex.load_from_memory(ptr, img->buffer_view->size);
+                tex = decode_one(req.fallback);
             }
             return tex;
         }

@@ -123,6 +123,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_gltf.cpp \
               tests/test_gltf_draco.cpp \
               tests/test_gltf_meshopt.cpp \
+              tests/test_gltf_ktx2.cpp \
               tests/test_renderer.cpp \
               tests/test_renderer_ao_clip.cpp \
               tests/test_renderer_shadow_depth.cpp \

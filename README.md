@@ -11,7 +11,7 @@ A software 3D rasterizer that renders entirely in the terminal. No GPU, no windo
 ## Features
 
 - **Shading modes** — wireframe, flat, Gouraud, and Phong (per-pixel)
-- **Textures** — diffuse maps with perspective-correct UV interpolation and bilinear filtering
+- **Textures** — diffuse maps with perspective-correct UV interpolation and bilinear filtering; KTX2 / Basis Universal (`KHR_texture_basisu`) transcoded on load
 - **Lighting** — Blinn-Phong with dual (warm key + cool fill) or single light; baked ambient occlusion
 - **Shadow maps** — hard shadows from the key light
 - **Orbit camera** — yaw, pitch, zoom; left-button drag; scroll to zoom
@@ -126,7 +126,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | OBJ / MTL | Triangles, quads, n-gons; `map_Kd` / `map_Ks` textures |
 | PLY | ASCII and binary (LE/BE); vertex and face colours |
 | STL | ASCII and binary |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression` |
+| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2) |
 
 ## Third-party libraries
 
