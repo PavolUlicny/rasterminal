@@ -746,6 +746,12 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         Texture tex;
         if (img->uri && img->uri[0] != '\0')
         {
+            // data: URIs (inline base64 images) are not yet supported; skip explicitly
+            // so the gap is visible here rather than a silent read_file failure below.
+            if (std::strncmp(img->uri, "data:", 5) == 0)
+            {
+                return tex;
+            }
             // Percent-decode the URI before opening the file. cgltf decodes escapes for
             // buffer URIs but not image URIs, so e.g. "my%20tex.ktx2" would otherwise fail
             // to open. Decode only the uri (not the dir prefix), matching cgltf's own
