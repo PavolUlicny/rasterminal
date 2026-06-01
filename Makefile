@@ -21,10 +21,12 @@ endif
 
 VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
-              -isystem vendor/meshoptimizer/src -isystem vendor/draco/src
+              -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
+              -isystem vendor/basisu/transcoder -isystem vendor/basisu/zstd
 VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
               vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h \
-              vendor/meshoptimizer/src/meshoptimizer.h vendor/draco/src/draco/draco_features.h
+              vendor/meshoptimizer/src/meshoptimizer.h vendor/draco/src/draco/draco_features.h \
+              vendor/basisu/transcoder/basisu_transcoder.h
 
 # Tier 1: fast flags safe for any CPU (both release and portable).
 OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only \
@@ -58,7 +60,12 @@ SRCS = src/main.cpp \
        src/renderer.cpp \
        src/texture.cpp \
        vendor/meshoptimizer/meshoptimizer_impl.cpp \
-       vendor/draco/draco_impl.cpp
+       vendor/draco/draco_impl.cpp \
+       vendor/basisu/basisu_impl.cpp
+
+# C sources (zstd decode amalgam, used by the basisu transcoder for KTX2 Zstd
+# supercompression). Compiled as C with $(CC) — must not go through the C++ flags.
+CSRCS = vendor/basisu/zstd/zstddeclib.c
 
 HDRS = src/args.h \
        src/clip.h \
@@ -132,7 +139,8 @@ TEST_SRCS   = tests/test_main.cpp \
               src/framebuffer.cpp \
               src/shadow.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
-              vendor/draco/draco_impl.cpp
+              vendor/draco/draco_impl.cpp \
+              vendor/basisu/basisu_impl.cpp
 
 # Per-build-type object caches. Mtime alone can't tell which variant produced
 # $(TARGET), so each variant has its own subdir of objects and is phony — the
@@ -145,6 +153,16 @@ TEST_SRCS   = tests/test_main.cpp \
 OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
 DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
+
+# ─── C flags (vendored zstd decode amalgam) ───────────────────────────────────
+# zstd is third-party C; compile it with $(CC), warnings off (-w), never via the
+# strict C++ flag set. -march follows the variant (native for release/test only).
+CC ?= cc
+C_OPT           = -std=c11 -O3 -w -pipe
+RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
+PORTABLE_CFLAGS = $(C_OPT)
+DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe
+TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
 # Terse output by default (one short line per compile/link); `make V=1` echoes the
 # full g++ commands. Q silences the recipe-line echo; E prints the short progress line
@@ -162,6 +180,11 @@ RELEASE_OBJS  = $(patsubst %.cpp,$(OBJDIR)/release/%.o,$(SRCS))
 PORTABLE_OBJS = $(patsubst %.cpp,$(OBJDIR)/portable/%.o,$(SRCS))
 DEBUG_OBJS    = $(patsubst %.cpp,$(OBJDIR)/debug/%.o,$(SRCS))
 TEST_OBJS     = $(patsubst %.cpp,$(OBJDIR)/test/%.o,$(TEST_SRCS))
+
+RELEASE_COBJS  = $(patsubst %.c,$(OBJDIR)/release/%.o,$(CSRCS))
+PORTABLE_COBJS = $(patsubst %.c,$(OBJDIR)/portable/%.o,$(CSRCS))
+DEBUG_COBJS    = $(patsubst %.c,$(OBJDIR)/debug/%.o,$(CSRCS))
+TEST_COBJS     = $(patsubst %.c,$(OBJDIR)/test/%.o,$(CSRCS))
 
 $(OBJDIR)/release/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	@mkdir -p $(@D)
@@ -184,21 +207,49 @@ $(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.
 	$(E) CXX $<
 	$(Q)$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
 
+$(OBJDIR)/release/%.o: %.c
+	@mkdir -p $(@D)
+	$(E) CC $<
+	$(Q)$(CC) -c $(RELEASE_CFLAGS) -o $@ $<
+
+$(OBJDIR)/portable/%.o: %.c
+	@mkdir -p $(@D)
+	$(E) CC $<
+	$(Q)$(CC) -c $(PORTABLE_CFLAGS) -o $@ $<
+
+$(OBJDIR)/debug/%.o: %.c
+	@mkdir -p $(@D)
+	$(E) CC $<
+	$(Q)$(CC) -c $(DEBUG_CFLAGS) -o $@ $<
+
+$(OBJDIR)/test/%.o: %.c
+	@mkdir -p $(@D)
+	$(E) CC $<
+	$(Q)$(CC) -c $(TEST_CFLAGS) -o $@ $<
+
+# The basisu transcoder shim is a large, unaudited vendored TU that trips a long,
+# compiler-specific warning set; suppress all of its warnings per-TU (-w, mirroring the
+# zstd C TU) instead of maintaining a fragile pragma list that breaks on version bumps.
+$(OBJDIR)/release/vendor/basisu/basisu_impl.o:  CXXFLAGS          += -w
+$(OBJDIR)/portable/vendor/basisu/basisu_impl.o: PORTABLE_CXXFLAGS += -w
+$(OBJDIR)/debug/vendor/basisu/basisu_impl.o:    DEBUG_CXXFLAGS     += -w
+$(OBJDIR)/test/vendor/basisu/basisu_impl.o:     TEST_CXXFLAGS      += -w
+
 .DEFAULT_GOAL := release
 
-release: $(RELEASE_OBJS)
+release: $(RELEASE_OBJS) $(RELEASE_COBJS)
 	$(E) LINK $(TARGET)
 	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
 
-portable: $(PORTABLE_OBJS)
+portable: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
 	$(E) LINK $(TARGET)
 	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
 
-debug: $(DEBUG_OBJS)
+debug: $(DEBUG_OBJS) $(DEBUG_COBJS)
 	$(E) LINK $(TARGET)
 	$(Q)$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
 
-$(TEST_TARGET): $(TEST_OBJS)
+$(TEST_TARGET): $(TEST_OBJS) $(TEST_COBJS)
 	$(E) LINK $@
 	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) -o $@ $^
 

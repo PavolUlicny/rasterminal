@@ -12,3 +12,7 @@ vendor/tinyobjloader
 vendor/tinyply
 -isystem
 vendor/draco/src
+-isystem
+vendor/basisu/transcoder
+-isystem
+vendor/basisu/zstd

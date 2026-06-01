@@ -11,6 +11,8 @@ Libraries are chosen for fit, not size, and vendored directly — a library may 
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 | meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
 | draco | v1.5.7 | `8786740086a9f4d83f44aa83badfbea4dce7a1b5` | <https://github.com/google/draco> | Apache-2.0 |
+| basis_universal | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
+| zstd (decode amalgam) | bundled with basis_universal `v2_1_0r` | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> (vendored copy of <https://github.com/facebook/zstd>) | BSD-3-Clause |
 
 ## Refresh recipe
 
@@ -83,3 +85,23 @@ git rev-parse HEAD   # record the commit SHA in the table above
 Update the commit and version in this table; verify `vendor/draco/src/draco/draco_features.h`
 still matches what `DRACO_GLTF_BITSTREAM=ON` generates; update `THIRD_PARTY_NOTICES` if the
 license changed; then test: `make clean && make && make test`.
+
+For basis_universal (decode-only KTX2/Basis transcoder for `KHR_texture_basisu`): we vendor
+the whole `transcoder/` directory plus the bundled zstd *decode* amalgam (zstd ships inside
+the basis_universal repo). The transcoder is configured for decode in the
+`vendor/basisu/basisu_impl.cpp` shim (only `BASISD_SUPPORT_KTX2` + `BASISD_SUPPORT_KTX2_ZSTD`
+are set; the GPU block-format targets are left at upstream defaults — partial stripping does
+not compile). The shim and the zstd C TU are built with blanket `-w` (they are large,
+unaudited TUs), wired per-source in both the Makefile and CMakeLists.txt.
+
+```sh
+TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/basis_universal.git /tmp/bu && cd /tmp/bu
+cp transcoder/*           /path/to/vendor/basisu/transcoder/
+cp zstd/zstd.h zstd/zstd_errors.h zstd/zstddeclib.c zstd/LICENSE  /path/to/vendor/basisu/zstd/
+cp LICENSE                /path/to/vendor/basisu/LICENSE          # Apache-2.0 (basisu)
+cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by Apache 2.0 4(d) — do not drop
+git rev-parse HEAD        # record the commit SHA in the table above (both basisu + zstd rows)
+```
+
+Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; update
+`THIRD_PARTY_NOTICES` if either license changed; then test: `make clean && make && make test`.

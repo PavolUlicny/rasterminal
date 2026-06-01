@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(rasterminal CXX)
+# C is enabled for the vendored zstd decode amalgam (vendor/basisu/zstd/zstddeclib.c),
+# used by the basisu transcoder for KTX2 Zstd supercompression.
+project(rasterminal CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,22 +21,36 @@ find_package(Threads REQUIRED)
 # ─── Vendored libraries ───────────────────────────────────────────────────────
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
-foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/src)
+foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/src
+            basisu/transcoder basisu/zstd)
   target_include_directories(rasterminal_vendor SYSTEM INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/${lib})
 endforeach()
 
+# The basisu transcoder shim and the zstd C amalgam are large, unaudited vendored TUs
+# that trip a long, compiler-specific warning set; suppress all their warnings per-source
+# (mirrors the Makefile's per-TU -w) rather than maintaining a fragile pragma list.
+set_source_files_properties(
+  vendor/basisu/basisu_impl.cpp
+  vendor/basisu/zstd/zstddeclib.c
+  PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+
 # ─── Warning flags ────────────────────────────────────────────────────────────
 add_library(rasterminal_warnings INTERFACE)
+# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the only C source is the
+# vendored zstd amalgam, which must not receive the C++-only -W flags (they would trip the
+# driver's "valid for C++ but not C" diagnostics under -Werror). It is suppressed via the
+# per-source -w set above.
 target_compile_options(rasterminal_warnings INTERFACE
-  $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
+  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;
     -Wold-style-cast;-Wcast-align;-Wunused;-Woverloaded-virtual;
     -Wnon-virtual-dtor;-Wnull-dereference;-Wdouble-promotion;
     -Wformat=2;-Wimplicit-fallthrough;-Wmisleading-indentation;-Werror>
-  $<$<CXX_COMPILER_ID:GNU>:
+  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:
     -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches;-Wuseless-cast>
-  $<$<CXX_COMPILER_ID:MSVC>:/W4;/WX;/permissive-;/D_CRT_SECURE_NO_WARNINGS>)
+  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W4;/WX;/permissive->
+  $<$<CXX_COMPILER_ID:MSVC>:/D_CRT_SECURE_NO_WARNINGS>)
 
 # ─── Release optimisation flags ───────────────────────────────────────────────
 # Tier 1: CPU-agnostic speed flags — applied in both release and portable builds.
@@ -77,7 +93,9 @@ add_executable(rasterminal
   src/renderer.cpp
   src/texture.cpp
   vendor/meshoptimizer/meshoptimizer_impl.cpp
-  vendor/draco/draco_impl.cpp)
+  vendor/draco/draco_impl.cpp
+  vendor/basisu/basisu_impl.cpp
+  vendor/basisu/zstd/zstddeclib.c)
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -154,7 +172,9 @@ if(RASTERMINAL_BUILD_TESTS)
     src/framebuffer.cpp
     src/shadow.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
-    vendor/draco/draco_impl.cpp)
+    vendor/draco/draco_impl.cpp
+    vendor/basisu/basisu_impl.cpp
+    vendor/basisu/zstd/zstddeclib.c)
   target_link_libraries(rasterminal_tests PRIVATE
     rasterminal_vendor
     rasterminal_warnings
