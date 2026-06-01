@@ -746,10 +746,16 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         Texture tex;
         if (img->uri && img->uri[0] != '\0')
         {
+            // Percent-decode the URI before opening the file. cgltf decodes escapes for
+            // buffer URIs but not image URIs, so e.g. "my%20tex.ktx2" would otherwise fail
+            // to open. Decode only the uri (not the dir prefix), matching cgltf's own
+            // buffer-load path; cgltf_decode_uri rewrites in place and returns the new len.
+            std::string uri = img->uri;
+            uri.resize(cgltf_decode_uri(uri.data()));
             // Slurp external files so KTX2 and stb-decodable formats route the same way
             // (by content), independent of the file extension.
             std::vector<uint8_t> bytes;
-            if (read_file(dir + img->uri, bytes))
+            if (read_file(dir + uri, bytes))
             {
                 if (is_ktx2(bytes.data(), bytes.size()))
                 {

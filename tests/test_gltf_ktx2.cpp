@@ -246,6 +246,41 @@ TEST(gltf_ktx2, external_uri_ktx2_decodes)
     ASSERT_EQ(t.height, 6);
 }
 
+TEST(gltf_ktx2, external_uri_percent_encoded_filename_decodes)
+{
+    // The on-disk sidecar name contains a space; the glTF URI percent-encodes it as
+    // %20. cgltf does not decode image URIs, so the loader must percent-decode before
+    // opening the file, else it would look for the literal "...%20..." name and drop it.
+    std::string pos;
+    for (float v : { -1.0f, -1.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f })
+    {
+        emit_f32_le(pos, v);
+    }
+    TmpFile bin_file(tmp_path("rast_ktx2_pct.bin"), pos.data(), pos.size());
+    TmpFile img_file(tmp_path("rast ktx2 pct img.ktx2"), k_ktx2_uastc_grid6, k_ktx2_uastc_grid6_len);
+
+    std::string json;
+    json += R"({"asset":{"version":"2.0"},"extensionsUsed":["KHR_texture_basisu"],)";
+    json += R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],)";
+    json += R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0}]}],)";
+    json += R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}],)";
+    json += R"("textures":[{"extensions":{"KHR_texture_basisu":{"source":0}}}],)";
+    json += R"("images":[{"uri":"rast%20ktx2%20pct%20img.ktx2"}],)";
+    json += R"("accessors":[)" + std::string(kTriPositionsAccessor) + "],";
+    json += R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],)";
+    json += R"("buffers":[{"uri":"rast_ktx2_pct.bin","byteLength":36}]})";
+
+    TmpFile gltf_file(tmp_path("rast_ktx2_pct.gltf"), json);
+    Mesh m = load_ok(gltf_file.path);
+
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const int idx = m.materials[1].diffuse_tex;
+    ASSERT_TRUE(idx >= 0); // decoded — the %20 was decoded to a space and the file opened
+    const Texture &t = m.textures[static_cast<size_t>(idx)];
+    ASSERT_EQ(t.width, 6);
+    ASSERT_EQ(t.height, 6);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  Fail-loud: a corrupt KTX2 drops the texture slot (index -> -1) but the model
 //  still loads, matching how a failed stb image decode is handled.
