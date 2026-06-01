@@ -389,17 +389,26 @@ Rasterminal vendors only the decode-only transcoder subset of basis_universal
 textures (glTF `KHR_texture_basisu`). It is licensed under the Apache License,
 Version 2.0, the full text of which is reproduced above (see the Draco notice).
 
-The following attribution is reproduced from the upstream NOTICE file, as required
-by Apache License 2.0 § 4(d):
+The upstream NOTICE file is reproduced verbatim below, as required by Apache
+License 2.0 § 4(d):
 
-  Basis Universal(TM) Supercompressed GPU Texture Compression Library
+--------------------------------------------------------------------------------
+NOTICE
 
-  Copyright (C) 2016-2026 Binomial LLC.
-  All rights reserved except as granted under the Apache 2.0 license.
-  "Basis Universal" is a trademark of Binomial LLC.
+Basis Universal™ Supercompressed GPU Texture Compression Library
 
-  The Basis Universal library, example, and tool source code fall under the
-  Apache 2.0 license, unless otherwise explicitly indicated.
+Copyright © 2016–2026 Binomial LLC.
+All rights reserved except as granted under the [Apache 2.0 license](https://github.com/BinomialLLC/basis_universal/blob/master/LICENSE).
+"Basis Universal" is a trademark of Binomial LLC.
+
+The documents in the Basis Universal wiki, and the Basis Universal library, example, and tool source code, fall under the Apache 2.0 license, unless otherwise explicitly indicated.
+
+Redistributions or derivative works must include a readable copy of the attribution notices from this NOTICE file (see Apache License 2.0 § 4(d)).
+
+If you modify the Basis Universal source code, specifications, or wiki documents and redistribute the files, you must cause any modified files to carry prominent notices stating that you changed the files (see Apache 2.0 §4(b)).
+
+**This software, documentation and specifications are provided "as is", without warranty of any kind (see Apache 2.0 §§7–8).**
+--------------------------------------------------------------------------------
 
 ================================================================================
 zstd (https://github.com/facebook/zstd, vendored via basis_universal)

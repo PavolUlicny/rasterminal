@@ -11,7 +11,7 @@ Libraries are chosen for fit, not size, and vendored directly — a library may 
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 | meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
 | draco | v1.5.7 | `8786740086a9f4d83f44aa83badfbea4dce7a1b5` | <https://github.com/google/draco> | Apache-2.0 |
-| basis_universal | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
+| basis_universal (`vendor/basisu/`) | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
 | zstd (decode amalgam) | bundled with basis_universal `v2_1_0r` | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> (vendored copy of <https://github.com/facebook/zstd>) | BSD-3-Clause |
 
 ## Refresh recipe
@@ -103,5 +103,7 @@ cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by 
 git rev-parse HEAD        # record the commit SHA in the table above (both basisu + zstd rows)
 ```
 
-Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; update
-`THIRD_PARTY_NOTICES` if either license changed; then test: `make clean && make && make test`.
+Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; if either
+license **or the NOTICE text** changed, update `THIRD_PARTY_NOTICES` (it reproduces the
+basis_universal NOTICE verbatim, so a NOTICE change there must be mirrored — it is not a
+license change); then test: `make clean && make && make test`.
