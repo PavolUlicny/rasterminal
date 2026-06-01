@@ -1,6 +1,6 @@
 # Vendored libraries
 
-All libraries are single-header, a small source set, or a vendored source subset, and vendored directly. Do not edit these files manually — they are formatting-disabled via `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
+Libraries are chosen for fit, not size, and vendored directly — a library may be a single header, a small source set, or a full vendored source subset, whatever the job warrants. Do not edit these files manually — they are formatting-disabled via `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
 
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
