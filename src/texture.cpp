@@ -5,6 +5,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstdint>
+#include <new>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,10 +27,23 @@ bool Texture::load(const std::string &path)
         return false;
     }
 
+    // Copy into a local buffer first: decode runs on worker threads with no exception
+    // boundary at the load site, so an unguarded heap copy would terminate the process on
+    // OOM. Fail loud instead, and only touch members on success (leave-unchanged contract).
+    std::vector<uint8_t> buf;
+    try
+    {
+        buf.assign(data, data + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
+    }
+    catch (const std::bad_alloc &)
+    {
+        stbi_image_free(data);
+        return false;
+    }
+    stbi_image_free(data);
     width = w;
     height = h;
-    pixels.assign(data, data + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
-    stbi_image_free(data);
+    pixels = std::move(buf);
     return true;
 }
 
@@ -49,10 +63,22 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     {
         return false;
     }
+    // See load(): guard the heap copy so a worker-thread OOM fails loud instead of
+    // terminating, and only touch members on success.
+    std::vector<uint8_t> buf;
+    try
+    {
+        buf.assign(img, img + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
+    }
+    catch (const std::bad_alloc &)
+    {
+        stbi_image_free(img);
+        return false;
+    }
+    stbi_image_free(img);
     width = w;
     height = h;
-    pixels.assign(img, img + (static_cast<size_t>(w) * static_cast<size_t>(h) * 4));
-    stbi_image_free(img);
+    pixels = std::move(buf);
     return true;
 }
 
