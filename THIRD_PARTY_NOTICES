@@ -389,8 +389,8 @@ Rasterminal vendors only the decode-only transcoder subset of basis_universal
 textures (glTF `KHR_texture_basisu`). It is licensed under the Apache License,
 Version 2.0, the full text of which is reproduced above (see the Draco notice).
 
-The upstream NOTICE file is reproduced verbatim below, as required by Apache
-License 2.0 § 4(d):
+The upstream NOTICE file is reproduced below, as required by Apache License 2.0
+§ 4(d):
 
 --------------------------------------------------------------------------------
 NOTICE
@@ -421,6 +421,11 @@ to decompress KTX2 UASTC Zstd-supercompressed payloads.
 zstd is dual-licensed under BSD-3-Clause OR GPLv2 at the user's option; rasterminal
 uses it under the BSD-3-Clause license, reproduced below. (The GPLv2 option is not
 exercised, and the GPLv2 text is not distributed.)
+
+The LICENSE text below is reproduced as it ships in basis_universal and names
+"Facebook, Inc."; the current upstream copyright line (in `zstddeclib.c` itself) reads
+"Copyright (c) Meta Platforms, Inc. and affiliates" / "Yann Collet - Meta Platforms,
+Inc." — the same entity (Facebook was renamed Meta).
 
 BSD License
 
