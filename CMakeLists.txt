@@ -32,8 +32,12 @@ endforeach()
 # (mirrors the Makefile's per-TU -w) rather than maintaining a fragile pragma list.
 set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
-  vendor/basisu/zstd/zstddeclib.c
   PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+# zstd is a C TU — use C_COMPILER_ID so the right flag is chosen on mixed-compiler
+# builds (e.g. Clang CXX + MSVC cl.exe C, a valid CMake configuration on Windows).
+set_source_files_properties(
+  vendor/basisu/zstd/zstddeclib.c
+  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 
 # ─── Warning flags ────────────────────────────────────────────────────────────
 add_library(rasterminal_warnings INTERFACE)
