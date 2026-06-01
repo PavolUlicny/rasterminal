@@ -769,8 +769,13 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         }
         else if (img->buffer_view)
         {
-            // cgltf_buffer_view_data honours EXT_meshopt_compression overrides.
+            // cgltf_buffer_view_data honours EXT_meshopt_compression overrides; returns
+            // null when the backing external buffer was never loaded.
             const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
+            if (!ptr)
+            {
+                return tex;
+            }
             const size_t size = img->buffer_view->size;
             if (is_ktx2(ptr, size))
             {
