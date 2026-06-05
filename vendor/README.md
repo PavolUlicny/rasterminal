@@ -134,8 +134,14 @@ src/dsp/alpha_processing_neon.c src/dsp/dec_neon.c src/dsp/filters_neon.c src/ds
 src/utils/bit_reader_utils.c src/utils/color_cache_utils.c src/utils/filters_utils.c src/utils/huffman_utils.c src/utils/palette.c src/utils/quant_levels_dec_utils.c src/utils/rescaler_utils.c src/utils/random_utils.c src/utils/thread_utils.c src/utils/utils.c
 EOF
 )
-# 2. Header set = the gcc -M closure of those .c (both arch modes capture every SIMD-guarded include).
-HDRS=$(for m in "-march=native" ""; do for f in $CFILES; do gcc $m -DNDEBUG -I. -MM -MG $f 2>/dev/null; done; done \
+# 2. Header set = the -M closure of those .c. The two x86 passes (native + portable) capture the
+#    SSE2/SSE41/AVX2-guarded includes; a THIRD pass forces WEBP_USE_NEON (with a stub <arm_neon.h>)
+#    so the ARM-only include src/dsp/neon.h is captured too. Toggling -march on x86 never enters the
+#    `#if defined(WEBP_USE_NEON)` block, so without this pass neon.h is silently dropped and the
+#    macOS-ARM build later fails with "src/dsp/neon.h file not found".
+mkdir -p /tmp/armstub && : > /tmp/armstub/arm_neon.h
+HDRS=$({ for m in "-march=native" ""; do for f in $CFILES; do gcc $m -DNDEBUG -I. -MM -MG $f 2>/dev/null; done; done
+         for f in $CFILES; do gcc -DWEBP_USE_NEON -DNDEBUG -I. -isystem /tmp/armstub -MM -MG $f 2>/dev/null; done; } \
        | tr ' \\' '\n\n' | grep '^src/.*\.h$' | sed 's#/\./#/#' | sort -u)
 # 3. Copy .c + .h preserving the src/ layout, plus the three root files every source
 #    header points to: COPYING (license), PATENTS (patent grant), AUTHORS (contributors).
