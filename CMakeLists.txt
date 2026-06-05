@@ -22,7 +22,7 @@ find_package(Threads REQUIRED)
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
 foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/src
-            basisu/transcoder basisu/zstd)
+            basisu/transcoder basisu/zstd libwebp)
   target_include_directories(rasterminal_vendor SYSTEM INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/${lib})
 endforeach()
@@ -39,12 +39,71 @@ set_source_files_properties(
   vendor/basisu/zstd/zstddeclib.c
   PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 
+# libwebp decode subset (EXT_texture_webp). Listed individually — a unity #include shim
+# fails on duplicate file-local statics (e.g. clip_8b). The dsp SIMD variants self-gate on
+# arch macros, so no per-file SIMD flags are needed. These are C TUs; suppress warnings
+# per-source like zstd (GNU/Clang C already gets no -W via the COMPILE_LANGUAGE:CXX gate
+# on rasterminal_warnings, but this also covers MSVC's default C warnings under /WX).
+set(WEBP_DEC_SRCS
+  vendor/libwebp/src/dec/alpha_dec.c
+  vendor/libwebp/src/dec/buffer_dec.c
+  vendor/libwebp/src/dec/frame_dec.c
+  vendor/libwebp/src/dec/idec_dec.c
+  vendor/libwebp/src/dec/io_dec.c
+  vendor/libwebp/src/dec/quant_dec.c
+  vendor/libwebp/src/dec/tree_dec.c
+  vendor/libwebp/src/dec/vp8_dec.c
+  vendor/libwebp/src/dec/vp8l_dec.c
+  vendor/libwebp/src/dec/webp_dec.c
+  vendor/libwebp/src/dsp/alpha_processing.c
+  vendor/libwebp/src/dsp/cpu.c
+  vendor/libwebp/src/dsp/dec.c
+  vendor/libwebp/src/dsp/dec_clip_tables.c
+  vendor/libwebp/src/dsp/filters.c
+  vendor/libwebp/src/dsp/lossless.c
+  vendor/libwebp/src/dsp/rescaler.c
+  vendor/libwebp/src/dsp/upsampling.c
+  vendor/libwebp/src/dsp/yuv.c
+  vendor/libwebp/src/dsp/alpha_processing_sse2.c
+  vendor/libwebp/src/dsp/dec_sse2.c
+  vendor/libwebp/src/dsp/filters_sse2.c
+  vendor/libwebp/src/dsp/lossless_sse2.c
+  vendor/libwebp/src/dsp/rescaler_sse2.c
+  vendor/libwebp/src/dsp/upsampling_sse2.c
+  vendor/libwebp/src/dsp/yuv_sse2.c
+  vendor/libwebp/src/dsp/alpha_processing_sse41.c
+  vendor/libwebp/src/dsp/dec_sse41.c
+  vendor/libwebp/src/dsp/lossless_sse41.c
+  vendor/libwebp/src/dsp/upsampling_sse41.c
+  vendor/libwebp/src/dsp/yuv_sse41.c
+  vendor/libwebp/src/dsp/lossless_avx2.c
+  vendor/libwebp/src/dsp/alpha_processing_neon.c
+  vendor/libwebp/src/dsp/dec_neon.c
+  vendor/libwebp/src/dsp/filters_neon.c
+  vendor/libwebp/src/dsp/lossless_neon.c
+  vendor/libwebp/src/dsp/rescaler_neon.c
+  vendor/libwebp/src/dsp/upsampling_neon.c
+  vendor/libwebp/src/dsp/yuv_neon.c
+  vendor/libwebp/src/utils/bit_reader_utils.c
+  vendor/libwebp/src/utils/color_cache_utils.c
+  vendor/libwebp/src/utils/filters_utils.c
+  vendor/libwebp/src/utils/huffman_utils.c
+  vendor/libwebp/src/utils/palette.c
+  vendor/libwebp/src/utils/quant_levels_dec_utils.c
+  vendor/libwebp/src/utils/rescaler_utils.c
+  vendor/libwebp/src/utils/random_utils.c
+  vendor/libwebp/src/utils/thread_utils.c
+  vendor/libwebp/src/utils/utils.c)
+set_source_files_properties(
+  ${WEBP_DEC_SRCS}
+  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+
 # ─── Warning flags ────────────────────────────────────────────────────────────
 add_library(rasterminal_warnings INTERFACE)
-# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the only C source is the
-# vendored zstd amalgam, which must not receive the C++-only -W flags (they would trip the
-# driver's "valid for C++ but not C" diagnostics under -Werror). It is suppressed via the
-# per-source -w set above.
+# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the only C sources are the
+# vendored zstd amalgam and the libwebp decode subset, which must not receive the C++-only
+# -W flags (they would trip the driver's "valid for C++ but not C" diagnostics under
+# -Werror). They are suppressed via the per-source -w sets above.
 target_compile_options(rasterminal_warnings INTERFACE
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;
@@ -100,7 +159,8 @@ add_executable(rasterminal
   vendor/meshoptimizer/meshoptimizer_impl.cpp
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
-  vendor/basisu/zstd/zstddeclib.c)
+  vendor/basisu/zstd/zstddeclib.c
+  ${WEBP_DEC_SRCS})
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -183,7 +243,8 @@ if(RASTERMINAL_BUILD_TESTS)
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp
-    vendor/basisu/zstd/zstddeclib.c)
+    vendor/basisu/zstd/zstddeclib.c
+    ${WEBP_DEC_SRCS})
   target_link_libraries(rasterminal_tests PRIVATE
     rasterminal_vendor
     rasterminal_warnings

@@ -16,3 +16,5 @@ vendor/draco/src
 vendor/basisu/transcoder
 -isystem
 vendor/basisu/zstd
+-isystem
+vendor/libwebp

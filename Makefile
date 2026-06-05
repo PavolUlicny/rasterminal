@@ -22,7 +22,8 @@ endif
 VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
               -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
-              -isystem vendor/basisu/transcoder -isystem vendor/basisu/zstd
+              -isystem vendor/basisu/transcoder -isystem vendor/basisu/zstd \
+              -isystem vendor/libwebp
 VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
               vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h \
               vendor/meshoptimizer/src/meshoptimizer.h vendor/draco/src/draco/draco_features.h \
@@ -64,9 +65,62 @@ SRCS = src/main.cpp \
        vendor/draco/draco_impl.cpp \
        vendor/basisu/basisu_impl.cpp
 
-# C sources (zstd decode amalgam, used by the basisu transcoder for KTX2 Zstd
-# supercompression). Compiled as C with $(CC) — must not go through the C++ flags.
-CSRCS = vendor/basisu/zstd/zstddeclib.c
+# C sources, compiled as C with $(CC) — must not go through the C++ flags.
+#  - zstd decode amalgam: used by the basisu transcoder for KTX2 Zstd supercompression.
+#  - libwebp decode subset: EXT_texture_webp image decode. Listed individually (a unity
+#    #include shim fails on duplicate file-local statics, e.g. clip_8b). The dsp SIMD
+#    variants (sse2/sse41/avx2/neon) self-gate on arch macros — no per-file SIMD flags;
+#    the C flags' blanket -w covers their warnings, so no per-TU suppression needed here.
+CSRCS = vendor/basisu/zstd/zstddeclib.c \
+        vendor/libwebp/src/dec/alpha_dec.c \
+        vendor/libwebp/src/dec/buffer_dec.c \
+        vendor/libwebp/src/dec/frame_dec.c \
+        vendor/libwebp/src/dec/idec_dec.c \
+        vendor/libwebp/src/dec/io_dec.c \
+        vendor/libwebp/src/dec/quant_dec.c \
+        vendor/libwebp/src/dec/tree_dec.c \
+        vendor/libwebp/src/dec/vp8_dec.c \
+        vendor/libwebp/src/dec/vp8l_dec.c \
+        vendor/libwebp/src/dec/webp_dec.c \
+        vendor/libwebp/src/dsp/alpha_processing.c \
+        vendor/libwebp/src/dsp/cpu.c \
+        vendor/libwebp/src/dsp/dec.c \
+        vendor/libwebp/src/dsp/dec_clip_tables.c \
+        vendor/libwebp/src/dsp/filters.c \
+        vendor/libwebp/src/dsp/lossless.c \
+        vendor/libwebp/src/dsp/rescaler.c \
+        vendor/libwebp/src/dsp/upsampling.c \
+        vendor/libwebp/src/dsp/yuv.c \
+        vendor/libwebp/src/dsp/alpha_processing_sse2.c \
+        vendor/libwebp/src/dsp/dec_sse2.c \
+        vendor/libwebp/src/dsp/filters_sse2.c \
+        vendor/libwebp/src/dsp/lossless_sse2.c \
+        vendor/libwebp/src/dsp/rescaler_sse2.c \
+        vendor/libwebp/src/dsp/upsampling_sse2.c \
+        vendor/libwebp/src/dsp/yuv_sse2.c \
+        vendor/libwebp/src/dsp/alpha_processing_sse41.c \
+        vendor/libwebp/src/dsp/dec_sse41.c \
+        vendor/libwebp/src/dsp/lossless_sse41.c \
+        vendor/libwebp/src/dsp/upsampling_sse41.c \
+        vendor/libwebp/src/dsp/yuv_sse41.c \
+        vendor/libwebp/src/dsp/lossless_avx2.c \
+        vendor/libwebp/src/dsp/alpha_processing_neon.c \
+        vendor/libwebp/src/dsp/dec_neon.c \
+        vendor/libwebp/src/dsp/filters_neon.c \
+        vendor/libwebp/src/dsp/lossless_neon.c \
+        vendor/libwebp/src/dsp/rescaler_neon.c \
+        vendor/libwebp/src/dsp/upsampling_neon.c \
+        vendor/libwebp/src/dsp/yuv_neon.c \
+        vendor/libwebp/src/utils/bit_reader_utils.c \
+        vendor/libwebp/src/utils/color_cache_utils.c \
+        vendor/libwebp/src/utils/filters_utils.c \
+        vendor/libwebp/src/utils/huffman_utils.c \
+        vendor/libwebp/src/utils/palette.c \
+        vendor/libwebp/src/utils/quant_levels_dec_utils.c \
+        vendor/libwebp/src/utils/rescaler_utils.c \
+        vendor/libwebp/src/utils/random_utils.c \
+        vendor/libwebp/src/utils/thread_utils.c \
+        vendor/libwebp/src/utils/utils.c
 
 HDRS = src/args.h \
        src/clip.h \
@@ -160,14 +214,17 @@ OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
 DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
 
-# ─── C flags (vendored zstd decode amalgam) ───────────────────────────────────
-# zstd is third-party C; compile it with $(CC), warnings off (-w), never via the
-# strict C++ flag set. -march follows the variant (native for release/test only).
+# ─── C flags (vendored zstd amalgam + libwebp decode subset) ──────────────────
+# Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
+# flag set. -march follows the variant (native for release/test only). libwebp's
+# internal includes are repo-rooted ("src/dec/..."), so it needs its root on the
+# include path; zstd is self-contained but the flag is harmless to it.
 CC ?= cc
-C_OPT           = -std=c11 -O3 -w -pipe
+C_INC           = -isystem vendor/libwebp
+C_OPT           = -std=c11 -O3 -w -pipe $(C_INC)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
-DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe
+DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC)
 TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
 # Terse output by default (one short line per compile/link); `make V=1` echoes the
