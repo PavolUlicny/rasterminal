@@ -70,8 +70,14 @@ SRCS = src/main.cpp \
 #  - zstd decode amalgam: used by the basisu transcoder for KTX2 Zstd supercompression.
 #  - libwebp decode subset: EXT_texture_webp image decode. Listed individually (a unity
 #    #include shim fails on duplicate file-local statics, e.g. clip_8b). The dsp SIMD
-#    variants (sse2/sse41/avx2/neon) self-gate on arch macros — no per-file SIMD flags;
-#    the C flags' blanket -w covers their warnings, so no per-TU suppression needed here.
+#    variants (sse2/sse41/avx2/neon) self-gate on arch macros and carry no per-file SIMD
+#    flags: release (-march=native) activates all of them; portable activates only the
+#    x86-64 SSE2 baseline (sse41/avx2 compile to empty stubs). libwebp ships CPUID runtime
+#    dispatch that COULD safely carry sse41/avx2 in a portable binary via per-file
+#    -msse4.1/-mavx2 (it picks kernels by actual CPU, so no SIGILL risk) — we deliberately
+#    forgo that to keep "portable = no arch-specific codegen" uniform across every TU.
+#    Portable WebP decode is correct, just SSE2-only (decode is load-time, not hot-path).
+#    The C flags' blanket -w covers their warnings, so no per-TU suppression needed here.
 CSRCS = vendor/basisu/zstd/zstddeclib.c \
         vendor/libwebp/src/dec/alpha_dec.c \
         vendor/libwebp/src/dec/buffer_dec.c \
@@ -181,6 +187,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_gltf_draco.cpp \
               tests/test_gltf_meshopt.cpp \
               tests/test_gltf_ktx2.cpp \
+              tests/test_gltf_webp.cpp \
               tests/test_renderer.cpp \
               tests/test_renderer_ao_clip.cpp \
               tests/test_renderer_shadow_depth.cpp \
@@ -222,9 +229,12 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
 # flag set. -march follows the variant (native for release/test only). libwebp's
 # internal includes are repo-rooted ("src/dec/..."), so it needs its root on the
-# include path; zstd is self-contained but the flag is harmless to it.
+# include path. WEBP_USE_THREAD makes libwebp's lazy SIMD function-pointer init
+# mutex-guarded (cpu.h): texture decode runs on worker threads, and without it the
+# first concurrent WebP decode races on the global DSP tables. Both flags are shared
+# with the self-contained zstd amalgam, which ignores them harmlessly.
 CC ?= cc
-C_INC           = -isystem vendor/libwebp
+C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
 C_OPT           = -std=c11 -O3 -w -pipe $(C_INC)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)

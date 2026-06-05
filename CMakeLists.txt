@@ -41,9 +41,14 @@ set_source_files_properties(
 
 # libwebp decode subset (EXT_texture_webp). Listed individually — a unity #include shim
 # fails on duplicate file-local statics (e.g. clip_8b). The dsp SIMD variants self-gate on
-# arch macros, so no per-file SIMD flags are needed. These are C TUs; suppress warnings
-# per-source like zstd (GNU/Clang C already gets no -W via the COMPILE_LANGUAGE:CXX gate
-# on rasterminal_warnings, but this also covers MSVC's default C warnings under /WX).
+# arch macros and carry no per-file SIMD flags: release (-march=native / /arch:AVX2) activates
+# all of them; portable activates only the SSE2 baseline (sse41/avx2 become empty stubs).
+# libwebp ships CPUID runtime dispatch that COULD safely carry sse41/avx2 in a portable binary
+# via per-file -msse4.1/-mavx2 (kernels are selected by actual CPU, so no SIGILL risk) — we
+# deliberately forgo that to keep "portable = no arch-specific codegen" uniform; portable WebP
+# decode stays correct, just SSE2-only (decode is load-time, not hot-path). These are C TUs;
+# suppress warnings per-source like zstd (GNU/Clang C already gets no -W via the
+# COMPILE_LANGUAGE:CXX gate on rasterminal_warnings, but this also covers MSVC's /WX C warnings).
 set(WEBP_DEC_SRCS
   vendor/libwebp/src/dec/alpha_dec.c
   vendor/libwebp/src/dec/buffer_dec.c
@@ -94,9 +99,17 @@ set(WEBP_DEC_SRCS
   vendor/libwebp/src/utils/random_utils.c
   vendor/libwebp/src/utils/thread_utils.c
   vendor/libwebp/src/utils/utils.c)
+# WEBP_USE_THREAD mutex-guards libwebp's lazy SIMD function-pointer init (cpu.h): texture
+# decode runs on worker threads, so without it the first concurrent WebP decode races on the
+# global DSP tables. cpu.h gates the mutex on `WEBP_USE_THREAD && !_WIN32`, so it engages
+# everywhere except MSVC/_WIN32 — there the unsynchronized path (and thus the race) remains,
+# matching upstream's own posture. That residual race is benign: idempotent writes of the same
+# SIMD impl, and aligned-pointer stores are atomic on the targeted ISAs.
 set_source_files_properties(
   ${WEBP_DEC_SRCS}
-  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+  PROPERTIES
+    COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>"
+    COMPILE_DEFINITIONS WEBP_USE_THREAD)
 
 # ─── Warning flags ────────────────────────────────────────────────────────────
 add_library(rasterminal_warnings INTERFACE)
@@ -222,6 +235,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_gltf_draco.cpp
     tests/test_gltf_meshopt.cpp
     tests/test_gltf_ktx2.cpp
+    tests/test_gltf_webp.cpp
     tests/test_renderer.cpp
     tests/test_renderer_ao_clip.cpp
     tests/test_renderer_shadow_depth.cpp

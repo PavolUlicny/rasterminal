@@ -170,7 +170,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | OBJ / MTL | Triangles, quads, n-gons; `map_Kd` / `map_Ks` textures |
 | PLY | ASCII and binary (LE/BE); vertex and face colours |
 | STL | ASCII and binary |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `KHR_materials_unlit` |
+| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit` |
 
 ## Requirements
 
@@ -201,6 +201,7 @@ Vendored under `vendor/` — see `THIRD_PARTY_NOTICES` for full licence texts.
 | [draco](https://github.com/google/draco) | 1.5.7 | Apache-2.0 | Draco mesh decompression (`KHR_draco_mesh_compression`) |
 | [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_1_0r | Apache-2.0 | KTX2 / Basis Universal texture transcoding (`KHR_texture_basisu`) |
 | [zstd](https://github.com/facebook/zstd) | bundled w/ basis_universal | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
+| [libwebp](https://chromium.googlesource.com/webm/libwebp) | 1.6.0 | BSD-3 + PATENTS | WebP texture decoding (`EXT_texture_webp`) |
 
 ## License
 

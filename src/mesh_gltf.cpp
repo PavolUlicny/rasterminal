@@ -65,6 +65,13 @@ namespace
         return data && size >= sizeof(magic) && std::memcmp(data, magic, sizeof(magic)) == 0;
     }
 
+    // The WebP RIFF container signature: "RIFF" at byte 0 and "WEBP" at byte 8. EXT_texture_webp
+    // images are WebP, which stb_image cannot decode — they are routed to libwebp instead.
+    bool is_webp(const uint8_t *data, size_t size)
+    {
+        return data && size >= 12 && std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WEBP", 4) == 0;
+    }
+
     // Read an entire file into out. Returns false (out untouched) on any error. Used to
     // slurp external image files so they can be content-sniffed and routed uniformly,
     // the same way embedded (buffer_view) images already are. Uses the FILE idiom from
@@ -102,10 +109,11 @@ namespace
         return true;
     }
 
-    // Resolve the image a texture should sample. KHR_texture_basisu carries a separate
-    // KTX2 image (basisu_image) alongside the standard fallback (image); prefer the KTX2
-    // source when present so we decode the intended texture, not the optional PNG/JPEG
-    // fallback (which may be absent).
+    // Resolve the image a texture should sample. KHR_texture_basisu (KTX2) and EXT_texture_webp
+    // each carry a separate image alongside the standard fallback (image); prefer an extension
+    // source when present so we decode the intended texture, not the optional PNG/JPEG fallback
+    // (which may be absent). Precedence is KTX2 -> WebP -> plain; a texture carrying both
+    // extensions is rare, but the order must be deterministic.
     const cgltf_image *pick_image(const cgltf_texture *tex)
     {
         if (!tex)
@@ -115,6 +123,10 @@ namespace
         if (tex->has_basisu && tex->basisu_image)
         {
             return tex->basisu_image;
+        }
+        if (tex->has_webp && tex->webp_image)
+        {
+            return tex->webp_image;
         }
         return tex->image;
     }
@@ -242,10 +254,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     materials.push_back(Material{});
 
     // A deferred texture decode: the preferred image, plus an optional fallback tried
-    // if the preferred one fails to decode. For KHR_texture_basisu the preferred image
-    // is the KTX2 and the fallback is the texture's ordinary source — the extension
-    // provides it precisely so a renderer that can't transcode a given KTX2 can degrade
-    // to the plain image instead of rendering untextured.
+    // if the preferred one fails to decode. For KHR_texture_basisu / EXT_texture_webp the
+    // preferred image is the extension source and the fallback is the texture's ordinary
+    // source — the extension provides it precisely so a renderer that can't decode a given
+    // extension image can degrade to the plain image instead of rendering untextured.
     struct TexRequest
     {
         const cgltf_image *primary;
@@ -276,10 +288,21 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         {
             return -1;
         }
-        // Fallback applies only when the KTX2 source was preferred over a distinct
-        // ordinary source on the same texture.
-        const cgltf_image *fallback =
-            (primary == tex->basisu_image && tex->image && tex->image != primary) ? tex->image : nullptr;
+        // Fallback applies only when an extension source (KTX2 or WebP) was preferred over a
+        // distinct ordinary source on the same texture, i.e. the picked primary is not the
+        // plain image itself.
+        //
+        // The single fallback is deliberately the plain image (tex->image), not a chain: that is
+        // the one fallback glTF defines — both KHR_texture_basisu and EXT_texture_webp designate
+        // texture.source as the fallback for clients that can't decode the extension image. A
+        // texture carrying BOTH extensions but no plain image is therefore not handled as
+        // KTX2->WebP->plain: if the preferred KTX2 fails to decode, the WebP peer (which lost
+        // precedence in pick_image, not a defined fallback for the KTX2) is not tried and the
+        // texture drops. That input is self-contradictory in practice (an author encoding the
+        // same image as both compressed forms would not omit the universally-decodable plain
+        // source) and degrades gracefully, so we mirror the spec's single fallback slot rather
+        // than invent an inter-extension chain.
+        const cgltf_image *fallback = (tex->image && primary != tex->image) ? tex->image : nullptr;
         const TexKey key{ primary, fallback };
         const auto it = tex_cache.find(key);
         if (it != tex_cache.end())
@@ -740,18 +763,38 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         compute_normals(crease_cos);
     }
 
-    // Decode one image (external uri or embedded buffer_view), routing KTX2 vs stb by
-    // content sniff. Returns an invalid Texture on any failure.
-    auto decode_one = [&](const cgltf_image *img) -> Texture
+    // Route a raw image blob to the right decoder by content sniff (not file extension), so
+    // external sidecars and embedded buffer_view images are handled identically. KTX2 and WebP
+    // have their own decoders; everything else goes through stb_image. Returns an invalid
+    // Texture on any failure.
+    auto decode_bytes = [](const uint8_t *p, size_t n) -> Texture
     {
         Texture tex;
+        if (is_ktx2(p, n))
+        {
+            (void)tex.load_ktx2_from_memory(p, n);
+        }
+        else if (is_webp(p, n))
+        {
+            (void)tex.load_webp_from_memory(p, n);
+        }
+        else
+        {
+            (void)tex.load_from_memory(p, n);
+        }
+        return tex;
+    };
+
+    // Decode one image, sourced from an external uri or an embedded buffer_view.
+    auto decode_one = [&](const cgltf_image *img) -> Texture
+    {
         if (img->uri && img->uri[0] != '\0')
         {
             // data: URIs (inline base64 images) are not yet supported; skip explicitly
             // so the gap is visible here rather than a silent read_file failure below.
             if (std::strncmp(img->uri, "data:", 5) == 0)
             {
-                return tex;
+                return Texture{};
             }
             // Percent-decode the URI before opening the file. cgltf decodes escapes for
             // buffer URIs but not image URIs, so e.g. "my%20tex.ktx2" would otherwise fail
@@ -759,46 +802,31 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             // buffer-load path; cgltf_decode_uri rewrites in place and returns the new len.
             std::string uri = img->uri;
             uri.resize(cgltf_decode_uri(uri.data()));
-            // Slurp external files so KTX2 and stb-decodable formats route the same way
-            // (by content), independent of the file extension.
             std::vector<uint8_t> bytes;
             if (read_file(dir + uri, bytes))
             {
-                if (is_ktx2(bytes.data(), bytes.size()))
-                {
-                    (void)tex.load_ktx2_from_memory(bytes.data(), bytes.size());
-                }
-                else
-                {
-                    (void)tex.load_from_memory(bytes.data(), bytes.size());
-                }
+                return decode_bytes(bytes.data(), bytes.size());
             }
+            return Texture{};
         }
-        else if (img->buffer_view)
+        if (img->buffer_view)
         {
             // cgltf_buffer_view_data honours EXT_meshopt_compression overrides; returns
             // null when the backing external buffer was never loaded.
             const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
             if (!ptr)
             {
-                return tex;
+                return Texture{};
             }
-            const size_t size = img->buffer_view->size;
-            if (is_ktx2(ptr, size))
-            {
-                (void)tex.load_ktx2_from_memory(ptr, size);
-            }
-            else
-            {
-                (void)tex.load_from_memory(ptr, size);
-            }
+            return decode_bytes(ptr, img->buffer_view->size);
         }
-        return tex;
+        return Texture{};
     };
 
     // Decode all registered images in parallel. data (held by guard) and dir outlive
     // the join, so worker reads of buffer_view->buffer->data are valid. On a failed
-    // KTX2 transcode, fall back to the texture's ordinary source if it provided one.
+    // extension decode (KTX2 transcode or WebP decode), fall back to the texture's
+    // ordinary source if it provided one (see load_tex for why that fallback is single).
     decode_textures(
         textures, materials, tex_requests.size(), n_threads,
         [&](size_t i) -> Texture

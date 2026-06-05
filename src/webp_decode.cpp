@@ -43,9 +43,12 @@ bool decode_webp_rgba(const void *data, size_t size, std::vector<uint8_t> &out_r
         return false;
     }
 
-    // The stride (width*4) is passed to WebPDecodeRGBAInto as an int. The WebP bitstream caps
-    // each axis at 16384, so this cannot actually overflow, but guard it explicitly so safety
-    // does not silently depend on a vendored format limit across upstream bumps.
+    // The stride (width*4) is passed to WebPDecodeRGBAInto as an int. Valid WebP dimensions are
+    // far smaller than that limit (a VP8X canvas is at most 2^24 per axis, VP8/VP8L at most
+    // 2^14), so width*4 stays well under INT_MAX and this never fires on a well-formed image;
+    // guard the int multiply explicitly anyway so a corrupt oversized width can't overflow it.
+    // Past this guard, out_size is computed in size_t and the resize below is bad_alloc-guarded,
+    // so an absurd-but-in-range width still fails loud rather than overflowing or terminating.
     if (width > INT_MAX / 4)
     {
         return false;
