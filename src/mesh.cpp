@@ -30,6 +30,7 @@ void Mesh::clear()
     has_emissive = false;
     has_normal_scale = false;
     has_occlusion = false;
+    has_unlit = false;
 }
 
 bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float crease_angle_deg)
@@ -86,6 +87,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     );
     has_occlusion =
         std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
+    has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
 
     // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
     // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).

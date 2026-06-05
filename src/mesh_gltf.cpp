@@ -359,6 +359,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             mat.emissive_tex = load_tex(m->emissive_texture.texture);
         }
         mat.double_sided = m->double_sided;
+        mat.unlit = m->unlit;
         if (m->alpha_mode == cgltf_alpha_mode_mask)
         {
             mat.alpha_cutoff = m->alpha_cutoff;

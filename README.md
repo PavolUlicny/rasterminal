@@ -170,7 +170,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | OBJ / MTL | Triangles, quads, n-gons; `map_Kd` / `map_Ks` textures |
 | PLY | ASCII and binary (LE/BE); vertex and face colours |
 | STL | ASCII and binary |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2) |
+| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided; `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `KHR_materials_unlit` |
 
 ## Requirements
 

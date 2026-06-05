@@ -75,6 +75,9 @@ struct Material
     float occlusion_strength = 1.0f;
     bool double_sided = false;
     float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
+    // KHR_materials_unlit: bypass lighting/shadow/emissive/normal/occlusion and output
+    // baseColor * diffuse texture * vertex color directly (alpha cutout still applies).
+    bool unlit = false;
 };
 
 struct Light

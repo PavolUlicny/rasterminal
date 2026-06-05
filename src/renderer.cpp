@@ -128,6 +128,7 @@ void Renderer::worker_func()
             const bool show_metallic = mesh->has_metallic && show_tex;
             const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
             const bool show_occlusion = mesh->has_occlusion && show_tex;
+            const bool mesh_has_unlit = mesh->has_unlit;
             Framebuffer *fb = m_fb;
             const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
             const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
@@ -208,7 +209,26 @@ void Renderer::worker_func()
                         const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
                         const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
 
-                        if (smode == ShadingMode::Phong)
+                        if (mesh_has_unlit && mat.unlit)
+                        {
+                            // KHR_materials_unlit: output baseColor * vertexColor * diffuse
+                            // texture directly, bypassing lighting/shadow/ambient/emissive/
+                            // normal/occlusion regardless of the active shading mode. Reuses the
+                            // flat/gouraud rasterizer with the raw base colour as the per-vertex
+                            // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
+                            // when the mesh has no vertex colours (set at ClipVert construction),
+                            // so this reduces to mat.diffuse there. Shadow colours are passed as
+                            // the same value to stay initialised; the null shadow map skips them.
+                            const vec3 ua = mat.diffuse * a.color;
+                            const vec3 ub = mat.diffuse * b.color;
+                            const vec3 uc = mat.diffuse * c.color;
+                            rasterize(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
+                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
+                                vec3{ 0.0f, 0.0f, 0.0f }
+                            );
+                        }
+                        else if (smode == ShadingMode::Phong)
                         {
                             // a.color/b.color/c.color already encode the has_vertex_colors
                             // condition: they are {1,1,1} when p_vcols == nullptr (set at

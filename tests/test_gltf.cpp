@@ -325,6 +325,46 @@ TEST(gltf_valid, double_sided_flag_set)
     ASSERT_TRUE(m.materials[1].double_sided);
 }
 
+TEST(gltf_valid, unlit_extension_sets_flags)
+{
+    // Material carrying the KHR_materials_unlit extension object → mat.unlit and the
+    // mesh-level has_unlit fast-path flag both set. cgltf reads the flag from the
+    // material extension directly; extensionsUsed is listed for spec-conformance only.
+    std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+                       R"("extensionsUsed":["KHR_materials_unlit"],)"
+                       R"("nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":)"
+                       R"({"POSITION":0},"material":0}]}],)"
+                       R"("materials":[{"extensions":{"KHR_materials_unlit":{}}}],)"
+                       R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,)"
+                       R"("type":"VEC3","min":[-1,-1,0],"max":[1,1,0]}],)"
+                       R"("bufferViews":[{"buffer":0,"byteLength":36}],)"
+                       R"("buffers":[{"byteLength":36}]})";
+
+    TmpFile f(tmp_path("rast_unlit.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_unlit);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].unlit);
+}
+
+TEST(gltf_valid, no_unlit_extension_flags_false)
+{
+    // A plain material (no KHR_materials_unlit) leaves both flags false.
+    std::string json = R"({"asset":{"version":"2.0"},"scene":0,"scenes":[{"nodes":[0]}],)"
+                       R"("nodes":[{"mesh":0}],"meshes":[{"primitives":[{"attributes":)"
+                       R"({"POSITION":0},"material":0}]}],"materials":[{}],)"
+                       R"("accessors":[{"bufferView":0,"componentType":5126,"count":3,)"
+                       R"("type":"VEC3","min":[-1,-1,0],"max":[1,1,0]}],)"
+                       R"("bufferViews":[{"buffer":0,"byteLength":36}],)"
+                       R"("buffers":[{"byteLength":36}]})";
+
+    TmpFile f(tmp_path("rast_no_unlit.glb"), build_minimal_glb(json));
+    Mesh m = load_ok(f.path);
+    ASSERT_FALSE(m.has_unlit);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_FALSE(m.materials[1].unlit);
+}
+
 TEST(gltf_valid, missing_scene_falls_back_to_first_scene_and_mask_cutoff_is_loaded)
 {
     std::string json =

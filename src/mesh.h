@@ -35,6 +35,7 @@ struct Mesh
     bool has_emissive = false;       // true if any material has a non-zero emissive factor
     bool has_normal_scale = false;   // true if any normal-mapped material has a non-unit glTF normalScale
     bool has_occlusion = false;      // true if any material has an occlusion texture (gates the Phong AO override)
+    bool has_unlit = false;          // true if any material is unlit (gates the per-triangle unlit branch)
 
     [[nodiscard]] const Material &mat_at(uint32_t idx) const
     {

@@ -165,6 +165,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_renderer_shadow_depth.cpp
     tests/test_renderer_vcol.cpp
     tests/test_renderer_misc.cpp
+    tests/test_renderer_unlit.cpp
     src/args.cpp
     src/renderer.cpp
     src/mesh.cpp
