@@ -225,6 +225,7 @@ jobs:
           -I vendor/draco/src
           -I vendor/basisu/transcoder
           -I vendor/basisu/zstd
+          -I vendor/libwebp
           src/*.cpp
 
   # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────

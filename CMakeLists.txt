@@ -156,6 +156,7 @@ add_executable(rasterminal
   src/renderer.cpp
   src/texture.cpp
   src/ktx2_decode.cpp
+  src/webp_decode.cpp
   vendor/meshoptimizer/meshoptimizer_impl.cpp
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
@@ -205,6 +206,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_clip_near.cpp
     tests/test_texture.cpp
     tests/test_ktx2.cpp
+    tests/test_webp.cpp
     tests/test_framebuffer.cpp
     tests/test_mesh_geometry.cpp
     tests/test_mesh_vcache.cpp
@@ -236,6 +238,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/draco_decode.cpp
     src/texture.cpp
     src/ktx2_decode.cpp
+    src/webp_decode.cpp
     src/camera.cpp
     src/rasterize.cpp
     src/framebuffer.cpp

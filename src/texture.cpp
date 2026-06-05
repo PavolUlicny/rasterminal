@@ -1,6 +1,7 @@
 #include "texture.h"
 
 #include "ktx2_decode.h"
+#include "webp_decode.h"
 
 #include <climits>
 #include <cstddef>
@@ -90,6 +91,23 @@ bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
     int w = 0;
     int h = 0;
     if (!decode_ktx2_rgba(data, size, rgba, w, h))
+    {
+        return false;
+    }
+    width = w;
+    height = h;
+    pixels = std::move(rgba);
+    return true;
+}
+
+// ─── Texture::load_webp_from_memory ──────────────────────────────────────────
+
+bool Texture::load_webp_from_memory(const uint8_t *data, size_t size)
+{
+    std::vector<uint8_t> rgba;
+    int w = 0;
+    int h = 0;
+    if (!decode_webp_rgba(data, size, rgba, w, h))
     {
         return false;
     }

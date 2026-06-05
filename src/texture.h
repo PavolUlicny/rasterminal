@@ -30,6 +30,11 @@ struct Texture
     // Returns false and leaves the object unchanged on error.
     [[nodiscard]] bool load_ktx2_from_memory(const uint8_t *data, size_t size);
 
+    // Load a WebP texture from a memory buffer (glTF EXT_texture_webp). stb_image cannot
+    // decode WebP, so this is a separate entry point that decodes via libwebp (see
+    // webp_decode.h). Returns false and leaves the object unchanged on error.
+    [[nodiscard]] bool load_webp_from_memory(const uint8_t *data, size_t size);
+
     [[nodiscard]] bool valid() const { return width > 0 && height > 0; }
 
     // Sample the texture at normalised (u, v) with bilinear interpolation.
