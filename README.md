@@ -12,7 +12,6 @@ Rasterminal reimplements the full GPU rasterization pipeline on the CPU — mode
 
 - [Quick start](#quick-start)
 - [Gallery](#gallery)
-- [Features](#features)
 - [How it works](#how-it-works)
 - [Build](#build)
 - [Usage](#usage)
@@ -60,21 +59,6 @@ More test assets live in the [Khronos glTF Sample Assets](https://github.com/Khr
 | Gouraud | Phong |
 | --- | --- |
 | ![gouraud shading](assets/shading-gouraud.png) | ![phong shading](assets/shading-phong.png) |
-
-## Features
-
-- **Shading modes** — wireframe, flat, Gouraud, and Phong (per-pixel)
-- **Textures** — diffuse maps with perspective-correct UV interpolation and bilinear filtering; KTX2 / Basis Universal (`KHR_texture_basisu`) transcoded on load
-- **Lighting** — Blinn-Phong with dual (warm key + cool fill) or single light; baked ambient occlusion
-- **Shadow maps** — hard shadows from the key light
-- **Orbit camera** — yaw, pitch, zoom; left-button drag; scroll to zoom
-- **File formats** — OBJ/MTL, PLY (ASCII + binary), STL (ASCII + binary), glTF 2.0, GLB
-- **Vertex colours** — PLY and glTF COLOR_0; per-face colours on PLY and STL
-- **Double-sided materials** — glTF `doubleSided` flag respected with correct back-face normals
-- **Near-plane clipping** — no pop-in artefacts when the camera gets close
-- **Multithreaded** — single-pass work-stealing pipeline; workers run geometry and rasterization end-to-end on each triangle chunk and commit fragments through a 64-bit atomic depth+colour slot (no intermediate band buffer, no inter-phase barrier). Thread count configurable.
-- **Terminal resize** — framebuffer adapts each frame
-- **Clean exit** — restores terminal state on quit, Ctrl+C, or SIGTERM
 
 ## How it works
 
