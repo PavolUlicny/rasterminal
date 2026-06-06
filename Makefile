@@ -3,6 +3,17 @@ CXX ?= g++
 # ─── Compiler detection (POSIX: GCC or Clang) ─────────────────────────────────
 IS_CLANG := $(findstring clang,$(shell $(CXX) --version 2>&1))
 
+# ─── Linker dead-code GC (drops unreferenced sections from the final binary) ──
+# Paired with -ffunction-sections/-fdata-sections below. LTO + -fvisibility=hidden
+# already strip unused C++; this mainly reaps the non-LTO C decode TUs (libwebp/zstd).
+# macOS ld64 doesn't understand --gc-sections — it spells the same thing -dead_strip.
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+GC_LINK = -Wl,-dead_strip
+else
+GC_LINK = -Wl,--gc-sections
+endif
+
 WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
               -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
               -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
@@ -14,7 +25,9 @@ LTO      = -flto=thin
 GCC_OPTS =
 else
 WARNINGS = $(WARN_COMMON) -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
-LTO      = -flto=auto
+# -fno-fat-lto-objects: emit thin (bytecode-only) LTO objects — faster LTO, smaller .o, no
+# runtime/binary change. GCC-only here (Clang's -flto=thin has no fat-object concept).
+LTO      = -flto=auto -fno-fat-lto-objects
 GCC_OPTS = -fno-plt -fno-semantic-interposition -fno-stack-clash-protection \
            -fgcse-sm -fgcse-las -fipa-pta -Wno-alloc-size-larger-than
 endif
@@ -33,8 +46,9 @@ VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_
 # -DNDEBUG strips assert()/library DCHECKs (in src + every vendored C/C++ lib) from all
 # optimized builds — never set for debug, which keeps asserts live.
 OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
+             -ffunction-sections -fdata-sections \
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
-             -fmerge-all-constants -fvisibility=hidden \
+             -fmerge-all-constants -fvisibility=hidden -fvisibility-inlines-hidden \
              -fno-stack-protector -fno-asynchronous-unwind-tables \
              -pipe -pthread $(GCC_OPTS)
 
@@ -43,7 +57,8 @@ ARCH_NATIVE = -march=native
 
 CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ARCH_NATIVE) $(VENDOR_INC)
 TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funroll-loops \
-                -ffast-math -fno-finite-math-only -DNDEBUG -fomit-frame-pointer -fstrict-aliasing \
+                -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
+                -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
                 -pipe -pthread $(VENDOR_INC)
 TARGET   = rasterminal
@@ -242,7 +257,8 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 # with the self-contained zstd amalgam, which ignores them harmlessly.
 CC ?= cc
 C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
-C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG -w -pipe $(C_INC)
+C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
+                  -ffunction-sections -fdata-sections -w -pipe $(C_INC)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
 DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC)
@@ -324,11 +340,11 @@ $(OBJDIR)/test/vendor/basisu/basisu_impl.o:     TEST_CXXFLAGS      += -w
 
 release: $(RELEASE_OBJS) $(RELEASE_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^
 
 portable: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) -o $(TARGET) $^
+	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^
 
 debug: $(DEBUG_OBJS) $(DEBUG_COBJS)
 	$(E) LINK $(TARGET)
@@ -336,7 +352,7 @@ debug: $(DEBUG_OBJS) $(DEBUG_COBJS)
 
 $(TEST_TARGET): $(TEST_OBJS) $(TEST_COBJS)
 	$(E) LINK $@
-	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) -o $@ $^
+	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $@ $^
 
 test: $(TEST_TARGET)
 	$(Q)./$(TEST_TARGET)
