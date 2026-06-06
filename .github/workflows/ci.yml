@@ -68,6 +68,27 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
+          # Linux — dist (portable codegen + static libstdc++/libgcc; the release artifact).
+          # Linux-only: static-libstdc++ is a no-op on macOS and unsupported on MSVC. The
+          # extra "Verify static link" step below asserts the binary's defining invariant.
+          - {
+              os: ubuntu-latest,
+              label: gcc dist,
+              cc: gcc,
+              cxx: g++,
+              build_type: Release,
+              portable: ON,
+              static_libstdcxx: ON,
+            }
+          - {
+              os: ubuntu-latest,
+              label: clang dist,
+              cc: clang,
+              cxx: clang++,
+              build_type: Release,
+              portable: ON,
+              static_libstdcxx: ON,
+            }
           # macOS — AppleClang (platform default; Debug×Portable=ON omitted — same flags as OFF)
           - {
               os: macos-latest,
@@ -113,8 +134,9 @@ jobs:
       - name: Configure
         run: >
           cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-          -DRASTERMINAL_PORTABLE=${{ matrix.portable }} ${{ matrix.cc  &&
-          format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
+          -DRASTERMINAL_PORTABLE=${{ matrix.portable }}
+          -DRASTERMINAL_STATIC_LIBSTDCXX=${{ matrix.static_libstdcxx || 'OFF' }}
+          ${{ matrix.cc  && format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
           && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
 
       - name: Build
@@ -122,6 +144,13 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
+
+      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
+      - name: Verify static link (dist)
+        if: matrix.static_libstdcxx == 'ON'
+        run: |
+          ldd build/rasterminal
+          ! ldd build/rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
   # ── Make: Linux + macOS, GCC + Clang, all four targets ──────────────────────
   make:
@@ -134,11 +163,13 @@ jobs:
           # Linux — GCC
           - { os: ubuntu-latest, cxx: g++, target: release }
           - { os: ubuntu-latest, cxx: g++, target: portable }
+          - { os: ubuntu-latest, cxx: g++, target: dist }
           - { os: ubuntu-latest, cxx: g++, target: debug }
           - { os: ubuntu-latest, cxx: g++, target: test }
           # Linux — Clang
           - { os: ubuntu-latest, cxx: clang++, target: release }
           - { os: ubuntu-latest, cxx: clang++, target: portable }
+          - { os: ubuntu-latest, cxx: clang++, target: dist }
           - { os: ubuntu-latest, cxx: clang++, target: debug }
           - { os: ubuntu-latest, cxx: clang++, target: test }
           # macOS — AppleClang (explicit clang++ avoids g++→clang symlink ambiguity)
@@ -152,6 +183,13 @@ jobs:
 
       - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
         run: make CXX=${{ matrix.cxx }} ${{ matrix.target }}
+
+      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
+      - name: Verify static link (dist)
+        if: matrix.target == 'dist'
+        run: |
+          ldd rasterminal
+          ! ldd rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
   # ── clang-format (Linux) ─────────────────────────────────────────────────────
   clang-format:
