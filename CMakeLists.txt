@@ -16,6 +16,10 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
+# Prefer the -pthread flag (compile + link) over a bare -lpthread, so Threads::Threads
+# matches the Makefile's -pthread and stays correct where the compile-time flag matters
+# (e.g. BSD); on modern glibc it is effectively a no-op.
+set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # ─── Vendored libraries ───────────────────────────────────────────────────────
@@ -129,7 +133,11 @@ target_compile_options(rasterminal_warnings INTERFACE
   $<$<CXX_COMPILER_ID:MSVC>:/D_CRT_SECURE_NO_WARNINGS>)
 
 # ─── Release optimisation flags ───────────────────────────────────────────────
-# Tier 1: CPU-agnostic speed flags — applied in both release and portable builds.
+# Tier 1: CPU-agnostic speed flags — applied in all non-Debug configs (Release, Portable,
+# RelWithDebInfo, MinSizeRel via the NOT:Debug gate). The appended -O3 overrides the
+# config default for RelWithDebInfo (-O2) and MinSizeRel (-Os): both end up at -O3, by
+# design (RelWithDebInfo is then -O3 -g, the accurate target for opt-dependent bug repro).
+# -DNDEBUG comes from the config's own *_FLAGS (every non-Debug config defines it).
 add_library(rasterminal_release_opts INTERFACE)
 target_compile_options(rasterminal_release_opts INTERFACE
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
