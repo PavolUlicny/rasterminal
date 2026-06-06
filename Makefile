@@ -30,7 +30,9 @@ VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_
               vendor/basisu/transcoder/basisu_transcoder.h
 
 # Tier 1: fast flags safe for any CPU (both release and portable).
-OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only \
+# -DNDEBUG strips assert()/library DCHECKs (in src + every vendored C/C++ lib) from all
+# optimized builds — never set for debug, which keeps asserts live.
+OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
              -fmerge-all-constants -fvisibility=hidden \
              -fno-stack-protector -fno-asynchronous-unwind-tables \
@@ -41,7 +43,7 @@ ARCH_NATIVE = -march=native
 
 CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ARCH_NATIVE) $(VENDOR_INC)
 TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funroll-loops \
-                -ffast-math -fno-finite-math-only -fomit-frame-pointer -fstrict-aliasing \
+                -ffast-math -fno-finite-math-only -DNDEBUG -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
                 -pipe -pthread $(VENDOR_INC)
 TARGET   = rasterminal
@@ -227,7 +229,12 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 
 # ─── C flags (vendored zstd amalgam + libwebp decode subset) ──────────────────
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
-# flag set. -march follows the variant (native for release/test only). libwebp's
+# flag set. The speed tier mirrors the C++ OPT_COMMON (-funroll-loops/-ffast-math/
+# -DNDEBUG) so decode isn't left at a bare -O3, but LTO is deliberately omitted: $(LTO)
+# is derived from $(CXX) (so -flto=thin would reach a gcc $(CC) under `make CXX=clang++`),
+# and cross-family C/C++ LTO objects can't link anyway. The decode TUs are load-time and
+# isolated behind webp_decode.cpp/ktx2_decode.cpp, so the lost cross-TU inlining is
+# marginal. -march follows the variant (native for release/test only). libwebp's
 # internal includes are repo-rooted ("src/dec/..."), so it needs its root on the
 # include path. WEBP_USE_THREAD makes libwebp's lazy SIMD function-pointer init
 # mutex-guarded (cpu.h): texture decode runs on worker threads, and without it the
@@ -235,7 +242,7 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 # with the self-contained zstd amalgam, which ignores them harmlessly.
 CC ?= cc
 C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
-C_OPT           = -std=c11 -O3 -w -pipe $(C_INC)
+C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG -w -pipe $(C_INC)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
 DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC)
