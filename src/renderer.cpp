@@ -192,13 +192,36 @@ void Renderer::worker_func()
                         cvc.normal = cvc.normal * -1.0f;
                     }
 
-                    const int n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
+                    // Fast path: when all three vertices are in front of the near plane
+                    // (the overwhelmingly common case) clip_near would only copy them into
+                    // clipped[] verbatim and the loop would read them back. Skip the call and
+                    // the ~228 B round trip by pointing straight at cva/cvb/cvc; clip_near
+                    // runs only for the rare straddle cases (a vertex behind the near plane).
+                    const ClipVert *tris[2][3];
+                    int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
+                    if (cva.c.w > near_plane && cvb.c.w > near_plane && cvc.c.w > near_plane)
+                    {
+                        n_tris = 1;
+                        tris[0][0] = &cva;
+                        tris[0][1] = &cvb;
+                        tris[0][2] = &cvc;
+                    }
+                    else
+                    {
+                        n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
+                        for (int ti = 0; ti < n_tris; ti++)
+                        {
+                            tris[ti][0] = &clipped[ti][0];
+                            tris[ti][1] = &clipped[ti][1];
+                            tris[ti][2] = &clipped[ti][2];
+                        }
+                    }
 
                     for (int ti = 0; ti < n_tris; ti++)
                     {
-                        const ClipVert &a = clipped[ti][0];
-                        const ClipVert &b = clipped[ti][1];
-                        const ClipVert &c = clipped[ti][2];
+                        const ClipVert &a = *tris[ti][0];
+                        const ClipVert &b = *tris[ti][1];
+                        const ClipVert &c = *tris[ti][2];
 
                         if (clip_reject(a.c, b.c, c.c))
                         {
@@ -428,13 +451,33 @@ void Renderer::render(
             const ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao };
             const ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao };
 
-            const int n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
+            // Fast path: skip clip_near and its copy when no vertex is behind the near
+            // plane (see worker_func). clip_near runs only for the rare straddle cases.
+            const ClipVert *tris[2][3];
+            int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
+            if (cva.c.w > camera.near_plane && cvb.c.w > camera.near_plane && cvc.c.w > camera.near_plane)
+            {
+                n_tris = 1;
+                tris[0][0] = &cva;
+                tris[0][1] = &cvb;
+                tris[0][2] = &cvc;
+            }
+            else
+            {
+                n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
+                for (int ti = 0; ti < n_tris; ti++)
+                {
+                    tris[ti][0] = &clipped[ti][0];
+                    tris[ti][1] = &clipped[ti][1];
+                    tris[ti][2] = &clipped[ti][2];
+                }
+            }
 
             for (int ti = 0; ti < n_tris; ti++)
             {
-                const ClipVert &a = clipped[ti][0];
-                const ClipVert &b = clipped[ti][1];
-                const ClipVert &c = clipped[ti][2];
+                const ClipVert &a = *tris[ti][0];
+                const ClipVert &b = *tris[ti][1];
+                const ClipVert &c = *tris[ti][2];
 
                 if (clip_reject(a.c, b.c, c.c))
                 {
