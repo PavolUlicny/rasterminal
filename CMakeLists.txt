@@ -142,16 +142,28 @@ add_library(rasterminal_release_opts INTERFACE)
 target_compile_options(rasterminal_release_opts INTERFACE
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
+    -ffunction-sections;-fdata-sections;
     -fno-rtti;-fomit-frame-pointer;-fstrict-aliasing;
-    -fmerge-all-constants;-fvisibility=hidden;
+    -fmerge-all-constants;-fvisibility=hidden;-fvisibility-inlines-hidden;
     -fno-stack-protector;-fno-asynchronous-unwind-tables;-pipe>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:
     -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
-  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR->
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR-;/Gy>
   # Tier 2: machine-specific — omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
+
+# Linker dead-code GC — drops the sections emitted by -ffunction-sections/-fdata-sections
+# (and /Gy) that nothing references. LTO + -fvisibility=hidden already strip unused C++;
+# this mainly reaps the non-LTO C decode TUs (libwebp/zstd). macOS ld64 spells --gc-sections
+# as -dead_strip; MSVC's /OPT:REF removes unreferenced, /OPT:ICF folds identical functions.
+# Applied (non-Debug) to both opt tiers so rasterminal and rasterminal_tests inherit it.
+set(RASTERMINAL_GC_LINK_OPTS
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-Wl,--gc-sections>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<PLATFORM_ID:Darwin>>:-Wl,-dead_strip>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/OPT:REF;/OPT:ICF>)
+target_link_options(rasterminal_release_opts INTERFACE ${RASTERMINAL_GC_LINK_OPTS})
 
 # LTO — CMake picks the right form per compiler (-flto=auto / -flto=thin / /GL+/LTCG).
 include(CheckIPOSupported)
@@ -208,11 +220,13 @@ if(RASTERMINAL_BUILD_TESTS)
   target_compile_options(rasterminal_test_opts INTERFACE
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
       -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
+      -ffunction-sections;-fdata-sections;
       -fomit-frame-pointer;-fstrict-aliasing;
       -fstack-protector-strong;-D_FORTIFY_SOURCE=2;-pipe>
-    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS>
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS;/Gy>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
+  target_link_options(rasterminal_test_opts INTERFACE ${RASTERMINAL_GC_LINK_OPTS})
 
   add_executable(rasterminal_tests
     tests/test_main.cpp
