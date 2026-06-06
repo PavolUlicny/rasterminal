@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml)
 
-A software 3D rasterizer that renders entirely in your terminal. No GPU, no windowing system, no runtime dependencies.
+A 3D model viewer and software rasterizer that runs entirely in your terminal. No GPU, no windowing system, no runtime dependencies.
 
 ![rasterminal spinning a model](assets/demo.gif)
 
-Rasterminal reimplements the full GPU rasterization pipeline on the CPU — model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and hard shadow maps — and paints the result with Unicode half-block characters (`▀`) and 24-bit ANSI colour. Each terminal cell carries two vertical pixels (one as the glyph's foreground, one as its background), so a plain text grid becomes a framebuffer.
+Point rasterminal at an OBJ, PLY, STL, or glTF file and it draws the model straight into your terminal — orbit with the mouse, zoom, switch shading modes, and toggle textures and lighting, all in real time. Behind the viewer is a complete software renderer: it reimplements the full GPU rasterization pipeline on the CPU — model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and hard shadow maps — and paints the result with Unicode half-block characters (`▀`) and 24-bit ANSI colour. Each terminal cell carries two vertical pixels (one as the glyph's foreground, one as its background), so a plain text grid becomes a framebuffer.
 
 ## Contents
 
