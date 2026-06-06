@@ -84,11 +84,27 @@ Two build systems are provided. Each has a **release** variant (`-march=native`,
 make                     # release: -O3 -march=native + all speed flags
 make CXX=clang++         # same with Clang
 make portable            # distributable binary, no -march=native
+make dist                # release artifact: portable + static libstdc++/libgcc (Linux)
 make debug               # -O0 -g
 make test                # build and run test suite
 ```
 
+`dist` is the binary to ship: same codegen as `portable` (any CPU of the target arch) but it
+statically links libstdc++/libgcc, so it does not fail on older distros with a missing
+`GLIBCXX_…` symbol. (glibc itself stays dynamic, so the build host's glibc version is still the
+floor — build on the oldest distro you need to support, or use a fully static toolchain.)
+
 ### All platforms — CMake
+
+The configurations below are also available as presets (CMake ≥ 3.21):
+
+```sh
+cmake --preset release      # or: portable | dist | debug | reldbg | clang
+cmake --build --preset release
+ctest --preset release      # release and dist define test presets
+```
+
+Equivalent explicit invocations:
 
 ```sh
 # Release
@@ -102,6 +118,10 @@ cmake --build build-debug -j
 # Portable (runs on any x86-64, not just the build machine)
 cmake -B build-portable -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON
 cmake --build build-portable -j
+
+# Dist (portable + static libstdc++/libgcc — the release artifact)
+cmake -B build-dist -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DRASTERMINAL_STATIC_LIBSTDCXX=ON
+cmake --build build-dist -j
 
 # Tests
 cmake --build build --target rasterminal_tests -j

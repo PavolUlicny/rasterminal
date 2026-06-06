@@ -1,0 +1,68 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release (machine-tuned, -march=native)",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RASTERMINAL_PORTABLE": "OFF"
+      }
+    },
+    {
+      "name": "portable",
+      "displayName": "Release, portable (no -march=native)",
+      "binaryDir": "${sourceDir}/build-portable",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RASTERMINAL_PORTABLE": "ON"
+      }
+    },
+    {
+      "name": "dist",
+      "displayName": "Release artifact (portable + static libstdc++/libgcc)",
+      "binaryDir": "${sourceDir}/build-dist",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "RASTERMINAL_PORTABLE": "ON",
+        "RASTERMINAL_STATIC_LIBSTDCXX": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug (-O0 -g, clean IEEE)",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "reldbg",
+      "displayName": "RelWithDebInfo (-O3 -g + fast-math + LTO)",
+      "binaryDir": "${sourceDir}/build-reldbg",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+    },
+    {
+      "name": "clang",
+      "displayName": "Release with Clang",
+      "binaryDir": "${sourceDir}/build-clang",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "portable", "configurePreset": "portable" },
+    { "name": "dist", "configurePreset": "dist" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "reldbg", "configurePreset": "reldbg" },
+    { "name": "clang", "configurePreset": "clang" }
+  ],
+  "testPresets": [
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "dist", "configurePreset": "dist", "output": { "outputOnFailure": true } }
+  ]
+}
