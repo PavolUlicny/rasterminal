@@ -11,6 +11,13 @@ option(RASTERMINAL_PORTABLE
        "Build for distribution: omit machine-specific opts (-march=native / /arch:AVX2)"
        OFF)
 option(RASTERMINAL_BUILD_TESTS "Build the test suite" ON)
+# Release-artifact link: statically link libstdc++/libgcc so the binary drops the build host's
+# libstdc++ ABI dependency (no "GLIBCXX_… not found" on older distros). glibc stays dynamic —
+# full distro-portability still needs an old-glibc/-static build. Linux GNU/Clang only (macOS
+# links the ABI-stable system libc++). Pair with RASTERMINAL_PORTABLE=ON for the `dist` preset.
+option(RASTERMINAL_STATIC_LIBSTDCXX
+       "Statically link libstdc++/libgcc into the binary (Linux release artifacts)"
+       OFF)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
@@ -205,7 +212,9 @@ target_link_libraries(rasterminal PRIVATE
 # vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
 # TUs keep -Wmaybe-uninitialized active at compile.
 target_link_options(rasterminal PRIVATE
-  $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
+  $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
+  # Statically link libstdc++/libgcc for release artifacts (Linux GNU/Clang only).
+  $<$<AND:$<BOOL:${RASTERMINAL_STATIC_LIBSTDCXX}>,$<CXX_COMPILER_ID:GNU,Clang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-static-libstdc++;-static-libgcc>)
 if(ipo_ok)
   set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
   set_property(TARGET rasterminal PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)

@@ -9,9 +9,15 @@ IS_CLANG := $(findstring clang,$(shell $(CXX) --version 2>&1))
 # macOS ld64 doesn't understand --gc-sections — it spells the same thing -dead_strip.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
-GC_LINK = -Wl,-dead_strip
+GC_LINK   = -Wl,-dead_strip
+# macOS links the ABI-stable system libc++; no static-libstdc++ story (or flag) there.
+DIST_LINK =
 else
-GC_LINK = -Wl,--gc-sections
+GC_LINK   = -Wl,--gc-sections
+# `dist` link-only flags: drop the build host's libstdc++/libgcc ABI dependency so a release
+# binary doesn't fail on older distros with "GLIBCXX_… not found". (glibc itself stays dynamic
+# — full distro-portability still needs an old-glibc/-static build; out of scope here.)
+DIST_LINK = -static-libstdc++ -static-libgcc
 endif
 
 WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
@@ -346,6 +352,11 @@ portable: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
 	$(E) LINK $(TARGET)
 	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^
 
+# Release artifact: portable codegen (link-only static flags reuse the portable objects).
+dist: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
+	$(E) LINK $(TARGET)
+	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) $(DIST_LINK) -o $(TARGET) $^
+
 debug: $(DEBUG_OBJS) $(DEBUG_COBJS)
 	$(E) LINK $(TARGET)
 	$(Q)$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
@@ -360,4 +371,4 @@ test: $(TEST_TARGET)
 clean:
 	rm -rf $(TARGET) $(TEST_TARGET) $(OBJDIR)
 
-.PHONY: release portable debug test clean
+.PHONY: release portable dist debug test clean
