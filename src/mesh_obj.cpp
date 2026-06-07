@@ -165,9 +165,17 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
+        // Otherwise a sub-1 dissolve (MTL `d` / `Tr`, parsed into m.dissolve by
+        // tinyobjloader) routes the material to the transparent blend pass. The two are
+        // mutually exclusive: a cutout mask takes precedence over scalar opacity.
         if (!m.alpha_texname.empty())
         {
             mat.alpha_cutoff = 0.5f;
+        }
+        else if (m.dissolve < 1.0f)
+        {
+            mat.blend = true;
+            mat.alpha = m.dissolve;
         }
         materials.push_back(mat);
     }

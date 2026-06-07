@@ -6,6 +6,10 @@
 #include "shadow.h"
 #include "texture.h"
 
+#include <atomic>
+#include <cstdint>
+#include <vector>
+
 // ─── ClipVert ─────────────────────────────────────────────────────────────────
 // A clip-space vertex bundled with the world-space attributes needed for
 // lighting and near-plane clipping.
@@ -21,6 +25,58 @@ struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
     float ao;
     vec3 color = { 1.0f, 1.0f,
                    1.0f }; // vertex color (white = no tint); at end so existing aggregate inits keep working
+    float color_a = 1.0f;  // per-vertex opacity (COLOR_0/PLY alpha); 1 = opaque; only read by the transparent pass
+};
+
+// ─── Transparency: A-buffer ───────────────────────────────────────────────────
+// Selects the rasterizer's per-pixel sink at compile time: Opaque commits to the
+// framebuffer (depth-CAS); Transparent pushes the shaded fragment onto a per-pixel
+// linked list for the later back-to-front resolve. The Opaque instantiation is
+// codegen-identical to the pre-transparency rasterizer (the Transparent branches
+// compile out).
+enum class Sink : std::uint8_t
+{
+    Opaque,
+    Transparent
+};
+
+// One shaded transparent fragment. Float color (not 8-bit) so deep stacks composite
+// without per-layer banding; clamped once at resolve. `next` links within a worker's
+// arena, encoded as (worker_id << 32) | node_index; ABuffer::SENTINEL ends the chain.
+struct Fragment
+{
+    float depth;
+    vec3 color;
+    float alpha;
+    uint64_t next;
+};
+
+// Per-pixel linked-list A-buffer handle handed to the Transparent rasterizer. `head`
+// is the framebuffer-sized array of per-pixel chain heads (shared across workers);
+// `nodes` is THIS worker's private arena (no cross-worker contention on append). Only
+// head[idx].exchange is shared, and it is uncontended except where two workers cover
+// the same pixel in one frame.
+struct ABuffer
+{
+    static constexpr uint64_t SENTINEL = ~static_cast<uint64_t>(0);
+
+    std::atomic<uint64_t> *head = nullptr;
+    std::vector<Fragment> *nodes = nullptr;
+    uint32_t worker_id = 0;
+
+    // Append a shaded fragment for pixel `idx`. push_back runs first so a bad_alloc
+    // leaves `head` untouched (no chain pointing at a non-existent node); the worker
+    // loop catches it and stops. Then publish the node by swapping it to the chain
+    // head and linking the previous head as its successor. const: only the pointees
+    // (head array, node arena) are mutated, not the ABuffer's own pointer members.
+    void push(size_t idx, float depth, const vec3 &color, float alpha) const
+    {
+        const auto my_idx = static_cast<uint32_t>(nodes->size());
+        nodes->push_back(Fragment{ depth, color, alpha, SENTINEL });
+        const uint64_t my_ref = (static_cast<uint64_t>(worker_id) << 32u) | my_idx;
+        const uint64_t prev = head[idx].exchange(my_ref, std::memory_order_relaxed);
+        (*nodes)[my_idx].next = prev;
+    }
 };
 
 // ─── Rasterization primitives ─────────────────────────────────────────────────
@@ -35,6 +91,10 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color);
 
 // Rasterize one triangle with pre-computed per-vertex Flat/Gouraud colours.
 // y_min/y_max define this thread's exclusive pixel row band.
+// Sink::Transparent uses sample_rgba for the diffuse (alpha = base_alpha * tex.a *
+// vertex-alpha), tests depth <= against the opaque buffer (decals visible), applies a
+// top-left fill rule, and pushes to *abuf instead of committing; Opaque is unchanged.
+template <Sink S = Sink::Opaque>
 void rasterize(
     Framebuffer &fb,
     vec3 sa,
@@ -60,12 +120,20 @@ void rasterize(
     const ShadowMap *shadow_map,
     int y_min,
     int y_max,
-    const Texture *etex = nullptr,           // emissive texture (modulates emissive factor)
-    vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f } // emissive factor (added post-color)
+    const Texture *etex = nullptr,            // emissive texture (modulates emissive factor)
+    vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f }, // emissive factor (added post-color)
+    const ABuffer *abuf = nullptr,            // Transparent only: per-pixel fragment sink
+    float base_alpha = 1.0f,                  // Transparent only: material base opacity (mat.alpha)
+    float caa = 1.0f,                         // Transparent only: per-vertex opacity at a/b/c
+    float cab = 1.0f,
+    float cac = 1.0f
 );
 
 // Rasterize one triangle with per-pixel Blinn-Phong lighting (Phong shading).
 // y_min/y_max define this thread's exclusive pixel row band.
+// Sink::Transparent behaves as in rasterize() (alpha = mat.alpha * tex.a * vertex-alpha,
+// depth <= test, top-left fill rule, push to *abuf); Opaque is unchanged.
+template <Sink S = Sink::Opaque>
 void rasterize_phong(
     Framebuffer &fb,
     vec3 sa,
@@ -109,6 +177,10 @@ void rasterize_phong(
     const Texture *etex = nullptr,            // emissive texture; modulates the emissive factor when present
     vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f }, // emissive factor (gated by caller, not read from mat)
     bool apply_normal_scale = false,          // gates the glTF normalScale per-pixel multiply (Mesh::has_normal_scale)
-    const Texture *octex = nullptr, // glTF occlusion texture; R channel overrides baked AO (Mesh::has_occlusion)
-    float occlusion_strength = 1.0f // occlusionTexture.strength: ao = 1 + strength*(R-1)
+    const Texture *octex = nullptr,  // glTF occlusion texture; R channel overrides baked AO (Mesh::has_occlusion)
+    float occlusion_strength = 1.0f, // occlusionTexture.strength: ao = 1 + strength*(R-1)
+    const ABuffer *abuf = nullptr,   // Transparent only: per-pixel fragment sink
+    float caa = 1.0f,                // Transparent only: per-vertex opacity at a/b/c (mat.alpha read from mat)
+    float cab = 1.0f,
+    float cac = 1.0f
 );

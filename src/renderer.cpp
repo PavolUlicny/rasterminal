@@ -13,8 +13,11 @@
 #include <atomic>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <mutex>
+#include <new>
 #include <thread>
+#include <utility>
 #include <vector>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
@@ -61,10 +64,11 @@ Renderer::Renderer(int n_threads)
     //  N = exactly N, clamped to [1, hw]
     const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
+    m_arenas.resize(static_cast<size_t>(m_n_workers)); // one transparent-fragment arena per worker
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
     {
-        m_threads.emplace_back(&Renderer::worker_func, this);
+        m_threads.emplace_back(&Renderer::worker_func, this, t);
     }
 }
 
@@ -82,64 +86,86 @@ Renderer::~Renderer()
     }
 }
 
-// ─── Renderer::worker_func ────────────────────────────────────────────────────
+// ─── Renderer::raster_triangles ───────────────────────────────────────────────
+// Single-pass geometry + rasterize over this worker's stolen triangle chunks.
+// Each worker steals triangle chunks and rasterizes directly into the framebuffer.
+// The CAS-based depth test in Framebuffer ensures the closest triangle wins per
+// pixel across all threads. A narrow race between a winning depth CAS and the
+// following color write is accepted: at most one wrong-coloured pixel per collision
+// per frame, invisible at interactive frame rates.
+//
+// S == Opaque processes [0, opaque_count) and commits to the framebuffer — codegen
+// is identical to the pre-transparency single pass. S == Transparent processes the
+// blend tail [opaque_count, total) and pushes shaded fragments into this worker's
+// A-buffer arena instead (the per-pixel resolve composites them later).
 
-void Renderer::worker_func()
+template <Sink S> void Renderer::raster_triangles(int worker_id)
 {
-    int my_gen = 0;
-    while (true)
     {
-        // Sleep until a new frame is dispatched or the renderer is destroyed.
-        std::unique_lock<std::mutex> lk(m_mutex);
-        m_cv_work.wait(lk, [this, my_gen] { return m_generation != my_gen || m_stop; });
-        if (m_stop)
+        const Mesh *mesh = m_mesh;
+        const mat4 &vp = m_vp;
+        const vec3 &eye = m_eye;
+        const Light *lights = m_lights;
+        const int n_lights = m_n_lights;
+        const vec3 &ambient = m_ambient;
+        const ShadowMap *shadow_map = m_shadow_map;
+        const float near_plane = m_near_plane;
+        const int width = m_width;
+        const int height = m_height;
+        const ShadingMode smode = m_smode;
+        const bool do_cull = m_cull_backfaces;
+        const bool show_tex = m_show_texture;
+        // Texture toggle gates only the emissive texture sample. The authored factor
+        // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
+        // even when diffuse_tex is hidden by the toggle.
+        const bool show_emissive = mesh->has_emissive && show_tex;
+        const bool show_metallic = mesh->has_metallic && show_tex;
+        const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
+        const bool show_occlusion = mesh->has_occlusion && show_tex;
+        const bool mesh_has_unlit = mesh->has_unlit;
+        Framebuffer *fb = m_fb;
+        const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
+        const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
+
+        // Opaque steals [0, opaque_count); transparent steals the blend tail
+        // [opaque_count, total). render() seeds m_tri_cursor to the matching start.
+        const int total = static_cast<int>(S == Sink::Opaque ? m_opaque_count : mesh->triangles.size());
+        const int work = (S == Sink::Opaque) ? total : (total - static_cast<int>(m_opaque_count));
+        const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
+        const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
+        [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
+
+        // Transparent: this worker's private fragment arena + the shared per-pixel head
+        // array. clear() keeps capacity, acting as the per-frame high-water reserve so
+        // steady-state pushes never reallocate. The handle is built once (const); for
+        // Opaque it stays default (null) and unused.
+        if constexpr (S == Sink::Transparent)
         {
-            return;
+            m_arenas[static_cast<size_t>(worker_id)].clear();
         }
-
-        my_gen = m_generation;
-        lk.unlock();
-
-        // ── Single-pass: geometry + rasterize ────────────────────────────────
-        // Each worker steals triangle chunks and rasterizes directly into the
-        // framebuffer. The CAS-based depth test in Framebuffer ensures the
-        // closest triangle wins per pixel across all threads. A narrow race
-        // between a winning depth CAS and the following color write is
-        // accepted: at most one wrong-coloured pixel per collision per frame,
-        // invisible at interactive frame rates.
+        const ABuffer abuf = [&]
         {
-            const Mesh *mesh = m_mesh;
-            const mat4 &vp = m_vp;
-            const vec3 &eye = m_eye;
-            const Light *lights = m_lights;
-            const int n_lights = m_n_lights;
-            const vec3 &ambient = m_ambient;
-            const ShadowMap *shadow_map = m_shadow_map;
-            const float near_plane = m_near_plane;
-            const int width = m_width;
-            const int height = m_height;
-            const ShadingMode smode = m_smode;
-            const bool do_cull = m_cull_backfaces;
-            const bool show_tex = m_show_texture;
-            // Texture toggle gates only the emissive texture sample. The authored factor
-            // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
-            // even when diffuse_tex is hidden by the toggle.
-            const bool show_emissive = mesh->has_emissive && show_tex;
-            const bool show_metallic = mesh->has_metallic && show_tex;
-            const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
-            const bool show_occlusion = mesh->has_occlusion && show_tex;
-            const bool mesh_has_unlit = mesh->has_unlit;
-            Framebuffer *fb = m_fb;
-            const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
-            const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
+            ABuffer a;
+            if constexpr (S == Sink::Transparent)
+            {
+                a.head = m_frag_head.data();
+                a.nodes = &m_arenas[static_cast<size_t>(worker_id)];
+                a.worker_id = static_cast<uint32_t>(worker_id);
+            }
+            return a;
+        }();
 
-            const int total = static_cast<int>(mesh->triangles.size());
-            const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
-            const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
+        const int chunk = choose_phase1_chunk(work, m_n_workers);
+        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+                                // clip_near overwrites before read
 
-            const int chunk = choose_phase1_chunk(total, m_n_workers);
-            ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
-                                    // clip_near overwrites before read
+        // The per-fragment arena push can throw bad_alloc under extreme overdraw +
+        // memory pressure. Catch at the loop boundary: flag truncation and stop pushing.
+        // The worker still returns and signals completion; resolve still runs and
+        // self-cleans the heads, so the next frame is uncorrupted (best-effort, never a
+        // crash). Opaque never allocates here, so it runs the loop directly.
+        const auto steal_loop = [&]()
+        {
             while (true)
             {
                 const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
@@ -185,6 +211,15 @@ void Renderer::worker_func()
                     ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca };
                     ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb };
                     ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc };
+                    if constexpr (S == Sink::Transparent)
+                    {
+                        if (p_valpha)
+                        {
+                            cva.color_a = p_valpha[tri.v[0]];
+                            cvb.color_a = p_valpha[tri.v[1]];
+                            cvc.color_a = p_valpha[tri.v[2]];
+                        }
+                    }
                     if (flip_normals)
                     {
                         cva.normal = cva.normal * -1.0f;
@@ -245,28 +280,56 @@ void Renderer::worker_func()
                             const vec3 ua = mat.diffuse * a.color;
                             const vec3 ub = mat.diffuse * b.color;
                             const vec3 uc = mat.diffuse * c.color;
-                            rasterize(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
-                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
-                                vec3{ 0.0f, 0.0f, 0.0f }
-                            );
+                            if constexpr (S == Sink::Opaque)
+                            {
+                                rasterize<Sink::Opaque>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos,
+                                    a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1,
+                                    nullptr, vec3{ 0.0f, 0.0f, 0.0f }
+                                );
+                            }
+                            else
+                            {
+                                rasterize<Sink::Transparent>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos,
+                                    a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1,
+                                    nullptr, vec3{ 0.0f, 0.0f, 0.0f }, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                                );
+                            }
                         }
                         else if (smode == ShadingMode::Phong)
                         {
                             // a.color/b.color/c.color already encode the has_vertex_colors
                             // condition: they are {1,1,1} when p_vcols == nullptr (set at
                             // ClipVert construction), so no ternary is needed here.
-                            rasterize_phong(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
-                                a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
-                                c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
-                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
-                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
-                                mat.occlusion_strength
-                            );
+                            if constexpr (S == Sink::Opaque)
+                            {
+                                rasterize_phong<Sink::Opaque>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal,
+                                    c.normal, a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao,
+                                    a.color, b.color, c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient,
+                                    mat, tex, show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                    show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
+                                    show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
+                                    show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
+                                    apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
+                                    mat.occlusion_strength
+                                );
+                            }
+                            else
+                            {
+                                rasterize_phong<Sink::Transparent>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal,
+                                    c.normal, a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao,
+                                    a.color, b.color, c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient,
+                                    mat, tex, show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                    show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
+                                    show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
+                                    show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
+                                    apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
+                                    mat.occlusion_strength, &abuf, a.color_a, b.color_a, c.color_a
+                                );
+                            }
                         }
                         else
                         {
@@ -385,16 +448,186 @@ void Renderer::worker_func()
                                 }
                             }
 
-                            rasterize(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
-                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                mat.emissive
-                            );
+                            if constexpr (S == Sink::Opaque)
+                            {
+                                rasterize<Sink::Opaque>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                                    a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                    shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                    mat.emissive
+                                );
+                            }
+                            else
+                            {
+                                rasterize<Sink::Transparent>(
+                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                                    a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                    shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                    mat.emissive, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                                );
+                            }
                         }
                     }
                 }
             }
+        }; // end steal_loop lambda
+
+        if constexpr (S == Sink::Transparent)
+        {
+            try
+            {
+                steal_loop();
+            }
+            catch (const std::bad_alloc &) // NOLINT(bugprone-empty-catch)
+            {
+                // Best-effort: stop pushing this worker's fragments. The chain stays consistent
+                // (push_back runs before the head swap), the worker still signals completion, and
+                // resolve still composites + self-cleans — so the frame loses a few fragments
+                // under extreme overdraw rather than crashing or corrupting the next frame.
+            }
+        }
+        else
+        {
+            steal_loop();
+        }
+    }
+}
+
+// ─── Renderer::resolve_pixels ─────────────────────────────────────────────────
+// Transparent resolve pass: each worker steals disjoint pixel ranges and composites
+// that pixel's accumulated fragment list back-to-front over the opaque colour already
+// in the framebuffer. Disjoint pixels + the post-accumulate barrier make the
+// single-threaded get_pixel/set_pixel safe here (no two workers touch one slot; the
+// half-block 2-px-per-cell packing is a present()-only concern). Each resolved head is
+// reset to SENTINEL so the array self-cleans for the next frame.
+
+void Renderer::resolve_pixels(int worker_id)
+{
+    (void)worker_id;
+    Framebuffer *fb = m_fb;
+    const int width = m_width;
+    const int total_px = width * m_height;
+    constexpr int PX_CHUNK = 4096;
+    constexpr float inv255 = 1.0f / 255.0f;
+
+    std::vector<Fragment> stack; // reused across pixels; per-worker, no sharing
+
+    while (true)
+    {
+        const int start = m_pixel_cursor.fetch_add(PX_CHUNK, std::memory_order_relaxed);
+        if (start >= total_px)
+        {
+            break;
+        }
+        const int end = std::min(start + PX_CHUNK, total_px);
+        for (int idx = start; idx < end; idx++)
+        {
+            uint64_t ref = m_frag_head[static_cast<size_t>(idx)].load(std::memory_order_relaxed);
+            if (ref == ABuffer::SENTINEL)
+            {
+                continue;
+            }
+
+            // Gather this pixel's chain. push_back is the only allocating call in resolve;
+            // guard it like the accumulate pass so an OOM here can't escape worker_func (a
+            // std::thread entry) into std::terminate. On OOM we composite nothing for this
+            // pixel (it keeps its opaque colour) — but the head reset below still runs
+            // UNCONDITIONALLY, so no stale non-sentinel head survives to corrupt the next
+            // frame (the self-cleaning invariant the design relies on). Far less likely than
+            // accumulate OOM: the chain's fragments were already allocated in that pass.
+            stack.clear();
+            try
+            {
+                while (ref != ABuffer::SENTINEL)
+                {
+                    const Fragment &f = m_arenas[ref >> 32u][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
+                    stack.push_back(f);
+                    ref = f.next;
+                }
+            }
+            catch (const std::bad_alloc &)
+            {
+                stack.clear();
+            }
+
+            // Back-to-front: composite far (greater depth) fragments first. The depth ties are
+            // broken on the fragment payload so the composite is reproducible: the A-buffer chain
+            // order is nondeterministic (cross-worker atomic exchanges) and the alpha-OVER is not
+            // commutative, so without a deterministic tie-break two coplanar fragments at one pixel
+            // would flicker frame-to-frame. Fragments equal on every field are identical, so their
+            // relative order then cannot affect the result. Skip the sort for the common
+            // single-fragment pixel (nothing to order).
+            if (stack.size() > 1)
+            {
+                std::sort(
+                    stack.begin(), stack.end(),
+                    [](const Fragment &x, const Fragment &y)
+                    {
+                        if (x.depth != y.depth)
+                        {
+                            return x.depth > y.depth;
+                        }
+                        if (x.color.x != y.color.x)
+                        {
+                            return x.color.x < y.color.x;
+                        }
+                        if (x.color.y != y.color.y)
+                        {
+                            return x.color.y < y.color.y;
+                        }
+                        if (x.color.z != y.color.z)
+                        {
+                            return x.color.z < y.color.z;
+                        }
+                        return x.alpha < y.alpha;
+                    }
+                );
+            }
+
+            const Color base = fb->color_at(static_cast<size_t>(idx));
+            vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
+                      static_cast<float>(base.b) * inv255 };
+            for (const Fragment &f : stack)
+            {
+                dst = f.color * f.alpha + dst * (1.0f - f.alpha);
+            }
+            fb->set_color_at(static_cast<size_t>(idx), vec3_to_color(dst));
+            m_frag_head[static_cast<size_t>(idx)].store(ABuffer::SENTINEL, std::memory_order_relaxed);
+        }
+    }
+}
+
+// ─── Renderer::worker_func ────────────────────────────────────────────────────
+// Persistent worker loop: sleep until render() dispatches a phase, run it, signal done.
+
+void Renderer::worker_func(int worker_id)
+{
+    int my_gen = 0;
+    while (true)
+    {
+        Pass pass; // NOLINT(cppcoreguidelines-init-variables) — assigned under the lock below before use
+        {
+            std::unique_lock<std::mutex> lk(m_mutex);
+            m_cv_work.wait(lk, [this, my_gen] { return m_generation != my_gen || m_stop; });
+            if (m_stop)
+            {
+                return;
+            }
+            my_gen = m_generation;
+            pass = m_pass;
+        }
+
+        switch (pass)
+        {
+        case Pass::Opaque:
+            raster_triangles<Sink::Opaque>(worker_id);
+            break;
+        case Pass::TransAccum:
+            raster_triangles<Sink::Transparent>(worker_id);
+            break;
+        case Pass::Resolve:
+            resolve_pixels(worker_id);
+            break;
         }
 
         // Signal completion. If this is the last worker, wake render().
@@ -404,6 +637,30 @@ void Renderer::worker_func()
             m_cv_done.notify_one();
         }
     }
+}
+
+// ─── Renderer::ensure_abuffer ─────────────────────────────────────────────────
+// Size the per-pixel head array to the framebuffer and sentinel-fill it. Only does
+// work when the dimensions change (or on first use): in steady state the resolve pass
+// restores every touched head to SENTINEL, so the array is already clean each frame.
+// std::vector<std::atomic> can't be resized in place (atomics aren't movable), so a
+// size change rebuilds the vector.
+
+void Renderer::ensure_abuffer(int width, int height)
+{
+    if (width == m_ab_width && height == m_ab_height && !m_frag_head.empty())
+    {
+        return;
+    }
+    const size_t n = static_cast<size_t>(width) * static_cast<size_t>(height);
+    std::vector<std::atomic<uint64_t>> head(n);
+    for (auto &h : head)
+    {
+        h.store(ABuffer::SENTINEL, std::memory_order_relaxed);
+    }
+    m_frag_head = std::move(head);
+    m_ab_width = width;
+    m_ab_height = height;
 }
 
 // ─── Renderer::render ─────────────────────────────────────────────────────────
@@ -497,8 +754,7 @@ void Renderer::render(
         return;
     }
 
-    // ── Dispatch workers for single-pass geometry+rasterize ─────────────────
-    m_tri_cursor.store(0, std::memory_order_relaxed);
+    // Frame inputs are written once under the lock and stay constant across all phases.
     {
         const std::scoped_lock lk(m_mutex);
         m_mesh = &mesh;
@@ -515,12 +771,40 @@ void Renderer::render(
         m_cull_backfaces = cull_backfaces;
         m_show_texture = show_texture;
         m_fb = &fb;
-        m_active.store(m_n_workers, std::memory_order_release);
-        ++m_generation;
+        // Opaque range. has_transparent meshes carry a real opaque_count from load_model;
+        // for everything else the opaque pass covers all triangles (a manually built Mesh
+        // may leave opaque_count at 0, so don't trust it unless has_transparent is set).
+        m_opaque_count = mesh.has_transparent ? mesh.opaque_count : static_cast<uint32_t>(mesh.triangles.size());
     }
-    m_cv_work.notify_all();
+
+    // dispatch(pass): bump the generation, wake the workers, block until all finish.
+    const auto dispatch = [this](Pass pass)
     {
+        {
+            const std::scoped_lock lk(m_mutex);
+            m_pass = pass;
+            m_active.store(m_n_workers, std::memory_order_release);
+            ++m_generation;
+        }
+        m_cv_work.notify_all();
         std::unique_lock<std::mutex> lk(m_mutex);
         m_cv_done.wait(lk, [this] { return m_active.load(std::memory_order_acquire) == 0; });
+    };
+
+    // Phase 1: opaque geometry over [0, opaque_count).
+    m_tri_cursor.store(0, std::memory_order_relaxed);
+    dispatch(Pass::Opaque);
+
+    // Phases 2-3: only meshes with blend materials. Accumulate transparent fragments into
+    // the per-pixel A-buffer, then resolve (sort + composite) over the opaque framebuffer.
+    if (mesh.has_transparent)
+    {
+        ensure_abuffer(width, height);
+
+        m_tri_cursor.store(static_cast<int>(m_opaque_count), std::memory_order_relaxed);
+        dispatch(Pass::TransAccum);
+
+        m_pixel_cursor.store(0, std::memory_order_relaxed);
+        dispatch(Pass::Resolve);
     }
 }

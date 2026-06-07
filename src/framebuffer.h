@@ -1,5 +1,7 @@
 #pragma once
 
+#include "linalg.h" // vec3 (for vec3_to_color)
+
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -21,6 +23,16 @@ constexpr bool operator==(Color a, Color b) noexcept
 constexpr bool operator!=(Color a, Color b) noexcept
 {
     return !(a == b);
+}
+
+// Clamp a float RGB colour to [0,1] and pack to 8-bit per channel. Shared by the
+// rasterizer's opaque commit path and the transparent resolve so the two quantize
+// identically (a divergence here would seam blended against unblended pixels).
+constexpr Color vec3_to_color(vec3 c) noexcept
+{
+    return { static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
+             static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
+             static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
 }
 
 class Framebuffer
@@ -65,6 +77,10 @@ class Framebuffer
 
     // Single-threaded only: load-then-store on the packed slot's color half.
     // Multi-threaded callers must use commit_pixel() to keep depth and color in sync.
+    // The transparent resolve pass also uses this from multiple workers, which is safe
+    // there only because each worker owns a disjoint set of pixels (no shared slot) and
+    // runs after the opaque/accumulate barrier — it preserves the depth half (invariant
+    // in depth_at()), writing colour alone.
     void set_pixel(int x, int y, Color color)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
@@ -92,6 +108,34 @@ class Framebuffer
     {
         const uint64_t cur = m_pixel[idx].load(std::memory_order_relaxed);
         return depth < unpack_depth(cur);
+    }
+
+    // Read the depth half of a slot without touching colour. Used by the transparent
+    // pass to cull fragments behind opaque geometry with a <= test (it never writes
+    // depth). INVARIANT: across the transparent accumulate + resolve passes the depth
+    // half is immutable — the opaque pass set it and nothing after writes it — so this
+    // read and commit_pixel/get_pixel stay consistent. Do not add a depth write to the
+    // resolve path without revisiting this.
+    [[nodiscard]] float depth_at(size_t idx) const noexcept
+    {
+        return unpack_depth(m_pixel[idx].load(std::memory_order_relaxed));
+    }
+
+    // idx-based colour read/write for the transparent resolve, peers to depth_at(idx):
+    // the linear index is already in hand there, so these skip the (x,y) pixel_idx
+    // recompute and bounds branch that get_pixel/set_pixel pay. Same single-threaded
+    // contract as set_pixel — safe in resolve because workers own disjoint pixels and run
+    // post-barrier, and the colour-only store preserves the (immutable, see depth_at) depth.
+    [[nodiscard]] Color color_at(size_t idx) const noexcept
+    {
+        return unpack_color(unpack_color_bits(m_pixel[idx].load(std::memory_order_relaxed)));
+    }
+
+    void set_color_at(size_t idx, Color color) noexcept
+    {
+        auto &slot = m_pixel[idx];
+        const uint64_t cur = slot.load(std::memory_order_relaxed);
+        slot.store(pack_pixel(unpack_depth(cur), pack_color(color)), std::memory_order_relaxed);
     }
 
     // Atomically replaces (depth, color) iff our depth still wins against whatever's

@@ -24,7 +24,11 @@ void Mesh::clear()
     textures.clear();
     tangents.clear();
     vertex_colors.clear();
+    vertex_alpha.clear();
     has_vertex_colors = false;
+    has_vertex_alpha = false;
+    has_transparent = false;
+    opaque_count = 0;
     has_double_sided = false;
     has_metallic = false;
     has_emissive = false;
@@ -88,6 +92,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     has_occlusion =
         std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
     has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
+    has_transparent = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.blend; });
 
     // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
     // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
@@ -98,12 +103,61 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         [](const Material &m) { return m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
     );
 
+    // Per-vertex alpha only matters when some vertex is actually translucent. An all-opaque
+    // alpha array is very common (vec4 COLOR_0 with every w == 1) and would otherwise be dragged
+    // through compute_normals' welding split and optimize_vertex_cache's remap for nothing, and
+    // read per-fragment in the transparent pass — all to multiply by 1. Drop it so opaque models
+    // (and opaque vertices of blend models) pay zero; the transparent path treats a missing array
+    // as alpha 1. The loader has already finished its normal-split, so the array is length-matched
+    // here; clearing keeps the parallel-array invariant (size 0) consistent for the passes below.
+    if (has_vertex_alpha && std::none_of(vertex_alpha.begin(), vertex_alpha.end(), [](float a) { return a < 1.0f; }))
+    {
+        vertex_alpha.clear();
+        has_vertex_alpha = false;
+    }
+
+    // Per-vertex alpha that survived the clear guard carries at least one translucent vertex, so it
+    // makes the mesh transparent even when no material declares blend — this is how PLY (which has
+    // no per-material opacity mode) routes its translucent triangles to the transparent pass.
+    has_transparent = has_transparent || has_vertex_alpha;
+
     compute_tangents();
     if (ao && ext != "stl")
     {
         compute_ao(n_threads);
     }
+
     optimize_vertex_cache(n_threads);
+
+    // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a blend
+    // tail. The classification is PER-TRIANGLE, not per-material: a triangle is transparent if its
+    // material blends, or — for formats whose opacity is per-vertex (PLY) — any of its vertices is
+    // translucent. This keeps a mostly-opaque mesh with localized translucency mostly on the fast
+    // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass and
+    // remain shadow casters (shadow.cpp bounds its occluder loop by opaque_count); only the
+    // genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
+    // optimize_vertex_cache's within-group order (its vertex-cache/overdraw locality survives), and
+    // runs after optimize so triangle vertex indices are final — it only moves whole Triangle
+    // structs. Opaque meshes (has_transparent == false) skip it and are unchanged.
+    opaque_count = static_cast<uint32_t>(triangles.size());
+    if (has_transparent)
+    {
+        const float *va = has_vertex_alpha ? vertex_alpha.data() : nullptr;
+        const auto is_opaque_tri = [&](const Triangle &t)
+        {
+            if (mat_at(t.material_idx).blend)
+            {
+                return false;
+            }
+            if (va && (va[t.v[0]] < 1.0f || va[t.v[1]] < 1.0f || va[t.v[2]] < 1.0f))
+            {
+                return false;
+            }
+            return true;
+        };
+        const auto mid = std::stable_partition(triangles.begin(), triangles.end(), is_opaque_tri);
+        opaque_count = static_cast<uint32_t>(mid - triangles.begin());
+    }
 
     return true;
 }
@@ -235,8 +289,9 @@ void Mesh::compute_normals(
 
     // Loaders that populate vertex_colors must keep it length-matched to vertices
     // (pad missing entries before calling); compute_normals only propagates colors
-    // when the parallel-array invariant already holds.
+    // when the parallel-array invariant already holds. vertex_alpha mirrors it.
     const bool has_vcol = (vertex_colors.size() == n_verts);
+    const bool has_valpha = (vertex_alpha.size() == n_verts);
 
     for (size_t g = 0; g < n_groups; g++)
     {
@@ -368,6 +423,10 @@ void Mesh::compute_normals(
                     if (has_vcol)
                     {
                         vertex_colors.push_back(vertex_colors[ov]);
+                    }
+                    if (has_valpha)
+                    {
+                        vertex_alpha.push_back(vertex_alpha[ov]);
                     }
                     if (has_weld)
                     {
@@ -696,6 +755,10 @@ void Mesh::optimize_vertex_cache(int n_threads)
     {
         vertex_colors.resize(nv, { 1.0f, 1.0f, 1.0f });
     }
+    if (has_vertex_alpha && vertex_alpha.size() < nv)
+    {
+        vertex_alpha.resize(nv, 1.0f);
+    }
 
     std::vector<Vertex> new_verts(new_nv);
     std::vector<vec3> new_tans(new_nv);
@@ -703,6 +766,11 @@ void Mesh::optimize_vertex_cache(int n_threads)
     if (has_vertex_colors)
     {
         new_vcols.resize(new_nv);
+    }
+    std::vector<float> new_valpha;
+    if (has_vertex_alpha)
+    {
+        new_valpha.resize(new_nv);
     }
 
     for (size_t v = 0; v < nv; v++)
@@ -716,6 +784,10 @@ void Mesh::optimize_vertex_cache(int n_threads)
         if (has_vertex_colors)
         {
             new_vcols[remap[v]] = vertex_colors[v];
+        }
+        if (has_vertex_alpha)
+        {
+            new_valpha[remap[v]] = vertex_alpha[v];
         }
     }
 
@@ -732,5 +804,9 @@ void Mesh::optimize_vertex_cache(int n_threads)
     if (has_vertex_colors)
     {
         vertex_colors = std::move(new_vcols);
+    }
+    if (has_vertex_alpha)
+    {
+        vertex_alpha = std::move(new_valpha);
     }
 }

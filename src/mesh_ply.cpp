@@ -177,6 +177,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     std::shared_ptr<tinyply::PlyData> normals;
     std::shared_ptr<tinyply::PlyData> uvs;
     std::shared_ptr<tinyply::PlyData> vcolors;
+    std::shared_ptr<tinyply::PlyData> valpha;
     std::shared_ptr<tinyply::PlyData> faces;
     std::shared_ptr<tinyply::PlyData> fcolors;
 
@@ -245,6 +246,30 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
         catch (...) // NOLINT(bugprone-empty-catch)
         {
+        }
+    }
+
+    // Optional per-vertex opacity (separate property so a file without it still loads).
+    // Consumed only by the standard shared-vertex path below; a sub-1 value there marks
+    // the mesh blended (PLY has no material system, so opacity rides on the default mat).
+    if (vcolors)
+    {
+        try
+        {
+            valpha = file.request_properties_from_element("vertex", { "alpha" });
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        if (!valpha)
+        {
+            try
+            {
+                valpha = file.request_properties_from_element("vertex", { "a" });
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
         }
     }
 
@@ -395,6 +420,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         const uint8_t *pb = positions->buffer.get();
         const uint8_t *nb = normals ? normals->buffer.get() : nullptr;
         const uint8_t *cb = vcolors ? vcolors->buffer.get() : nullptr;
+        const uint8_t *ab = valpha ? valpha->buffer.get() : nullptr;
         const uint8_t *tcb = tc->buffer.get();
         const tinyply::Type tct = tc->t;
         const uint8_t *fb = faces->buffer.get();
@@ -422,6 +448,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         if (vcolors)
         {
             vertex_colors.reserve(n_verts);
+        }
+        if (ab)
+        {
+            vertex_alpha.reserve(n_verts);
         }
 
         auto get_vertex = [&](uint32_t pos_idx, size_t corner_float_off) -> uint32_t
@@ -452,6 +482,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
                 vertex_colors.emplace_back(
                     rd_col(cb, vcolors->t, p3), rd_col(cb, vcolors->t, p3 + 1), rd_col(cb, vcolors->t, p3 + 2)
                 );
+            }
+            if (ab)
+            {
+                vertex_alpha.push_back(rd_col(ab, valpha->t, pos_idx));
             }
             if (need_weld)
             {
@@ -488,6 +522,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         if (vcolors)
         {
             has_vertex_colors = true;
+        }
+        if (ab)
+        {
+            // PLY has no per-material opacity mode, so per-vertex alpha is the opacity signal.
+            // load_model's per-triangle partition routes only the genuinely-translucent triangles
+            // to the transparent pass (so an opaque region keeps the fast path and casts shadows).
+            has_vertex_alpha = true;
         }
         use_weld = need_weld;
     }
@@ -527,6 +568,19 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
                                      rd_col(cb, vcolors->t, (i * 3) + 2) };
             }
             has_vertex_colors = true;
+
+            if (valpha)
+            {
+                // Per-vertex alpha is PLY's only opacity signal; load_model's per-triangle
+                // partition routes just the translucent triangles to the transparent pass.
+                const uint8_t *ab = valpha->buffer.get();
+                vertex_alpha.resize(n_verts);
+                for (size_t i = 0; i < n_verts; i++)
+                {
+                    vertex_alpha[i] = rd_col(ab, valpha->t, i);
+                }
+                has_vertex_alpha = true;
+            }
         }
 
         const uint8_t *fb = faces->buffer.get();

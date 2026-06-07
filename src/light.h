@@ -75,6 +75,12 @@ struct Material
     float occlusion_strength = 1.0f;
     bool double_sided = false;
     float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
+    // Alpha blending (distinct from alpha_cutoff / MASK, which is a binary-discard opaque path).
+    // blend = true routes the material's triangles to the transparent pass (alpha-OVER compositing);
+    // alpha is the base opacity (glTF baseColorFactor.a / MTL d). Per-fragment opacity is
+    // alpha * diffuse-texture.a * vertex-color.a. Mesh::has_transparent gates the whole path.
+    bool blend = false;
+    float alpha = 1.0f;
     // KHR_materials_unlit: bypass lighting/shadow/emissive/normal/occlusion and output
     // baseColor * diffuse texture * vertex color directly (alpha cutout still applies).
     bool unlit = false;
