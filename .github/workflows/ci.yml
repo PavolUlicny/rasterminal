@@ -223,18 +223,13 @@ jobs:
           sudo apt-get install -y clang-tidy-22
 
       # clang-tidy has no -j; fan the file list across cores with xargs -P (each
-      # invocation re-parses one TU, so this scales near-linearly). The explicit
-      # src list (not src/*.cpp) deliberately omits ktx2_decode.cpp/webp_decode.cpp
-      # — the vendor-header isolation TUs are not audited — so the literal list is
-      # kept rather than a run-clang-tidy regex that could drift from that set. Any
-      # file failing under --warnings-as-errors makes xargs exit non-zero (123).
+      # invocation re-parses one TU, so this scales near-linearly). All src TUs are
+      # linted — including the ktx2/webp vendor-header isolation wrappers, which pass
+      # under the clang-analyzer suppressions already in .clang-tidy. A file failing
+      # under --warnings-as-errors makes xargs exit non-zero (123).
       - name: Run clang-tidy (src)
         run: >
-          printf '%s\n'
-          src/main.cpp src/args.cpp src/framebuffer.cpp src/mesh.cpp
-          src/mesh_obj.cpp src/mesh_ply.cpp src/mesh_stl.cpp src/mesh_gltf.cpp
-          src/draco_decode.cpp src/camera.cpp src/shadow.cpp src/rasterize.cpp
-          src/renderer.cpp src/texture.cpp
+          printf '%s\n' src/*.cpp
           | xargs -r -P "$(nproc)" -n1
           clang-tidy-22 --warnings-as-errors='*' -p build --header-filter='src/.*'
 
