@@ -268,6 +268,31 @@ TEST(ply_valid, vertex_color_alias_r_g_b_is_supported)
     ASSERT_NEAR(m.vertex_colors[0].z, 30.0f / 255.0f, 1e-4f);
 }
 
+TEST(ply_valid, float_vertex_colors)
+{
+    // FLOAT32 colors are in 0..1 and pass through rd_col unchanged (no /255). Guards
+    // that the type predicate keeps FLOAT32 accepted, not just UINT8.
+    TmpFile t(
+        tmp_path("rast_vcol_float.ply"), "ply\nformat ascii 1.0\n"
+                                         "element vertex 3\n"
+                                         "property float x\nproperty float y\nproperty float z\n"
+                                         "property float red\nproperty float green\nproperty float blue\n"
+                                         "element face 1\n"
+                                         "property list uchar int vertex_indices\n"
+                                         "end_header\n"
+                                         "0 0 0 1.0 0.5 0.0\n"
+                                         "1 0 0 1.0 0.5 0.0\n"
+                                         "0 1 0 1.0 0.5 0.0\n"
+                                         "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_EQ(m.vertex_colors.size(), size_t{ 3 });
+    ASSERT_NEAR(m.vertex_colors[0].x, 1.0f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].y, 0.5f, 1e-4f);
+    ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  REJECTIONS — malformed/corrupt PLY must not crash
 // ═══════════════════════════════════════════════════════════════════════════
@@ -304,6 +329,69 @@ TEST(reject, ply_unknown_property_type)
                                                   "property quadruple x\n"
                                                   "end_header\n"
                                                   "0\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_vertex_color_unsupported_type)
+{
+    // ushort vertex colors: rd_col handles only UINT8/FLOAT32/FLOAT64. A 2-byte-per-
+    // element buffer indexed with rd_col's 4-byte stride would read out of bounds, so
+    // the loader must reject rather than misread.
+    TmpFile t(
+        tmp_path("rasterminal_test_vcol_ushort.ply"),
+        "ply\nformat ascii 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property ushort red\nproperty ushort green\nproperty ushort blue\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n"
+        "0 0 0 65535 32768 0\n"
+        "1 0 0 65535 32768 0\n"
+        "0 1 0 65535 32768 0\n"
+        "3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_vertex_alpha_unsupported_type)
+{
+    // Valid uchar RGB but a ushort alpha property — alpha rides the same rd_col
+    // decode path, so an unsupported alpha type must reject too.
+    TmpFile t(
+        tmp_path("rasterminal_test_valpha_ushort.ply"),
+        "ply\nformat ascii 1.0\n"
+        "element vertex 3\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property uchar red\nproperty uchar green\nproperty uchar blue\nproperty ushort alpha\n"
+        "element face 1\n"
+        "property list uchar int vertex_indices\n"
+        "end_header\n"
+        "0 0 0 255 128 0 65535\n"
+        "1 0 0 255 128 0 65535\n"
+        "0 1 0 255 128 0 65535\n"
+        "3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, ply_face_color_unsupported_type)
+{
+    // int (INT32) face colors with no vertex colors selects the face-color path,
+    // which also decodes via rd_col. Unsupported type must reject.
+    TmpFile t(
+        tmp_path("rasterminal_test_fcol_int.ply"), "ply\nformat ascii 1.0\n"
+                                                   "element vertex 3\n"
+                                                   "property float x\nproperty float y\nproperty float z\n"
+                                                   "element face 1\n"
+                                                   "property list uchar int vertex_indices\n"
+                                                   "property int red\nproperty int green\nproperty int blue\n"
+                                                   "end_header\n"
+                                                   "0 0 0\n"
+                                                   "1 0 0\n"
+                                                   "0 1 0\n"
+                                                   "3 0 1 2 255 0 0\n"
     );
     assert_rejects(t.path);
 }

@@ -50,6 +50,15 @@ namespace
         return f;
     }
 
+    // rd_col decodes only these three layouts (UINT8 normalized, FLOAT32, FLOAT64).
+    // Any other declared type would hit rd_col's 4-byte fall-through read, which both
+    // misinterprets the bytes and runs past a 1- or 2-byte-per-element buffer. Loaders
+    // validate against this before using rd_col, then fail loud.
+    bool rd_col_supported(tinyply::Type t)
+    {
+        return t == tinyply::Type::UINT8 || t == tinyply::Type::FLOAT32 || t == tinyply::Type::FLOAT64;
+    }
+
     uint32_t rd_idx(const uint8_t *buf, tinyply::Type t, size_t i)
     {
         switch (t)
@@ -341,6 +350,16 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         file.read(ss);
     }
     catch (...)
+    {
+        return false;
+    }
+
+    // Every color/alpha property below is decoded with rd_col, which only handles
+    // UINT8/FLOAT32/FLOAT64. A different declared type would make rd_col read past
+    // the buffer (its 4-byte stride exceeds a 1- or 2-byte element) — the file-size
+    // guard above checks counts, not rd_col's stride assumption. Reject up front.
+    if ((vcolors && !rd_col_supported(vcolors->t)) || (valpha && !rd_col_supported(valpha->t)) ||
+        (fcolors && !rd_col_supported(fcolors->t)))
     {
         return false;
     }
