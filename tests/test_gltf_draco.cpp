@@ -1,3 +1,4 @@
+#include "draco_cube_alpha.h"
 #include "draco_cube_bitstream.h"
 #include "draco_cube_color.h"
 #include "loader_util.h"
@@ -227,6 +228,88 @@ TEST(gltf_draco, decode_color0)
     ASSERT_NEAR(cyan.x, 0.0f, 1e-2f);
     ASSERT_NEAR(cyan.y, 1.0f, 1e-2f);
     ASSERT_NEAR(cyan.z, 1.0f, 1e-2f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  COLOR_0 per-vertex alpha (vec4) survives onto vertex_alpha under alphaMode=BLEND.
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace
+{
+    // Bespoke GLB for the alpha fixture: make_draco_glb has no materials support, and the
+    // vec4-COLOR_0-under-BLEND gate needs a material. alpha_mode is the only thing that
+    // varies between the two tests below, so it is the single parameter here.
+    std::string make_draco_alpha_glb(const char *alpha_mode)
+    {
+        std::string json =
+            R"({"asset":{"version":"2.0"},)"
+            R"("extensionsUsed":["KHR_draco_mesh_compression"],"extensionsRequired":["KHR_draco_mesh_compression"],)"
+            R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],)"
+            R"("materials":[{"alphaMode":")" +
+            std::string(alpha_mode) +
+            R"(","pbrMetallicRoughness":{"baseColorFactor":[1,1,1,1]}}],)"
+            R"("meshes":[{"primitives":[{"attributes":{"POSITION":0,"COLOR_0":1},"indices":2,"material":0,"mode":4,)"
+            R"("extensions":{"KHR_draco_mesh_compression":{"bufferView":0,"attributes":{"POSITION":0,"COLOR_0":1}}}}]}],)"
+            R"("accessors":[{"componentType":5126,"count":8,"type":"VEC3"},)"
+            R"({"componentType":5126,"count":8,"type":"VEC4"},)"
+            R"({"componentType":5125,"count":36,"type":"SCALAR"}],)"
+            R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":)" +
+            std::to_string(draco_cube_alpha_drc_len) + R"(}],"buffers":[{"byteLength":)" +
+            std::to_string(draco_cube_alpha_drc_len) + R"(}]})";
+        std::string bin(reinterpret_cast<const char *>(draco_cube_alpha_drc), draco_cube_alpha_drc_len);
+        return assemble_glb(json, bin);
+    }
+} // namespace
+
+TEST(gltf_draco, color0_alpha_under_blend)
+{
+    // draco_cube_alpha: POSITION uid 0 + COLOR_0 uid 1 (4-component RGBA, varied alpha).
+    // The BLEND material means the per-vertex alpha must reach Mesh::vertex_alpha — the Draco
+    // analogue of the accessor-path vec4-COLOR_0-under-BLEND rule (this is the regression the
+    // RGB-only decoder used to drop, forcing every alpha to 1.0). Anchors located by position
+    // (split/vcache reorder, but vertex_alpha is synced in lockstep): measured at fixture mint.
+    const std::string glb = make_draco_alpha_glb("BLEND");
+    TmpFile f(tmp_path("rast_draco_alpha.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+
+    ASSERT_TRUE(m.has_vertex_alpha);
+    ASSERT_EQ(m.vertex_alpha.size(), m.vertices.size());
+
+    auto alpha_at = [&](float x, float y, float z, float &out) -> bool
+    {
+        for (size_t i = 0; i < m.vertices.size(); i++)
+        {
+            const vec3 &p = m.vertices[i].pos;
+            if (std::abs(p.x - x) < 1e-3f && std::abs(p.y - y) < 1e-3f && std::abs(p.z - z) < 1e-3f)
+            {
+                out = m.vertex_alpha[i];
+                return true;
+            }
+        }
+        return false;
+    };
+    float a_lo{};
+    float a_hi{};
+    ASSERT_TRUE(alpha_at(-1.0f, -1.0f, -1.0f, a_lo));
+    ASSERT_TRUE(alpha_at(1.0f, 1.0f, 1.0f, a_hi));
+    ASSERT_NEAR(a_lo, 0.251f, 2e-2f);
+    ASSERT_NEAR(a_hi, 0.753f, 2e-2f);
+    // Regression guard: the RGB-only decoder forced both anchors to 1.0.
+    ASSERT_TRUE(a_lo < 0.9f);
+}
+
+TEST(gltf_draco, color0_alpha_ignored_without_blend)
+{
+    // Same 4-component COLOR_0 fixture under an OPAQUE material: per spec the base-colour
+    // alpha is honoured only for alphaMode=BLEND, so vertex_alpha must stay empty even though
+    // the RGB colours still load. Guards the BLEND gate (mirrors the accessor-path semantics).
+    const std::string glb = make_draco_alpha_glb("OPAQUE");
+    TmpFile f(tmp_path("rast_draco_alpha_opaque.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+
+    ASSERT_TRUE(m.has_vertex_colors);
+    ASSERT_FALSE(m.has_vertex_alpha);
+    ASSERT_TRUE(m.vertex_alpha.empty());
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
