@@ -585,15 +585,22 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     const bool has_dn = !dm.normals.empty();
                     const bool has_du = !dm.uvs.empty();
                     const bool has_dc = !dm.colors.empty();
+                    // dm.colors_alpha is non-empty only when COLOR_0 was 4-component. Honour that
+                    // opacity only under alphaMode=BLEND — the same vec4-under-BLEND gate the accessor
+                    // path uses (see the COLOR_0 block below), so Draco and uncompressed primitives
+                    // behave identically. Without BLEND, vertex_alpha stays empty (zero-cost, and no
+                    // mis-classification in the per-triangle blend partition).
+                    const bool color_has_alpha = !dm.colors_alpha.empty() && prim.material &&
+                                                 prim.material->alpha_mode == cgltf_alpha_mode_blend;
                     vertices.reserve(vertices.size() + n_verts);
                     if (has_dc)
                     {
                         vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
                     }
-                    // KNOWN LIMITATION: draco_decode extracts COLOR_0 as RGB only (see draco_decode.h),
-                    // so a Draco-compressed BLEND primitive with a vec4 COLOR_0 loses its per-vertex
-                    // opacity here (treated as 1.0). The material blend flag still routes the primitive
-                    // correctly, so it stays consistent — only the per-vertex alpha fidelity is dropped.
+                    if (color_has_alpha)
+                    {
+                        vertex_alpha.resize(vert_base + n_verts, 1.0f);
+                    }
                     for (size_t i = 0; i < n_verts; i++)
                     {
                         Vertex v{};
@@ -613,6 +620,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                             vertex_colors[vert_base + i] = { dm.colors[(i * 3) + 0], dm.colors[(i * 3) + 1],
                                                              dm.colors[(i * 3) + 2] };
                         }
+                        if (color_has_alpha)
+                        {
+                            vertex_alpha[vert_base + i] = dm.colors_alpha[i];
+                        }
                     }
                     if (has_dn)
                     {
@@ -621,6 +632,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     if (has_dc)
                     {
                         has_vertex_colors = true;
+                    }
+                    if (color_has_alpha)
+                    {
+                        has_vertex_alpha = true;
                     }
 
                     // Connectivity comes from the Draco bitstream itself

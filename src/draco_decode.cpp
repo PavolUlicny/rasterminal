@@ -73,6 +73,11 @@ bool decode_draco_mesh(
     {
         return false;
     }
+    // A 4-component COLOR_0 carries per-vertex opacity in its 4th channel; surface it
+    // in colors_alpha. Mirrors the accessor path's strict vec4 test — a non-RGBA color
+    // attribute (3, or a malformed >4) is not treated as carrying alpha.
+    const bool col_alpha = col && col->num_components() == 4;
+
     out.num_points = n;
     out.positions.resize(n * 3);
     if (nrm)
@@ -86,6 +91,10 @@ bool decode_draco_mesh(
     if (col)
     {
         out.colors.resize(n * 3);
+    }
+    if (col_alpha)
+    {
+        out.colors_alpha.resize(n);
     }
     for (size_t i = 0; i < n; i++)
     {
@@ -104,14 +113,18 @@ bool decode_draco_mesh(
             // num_components() is an unconstrained uint8_t straight from the bitstream
             // (1-255), and ConvertValue writes that many floats into the output. Clamp
             // to the 4-float destination so a malformed COLOR_0 attribute declaring >4
-            // components can't overflow this stack buffer (we only use RGB anyway). The
-            // clamp also keeps the int8_t cast lossless.
+            // components can't overflow this stack buffer (RGB into colors, the 4th into
+            // colors_alpha when col_alpha). The clamp also keeps the int8_t cast lossless.
             float c[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
             const auto nc = static_cast<int8_t>(std::min<uint32_t>(col->num_components(), 4u));
             col->ConvertValue<float>(col->mapped_index(pi), nc, c);
             out.colors[(i * 3) + 0] = c[0];
             out.colors[(i * 3) + 1] = c[1];
             out.colors[(i * 3) + 2] = c[2];
+            if (col_alpha)
+            {
+                out.colors_alpha[i] = c[3];
+            }
         }
     }
 
