@@ -259,8 +259,12 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     }
 
     // Optional per-vertex opacity (separate property so a file without it still loads).
-    // Consumed only by the standard shared-vertex path below; a sub-1 value there marks
-    // the mesh blended (PLY has no material system, so opacity rides on the default mat).
+    // Consumed by both the shared-vertex and welded (split-by-UV) paths below; a sub-1
+    // value marks the mesh blended (PLY has no material system, so opacity rides on the
+    // default mat). Gated on vcolors by design: PLY's `alpha` is conventionally the 4th
+    // channel of RGB vertex color, not a standalone opacity property, so a file with alpha
+    // but no RGB is not treated as translucent (CloudCompare likewise reads alpha only
+    // alongside RGB).
     if (vcolors)
     {
         try
