@@ -499,9 +499,8 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
 // half-block 2-px-per-cell packing is a present()-only concern). Each resolved head is
 // reset to SENTINEL so the array self-cleans for the next frame.
 
-void Renderer::resolve_pixels(int worker_id)
+void Renderer::resolve_pixels()
 {
-    (void)worker_id;
     Framebuffer *fb = m_fb;
     const int width = m_width;
     const int total_px = width * m_height;
@@ -624,7 +623,7 @@ void Renderer::worker_func(int worker_id)
             raster_triangles<Sink::Transparent>(worker_id);
             break;
         case Pass::Resolve:
-            resolve_pixels(worker_id);
+            resolve_pixels();
             break;
         }
 

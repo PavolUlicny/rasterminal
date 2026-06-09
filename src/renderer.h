@@ -77,7 +77,7 @@ struct Renderer
 
     // Resolve pass: composite each owned pixel's fragment list back-to-front over the
     // opaque colour already in the framebuffer.
-    void resolve_pixels(int worker_id);
+    void resolve_pixels();
 
     // Resize the per-pixel head array + reset per-worker arenas to match the framebuffer.
     // One full sentinel clear on size change; steady-state heads self-clean in Resolve.
