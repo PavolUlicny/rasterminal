@@ -743,8 +743,6 @@ void rasterize_phong(
             vec3 use_specular = mat.specular;
             float use_shin = mat.shininess;
 
-            // Diffuse sample. .w carries the texture opacity for the transparent finalize; it
-            // stays 1 for opaque (and for the no-texture case), so it is harmless there.
             // Diffuse sample. Opaque keeps the original plain-vec3 path (structurally identical
             // codegen — no vec4, no round-trip). Transparent additionally carries the texture
             // alpha to the finalize push. NOLINT: tex_a is mutated only in the Transparent
