@@ -43,7 +43,8 @@ enum class Sink : std::uint8_t
 // One shaded transparent fragment. Float color (not 8-bit) so deep stacks composite
 // without per-layer banding; clamped once at resolve. `next` links within a worker's
 // arena, encoded as (worker_id << 32) | node_index; ABuffer::SENTINEL ends the chain.
-struct Fragment
+struct Fragment // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always aggregate-initialized
+                // (ABuffer::push); never default-constructed
 {
     float depth;
     vec3 color;
