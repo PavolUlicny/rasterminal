@@ -175,6 +175,12 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         else if (m.dissolve < 1.0f)
         {
             mat.blend = true;
+            // Authored dissolve passes straight through with no floor: `d 0` is a fully
+            // invisible material, which is spec-correct (0 = fully dissolved). This is a
+            // deliberate asymmetry with the glTF transmission path's GLASS_ALPHA_FLOOR --
+            // that floor exists only because transmission->alpha-blend is an approximation
+            // that would otherwise vanish a surface the asset meant to be seen; an explicit
+            // `d`/`Tr` value is the author's literal intent, so it is not second-guessed.
             mat.alpha = m.dissolve;
         }
         materials.push_back(mat);
