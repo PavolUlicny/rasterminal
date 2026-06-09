@@ -77,10 +77,8 @@ class Framebuffer
 
     // Single-threaded only: load-then-store on the packed slot's color half.
     // Multi-threaded callers must use commit_pixel() to keep depth and color in sync.
-    // The transparent resolve pass also uses this from multiple workers, which is safe
-    // there only because each worker owns a disjoint set of pixels (no shared slot) and
-    // runs after the opaque/accumulate barrier — it preserves the depth half (invariant
-    // in depth_at()), writing colour alone.
+    // (The transparent resolve pass writes colour from multiple workers via the idx-based
+    // set_color_at() below, not this overload — see its comment for the safety contract.)
     void set_pixel(int x, int y, Color color)
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
