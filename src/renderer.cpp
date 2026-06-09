@@ -792,9 +792,12 @@ void Renderer::render(
     m_tri_cursor.store(0, std::memory_order_relaxed);
     dispatch(Pass::Opaque);
 
-    // Phases 2-3: only meshes with blend materials. Accumulate transparent fragments into
-    // the per-pixel A-buffer, then resolve (sort + composite) over the opaque framebuffer.
-    if (mesh.has_transparent)
+    // Phases 2-3: only meshes that actually have a blend tail. Accumulate transparent
+    // fragments into the per-pixel A-buffer, then resolve (sort + composite) over the opaque
+    // framebuffer. The opaque_count < total guard skips both barrier round-trips (and the
+    // O(pixels) resolve sweep) when has_transparent is set by a declared-but-unused blend
+    // material — no triangle reached the tail, so there is nothing to accumulate or resolve.
+    if (mesh.has_transparent && m_opaque_count < static_cast<uint32_t>(mesh.triangles.size()))
     {
         ensure_abuffer(width, height);
 
