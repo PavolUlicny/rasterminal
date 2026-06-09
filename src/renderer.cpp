@@ -494,7 +494,9 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
 // ─── Renderer::resolve_pixels ─────────────────────────────────────────────────
 // Transparent resolve pass: each worker steals disjoint pixel ranges and composites
 // that pixel's accumulated fragment list back-to-front over the opaque colour already
-// in the framebuffer. Disjoint pixels + the post-accumulate barrier make the
+// in the framebuffer. The common single-layer pixel takes a fast path that composites the
+// lone fragment directly, skipping the gather vector and the sort entirely; only multi-layer
+// pixels build and sort the stack. Disjoint pixels + the post-accumulate barrier make the
 // single-threaded get_pixel/set_pixel safe here (no two workers touch one slot; the
 // half-block 2-px-per-cell packing is a present()-only concern). Each resolved head is
 // reset to SENTINEL so the array self-cleans for the next frame.
@@ -519,75 +521,90 @@ void Renderer::resolve_pixels()
         const int end = std::min(start + PX_CHUNK, total_px);
         for (int idx = start; idx < end; idx++)
         {
-            uint64_t ref = m_frag_head[static_cast<size_t>(idx)].load(std::memory_order_relaxed);
+            const uint64_t ref = m_frag_head[static_cast<size_t>(idx)].load(std::memory_order_relaxed);
             if (ref == ABuffer::SENTINEL)
             {
                 continue;
             }
 
-            // Gather this pixel's chain. push_back is the only allocating call in resolve;
-            // guard it like the accumulate pass so an OOM here can't escape worker_func (a
-            // std::thread entry) into std::terminate. On OOM we composite nothing for this
-            // pixel (it keeps its opaque colour) — but the head reset below still runs
-            // UNCONDITIONALLY, so no stale non-sentinel head survives to corrupt the next
-            // frame (the self-cleaning invariant the design relies on). Far less likely than
-            // accumulate OOM: the chain's fragments were already allocated in that pass.
-            stack.clear();
-            try
-            {
-                while (ref != ABuffer::SENTINEL)
-                {
-                    const Fragment &f = m_arenas[ref >> 32u][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
-                    stack.push_back(f);
-                    ref = f.next;
-                }
-            }
-            catch (const std::bad_alloc &)
-            {
-                stack.clear();
-            }
-
-            // Back-to-front: composite far (greater depth) fragments first. The depth ties are
-            // broken on the fragment payload so the composite is reproducible: the A-buffer chain
-            // order is nondeterministic (cross-worker atomic exchanges) and the alpha-OVER is not
-            // commutative, so without a deterministic tie-break two coplanar fragments at one pixel
-            // would flicker frame-to-frame. Fragments equal on every field are identical, so their
-            // relative order then cannot affect the result. Skip the sort for the common
-            // single-fragment pixel (nothing to order).
-            if (stack.size() > 1)
-            {
-                std::sort(
-                    stack.begin(), stack.end(),
-                    [](const Fragment &x, const Fragment &y)
-                    {
-                        if (x.depth != y.depth)
-                        {
-                            return x.depth > y.depth;
-                        }
-                        if (x.color.x != y.color.x)
-                        {
-                            return x.color.x < y.color.x;
-                        }
-                        if (x.color.y != y.color.y)
-                        {
-                            return x.color.y < y.color.y;
-                        }
-                        if (x.color.z != y.color.z)
-                        {
-                            return x.color.z < y.color.z;
-                        }
-                        return x.alpha < y.alpha;
-                    }
-                );
-            }
-
+            // Composite the chain over the opaque colour already in the framebuffer. color_at is
+            // just a load (order-independent), so read the base first and let both paths fold into dst.
             const Color base = fb->color_at(static_cast<size_t>(idx));
             vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
                       static_cast<float>(base.b) * inv255 };
-            for (const Fragment &f : stack)
+
+            const Fragment &f0 = m_arenas[ref >> 32u][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
+            if (f0.next == ABuffer::SENTINEL)
             {
-                dst = f.color * f.alpha + dst * (1.0f - f.alpha);
+                // Fast path: the overwhelmingly common single-layer pixel. One OVER step, no
+                // vector touch and no allocation, so the bad_alloc guard below is never entered.
+                dst = f0.color * f0.alpha + dst * (1.0f - f0.alpha);
             }
+            else
+            {
+                // Gather this pixel's chain. push_back is the only allocating call in resolve;
+                // guard it like the accumulate pass so an OOM here can't escape worker_func (a
+                // std::thread entry) into std::terminate. On OOM we composite nothing for this
+                // pixel (it keeps its opaque colour) — but the head reset below still runs
+                // UNCONDITIONALLY, so no stale non-sentinel head survives to corrupt the next
+                // frame (the self-cleaning invariant the design relies on). Far less likely than
+                // accumulate OOM: the chain's fragments were already allocated in that pass.
+                stack.clear();
+                try
+                {
+                    uint64_t r = ref;
+                    while (r != ABuffer::SENTINEL)
+                    {
+                        const Fragment &f = m_arenas[r >> 32u][static_cast<uint32_t>(r & 0xFFFFFFFFu)];
+                        stack.push_back(f);
+                        r = f.next;
+                    }
+                }
+                catch (const std::bad_alloc &)
+                {
+                    stack.clear();
+                }
+
+                // Back-to-front: composite far (greater depth) fragments first. The depth ties are
+                // broken on the fragment payload so the composite is reproducible: the A-buffer chain
+                // order is nondeterministic (cross-worker atomic exchanges) and the alpha-OVER is not
+                // commutative, so without a deterministic tie-break two coplanar fragments at one pixel
+                // would flicker frame-to-frame. Fragments equal on every field are identical, so their
+                // relative order then cannot affect the result. (The size > 1 guard also skips an
+                // OOM-emptied stack.)
+                if (stack.size() > 1)
+                {
+                    std::sort(
+                        stack.begin(), stack.end(),
+                        [](const Fragment &x, const Fragment &y)
+                        {
+                            if (x.depth != y.depth)
+                            {
+                                return x.depth > y.depth;
+                            }
+                            if (x.color.x != y.color.x)
+                            {
+                                return x.color.x < y.color.x;
+                            }
+                            if (x.color.y != y.color.y)
+                            {
+                                return x.color.y < y.color.y;
+                            }
+                            if (x.color.z != y.color.z)
+                            {
+                                return x.color.z < y.color.z;
+                            }
+                            return x.alpha < y.alpha;
+                        }
+                    );
+                }
+
+                for (const Fragment &f : stack)
+                {
+                    dst = f.color * f.alpha + dst * (1.0f - f.alpha);
+                }
+            }
+
             fb->set_color_at(static_cast<size_t>(idx), vec3_to_color(dst));
             m_frag_head[static_cast<size_t>(idx)].store(ABuffer::SENTINEL, std::memory_order_relaxed);
         }
