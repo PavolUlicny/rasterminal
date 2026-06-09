@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 // ─── internal helpers ─────────────────────────────────────────────────────────
 
@@ -20,13 +19,6 @@ namespace
     // Standard normal-incidence reflectance (F0) for dielectrics; metals lerp from
     // this toward their base colour by the metalness factor.
     constexpr vec3 DIELECTRIC_F0{ 0.04f, 0.04f, 0.04f };
-
-    constexpr Color vec3_to_color(vec3 c) noexcept
-    {
-        return { static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
-                 static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
-                 static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
-    }
 
     // Precomputed barycentric rasterization setup for one triangle.
     struct TriSetup
@@ -125,7 +117,8 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
                  v0.tangent + (v1.tangent - v0.tangent) * t,
                  v0.uv + (v1.uv - v0.uv) * t,
                  v0.ao + ((v1.ao - v0.ao) * t),
-                 v0.color + (v1.color - v0.color) * t };
+                 v0.color + (v1.color - v0.color) * t,
+                 v0.color_a + ((v1.color_a - v0.color_a) * t) };
     };
 
     if (n == 1)
@@ -236,6 +229,7 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // tex may be nullptr if no diffuse texture is active.
 // shadow_map may be nullptr if shadows are disabled.
 
+template <Sink S>
 void rasterize(
     Framebuffer &fb,
     vec3 sa,
@@ -262,7 +256,12 @@ void rasterize(
     int y_min,
     int y_max,
     const Texture *etex,
-    vec3 emissive
+    vec3 emissive,
+    const ABuffer *abuf,
+    float base_alpha,
+    float caa,
+    float cab,
+    float cac
 )
 {
     const int width = fb.width();
@@ -289,6 +288,23 @@ void rasterize(
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
+    // Transparent: per-edge top-left flags so a pixel center landing exactly on a shared edge
+    // is owned by one triangle (no double-composited seam). The barycentric gradients are
+    // winding-normalized (always point toward the interior), so the classification is
+    // winding-independent. bc's gradient is -(grad ba + grad bb). Compiles out for Opaque.
+    // NOTE: this is the float-barycentric approximation of a top-left rule, not an exact one.
+    // Barycentrics are accumulated by repeated += per pixel, so an exact == 0.0f on an edge
+    // almost never occurs; ownership effectively rests on the strict > 0 tests. Where rounding
+    // puts a shared-edge pixel tiny-negative for both neighbours you get a 1px gap, tiny-positive
+    // for both a faint double-blend seam. Cosmetic and blend-only; an exact rule would need
+    // fixed-point edge functions, which this incremental-float rasterizer does not use.
+    [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
+    [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
+    [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);
+    [[maybe_unused]] const bool tl_b = (bb_dy > 0.0f) || (bb_dy == 0.0f && bb_dx > 0.0f);
+    [[maybe_unused]] const bool tl_c = (bc_dy > 0.0f) || (bc_dy == 0.0f && bc_dx > 0.0f);
+    [[maybe_unused]] constexpr float ALPHA_EPS = 1.0f / 512.0f; // skip fragments too sheer to matter
+
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
@@ -296,18 +312,35 @@ void rasterize(
         size_t idx = (static_cast<size_t>(y) * stride) + static_cast<size_t>(s.x0);
         for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
-            if (ba < 0.0f || bb < 0.0f)
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (ba < 0.0f || bb < 0.0f)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
             const float bc = 1.0f - ba - bb;
-            if (bc < 0.0f)
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (bc < 0.0f)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+            }
+            else
+            {
+                const bool covered = (ba > 0.0f || (ba == 0.0f && tl_a)) && (bb > 0.0f || (bb == 0.0f && tl_b)) &&
+                                     (bc > 0.0f || (bc == 0.0f && tl_c));
+                if (!covered)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
 
             // z_ndc is linear in screen space (projection makes it A + B/z_view,
@@ -340,11 +373,25 @@ void rasterize(
                 cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
-            if (!fb.depth_test_relaxed(idx, depth))
+            // Opaque: strict depth-CAS gate. Transparent: keep fragments at or in front of
+            // the (final) opaque depth (<= so coplanar decals show); never writes depth.
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (!fb.depth_test_relaxed(idx, depth))
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+            }
+            else
+            {
+                if (depth > fb.depth_at(idx))
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
 
             // Perspective-correct weights — computed once, reused for all attributes.
@@ -384,27 +431,58 @@ void rasterize(
 
             vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
-            if (tex)
+            if constexpr (S == Sink::Transparent)
             {
-                col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y));
-            }
-
-            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
-            // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
-            // emissive contribution saturates invisibly — visible only where the lit colour
-            // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
-            // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
-            if (do_emissive)
-            {
-                vec3 e = emissive;
-                if (etex)
+                // Diffuse via sample_rgba: .rgb tints, .w is the texture opacity.
+                float tex_a = 1.0f;
+                if (tex)
                 {
-                    e = e * etex->sample_rgb(uv.x, uv.y);
+                    const vec4 t = tex->sample_rgba(uv.x, uv.y);
+                    col = col * vec3{ t.x, t.y, t.z };
+                    tex_a = t.w;
                 }
-                col = col + e;
+                if (do_emissive)
+                {
+                    vec3 e = emissive;
+                    if (etex)
+                    {
+                        e = e * etex->sample_rgb(uv.x, uv.y);
+                    }
+                    col = col + e;
+                }
+                // Fragment opacity = material base * texture * (perspective-correct) vertex alpha.
+                // Push raw (unclamped) colour; the resolve clamps once after compositing.
+                const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
+                const float a = base_alpha * tex_a * vca;
+                if (a >= ALPHA_EPS)
+                {
+                    abuf->push(idx, depth, col, a);
+                }
             }
+            else
+            {
+                if (tex)
+                {
+                    col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y));
+                }
 
-            fb.commit_pixel(idx, depth, vec3_to_color(col));
+                // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
+                // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
+                // emissive contribution saturates invisibly — visible only where the lit colour
+                // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
+                // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
+                if (do_emissive)
+                {
+                    vec3 e = emissive;
+                    if (etex)
+                    {
+                        e = e * etex->sample_rgb(uv.x, uv.y);
+                    }
+                    col = col + e;
+                }
+
+                fb.commit_pixel(idx, depth, vec3_to_color(col));
+            }
 
             ba += ba_dx;
             bb += bb_dx;
@@ -423,6 +501,7 @@ void rasterize(
 // tex may be nullptr if no diffuse texture is active; when present its RGB is
 // multiplied into mat.diffuse before the lighting calculation.
 
+template <Sink S>
 void rasterize_phong(
     Framebuffer &fb,
     vec3 sa,
@@ -466,7 +545,11 @@ void rasterize_phong(
     vec3 emissive,
     bool apply_normal_scale,
     const Texture *octex,
-    float occlusion_strength
+    float occlusion_strength,
+    const ABuffer *abuf,
+    float caa,
+    float cab,
+    float cac
 )
 {
     const int width = fb.width();
@@ -500,6 +583,14 @@ void rasterize_phong(
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
+    // Transparent fill-rule flags (see rasterize() for the rationale); compile out for Opaque.
+    [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
+    [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
+    [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);
+    [[maybe_unused]] const bool tl_b = (bb_dy > 0.0f) || (bb_dy == 0.0f && bb_dx > 0.0f);
+    [[maybe_unused]] const bool tl_c = (bc_dy > 0.0f) || (bc_dy == 0.0f && bc_dx > 0.0f);
+    [[maybe_unused]] constexpr float ALPHA_EPS = 1.0f / 512.0f;
+
     for (int y = s.y0; y <= s.y1; y++)
     {
         float ba = ba_row;
@@ -507,18 +598,35 @@ void rasterize_phong(
         size_t idx = (static_cast<size_t>(y) * stride) + static_cast<size_t>(s.x0);
         for (int x = s.x0; x <= s.x1; ++x, ++idx)
         {
-            if (ba < 0.0f || bb < 0.0f)
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (ba < 0.0f || bb < 0.0f)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
             const float bc = 1.0f - ba - bb;
-            if (bc < 0.0f)
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (bc < 0.0f)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+            }
+            else
+            {
+                const bool covered = (ba > 0.0f || (ba == 0.0f && tl_a)) && (bb > 0.0f || (bb == 0.0f && tl_b)) &&
+                                     (bc > 0.0f || (bc == 0.0f && tl_c));
+                if (!covered)
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
 
             const float depth = (ba * sa.z) + (bb * sb.z) + (bc * sc.z);
@@ -548,11 +656,25 @@ void rasterize_phong(
                 cutout_rgb = { ta.x, ta.y, ta.z };
             }
 
-            if (!fb.depth_test_relaxed(idx, depth))
+            // Opaque: strict depth-CAS gate. Transparent: keep at/in front of opaque (<=),
+            // never writing depth (see rasterize()).
+            if constexpr (S == Sink::Opaque)
             {
-                ba += ba_dx;
-                bb += bb_dx;
-                continue;
+                if (!fb.depth_test_relaxed(idx, depth))
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
+            }
+            else
+            {
+                if (depth > fb.depth_at(idx))
+                {
+                    ba += ba_dx;
+                    bb += bb_dx;
+                    continue;
+                }
             }
 
             if (!has_cutout)
@@ -621,12 +743,29 @@ void rasterize_phong(
             vec3 use_specular = mat.specular;
             float use_shin = mat.shininess;
 
+            // Diffuse sample. Opaque keeps the original plain-vec3 path (structurally identical
+            // codegen — no vec4, no round-trip). Transparent additionally carries the texture
+            // alpha to the finalize push. NOLINT: tex_a is mutated only in the Transparent
+            // instantiation, so const-correctness flags it in the Opaque one where that branch is
+            // compiled out; [[maybe_unused]] covers the matching unused read there.
+            [[maybe_unused]] float tex_a = 1.0f; // NOLINT(misc-const-correctness)
             if (tex)
             {
-                // Reuse the rgba sample from the cutout pre-pass when active.
-                const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
-                use_diffuse = use_diffuse * tc;
-                use_ambient = use_ambient * tc;
+                if constexpr (S == Sink::Transparent)
+                {
+                    const vec4 t = tex->sample_rgba(uv.x, uv.y);
+                    const vec3 tc{ t.x, t.y, t.z };
+                    use_diffuse = use_diffuse * tc;
+                    use_ambient = use_ambient * tc;
+                    tex_a = t.w;
+                }
+                else
+                {
+                    // Reuse the rgba sample from the cutout pre-pass when active.
+                    const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
+                    use_diffuse = use_diffuse * tc;
+                    use_ambient = use_ambient * tc;
+                }
             }
             if (stex)
             {
@@ -702,7 +841,21 @@ void rasterize_phong(
                 color = color + e;
             }
 
-            fb.commit_pixel(idx, depth, vec3_to_color(color));
+            if constexpr (S == Sink::Transparent)
+            {
+                // Opacity = material base * texture * (perspective-correct) vertex alpha.
+                // Push the raw lit colour; the resolve clamps once after compositing.
+                const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
+                const float a = mat.alpha * tex_a * vca;
+                if (a >= ALPHA_EPS)
+                {
+                    abuf->push(idx, depth, color, a);
+                }
+            }
+            else
+            {
+                fb.commit_pixel(idx, depth, vec3_to_color(color));
+            }
 
             ba += ba_dx;
             bb += bb_dx;
@@ -712,3 +865,173 @@ void rasterize_phong(
         bb_row += bb_dy;
     }
 }
+
+// ─── Explicit template instantiation ──────────────────────────────────────────
+// The rasterizer definitions live in this TU; callers in renderer.cpp (and the
+// tests) need both Sink instantiations at link time. Emit them explicitly here.
+
+template void rasterize<Sink::Opaque>(
+    Framebuffer &,
+    vec3,
+    vec3,
+    vec3,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec2,
+    vec2,
+    vec2,
+    const Texture *,
+    float,
+    const ShadowMap *,
+    int,
+    int,
+    const Texture *,
+    vec3,
+    const ABuffer *,
+    float,
+    float,
+    float,
+    float
+);
+template void rasterize<Sink::Transparent>(
+    Framebuffer &,
+    vec3,
+    vec3,
+    vec3,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec2,
+    vec2,
+    vec2,
+    const Texture *,
+    float,
+    const ShadowMap *,
+    int,
+    int,
+    const Texture *,
+    vec3,
+    const ABuffer *,
+    float,
+    float,
+    float,
+    float
+);
+
+template void rasterize_phong<Sink::Opaque>(
+    Framebuffer &,
+    vec3,
+    vec3,
+    vec3,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec2,
+    vec2,
+    vec2,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    bool,
+    const vec3 &,
+    const Light *,
+    int,
+    const vec3 &,
+    const Material &,
+    const Texture *,
+    const Texture *,
+    const Texture *,
+    const ShadowMap *,
+    int,
+    int,
+    const Texture *,
+    const Texture *,
+    vec3,
+    bool,
+    const Texture *,
+    float,
+    const ABuffer *,
+    float,
+    float,
+    float
+);
+template void rasterize_phong<Sink::Transparent>(
+    Framebuffer &,
+    vec3,
+    vec3,
+    vec3,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec3,
+    vec2,
+    vec2,
+    vec2,
+    float,
+    float,
+    float,
+    vec3,
+    vec3,
+    vec3,
+    bool,
+    const vec3 &,
+    const Light *,
+    int,
+    const vec3 &,
+    const Material &,
+    const Texture *,
+    const Texture *,
+    const Texture *,
+    const ShadowMap *,
+    int,
+    int,
+    const Texture *,
+    const Texture *,
+    vec3,
+    bool,
+    const Texture *,
+    float,
+    const ABuffer *,
+    float,
+    float,
+    float
+);

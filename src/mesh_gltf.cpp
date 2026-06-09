@@ -387,6 +387,41 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         {
             mat.alpha_cutoff = m->alpha_cutoff;
         }
+        else if (m->alpha_mode == cgltf_alpha_mode_blend)
+        {
+            mat.blend = true;
+            mat.alpha = pbr.base_color_factor[3];
+        }
+        // KHR_materials_transmission: this CPU viewer has no refraction, so approximate a
+        // transmissive surface (glass) as alpha blending — fully transmissive reads as mostly
+        // see-through. The alpha is floored so the glass shape and its highlights stay visible
+        // instead of vanishing at transmissionFactor 1. Only applied when the base material did
+        // not already declare BLEND or MASK. KHR_materials_volume.attenuationColor (the tint
+        // transmitted light takes on) is folded in as a faint, uniform surface tint — thickness is
+        // not modelled, so the depth-dependent deepening in the reference render is not reproduced.
+        // The MASK guard (alpha_cutoff == 0) avoids a contradictory cutout+blend material: a MASK
+        // surface that also declares transmission keeps its authored binary cutout (opaque path).
+        if (!mat.blend && mat.alpha_cutoff == 0.0f && m->has_transmission && m->transmission.transmission_factor > 0.0f)
+        {
+            constexpr float GLASS_ALPHA_FLOOR = 0.18f;
+            mat.blend = true;
+            mat.alpha = std::clamp(1.0f - m->transmission.transmission_factor, GLASS_ALPHA_FLOOR, 1.0f);
+            // Force double-sided: a transmissive surface is physically a volume (light passes
+            // through both the near and far interface), but glass is commonly authored
+            // single-sided because a real transmission renderer traces through the volume. In our
+            // alpha-blend approximation, culling the back faces would drop the far shell of a
+            // closed glass mesh and make it look thin — so both shells must enter the A-buffer and
+            // composite back-to-front. Scoped to the transmission approximation; genuine
+            // alphaMode=BLEND still honours the authored doubleSided flag.
+            mat.double_sided = true;
+            if (m->has_volume)
+            {
+                const vec3 tint{ m->volume.attenuation_color[0], m->volume.attenuation_color[1],
+                                 m->volume.attenuation_color[2] };
+                mat.diffuse = mat.diffuse * tint;
+                mat.ambient = mat.ambient * tint;
+            }
+        }
         return mat;
     };
 
@@ -550,10 +585,21 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     const bool has_dn = !dm.normals.empty();
                     const bool has_du = !dm.uvs.empty();
                     const bool has_dc = !dm.colors.empty();
+                    // dm.colors_alpha is non-empty only when COLOR_0 was 4-component. Honour that
+                    // opacity only under alphaMode=BLEND — the same vec4-under-BLEND gate the accessor
+                    // path uses (see the COLOR_0 block below), so Draco and uncompressed primitives
+                    // behave identically. Without BLEND, vertex_alpha stays empty (zero-cost, and no
+                    // mis-classification in the per-triangle blend partition).
+                    const bool color_has_alpha = !dm.colors_alpha.empty() && prim.material &&
+                                                 prim.material->alpha_mode == cgltf_alpha_mode_blend;
                     vertices.reserve(vertices.size() + n_verts);
                     if (has_dc)
                     {
                         vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
+                    }
+                    if (color_has_alpha)
+                    {
+                        vertex_alpha.resize(vert_base + n_verts, 1.0f);
                     }
                     for (size_t i = 0; i < n_verts; i++)
                     {
@@ -574,6 +620,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                             vertex_colors[vert_base + i] = { dm.colors[(i * 3) + 0], dm.colors[(i * 3) + 1],
                                                              dm.colors[(i * 3) + 2] };
                         }
+                        if (color_has_alpha)
+                        {
+                            vertex_alpha[vert_base + i] = dm.colors_alpha[i];
+                        }
                     }
                     if (has_dn)
                     {
@@ -582,6 +632,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     if (has_dc)
                     {
                         has_vertex_colors = true;
+                    }
+                    if (color_has_alpha)
+                    {
+                        has_vertex_alpha = true;
                     }
 
                     // Connectivity comes from the Draco bitstream itself
@@ -676,13 +730,33 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 if (color_acc)
                 {
                     vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
+                    // COLOR_0 may be vec3 or vec4; only vec4 carries opacity, and per the glTF spec
+                    // that opacity is honoured only under alphaMode=BLEND (OPAQUE/MASK ignore the
+                    // base-colour alpha entirely). Populating vertex_alpha only for vec4-under-BLEND
+                    // keeps the array empty (zero-cost) on the common no-alpha case AND prevents the
+                    // per-triangle blend partition from mis-classifying an OPAQUE primitive that
+                    // happens to author a sub-1 COLOR_0 alpha.
+                    const bool color_has_alpha = (color_acc->type == cgltf_type_vec4) && prim.material &&
+                                                 prim.material->alpha_mode == cgltf_alpha_mode_blend;
+                    if (color_has_alpha)
+                    {
+                        vertex_alpha.resize(vert_base + n_verts, 1.0f);
+                    }
                     for (size_t i = 0; i < n_verts; i++)
                     {
                         float c[4];
                         cgltf_accessor_read_float(color_acc, i, c, 4);
                         vertex_colors[vert_base + i] = { c[0], c[1], c[2] };
+                        if (color_has_alpha)
+                        {
+                            vertex_alpha[vert_base + i] = c[3];
+                        }
                     }
                     has_vertex_colors = true;
+                    if (color_has_alpha)
+                    {
+                        has_vertex_alpha = true;
+                    }
                 }
 
                 // Push triangles.
@@ -756,6 +830,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     if (has_vertex_colors && vertex_colors.size() < vertices.size())
     {
         vertex_colors.resize(vertices.size(), vec3{ 1.0f, 1.0f, 1.0f });
+    }
+    if (has_vertex_alpha && vertex_alpha.size() < vertices.size())
+    {
+        vertex_alpha.resize(vertices.size(), 1.0f);
     }
 
     if (!has_normals)

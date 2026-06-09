@@ -16,11 +16,16 @@ struct DracoMesh
     std::vector<float> normals;   // 3 * num_points, or empty
     std::vector<float> uvs;       // 2 * num_points, or empty
     // RGB only: matches Mesh::vertex_colors (std::vector<vec3>). When a Draco asset
-    // authors RGBA COLOR_0, ConvertValue still writes all four floats into a local
-    // scratch buffer, but only the first three are copied here — alpha is dropped
-    // intentionally, matching the accessor-path behaviour.
-    std::vector<float> colors;     // 3 * num_points (RGB), or empty
-    std::vector<uint32_t> indices; // 3 * num_faces
+    // authors RGBA COLOR_0, the 4th component is surfaced separately in colors_alpha
+    // (below) rather than dropped — colors itself stays RGB to keep the common path
+    // off the per-vertex-opacity machinery.
+    std::vector<float> colors; // 3 * num_points (RGB), or empty
+    // Per-vertex opacity, kept parallel rather than widening colors to RGBA (mirrors
+    // Mesh::vertex_alpha's separate-float-array design). Populated only when COLOR_0
+    // is 4-component; empty for RGB COLOR_0 or no COLOR_0. The glTF loader applies the
+    // vec4-under-alphaMode=BLEND gate before routing this into Mesh::vertex_alpha.
+    std::vector<float> colors_alpha; // num_points (alpha), or empty
+    std::vector<uint32_t> indices;   // 3 * num_faces
     size_t num_points = 0;
 };
 

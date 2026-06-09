@@ -12,4 +12,5 @@ unusedFunction:src/linalg.h
 useStlAlgorithm:src/mesh.cpp
 useStlAlgorithm:src/mesh_obj.cpp
 useStlAlgorithm:src/mesh_ply.cpp
+useStlAlgorithm:src/renderer.cpp
 useStlAlgorithm:src/shadow.cpp

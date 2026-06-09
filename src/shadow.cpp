@@ -128,7 +128,12 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
     shadow_map.light_vp = light_proj * light_view;
 
     const int S = ShadowMap::SIZE;
-    const int nt = static_cast<int>(mesh.triangles.size());
+    // Only opaque triangles cast shadows. They are partitioned to the front
+    // ([0, opaque_count)); transparent surfaces cast none (standard for a viewer —
+    // a blend material occluding light as a solid black shadow looks wrong). The
+    // bounding sphere above intentionally still spans all vertices (a slightly larger
+    // frustum is harmless).
+    const int nt = static_cast<int>(mesh.has_transparent ? mesh.opaque_count : mesh.triangles.size());
     const int eff_threads = (n_threads <= 1 || nt < 256) ? 1 : std::min(n_threads, nt);
 
     // Depth-only rasterization into the shadow map.

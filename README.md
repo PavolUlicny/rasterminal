@@ -6,7 +6,7 @@ A 3D model viewer and software rasterizer that runs entirely in your terminal. N
 
 ![rasterminal spinning a model](assets/demo.gif)
 
-Point rasterminal at an OBJ, PLY, STL, or glTF file and it draws the model straight into your terminal — orbit with the mouse, zoom, switch shading modes, and toggle textures and lighting, all in real time. Behind the viewer is a complete software renderer: it reimplements the full GPU rasterization pipeline on the CPU — model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and hard shadow maps — and paints the result with Unicode half-block characters (`▀`) and 24-bit ANSI colour. Each terminal cell carries two vertical pixels (one as the glyph's foreground, one as its background), so a plain text grid becomes a framebuffer.
+Point rasterminal at an OBJ, PLY, STL, or glTF file and it draws the model straight into your terminal — orbit with the mouse, zoom, switch shading modes, and toggle textures and lighting, all in real time. Behind the viewer is a complete software renderer: it reimplements the full GPU rasterization pipeline on the CPU — model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, hard shadow maps, and order-independent alpha-blended transparency — and paints the result with Unicode half-block characters (`▀`) and 24-bit ANSI colour. Each terminal cell carries two vertical pixels (one as the glyph's foreground, one as its background), so a plain text grid becomes a framebuffer.
 
 ## Contents
 
@@ -70,9 +70,10 @@ Every frame, for every triangle, rasterminal runs the same pipeline a GPU would 
 4. **Rasterize** — after the perspective divide, triangles are scan-converted with perspective-correct interpolation of colour, UVs, world position, and normals.
 5. **Depth test** — a z-buffer keeps the nearest fragment per pixel.
 6. **Shade** — Blinn-Phong lighting (flat per-face, Gouraud per-vertex, or Phong per-pixel), modulated by texture sampling, baked ambient occlusion, and a hard shadow map built from the key light.
-7. **Resolve** — each pair of vertically stacked pixels becomes one terminal cell: a `▀` glyph whose foreground is the top pixel and background is the bottom, in 24-bit colour.
+7. **Blend** — transparent surfaces (glTF `BLEND`, MTL `d`/`Tr`, per-vertex alpha) are accumulated into a per-pixel fragment list, then composited back-to-front over the opaque image — exact ordering, even for interpenetrating and double-sided geometry. Fully opaque models skip this entirely.
+8. **Output** — each pair of vertically stacked pixels becomes one terminal cell: a `▀` glyph whose foreground is the top pixel and background is the bottom, in 24-bit colour.
 
-The work is spread across threads with a single-pass work-stealing loop: each worker claims a chunk of triangles and rasterizes it end-to-end, committing fragments through a per-pixel 64-bit atomic that packs depth and colour together — no separate depth pass, no band buffers, no inter-phase barrier.
+The work is spread across threads with a work-stealing loop: each worker claims a chunk of triangles and rasterizes it end-to-end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and colour together — no separate depth pass, no band buffers. Transparency adds two more work-stealing phases (accumulate, then resolve) only when a model actually has blended materials.
 
 ## Build
 

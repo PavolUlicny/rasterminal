@@ -50,6 +50,15 @@ namespace
         return f;
     }
 
+    // rd_col decodes only these three layouts (UINT8 normalized, FLOAT32, FLOAT64).
+    // Any other declared type would hit rd_col's 4-byte fall-through read, which both
+    // misinterprets the bytes and runs past a 1- or 2-byte-per-element buffer. Loaders
+    // validate against this before using rd_col, then fail loud.
+    bool rd_col_supported(tinyply::Type t)
+    {
+        return t == tinyply::Type::UINT8 || t == tinyply::Type::FLOAT32 || t == tinyply::Type::FLOAT64;
+    }
+
     uint32_t rd_idx(const uint8_t *buf, tinyply::Type t, size_t i)
     {
         switch (t)
@@ -177,6 +186,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     std::shared_ptr<tinyply::PlyData> normals;
     std::shared_ptr<tinyply::PlyData> uvs;
     std::shared_ptr<tinyply::PlyData> vcolors;
+    std::shared_ptr<tinyply::PlyData> valpha;
     std::shared_ptr<tinyply::PlyData> faces;
     std::shared_ptr<tinyply::PlyData> fcolors;
 
@@ -248,6 +258,34 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
+    // Optional per-vertex opacity (separate property so a file without it still loads).
+    // Consumed by both the shared-vertex and welded (split-by-UV) paths below; a sub-1
+    // value marks the mesh blended (PLY has no material system, so opacity rides on the
+    // default mat). Gated on vcolors by design: PLY's `alpha` is conventionally the 4th
+    // channel of RGB vertex color, not a standalone opacity property, so a file with alpha
+    // but no RGB is not treated as translucent (CloudCompare likewise reads alpha only
+    // alongside RGB).
+    if (vcolors)
+    {
+        try
+        {
+            valpha = file.request_properties_from_element("vertex", { "alpha" });
+        }
+        catch (...) // NOLINT(bugprone-empty-catch)
+        {
+        }
+        if (!valpha)
+        {
+            try
+            {
+                valpha = file.request_properties_from_element("vertex", { "a" });
+            }
+            catch (...) // NOLINT(bugprone-empty-catch)
+            {
+            }
+        }
+    }
+
     // Face indices (try both common property names).
     try
     {
@@ -316,6 +354,16 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         file.read(ss);
     }
     catch (...)
+    {
+        return false;
+    }
+
+    // Every color/alpha property below is decoded with rd_col, which only handles
+    // UINT8/FLOAT32/FLOAT64. A different declared type would make rd_col read past
+    // the buffer (its 4-byte stride exceeds a 1- or 2-byte element) — the file-size
+    // guard above checks counts, not rd_col's stride assumption. Reject up front.
+    if ((vcolors && !rd_col_supported(vcolors->t)) || (valpha && !rd_col_supported(valpha->t)) ||
+        (fcolors && !rd_col_supported(fcolors->t)))
     {
         return false;
     }
@@ -395,6 +443,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         const uint8_t *pb = positions->buffer.get();
         const uint8_t *nb = normals ? normals->buffer.get() : nullptr;
         const uint8_t *cb = vcolors ? vcolors->buffer.get() : nullptr;
+        const uint8_t *ab = valpha ? valpha->buffer.get() : nullptr;
         const uint8_t *tcb = tc->buffer.get();
         const tinyply::Type tct = tc->t;
         const uint8_t *fb = faces->buffer.get();
@@ -422,6 +471,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         if (vcolors)
         {
             vertex_colors.reserve(n_verts);
+        }
+        if (ab)
+        {
+            vertex_alpha.reserve(n_verts);
         }
 
         auto get_vertex = [&](uint32_t pos_idx, size_t corner_float_off) -> uint32_t
@@ -452,6 +505,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
                 vertex_colors.emplace_back(
                     rd_col(cb, vcolors->t, p3), rd_col(cb, vcolors->t, p3 + 1), rd_col(cb, vcolors->t, p3 + 2)
                 );
+            }
+            if (ab)
+            {
+                vertex_alpha.push_back(rd_col(ab, valpha->t, pos_idx));
             }
             if (need_weld)
             {
@@ -488,6 +545,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         if (vcolors)
         {
             has_vertex_colors = true;
+        }
+        if (ab)
+        {
+            // PLY has no per-material opacity mode, so per-vertex alpha is the opacity signal.
+            // load_model's per-triangle partition routes only the genuinely-translucent triangles
+            // to the transparent pass (so an opaque region keeps the fast path and casts shadows).
+            has_vertex_alpha = true;
         }
         use_weld = need_weld;
     }
@@ -527,6 +591,19 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
                                      rd_col(cb, vcolors->t, (i * 3) + 2) };
             }
             has_vertex_colors = true;
+
+            if (valpha)
+            {
+                // Per-vertex alpha is PLY's only opacity signal; load_model's per-triangle
+                // partition routes just the translucent triangles to the transparent pass.
+                const uint8_t *ab = valpha->buffer.get();
+                vertex_alpha.resize(n_verts);
+                for (size_t i = 0; i < n_verts; i++)
+                {
+                    vertex_alpha[i] = rd_col(ab, valpha->t, i);
+                }
+                has_vertex_alpha = true;
+            }
         }
 
         const uint8_t *fb = faces->buffer.get();
