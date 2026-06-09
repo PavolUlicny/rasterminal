@@ -101,395 +101,393 @@ Renderer::~Renderer()
 
 template <Sink S> void Renderer::raster_triangles(int worker_id)
 {
+    const Mesh *mesh = m_mesh;
+    const mat4 &vp = m_vp;
+    const vec3 &eye = m_eye;
+    const Light *lights = m_lights;
+    const int n_lights = m_n_lights;
+    const vec3 &ambient = m_ambient;
+    const ShadowMap *shadow_map = m_shadow_map;
+    const float near_plane = m_near_plane;
+    const int width = m_width;
+    const int height = m_height;
+    const ShadingMode smode = m_smode;
+    const bool do_cull = m_cull_backfaces;
+    const bool show_tex = m_show_texture;
+    // Texture toggle gates only the emissive texture sample. The authored factor
+    // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
+    // even when diffuse_tex is hidden by the toggle.
+    const bool show_emissive = mesh->has_emissive && show_tex;
+    const bool show_metallic = mesh->has_metallic && show_tex;
+    const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
+    const bool show_occlusion = mesh->has_occlusion && show_tex;
+    const bool mesh_has_unlit = mesh->has_unlit;
+    Framebuffer *fb = m_fb;
+    const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
+    const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
+
+    // Opaque steals [0, opaque_count); transparent steals the blend tail
+    // [opaque_count, total). render() seeds m_tri_cursor to the matching start.
+    const int total = static_cast<int>(S == Sink::Opaque ? m_opaque_count : mesh->triangles.size());
+    const int work = (S == Sink::Opaque) ? total : (total - static_cast<int>(m_opaque_count));
+    const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
+    const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
+    [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
+
+    // Transparent: this worker's private fragment arena + the shared per-pixel head
+    // array. clear() keeps capacity, acting as the per-frame high-water reserve so
+    // steady-state pushes never reallocate. The handle is built once (const); for
+    // Opaque it stays default (null) and unused.
+    if constexpr (S == Sink::Transparent)
     {
-        const Mesh *mesh = m_mesh;
-        const mat4 &vp = m_vp;
-        const vec3 &eye = m_eye;
-        const Light *lights = m_lights;
-        const int n_lights = m_n_lights;
-        const vec3 &ambient = m_ambient;
-        const ShadowMap *shadow_map = m_shadow_map;
-        const float near_plane = m_near_plane;
-        const int width = m_width;
-        const int height = m_height;
-        const ShadingMode smode = m_smode;
-        const bool do_cull = m_cull_backfaces;
-        const bool show_tex = m_show_texture;
-        // Texture toggle gates only the emissive texture sample. The authored factor
-        // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
-        // even when diffuse_tex is hidden by the toggle.
-        const bool show_emissive = mesh->has_emissive && show_tex;
-        const bool show_metallic = mesh->has_metallic && show_tex;
-        const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
-        const bool show_occlusion = mesh->has_occlusion && show_tex;
-        const bool mesh_has_unlit = mesh->has_unlit;
-        Framebuffer *fb = m_fb;
-        const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
-        const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
-
-        // Opaque steals [0, opaque_count); transparent steals the blend tail
-        // [opaque_count, total). render() seeds m_tri_cursor to the matching start.
-        const int total = static_cast<int>(S == Sink::Opaque ? m_opaque_count : mesh->triangles.size());
-        const int work = (S == Sink::Opaque) ? total : (total - static_cast<int>(m_opaque_count));
-        const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
-        const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
-        [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
-
-        // Transparent: this worker's private fragment arena + the shared per-pixel head
-        // array. clear() keeps capacity, acting as the per-frame high-water reserve so
-        // steady-state pushes never reallocate. The handle is built once (const); for
-        // Opaque it stays default (null) and unused.
+        m_arenas[static_cast<size_t>(worker_id)].clear();
+    }
+    const ABuffer abuf = [&]
+    {
+        ABuffer a;
         if constexpr (S == Sink::Transparent)
         {
-            m_arenas[static_cast<size_t>(worker_id)].clear();
+            a.head = m_frag_head.data();
+            a.nodes = &m_arenas[static_cast<size_t>(worker_id)];
+            a.worker_id = static_cast<uint32_t>(worker_id);
         }
-        const ABuffer abuf = [&]
+        return a;
+    }();
+
+    const int chunk = choose_phase1_chunk(work, m_n_workers);
+    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+                            // clip_near overwrites before read
+
+    // The per-fragment arena push can throw bad_alloc under extreme overdraw +
+    // memory pressure. Catch at the loop boundary: flag truncation and stop pushing.
+    // The worker still returns and signals completion; resolve still runs and
+    // self-cleans the heads, so the next frame is uncorrupted (best-effort, never a
+    // crash). Opaque never allocates here, so it runs the loop directly.
+    const auto steal_loop = [&]()
+    {
+        while (true)
         {
-            ABuffer a;
-            if constexpr (S == Sink::Transparent)
+            const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
+            if (start >= total)
             {
-                a.head = m_frag_head.data();
-                a.nodes = &m_arenas[static_cast<size_t>(worker_id)];
-                a.worker_id = static_cast<uint32_t>(worker_id);
+                break;
             }
-            return a;
-        }();
-
-        const int chunk = choose_phase1_chunk(work, m_n_workers);
-        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
-                                // clip_near overwrites before read
-
-        // The per-fragment arena push can throw bad_alloc under extreme overdraw +
-        // memory pressure. Catch at the loop boundary: flag truncation and stop pushing.
-        // The worker still returns and signals completion; resolve still runs and
-        // self-cleans the heads, so the next frame is uncorrupted (best-effort, never a
-        // crash). Opaque never allocates here, so it runs the loop directly.
-        const auto steal_loop = [&]()
-        {
-            while (true)
+            const int end = std::min(start + chunk, total);
+            for (int i = start; i < end; i++)
             {
-                const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
-                if (start >= total)
+                const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
+                const Vertex &va = mesh->vertices[tri.v[0]];
+                const Vertex &vb = mesh->vertices[tri.v[1]];
+                const Vertex &vc = mesh->vertices[tri.v[2]];
+
+                // Pre-projection backface cull: test the world-space face plane
+                // against the eye before any matrix transforms. Rejects ~half the
+                // triangles of a closed mesh before clip-space work. Winding
+                // assumption matches the old screen-space cull (CCW front).
+                bool flip_normals = false;
+                if (do_cull)
                 {
-                    break;
-                }
-                const int end = std::min(start + chunk, total);
-                for (int i = start; i < end; i++)
-                {
-                    const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
-                    const Vertex &va = mesh->vertices[tri.v[0]];
-                    const Vertex &vb = mesh->vertices[tri.v[1]];
-                    const Vertex &vc = mesh->vertices[tri.v[2]];
-
-                    // Pre-projection backface cull: test the world-space face plane
-                    // against the eye before any matrix transforms. Rejects ~half the
-                    // triangles of a closed mesh before clip-space work. Winding
-                    // assumption matches the old screen-space cull (CCW front).
-                    bool flip_normals = false;
-                    if (do_cull)
+                    const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
+                    if (dot(face_normal, eye - va.pos) <= 0.0f)
                     {
-                        const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
-                        if (dot(face_normal, eye - va.pos) <= 0.0f)
-                        {
-                            if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
-                            {
-                                continue;
-                            }
-                            flip_normals = true;
-                        }
-                    }
-
-                    const Material &mat = mesh->mat_at(tri.material_idx);
-                    const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_tex) : nullptr;
-
-                    const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{ 0.0f, 0.0f, 0.0f };
-                    const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{ 0.0f, 0.0f, 0.0f };
-                    const vec3 tc = p_tans ? p_tans[tri.v[2]] : vec3{ 0.0f, 0.0f, 0.0f };
-                    const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{ 1.0f, 1.0f, 1.0f };
-                    const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{ 1.0f, 1.0f, 1.0f };
-                    const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{ 1.0f, 1.0f, 1.0f };
-                    ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca };
-                    ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb };
-                    ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc };
-                    if constexpr (S == Sink::Transparent)
-                    {
-                        if (p_valpha)
-                        {
-                            cva.color_a = p_valpha[tri.v[0]];
-                            cvb.color_a = p_valpha[tri.v[1]];
-                            cvc.color_a = p_valpha[tri.v[2]];
-                        }
-                    }
-                    if (flip_normals)
-                    {
-                        cva.normal = cva.normal * -1.0f;
-                        cvb.normal = cvb.normal * -1.0f;
-                        cvc.normal = cvc.normal * -1.0f;
-                    }
-
-                    // Fast path: when all three vertices are in front of the near plane
-                    // (the overwhelmingly common case) clip_near would only copy them into
-                    // clipped[] verbatim and the loop would read them back. Skip the call and
-                    // the ~228 B round trip by pointing straight at cva/cvb/cvc; clip_near
-                    // runs only for the rare straddle cases (a vertex behind the near plane).
-                    const ClipVert *tris[2][3];
-                    int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
-                    if (cva.c.w > near_plane && cvb.c.w > near_plane && cvc.c.w > near_plane)
-                    {
-                        n_tris = 1;
-                        tris[0][0] = &cva;
-                        tris[0][1] = &cvb;
-                        tris[0][2] = &cvc;
-                    }
-                    else
-                    {
-                        n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
-                        for (int ti = 0; ti < n_tris; ti++)
-                        {
-                            tris[ti][0] = &clipped[ti][0];
-                            tris[ti][1] = &clipped[ti][1];
-                            tris[ti][2] = &clipped[ti][2];
-                        }
-                    }
-
-                    for (int ti = 0; ti < n_tris; ti++)
-                    {
-                        const ClipVert &a = *tris[ti][0];
-                        const ClipVert &b = *tris[ti][1];
-                        const ClipVert &c = *tris[ti][2];
-
-                        if (clip_reject(a.c, b.c, c.c))
+                        if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
                         {
                             continue;
                         }
+                        flip_normals = true;
+                    }
+                }
 
-                        const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
-                        const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
-                        const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
+                const Material &mat = mesh->mat_at(tri.material_idx);
+                const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_tex) : nullptr;
 
-                        if (mesh_has_unlit && mat.unlit)
+                const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{ 0.0f, 0.0f, 0.0f };
+                const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{ 0.0f, 0.0f, 0.0f };
+                const vec3 tc = p_tans ? p_tans[tri.v[2]] : vec3{ 0.0f, 0.0f, 0.0f };
+                const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{ 1.0f, 1.0f, 1.0f };
+                const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{ 1.0f, 1.0f, 1.0f };
+                const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{ 1.0f, 1.0f, 1.0f };
+                ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca };
+                ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb };
+                ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc };
+                if constexpr (S == Sink::Transparent)
+                {
+                    if (p_valpha)
+                    {
+                        cva.color_a = p_valpha[tri.v[0]];
+                        cvb.color_a = p_valpha[tri.v[1]];
+                        cvc.color_a = p_valpha[tri.v[2]];
+                    }
+                }
+                if (flip_normals)
+                {
+                    cva.normal = cva.normal * -1.0f;
+                    cvb.normal = cvb.normal * -1.0f;
+                    cvc.normal = cvc.normal * -1.0f;
+                }
+
+                // Fast path: when all three vertices are in front of the near plane
+                // (the overwhelmingly common case) clip_near would only copy them into
+                // clipped[] verbatim and the loop would read them back. Skip the call and
+                // the ~228 B round trip by pointing straight at cva/cvb/cvc; clip_near
+                // runs only for the rare straddle cases (a vertex behind the near plane).
+                const ClipVert *tris[2][3];
+                int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
+                if (cva.c.w > near_plane && cvb.c.w > near_plane && cvc.c.w > near_plane)
+                {
+                    n_tris = 1;
+                    tris[0][0] = &cva;
+                    tris[0][1] = &cvb;
+                    tris[0][2] = &cvc;
+                }
+                else
+                {
+                    n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
+                    for (int ti = 0; ti < n_tris; ti++)
+                    {
+                        tris[ti][0] = &clipped[ti][0];
+                        tris[ti][1] = &clipped[ti][1];
+                        tris[ti][2] = &clipped[ti][2];
+                    }
+                }
+
+                for (int ti = 0; ti < n_tris; ti++)
+                {
+                    const ClipVert &a = *tris[ti][0];
+                    const ClipVert &b = *tris[ti][1];
+                    const ClipVert &c = *tris[ti][2];
+
+                    if (clip_reject(a.c, b.c, c.c))
+                    {
+                        continue;
+                    }
+
+                    const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                    const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                    const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
+
+                    if (mesh_has_unlit && mat.unlit)
+                    {
+                        // KHR_materials_unlit: output baseColor * vertexColor * diffuse
+                        // texture directly, bypassing lighting/shadow/ambient/emissive/
+                        // normal/occlusion regardless of the active shading mode. Reuses the
+                        // flat/gouraud rasterizer with the raw base colour as the per-vertex
+                        // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
+                        // when the mesh has no vertex colours (set at ClipVert construction),
+                        // so this reduces to mat.diffuse there. Shadow colours are passed as
+                        // the same value to stay initialised; the null shadow map skips them.
+                        const vec3 ua = mat.diffuse * a.color;
+                        const vec3 ub = mat.diffuse * b.color;
+                        const vec3 uc = mat.diffuse * c.color;
+                        if constexpr (S == Sink::Opaque)
                         {
-                            // KHR_materials_unlit: output baseColor * vertexColor * diffuse
-                            // texture directly, bypassing lighting/shadow/ambient/emissive/
-                            // normal/occlusion regardless of the active shading mode. Reuses the
-                            // flat/gouraud rasterizer with the raw base colour as the per-vertex
-                            // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
-                            // when the mesh has no vertex colours (set at ClipVert construction),
-                            // so this reduces to mat.diffuse there. Shadow colours are passed as
-                            // the same value to stay initialised; the null shadow map skips them.
-                            const vec3 ua = mat.diffuse * a.color;
-                            const vec3 ub = mat.diffuse * b.color;
-                            const vec3 uc = mat.diffuse * c.color;
-                            if constexpr (S == Sink::Opaque)
-                            {
-                                rasterize<Sink::Opaque>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos,
-                                    a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1,
-                                    nullptr, vec3{ 0.0f, 0.0f, 0.0f }
-                                );
-                            }
-                            else
-                            {
-                                rasterize<Sink::Transparent>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos,
-                                    a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1,
-                                    nullptr, vec3{ 0.0f, 0.0f, 0.0f }, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
-                                );
-                            }
-                        }
-                        else if (smode == ShadingMode::Phong)
-                        {
-                            // a.color/b.color/c.color already encode the has_vertex_colors
-                            // condition: they are {1,1,1} when p_vcols == nullptr (set at
-                            // ClipVert construction), so no ternary is needed here.
-                            if constexpr (S == Sink::Opaque)
-                            {
-                                rasterize_phong<Sink::Opaque>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal,
-                                    c.normal, a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao,
-                                    a.color, b.color, c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient,
-                                    mat, tex, show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                    show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                    show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                    show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
-                                    apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
-                                    mat.occlusion_strength
-                                );
-                            }
-                            else
-                            {
-                                rasterize_phong<Sink::Transparent>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal,
-                                    c.normal, a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao,
-                                    a.color, b.color, c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient,
-                                    mat, tex, show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                    show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                    show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                    show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
-                                    apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
-                                    mat.occlusion_strength, &abuf, a.color_a, b.color_a, c.color_a
-                                );
-                            }
+                            rasterize<Sink::Opaque>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
+                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
+                                vec3{ 0.0f, 0.0f, 0.0f }
+                            );
                         }
                         else
                         {
-                            vec3 col_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
-                                        // overwritten in Flat/Gouraud branches below
-                            vec3 col_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 col_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
-                                         // when shadow_map != nullptr; written before that read
-                            vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                            vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                            rasterize<Sink::Transparent>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
+                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
+                                vec3{ 0.0f, 0.0f, 0.0f }, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                            );
+                        }
+                    }
+                    else if (smode == ShadingMode::Phong)
+                    {
+                        // a.color/b.color/c.color already encode the has_vertex_colors
+                        // condition: they are {1,1,1} when p_vcols == nullptr (set at
+                        // ClipVert construction), so no ternary is needed here.
+                        if constexpr (S == Sink::Opaque)
+                        {
+                            rasterize_phong<Sink::Opaque>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
+                                a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
+                                c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
+                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
+                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
+                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
+                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
+                                mat.occlusion_strength
+                            );
+                        }
+                        else
+                        {
+                            rasterize_phong<Sink::Transparent>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
+                                a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
+                                c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
+                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
+                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
+                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
+                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
+                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
+                                mat.occlusion_strength, &abuf, a.color_a, b.color_a, c.color_a
+                            );
+                        }
+                    }
+                    else
+                    {
+                        vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
+                                     // overwritten in Flat/Gouraud branches below
+                        vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                        vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                        vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
+                                     // when shadow_map != nullptr; written before that read
+                        vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                        vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
-                            if (smode == ShadingMode::Flat)
+                        if (smode == ShadingMode::Flat)
+                        {
+                            vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                            if (flip_normals)
                             {
-                                vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
-                                if (flip_normals)
+                                face_n = face_n * -1.0f;
+                            }
+                            const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
+                            const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                            const Material *flat_mat = &mat;
+                            Material vcol_mat;
+                            if (mesh->has_vertex_colors)
+                            {
+                                const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                                if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
                                 {
-                                    face_n = face_n * -1.0f;
+                                    vcol_mat = mat;
+                                    vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
+                                    vcol_mat.ambient = vcol_mat.ambient * face_vcol;
+                                    flat_mat = &vcol_mat;
                                 }
-                                const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                                const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
-                                const Material *flat_mat = &mat;
-                                Material vcol_mat;
-                                if (mesh->has_vertex_colors)
+                            }
+                            col_a = col_b = col_c = compute_lighting(
+                                assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
+                            );
+                            if (shadow_map)
+                            {
+                                shad_a = shad_b = shad_c = compute_lighting(
+                                    assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat,
+                                    face_ao
+                                );
+                            }
+                        }
+                        else // Gouraud
+                        {
+                            if (p_vcols)
+                            {
+                                Material gvcol_mat;
+                                auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
                                 {
-                                    const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
-                                    if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
+                                    if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
                                     {
-                                        vcol_mat = mat;
-                                        vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
-                                        vcol_mat.ambient = vcol_mat.ambient * face_vcol;
-                                        flat_mat = &vcol_mat;
+                                        return mat;
                                     }
-                                }
-                                col_a = col_b = col_c = compute_lighting(
-                                    assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
+                                    gvcol_mat = mat;
+                                    gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
+                                    gvcol_mat.ambient = gvcol_mat.ambient * vcol;
+                                    return gvcol_mat;
+                                };
+                                col_a = compute_lighting(
+                                    assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color),
+                                    a.ao
+                                );
+                                col_b = compute_lighting(
+                                    assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color),
+                                    b.ao
+                                );
+                                col_c = compute_lighting(
+                                    assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color),
+                                    c.ao
                                 );
                                 if (shadow_map)
                                 {
-                                    shad_a = shad_b = shad_c = compute_lighting(
-                                        assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient,
-                                        *flat_mat, face_ao
-                                    );
-                                }
-                            }
-                            else // Gouraud
-                            {
-                                if (p_vcols)
-                                {
-                                    Material gvcol_mat;
-                                    auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
-                                    {
-                                        if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
-                                        {
-                                            return mat;
-                                        }
-                                        gvcol_mat = mat;
-                                        gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
-                                        gvcol_mat.ambient = gvcol_mat.ambient * vcol;
-                                        return gvcol_mat;
-                                    };
-                                    col_a = compute_lighting(
-                                        assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient,
+                                    shad_a = compute_lighting(
+                                        assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
                                         gouraud_mat(a.color), a.ao
                                     );
-                                    col_b = compute_lighting(
-                                        assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient,
+                                    shad_b = compute_lighting(
+                                        assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
                                         gouraud_mat(b.color), b.ao
                                     );
-                                    col_c = compute_lighting(
-                                        assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient,
+                                    shad_c = compute_lighting(
+                                        assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
                                         gouraud_mat(c.color), c.ao
                                     );
-                                    if (shadow_map)
-                                    {
-                                        shad_a = compute_lighting(
-                                            assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            gouraud_mat(a.color), a.ao
-                                        );
-                                        shad_b = compute_lighting(
-                                            assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            gouraud_mat(b.color), b.ao
-                                        );
-                                        shad_c = compute_lighting(
-                                            assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            gouraud_mat(c.color), c.ao
-                                        );
-                                    }
                                 }
-                                else
-                                {
-                                    col_a = compute_lighting(
-                                        assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao
-                                    );
-                                    col_b = compute_lighting(
-                                        assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao
-                                    );
-                                    col_c = compute_lighting(
-                                        assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao
-                                    );
-                                    if (shadow_map)
-                                    {
-                                        shad_a = compute_lighting(
-                                            assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            mat, a.ao
-                                        );
-                                        shad_b = compute_lighting(
-                                            assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            mat, b.ao
-                                        );
-                                        shad_c = compute_lighting(
-                                            assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                            mat, c.ao
-                                        );
-                                    }
-                                }
-                            }
-
-                            if constexpr (S == Sink::Opaque)
-                            {
-                                rasterize<Sink::Opaque>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
-                                    a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                    shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                    mat.emissive
-                                );
                             }
                             else
                             {
-                                rasterize<Sink::Transparent>(
-                                    *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
-                                    a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                    shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                    mat.emissive, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                                col_a = compute_lighting(
+                                    assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao
                                 );
+                                col_b = compute_lighting(
+                                    assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao
+                                );
+                                col_c = compute_lighting(
+                                    assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao
+                                );
+                                if (shadow_map)
+                                {
+                                    shad_a = compute_lighting(
+                                        assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
+                                        a.ao
+                                    );
+                                    shad_b = compute_lighting(
+                                        assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
+                                        b.ao
+                                    );
+                                    shad_c = compute_lighting(
+                                        assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
+                                        c.ao
+                                    );
+                                }
                             }
+                        }
+
+                        if constexpr (S == Sink::Opaque)
+                        {
+                            rasterize<Sink::Opaque>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                mat.emissive
+                            );
+                        }
+                        else
+                        {
+                            rasterize<Sink::Transparent>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
+                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
+                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
+                                mat.emissive, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                            );
                         }
                     }
                 }
             }
-        }; // end steal_loop lambda
-
-        if constexpr (S == Sink::Transparent)
-        {
-            try
-            {
-                steal_loop();
-            }
-            catch (const std::bad_alloc &) // NOLINT(bugprone-empty-catch)
-            {
-                // Best-effort: stop pushing this worker's fragments. The chain stays consistent
-                // (push_back runs before the head swap), the worker still signals completion, and
-                // resolve still composites + self-cleans — so the frame loses a few fragments
-                // under extreme overdraw rather than crashing or corrupting the next frame.
-            }
         }
-        else
+    }; // end steal_loop lambda
+
+    if constexpr (S == Sink::Transparent)
+    {
+        try
         {
             steal_loop();
         }
+        catch (const std::bad_alloc &) // NOLINT(bugprone-empty-catch)
+        {
+            // Best-effort: stop pushing this worker's fragments. The chain stays consistent
+            // (push_back runs before the head swap), the worker still signals completion, and
+            // resolve still composites + self-cleans — so the frame loses a few fragments
+            // under extreme overdraw rather than crashing or corrupting the next frame.
+        }
+    }
+    else
+    {
+        steal_loop();
     }
 }
 
