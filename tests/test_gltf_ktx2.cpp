@@ -298,3 +298,48 @@ TEST(gltf_ktx2, corrupt_basisu_drops_texture_but_loads)
     ASSERT_EQ(m.materials[1].diffuse_tex, -1); // decode failed -> slot dropped, load still ok
     ASSERT_TRUE(m.textures.empty());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  A KTX2 carried by an inline base64 data: URI decodes — proves the data-URI
+//  path routes through decode_bytes to the KTX2 transcoder, not just stb.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(gltf_ktx2, data_uri_basisu_decodes)
+{
+    const std::string uri = "data:image/ktx2;base64," + b64encode(k_ktx2_uastc_grid6, k_ktx2_uastc_grid6_len);
+
+    std::string bin;
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+
+    std::string json;
+    json += R"({"asset":{"version":"2.0"},"extensionsUsed":["KHR_texture_basisu"],)";
+    json += R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],)";
+    json += R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0}]}],)";
+    json += R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}],)";
+    json += R"("textures":[{"extensions":{"KHR_texture_basisu":{"source":0}}}],)";
+    json += R"("images":[{"uri":")" + uri + R"(","mimeType":"image/ktx2"}],)";
+    json += R"("accessors":[)" + std::string(kTriPositionsAccessor) + "],";
+    json += R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],)";
+    json += R"("buffers":[{"byteLength":36}]})";
+
+    const std::string glb = assemble_glb(json, bin);
+    TmpFile f(tmp_path("rast_ktx2_datauri.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const int idx = m.materials[1].diffuse_tex;
+    ASSERT_TRUE(idx >= 0);
+    ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
+    const Texture &t = m.textures[static_cast<size_t>(idx)];
+    ASSERT_TRUE(t.valid());
+    ASSERT_EQ(t.width, 6);
+    ASSERT_EQ(t.height, 6);
+}

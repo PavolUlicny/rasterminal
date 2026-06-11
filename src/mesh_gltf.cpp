@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <memory>
@@ -872,11 +873,67 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     {
         if (img->uri && img->uri[0] != '\0')
         {
-            // data: URIs (inline base64 images) are not yet supported; skip explicitly
-            // so the gap is visible here rather than a silent read_file failure below.
+            // Inline data: URIs. cgltf expands base64 *buffer* URIs during
+            // cgltf_load_buffers but leaves *image* URIs untouched, so decode the base64
+            // payload here and route the bytes through the same content-sniff as
+            // buffer_view images. Only the ";base64" form is handled; a non-base64 data:
+            // URI (percent-encoded raw bytes) is rare and dropped, matching every other
+            // decode-failure path here (return an invalid Texture, model still loads).
             if (std::strncmp(img->uri, "data:", 5) == 0)
             {
-                return Texture{};
+                const char *comma = std::strchr(img->uri, ',');
+                // Require the ";base64" marker immediately before the comma (cgltf's own
+                // rule). The `comma - img->uri >= 7` guard both rejects a comma-less data:
+                // string and prevents the strncmp from reading before the buffer when the
+                // metadata is shorter than ";base64".
+                if (!comma || comma - img->uri < 7 || std::strncmp(comma - 7, ";base64", 7) != 0)
+                {
+                    return Texture{};
+                }
+                const char *payload = comma + 1;
+                // Output size from the count of base64-alphabet chars, stopping at the
+                // first non-alphabet char so `=` padding and any junk/whitespace tail are
+                // excluded (a glTF data URI is never MIME-wrapped, so a stop on whitespace
+                // can only mean a malformed payload, which then fails to decode below).
+                // Computed without a multiply so it cannot wrap size_t on the ILP32 build.
+                size_t nchars = 0;
+                for (const char *q = payload; *q != '\0'; ++q)
+                {
+                    const char c = *q;
+                    const bool b64 = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+                                     c == '+' || c == '/';
+                    if (!b64)
+                    {
+                        break;
+                    }
+                    ++nchars;
+                }
+                size_t out_size = (nchars / 4) * 3;
+                if (nchars % 4 == 2)
+                {
+                    out_size += 1;
+                }
+                else if (nchars % 4 == 3)
+                {
+                    out_size += 2;
+                }
+                if (out_size == 0)
+                {
+                    return Texture{}; // empty / degenerate payload
+                }
+                // cgltf_load_buffer_base64 reads ceil(out_size*8/6) <= nchars chars, so it
+                // never reads a pad byte or past the valid run. It allocates via opts'
+                // allocator and returns a result code instead of throwing — safe at this
+                // no-exception-boundary worker site.
+                void *raw = nullptr;
+                if (cgltf_load_buffer_base64(&opts, out_size, payload, &raw) != cgltf_result_success)
+                {
+                    return Texture{};
+                }
+                // opts carries no custom allocator, so cgltf used cgltf_default_alloc ==
+                // malloc; free with the matching deallocator on every exit path.
+                const auto owned = std::unique_ptr<void, void (*)(void *)>(raw, std::free);
+                return decode_bytes(static_cast<const uint8_t *>(raw), out_size);
             }
             // Percent-decode the URI before opening the file. cgltf decodes escapes for
             // buffer URIs but not image URIs, so e.g. "my%20tex.ktx2" would otherwise fail

@@ -337,3 +337,41 @@ TEST(gltf_webp, animated_webp_dropped_but_loads)
     ASSERT_EQ(m.materials[1].diffuse_tex, -1); // animation rejected -> slot dropped, load ok
     ASSERT_TRUE(m.textures.empty());
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  A WebP carried by an inline base64 data: URI decodes — proves the data-URI
+//  path routes through decode_bytes to libwebp (the is_webp sniff branch), the
+//  third decode_bytes branch the data-URI tests cover (KTX2 and stb are covered
+//  in test_gltf_ktx2.cpp and test_gltf.cpp).
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(gltf_webp, data_uri_webp_decodes)
+{
+    const std::string uri = "data:image/webp;base64," + b64encode(k_webp_rect, k_webp_rect_len);
+
+    Bin bin;
+    bin.add_floats({ -1.0f, -1.0f, 0.0f, 1.0f, -1.0f, 0.0f, 0.0f, 1.0f, 0.0f }); // bufferView 0
+    std::string json;
+    json += R"({"asset":{"version":"2.0"},"extensionsUsed":["EXT_texture_webp"],)";
+    json += R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],)";
+    json += R"("meshes":[{"primitives":[{"attributes":{"POSITION":0},"material":0}]}],)";
+    json += R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0}}}],)";
+    json += R"("textures":[{"extensions":{"EXT_texture_webp":{"source":0}}}],)";
+    json += R"("images":[{"uri":")" + uri + R"(","mimeType":"image/webp"}],)";
+    json += R"("accessors":[)" + std::string(kTriPositionsAccessor) + "],";
+    json += R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":36}],)";
+    json += R"("buffers":[{"byteLength":36}]})";
+
+    const std::string glb = assemble_glb(json, bin.data);
+    TmpFile f(tmp_path("rast_webp_datauri.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const int idx = m.materials[1].diffuse_tex;
+    ASSERT_TRUE(idx >= 0);
+    ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
+    const Texture &t = m.textures[static_cast<size_t>(idx)];
+    ASSERT_TRUE(t.valid());
+    ASSERT_EQ(t.width, 6);
+    ASSERT_EQ(t.height, 2);
+}

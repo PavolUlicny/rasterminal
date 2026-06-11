@@ -115,3 +115,38 @@ static void emit_u32_be(std::string &s, uint32_t v)
     std::memcpy(&u, &v, 4);
     emit_u32_be(s, u);
 }
+
+// Canonical (=-padded) base64 encoder for building inline data: URI fixtures.
+[[maybe_unused]] static std::string b64encode(const uint8_t *data, size_t n)
+{
+    static const char tbl[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    size_t i = 0;
+    for (; i + 3 <= n; i += 3)
+    {
+        const uint32_t v = (static_cast<uint32_t>(data[i]) << 16) | (static_cast<uint32_t>(data[i + 1]) << 8) |
+                           static_cast<uint32_t>(data[i + 2]);
+        out.push_back(tbl[(v >> 18) & 0x3F]);
+        out.push_back(tbl[(v >> 12) & 0x3F]);
+        out.push_back(tbl[(v >> 6) & 0x3F]);
+        out.push_back(tbl[v & 0x3F]);
+    }
+    const size_t rem = n - i;
+    if (rem == 1)
+    {
+        const uint32_t v = static_cast<uint32_t>(data[i]) << 16;
+        out.push_back(tbl[(v >> 18) & 0x3F]);
+        out.push_back(tbl[(v >> 12) & 0x3F]);
+        out.push_back('=');
+        out.push_back('=');
+    }
+    else if (rem == 2)
+    {
+        const uint32_t v = (static_cast<uint32_t>(data[i]) << 16) | (static_cast<uint32_t>(data[i + 1]) << 8);
+        out.push_back(tbl[(v >> 18) & 0x3F]);
+        out.push_back(tbl[(v >> 12) & 0x3F]);
+        out.push_back(tbl[(v >> 6) & 0x3F]);
+        out.push_back('=');
+    }
+    return out;
+}

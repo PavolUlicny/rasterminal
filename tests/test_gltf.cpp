@@ -2225,3 +2225,139 @@ TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
     const vec3 face_n = cross(b - a, c - a);
     ASSERT_TRUE(face_n.z > 0.0f);
 }
+
+// ─── Group: inline data: URI images ───────────────────────────────────────────
+
+// One-triangle GLB whose single material's baseColorTexture is image 0 carrying `uri`.
+static std::string data_uri_tex_glb(const std::string &uri)
+{
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+                             "{\"POSITION\":0},\"material\":0}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+                             "\"textures\":[{\"source\":0}],"
+                             "\"images\":[{\"uri\":\"" +
+                             uri +
+                             "\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+    return make_glb(json, bin);
+}
+
+// Build the data: URI for the given bytes with the given mediatype, base64-encoded.
+static std::string data_uri(const std::string &mediatype, const uint8_t *bytes, size_t n)
+{
+    return "data:" + mediatype + ";base64," + b64encode(bytes, n);
+}
+
+TEST(gltf_data_uri, base64_bmp_decodes)
+{
+    // Happy path: a padded-base64 BMP data URI decodes through the stb route. Proves the
+    // base64 round-trip (k1x1_red_bmp is 58 bytes -> padded encoding) and content-sniff.
+    const std::string uri = data_uri("image/bmp", k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile f(tmp_path("rast_datauri_bmp.glb"), data_uri_tex_glb(uri));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const int idx = m.materials[1].diffuse_tex;
+    ASSERT_TRUE(idx >= 0);
+    ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
+    const Texture &t = m.textures[static_cast<size_t>(idx)];
+    ASSERT_TRUE(t.valid());
+    ASSERT_EQ(t.width, 1);
+    ASSERT_EQ(t.height, 1);
+}
+
+TEST(gltf_data_uri, no_base64_marker_dropped)
+{
+    // data:<mediatype>,<raw> without ";base64" is not handled -> slot dropped, load ok.
+    TmpFile f(tmp_path("rast_datauri_nomarker.glb"), data_uri_tex_glb("data:image/bmp,Qk0"));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, invalid_alphabet_dropped)
+{
+    // Payload has no base64-alphabet chars -> out_size 0 -> slot dropped, load ok.
+    TmpFile f(tmp_path("rast_datauri_badalpha.glb"), data_uri_tex_glb("data:image/bmp;base64,@@@@"));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, empty_payload_dropped)
+{
+    // Comma is the last char -> empty payload -> out_size 0 -> slot dropped, load ok.
+    TmpFile f(tmp_path("rast_datauri_empty.glb"), data_uri_tex_glb("data:image/bmp;base64,"));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, valid_base64_non_image_dropped)
+{
+    // Well-formed base64 that decodes to non-image bytes: the base64 step succeeds but the
+    // content-sniff / stb decode rejects it -> slot dropped, load ok.
+    const uint8_t hello[] = { 'h', 'e', 'l', 'l', 'o' };
+    const std::string uri = data_uri("application/octet-stream", hello, sizeof(hello));
+    TmpFile f(tmp_path("rast_datauri_nonimage.glb"), data_uri_tex_glb(uri));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, no_comma_dropped)
+{
+    // No comma at all -> strchr returns null -> slot dropped without UB, load ok.
+    TmpFile f(tmp_path("rast_datauri_nocomma.glb"), data_uri_tex_glb("data:image/bmp;base64"));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, short_metadata_no_underread)
+{
+    // Comma at index 5: the `comma - uri >= 7` guard rejects before the strncmp would read
+    // before the start of the string -> slot dropped, load ok.
+    TmpFile f(tmp_path("rast_datauri_short.glb"), data_uri_tex_glb("data:,x"));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_tex, -1);
+}
+
+TEST(gltf_data_uri, shared_data_uri_dedup)
+{
+    // Two materials, two textures, both pointing at image 0 (one data: URI). Both load_tex
+    // calls resolve the same cgltf_image* -> TexKey dedup -> one decode, one texture slot,
+    // and both materials reference it.
+    const std::string uri = data_uri("image/bmp", k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":1}]}],"
+                             "\"materials\":["
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":1}}}],"
+                             "\"textures\":[{\"source\":0},{\"source\":0}],"
+                             "\"images\":[{\"uri\":\"" +
+                             uri +
+                             "\"}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,"
+                             "\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36}],"
+                             "\"buffers\":[{\"byteLength\":36}]}";
+    std::string bin;
+    emit_tri_verts(bin);
+    TmpFile f(tmp_path("rast_datauri_dedup.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 3);
+    const int a = m.materials[1].diffuse_tex;
+    const int b = m.materials[2].diffuse_tex;
+    ASSERT_TRUE(a >= 0);
+    ASSERT_EQ(a, b);
+    ASSERT_EQ(m.textures.size(), static_cast<size_t>(1));
+}
