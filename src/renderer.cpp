@@ -533,7 +533,10 @@ void Renderer::resolve_pixels()
             vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
                       static_cast<float>(base.b) * inv255 };
 
-            const Fragment &f0 = m_arenas[ref >> 32u][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
+            // uint32_t cast on the worker-id index (mirrors the arena-slot cast): the ref packs it
+            // in the high 32 bits so it fits, and uint64_t->uint32_t is a real narrowing on both LP64
+            // and ILP32 — unlike a size_t cast, which is useless (==uint64_t) on LP64.
+            const Fragment &f0 = m_arenas[static_cast<uint32_t>(ref >> 32u)][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
             if (f0.next == ABuffer::SENTINEL)
             {
                 // Fast path: the overwhelmingly common single-layer pixel. One OVER step, no
@@ -555,7 +558,8 @@ void Renderer::resolve_pixels()
                     uint64_t r = ref;
                     while (r != ABuffer::SENTINEL)
                     {
-                        const Fragment &f = m_arenas[r >> 32u][static_cast<uint32_t>(r & 0xFFFFFFFFu)];
+                        const Fragment &f =
+                            m_arenas[static_cast<uint32_t>(r >> 32u)][static_cast<uint32_t>(r & 0xFFFFFFFFu)];
                         stack.push_back(f);
                         r = f.next;
                     }
