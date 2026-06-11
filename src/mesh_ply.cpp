@@ -13,7 +13,18 @@
 #include <vector>
 
 #define TINYPLY_IMPLEMENTATION
+// GCC at ILP32 + -O3 inlines tinyply's ASCII reader and mis-sees an 8-byte double write into a
+// 4-byte slot on a path unreachable for valid data (-Warray-bounds false positive in tinyply.h,
+// middle-end so -isystem can't filter it). The warning is attributed to the header line, so the
+// suppression must wrap the include, not the call site.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#endif
 #include "tinyply.h"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 // ─── typed-buffer helpers ────────────────────────────────────────────────────
 
