@@ -276,7 +276,11 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     {
         size_t operator()(const TexKey &k) const
         {
-            return (std::hash<const void *>{}(k.first) * 1099511628211ULL) ^ std::hash<const void *>{}(k.second);
+            // The 64-bit FNV-prime mix is computed wide, then truncated to size_t (a no-op at
+            // LP64; an accepted hash truncation at ILP32 where size_t is 32-bit).
+            return static_cast<size_t>(
+                (std::hash<const void *>{}(k.first) * 1099511628211ULL) ^ std::hash<const void *>{}(k.second)
+            );
         }
     };
     std::unordered_map<TexKey, int, TexKeyHash> tex_cache;
