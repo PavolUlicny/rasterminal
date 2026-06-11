@@ -6,6 +6,8 @@
 #pragma GCC diagnostic ignored "-Wfloat-conversion"
 #pragma GCC diagnostic ignored "-Wdouble-promotion"
 #pragma GCC diagnostic ignored "-Wold-style-cast"
+// GCC's optimizer reports a false null-dereference in simplifier.cpp's hash probe at ILP32 -O3.
+#pragma GCC diagnostic ignored "-Wnull-dereference"
 #if !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wuseless-cast"
 #endif

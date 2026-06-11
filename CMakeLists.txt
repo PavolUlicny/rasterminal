@@ -29,6 +29,27 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# ─── 32-bit (ILP32) target adjustments ────────────────────────────────────────
+# CMAKE_SIZEOF_VOID_P reflects the effective target: a -m32 flag (Linux i686), -A Win32
+# (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling — applied
+# at directory scope so both targets, all configs (incl. Debug), and C *and* C++ sources
+# (the vendored zstd/libwebp decode TUs) inherit it.
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  set(RASTERMINAL_ILP32 ON) # gates -Wuseless-cast off below (word-size-dependent warning)
+  # Pin SSE math on x86-32 (GNU/Clang): i686 defaults to the x87 FPU (80-bit intermediates),
+  # whose results diverge from the SSE/x86-64 path the renderer and tests assume. ARM ILP32
+  # is already IEEE (VFP) and would reject -msse2, so gate on __i386__, not pointer size.
+  # MSVC Win32 is SSE2 by default and needs neither flag.
+  if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    include(CheckCXXSourceCompiles)
+    check_cxx_source_compiles("#ifndef __i386__\n#error not i386\n#endif\nint main(){return 0;}"
+                              RASTERMINAL_X86_32)
+    if(RASTERMINAL_X86_32)
+      add_compile_options(-msse2 -mfpmath=sse)
+    endif()
+  endif()
+endif()
+
 # ─── Vendored libraries ───────────────────────────────────────────────────────
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
@@ -135,7 +156,11 @@ target_compile_options(rasterminal_warnings INTERFACE
     -Wnon-virtual-dtor;-Wnull-dereference;-Wdouble-promotion;
     -Wformat=2;-Wimplicit-fallthrough;-Wmisleading-indentation;-Werror>
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:
-    -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches;-Wuseless-cast>
+    -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches>
+  # -Wuseless-cast is word-size-dependent (a cast that narrows/widens at LP64 is a no-op at
+  # ILP32); keep it on 64-bit, drop it on 32-bit. See the ILP32 block near the top.
+  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>,$<NOT:$<BOOL:${RASTERMINAL_ILP32}>>>:
+    -Wuseless-cast>
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W4;/WX;/permissive->
   $<$<CXX_COMPILER_ID:MSVC>:/D_CRT_SECURE_NO_WARNINGS>)
 

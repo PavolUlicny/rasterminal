@@ -3,6 +3,22 @@ CXX ?= g++
 # ─── Compiler detection (POSIX: GCC or Clang) ─────────────────────────────────
 IS_CLANG := $(findstring clang,$(shell $(CXX) --version 2>&1))
 
+# ─── 32-bit (ILP32) target detection ──────────────────────────────────────────
+# Probed from $(CXX) so it follows a native 32-bit toolchain (i686, armhf) AND CI's
+# CXX='g++ -m32'. Two adjustments, scoped differently:
+#  - SSE math, x86-32 only ($(ARCH32)): i686 defaults to the x87 FPU (80-bit intermediates),
+#    whose results diverge from the SSE/x86-64 path the renderer and tests assume.
+#    -msse2 -mfpmath=sse restores IEEE parity (SSE2 is universal on x86 since 2001; pre-SSE2
+#    is a non-target). ARM ILP32 already uses IEEE VFP and would reject -msse2, so this is
+#    gated on __i386__, not on pointer size.
+#  - Drop -Wuseless-cast, any ILP32: "useless" is word-size-dependent — casts that
+#    legitimately widen/narrow at LP64 become no-ops where size_t is 32-bit. Kept on 64-bit.
+IS_X86_32 := $(filter 1,$(shell printf '__i386__\n' | $(CXX) -P -E -x c++ - 2>/dev/null | tail -1))
+IS_ILP32  := $(filter 4,$(shell printf '__SIZEOF_POINTER__\n' | $(CXX) -P -E -x c++ - 2>/dev/null | tail -1))
+ifeq ($(IS_X86_32),1)
+ARCH32 := -msse2 -mfpmath=sse
+endif
+
 # ─── Linker dead-code GC (drops unreferenced sections from the final binary) ──
 # Paired with -ffunction-sections/-fdata-sections below. LTO + -fvisibility=hidden
 # already strip unused C++; this mainly reaps the non-LTO C decode TUs (libwebp/zstd).
@@ -38,6 +54,11 @@ GCC_OPTS = -fno-plt -fno-semantic-interposition -fno-stack-clash-protection \
            -fgcse-sm -fgcse-las -fipa-pta -Wno-alloc-size-larger-than
 endif
 
+# -Wuseless-cast (GCC-only, added above) is word-size-dependent — relax it on any ILP32 target.
+ifeq ($(IS_ILP32),4)
+WARNINGS := $(filter-out -Wuseless-cast,$(WARNINGS))
+endif
+
 VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
               -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
@@ -56,7 +77,7 @@ OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBU
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
              -fmerge-all-constants -fvisibility=hidden -fvisibility-inlines-hidden \
              -fno-stack-protector -fno-asynchronous-unwind-tables \
-             -pipe -pthread $(GCC_OPTS)
+             -pipe -pthread $(GCC_OPTS) $(ARCH32)
 
 # Tier 2: machine-specific (release only).
 ARCH_NATIVE = -march=native
@@ -66,7 +87,7 @@ TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funrol
                 -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread $(VENDOR_INC)
+                -pipe -pthread $(VENDOR_INC) $(ARCH32)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -247,7 +268,7 @@ TEST_SRCS   = tests/test_main.cpp \
 # unnecessary recompiles, so source edits stay incremental.
 OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
-DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC)
+DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32)
 
 # ─── C flags (vendored zstd amalgam + libwebp decode subset) ──────────────────
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
@@ -265,10 +286,10 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 CC ?= cc
 C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
 C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
-                  -ffunction-sections -fdata-sections -w -pipe $(C_INC)
+                  -ffunction-sections -fdata-sections -w -pipe $(C_INC) $(ARCH32)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
-DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC)
+DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32)
 TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
 # Terse output by default (one short line per compile/link); `make V=1` echoes the
