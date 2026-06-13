@@ -38,12 +38,15 @@ namespace
 
 float ShadowMap::in_shadow(vec3 world_pos) const
 {
-    const vec4 light_clip = light_vp * vec4(world_pos, 1.0f);
-    if (light_clip.w <= 0.0f)
-    {
-        return 0.0f;
-    }
-    const vec3 ndc = light_clip.perspective_divide();
+    // light_vp = ortho * look_at — both affine, so light_vp's bottom row is exactly
+    // (0,0,0,1) and clip-space w is always 1. Compute NDC directly as the affine image
+    // of world_pos, skipping the per-pixel reciprocal + 3 multiplies of
+    // perspective_divide() (and the dead w<=0 branch). Bit-identical: the old path
+    // divided by an exact 1.0f. in_shadow runs once per Phong pixel, so this is hot.
+    const auto(&m)[4][4] = light_vp.m;
+    const vec3 ndc = { (m[0][0] * world_pos.x) + (m[1][0] * world_pos.y) + (m[2][0] * world_pos.z) + m[3][0],
+                       (m[0][1] * world_pos.x) + (m[1][1] * world_pos.y) + (m[2][1] * world_pos.z) + m[3][1],
+                       (m[0][2] * world_pos.x) + (m[1][2] * world_pos.y) + (m[2][2] * world_pos.z) + m[3][2] };
     if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < -1.0f || ndc.z > 1.0f)
     {
         return 0.0f;
