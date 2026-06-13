@@ -36,8 +36,11 @@ TEST(vcache, early_exit_single_triangle)
 
 TEST(vcache, fully_unshared_stl_optimises_correctly)
 {
-    // STL produces unshared vertices (nv == nt*3). All three passes still run:
-    // overdraw reorders triangles, vertex fetch remaps to first-use order.
+    // STL deduplicates shared positions (stl_reader), but the two triangles here have six
+    // all-distinct positions, so nothing welds and the mesh is genuinely unshared (nv == nt*3).
+    // This pins that all three vcache passes still run on that layout: overdraw reorders
+    // triangles, vertex fetch remaps to first-use order. (nv == nt*3 is a property of THIS
+    // all-distinct input, not STL in general — a shared-position STL would dedup to fewer verts.)
     TmpFile f(
         tmp_path("rast_vc_stl.stl"), "solid s\n"
                                      "facet normal 0 0 1\n outer loop\n"
