@@ -236,7 +236,7 @@ TEST(args, missing_value_for_lighting_is_error)
 
 // ─── error: short flags reject = form ────────────────────────────────────────
 
-TEST(args, short_flag_equals_form_is_unknown_flag)
+TEST(args, short_flag_equals_form_is_rejected)
 {
     ASSERT_FALSE(run({ "-s=phong", "m.obj" }).ok);
     ASSERT_FALSE(run({ "-b=white", "m.obj" }).ok);
