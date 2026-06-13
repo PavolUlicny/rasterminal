@@ -85,6 +85,36 @@ TEST(args, help_long_exits_zero)
     ASSERT_EQ(r.exit_code, 0);
 }
 
+// ─── --version ──────────────────────────────────────────────────────────────
+
+TEST(args, version_short_exits_zero)
+{
+    ParseResult r = run({ "-V" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, version_long_exits_zero)
+{
+    ParseResult r = run({ "--version" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, version_with_equals_value_is_error)
+{
+    ParseResult r = run({ "--version=1", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, version_clusters_after_boolean)
+{
+    ParseResult r = run({ "-SV" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
 // ─── error: no model ─────────────────────────────────────────────────────────
 
 TEST(args, no_model_is_error)

@@ -1,5 +1,7 @@
 #include "args.h"
 
+#include "version.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
@@ -291,6 +293,8 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto print_version = []() { std::printf("rasterminal %s\n", RASTERMINAL_VERSION); };
+
     auto print_help = []()
     {
         std::printf("Usage: rasterminal [options] <model>\n"
@@ -333,6 +337,7 @@ ParseResult parse_args(int argc, char *argv[])
                     "          --no-ao                Disable ambient occlusion\n"
                     "          --no-hud               Hide the HUD status line\n"
                     "  -h,     --help                 Show this message\n"
+                    "  -V,     --version              Show version and exit\n"
                     "\n"
                     "Controls:\n"
                     "  1-4          Shading mode           B       Cycle background\n"
@@ -501,6 +506,16 @@ ParseResult parse_args(int argc, char *argv[])
             print_help();
             return fail(0);
         }
+        else if (arg == "--version")
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                return fail(1);
+            }
+            print_version();
+            return fail(0);
+        }
         else if (arg == "--spin")
         {
             if (eq_val != nullptr)
@@ -583,6 +598,11 @@ ParseResult parse_args(int argc, char *argv[])
                 else if (c == 'h')
                 {
                     print_help();
+                    return fail(0);
+                }
+                else if (c == 'V')
+                {
+                    print_version();
                     return fail(0);
                 }
                 else if (c == 's' || c == 'b' || c == 'l' || c == 'w' || c == 'c' || c == 't')
