@@ -391,6 +391,43 @@ TEST(normals, crease_threshold_controls_split)
     ASSERT_EQ(count_origin(hard), 2); // 90 deg > 45 deg threshold → split
 }
 
+TEST(normals, crease_boundary_brackets_threshold)
+{
+    // Same 90 deg fold, but the crease angle now sits one degree on either side of the
+    // dihedral to pin the comparison (cos_a >= crease_cos, mesh.cpp) right at the
+    // boundary — earlier tests only bracket far away (45/180). The exact-90 case is left
+    // unasserted: std::cos(to_radians(90)) is not exactly 0 in float, so equality there
+    // is too fragile to depend on.
+    const std::string obj = "v 0 0 0\n"
+                            "v 1 0 0\n"
+                            "v 0 1 0\n"
+                            "v 0 0 1\n"
+                            "f 1 2 3\n"
+                            "f 2 1 4\n";
+    TmpFile f(tmp_path("rast_norm_crease_boundary.obj"), obj);
+
+    auto count_origin = [](const Mesh &m) -> int
+    {
+        int c = 0;
+        for (const auto &v : m.vertices)
+        {
+            if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+            {
+                c++;
+            }
+        }
+        return c;
+    };
+
+    Mesh just_below;
+    ASSERT_TRUE(just_below.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/89.0f));
+    ASSERT_EQ(count_origin(just_below), 2); // 90 deg > 89 deg threshold → split
+
+    Mesh just_above;
+    ASSERT_TRUE(just_above.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/91.0f));
+    ASSERT_EQ(count_origin(just_above), 1); // 90 deg < 91 deg threshold → merged
+}
+
 TEST(normals, bowtie_point_share_splits)
 {
     // Two triangles meet at ONLY vertex 0 (a point, no shared edge). They must
@@ -542,6 +579,43 @@ TEST(normals, smoothing_group_smooths_across_uv_seam)
     ASSERT_NEAR(first.y, second.y, 1e-5f);
     ASSERT_NEAR(first.z, second.z, 1e-5f);
     ASSERT_TRUE(first.y > 0.4f && first.z > 0.4f); // blended, not a single face normal
+}
+
+TEST(normals, smoothing_group_differs_across_uv_seam_no_weld)
+{
+    // Same geometry as smoothing_group_smooths_across_uv_seam (90 deg fold, UV seam
+    // splitting the origin), but the two faces are in DIFFERENT groups. The seam already
+    // splits the origin by UV; the open question is whether the group machinery welds the
+    // two halves' normals back together. Different groups must NOT unite — each half keeps
+    // its own axis-aligned face normal, the opposite of the same-group welded case above.
+    const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                            "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
+                            "s 1\n"
+                            "f 1/1 2/2 3/3\n"
+                            "s 2\n"
+                            "f 2/5 1/4 4/6\n";
+    TmpFile f(tmp_path("rast_sg_seam_diff.obj"), obj);
+    Mesh m = load_ok(f.path);
+    int at_origin = 0;
+    bool saw_z = false;
+    bool saw_y = false;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            if (v.normal.z > 0.9999f)
+            {
+                saw_z = true; // unblended +Z face (group 1)
+            }
+            if (v.normal.y > 0.9999f)
+            {
+                saw_y = true; // unblended +Y face (group 2)
+            }
+        }
+    }
+    ASSERT_EQ(at_origin, 2);     // UV split preserved
+    ASSERT_TRUE(saw_z && saw_y); // each half kept its own face normal → no cross-group weld
 }
 
 TEST(normals, smoothing_group_smooths_across_object_boundary)
