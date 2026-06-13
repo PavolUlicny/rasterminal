@@ -537,6 +537,89 @@ TEST(args, flags_before_and_after_model_path)
     ASSERT_EQ(r.args.bg, 1);
 }
 
+// ─── short-option clustering (POSIX Guideline 5) ──────────────────────────────
+
+TEST(args, cluster_spin_help_exits_zero)
+{
+    ParseResult r = run({ "-Sh" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, cluster_help_first_exits_zero)
+{
+    // 'h' exits regardless of its position in the cluster.
+    ParseResult r = run({ "-hS" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, cluster_spin_threads_compact)
+{
+    ParseResult r = run({ "-Sj4", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.n_threads, 4);
+}
+
+TEST(args, cluster_spin_threads_next_token)
+{
+    // Bare 'j' last in the cluster consumes the following positive integer.
+    ParseResult r = run({ "-Sj", "4", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.n_threads, 4);
+}
+
+TEST(args, cluster_spin_shading_value)
+{
+    ParseResult r = run({ "-Ssphong", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.shading, 3);
+}
+
+TEST(args, cluster_spin_cull_off)
+{
+    ParseResult r = run({ "-Scoff", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_FALSE(r.args.cull);
+}
+
+TEST(args, cluster_spin_texture_off)
+{
+    ParseResult r = run({ "-Stoff", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_FALSE(r.args.texture);
+}
+
+TEST(args, cluster_spin_bare_bench)
+{
+    // Bare 'B' last in the cluster, no integer follows → default 200.
+    ParseResult r = run({ "-SB", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.bench, 200);
+}
+
+TEST(args, cluster_value_flag_next_token)
+{
+    // A mandatory-value flag last in the cluster pulls the next argv token.
+    ParseResult r = run({ "-Sc", "off", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_FALSE(r.args.cull);
+}
+
+TEST(args, cluster_unknown_char_is_error)
+{
+    ParseResult r = run({ "-Sz", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // ─── --wireframe-color ────────────────────────────────────────────────────────
 
 TEST(args, wireframe_color_default)

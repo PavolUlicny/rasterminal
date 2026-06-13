@@ -291,6 +291,59 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    auto print_help = []()
+    {
+        std::printf("Usage: rasterminal [options] <model>\n"
+                    "\n"
+                    "Render a 3D model in the terminal using unicode half-block characters\n"
+                    "and 24-bit ANSI color.\n"
+                    "\n"
+                    "Supported formats:\n"
+                    "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
+                    "  .ply        ASCII or binary (little/big-endian)\n"
+                    "  .stl        ASCII or binary\n"
+                    "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
+                    "\n"
+                    "Options:\n"
+                    "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
+                    "                                  wireframe|flat|gouraud|phong  or  1-4\n"
+                    "  -b,     --bg <color>           Initial background color (default: black)\n"
+                    "                                  black|gray|white  or  1-3\n"
+                    "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
+                    "                                  dual|single|flat  or  1-3\n"
+                    "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
+                    "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
+                    "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
+                    "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+                    "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
+                    "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+                    "  -S,     --spin                 Start with auto-rotation enabled\n"
+                    "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
+                    "                                  bare -j/--threads uses all cores, -j N uses N\n"
+                    "  -f [N], --fps [N]              Frame cap (default: 60)\n"
+                    "                                  bare -f/--fps uncapped, -f N caps at N fps\n"
+                    "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200)\n"
+                    "                                  prints timing + fps + throughput to stderr\n"
+                    "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
+                    "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
+                    "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
+                    "                                  0=faceted, 180=smooth\n"
+                    "                                  ignored when an OBJ authors smoothing groups\n"
+                    "          --no-shadow            Disable shadow map\n"
+                    "          --no-ao                Disable ambient occlusion\n"
+                    "          --no-hud               Hide the HUD status line\n"
+                    "  -h,     --help                 Show this message\n"
+                    "\n"
+                    "Controls:\n"
+                    "  1-4          Shading mode           B       Cycle background\n"
+                    "  Space        Toggle spin            L       Cycle lighting\n"
+                    "  WASD/arrows  Orbit camera           R       Reset view\n"
+                    "  +/-          Zoom                   C       Cycle wireframe color\n"
+                    "  Mouse drag   Orbit                  K       Toggle backface culling\n"
+                    "  Scroll       Zoom                   T       Toggle textures\n"
+                    "  Q/Escape     Quit\n");
+    };
+
     bool saw_bench_size = false;
     bool saw_bench_warmup = false;
     bool end_of_options = false;
@@ -340,7 +393,7 @@ ParseResult parse_args(int argc, char *argv[])
             return require_val(arg_i, flag);
         };
 
-        if (arg == "-j" || arg == "--threads")
+        if (arg == "--threads")
         {
             // Bare form (no value, or next token is not a positive integer) = all threads.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
@@ -356,14 +409,7 @@ ParseResult parse_args(int argc, char *argv[])
                 }
             }
         }
-        else if (std::strncmp(argv[i], "-j", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_threads("-j", argv[i] + 2, args.n_threads))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-f" || arg == "--fps")
+        else if (arg == "--fps")
         {
             // Bare form (no value, or next token is not a positive integer) = uncapped.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
@@ -379,14 +425,7 @@ ParseResult parse_args(int argc, char *argv[])
                 }
             }
         }
-        else if (std::strncmp(argv[i], "-f", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_threads("-f", argv[i] + 2, args.fps))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-B" || arg == "--bench")
+        else if (arg == "--bench")
         {
             // Bare form (no value, or next token is not a positive integer) = 200 frames.
             if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
@@ -400,13 +439,6 @@ ParseResult parse_args(int argc, char *argv[])
                 {
                     return fail(1);
                 }
-            }
-        }
-        else if (std::strncmp(argv[i], "-B", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_threads("-B", argv[i] + 2, args.bench))
-            {
-                return fail(1);
             }
         }
         else if (arg == "--bench-size")
@@ -435,7 +467,7 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (arg == "-s" || arg == "--shading")
+        else if (arg == "--shading")
         {
             const char *val = get_val(i);
             if (!val || !parse_shading(flag, val, args.shading))
@@ -443,14 +475,7 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-s", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_shading("-s", argv[i] + 2, args.shading))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-b" || arg == "--bg")
+        else if (arg == "--bg")
         {
             const char *val = get_val(i);
             if (!val || !parse_bg(flag, val, args.bg))
@@ -458,14 +483,7 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-b", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_bg("-b", argv[i] + 2, args.bg))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-l" || arg == "--lighting")
+        else if (arg == "--lighting")
         {
             const char *val = get_val(i);
             if (!val || !parse_lighting(flag, val, args.lighting))
@@ -473,72 +491,17 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-l", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_lighting("-l", argv[i] + 2, args.lighting))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-h" || arg == "--help")
+        else if (arg == "--help")
         {
             if (eq_val != nullptr)
             {
                 std::fprintf(stderr, "Error: %s does not take a value\n", flag);
                 return fail(1);
             }
-            std::printf("Usage: rasterminal [options] <model>\n"
-                        "\n"
-                        "Render a 3D model in the terminal using unicode half-block characters\n"
-                        "and 24-bit ANSI color.\n"
-                        "\n"
-                        "Supported formats:\n"
-                        "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
-                        "  .ply        ASCII or binary (little/big-endian)\n"
-                        "  .stl        ASCII or binary\n"
-                        "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
-                        "\n"
-                        "Options:\n"
-                        "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
-                        "                                  wireframe|flat|gouraud|phong  or  1-4\n"
-                        "  -b,     --bg <color>           Initial background color (default: black)\n"
-                        "                                  black|gray|white  or  1-3\n"
-                        "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
-                        "                                  dual|single|flat  or  1-3\n"
-                        "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
-                        "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
-                        "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
-                        "                                  on|off, 1|0, true|false, yes|no, y|n\n"
-                        "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
-                        "                                  on|off, 1|0, true|false, yes|no, y|n\n"
-                        "  -S,     --spin                 Start with auto-rotation enabled\n"
-                        "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
-                        "                                  bare -j/--threads uses all cores, -j N uses N\n"
-                        "  -f [N], --fps [N]              Frame cap (default: 60)\n"
-                        "                                  bare -f/--fps uncapped, -f N caps at N fps\n"
-                        "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200)\n"
-                        "                                  prints timing + fps + throughput to stderr\n"
-                        "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
-                        "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
-                        "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
-                        "                                  0=faceted, 180=smooth\n"
-                        "                                  ignored when an OBJ authors smoothing groups\n"
-                        "          --no-shadow            Disable shadow map\n"
-                        "          --no-ao                Disable ambient occlusion\n"
-                        "          --no-hud               Hide the HUD status line\n"
-                        "  -h,     --help                 Show this message\n"
-                        "\n"
-                        "Controls:\n"
-                        "  1-4          Shading mode           B       Cycle background\n"
-                        "  Space        Toggle spin            L       Cycle lighting\n"
-                        "  WASD/arrows  Orbit camera           R       Reset view\n"
-                        "  +/-          Zoom                   C       Cycle wireframe color\n"
-                        "  Mouse drag   Orbit                  K       Toggle backface culling\n"
-                        "  Scroll       Zoom                   T       Toggle textures\n"
-                        "  Q/Escape     Quit\n");
+            print_help();
             return fail(0);
         }
-        else if (arg == "-S" || arg == "--spin")
+        else if (arg == "--spin")
         {
             if (eq_val != nullptr)
             {
@@ -574,7 +537,7 @@ ParseResult parse_args(int argc, char *argv[])
             }
             args.hud = false;
         }
-        else if (arg == "-c" || arg == "--cull")
+        else if (arg == "--cull")
         {
             const char *val = get_val(i);
             if (!val || !parse_bool(flag, val, args.cull))
@@ -582,14 +545,7 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-c", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_bool("-c", argv[i] + 2, args.cull))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-t" || arg == "--texture")
+        else if (arg == "--texture")
         {
             const char *val = get_val(i);
             if (!val || !parse_bool(flag, val, args.texture))
@@ -597,14 +553,7 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-t", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
-        {
-            if (!parse_bool("-t", argv[i] + 2, args.texture))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "-w" || arg == "--wireframe-color")
+        else if (arg == "--wireframe-color")
         {
             const char *val = get_val(i);
             if (!val || !parse_wireframe_color(flag, val, args.wireframe_color))
@@ -612,15 +561,102 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (std::strncmp(argv[i], "-w", 2) == 0 && argv[i][2] != '\0' && argv[i][2] != '=' && eq_val == nullptr)
+        // Short-option cluster (POSIX Guideline 5): a run of no-argument options
+        // bundled behind one '-', with at most one value-taking option last. A
+        // single short flag ("-s", "-j8") is just a length-one cluster. The value
+        // flag takes the rest of the token, or the next argv token if none follows
+        // (getopt-style: "-s=phong" passes "=phong" as the value).
+        else if (argv[i][0] == '-' && argv[i][1] != '\0' && argv[i][1] != '-')
         {
-            if (!parse_wireframe_color("-w", argv[i] + 2, args.wireframe_color))
+            const char *tok = argv[i];
+            bool value_consumed = false; // a value flag ate the rest of the token
+            for (int k = 1; tok[k] != '\0' && !value_consumed; k++)
             {
-                return fail(1);
+                const char c = tok[k];
+                const char short_flag[3] = { '-', c, '\0' };
+                const char *rest = tok + k + 1;
+
+                if (c == 'S')
+                {
+                    args.spin = true;
+                }
+                else if (c == 'h')
+                {
+                    print_help();
+                    return fail(0);
+                }
+                else if (c == 's' || c == 'b' || c == 'l' || c == 'w' || c == 'c' || c == 't')
+                {
+                    const char *val = (*rest != '\0') ? rest : require_val(i, short_flag);
+                    if (!val)
+                    {
+                        return fail(1);
+                    }
+                    bool valid = false;
+                    if (c == 's')
+                    {
+                        valid = parse_shading(short_flag, val, args.shading);
+                    }
+                    else if (c == 'b')
+                    {
+                        valid = parse_bg(short_flag, val, args.bg);
+                    }
+                    else if (c == 'l')
+                    {
+                        valid = parse_lighting(short_flag, val, args.lighting);
+                    }
+                    else if (c == 'w')
+                    {
+                        valid = parse_wireframe_color(short_flag, val, args.wireframe_color);
+                    }
+                    else if (c == 'c')
+                    {
+                        valid = parse_bool(short_flag, val, args.cull);
+                    }
+                    else
+                    {
+                        valid = parse_bool(short_flag, val, args.texture);
+                    }
+                    if (!valid)
+                    {
+                        return fail(1);
+                    }
+                    value_consumed = true;
+                }
+                else if (c == 'j' || c == 'f' || c == 'B')
+                {
+                    int &out = (c == 'j') ? args.n_threads : (c == 'f') ? args.fps : args.bench;
+                    const int bare = (c == 'B') ? 200 : 0;
+                    if (*rest != '\0')
+                    {
+                        if (!parse_threads(short_flag, rest, out))
+                        {
+                            return fail(1);
+                        }
+                    }
+                    else if (i + 1 < argc && is_all_digits(argv[i + 1]))
+                    {
+                        if (!parse_threads(short_flag, argv[++i], out))
+                        {
+                            return fail(1);
+                        }
+                    }
+                    else
+                    {
+                        out = bare;
+                    }
+                    value_consumed = true;
+                }
+                else
+                {
+                    std::fprintf(stderr, "Error: unknown flag '-%c'\n", c);
+                    return fail(1);
+                }
             }
         }
-        // A lone "-" is an operand (POSIX stdin sentinel), not a flag: fall
-        // through to positional handling rather than rejecting it.
+        // A lone "-" is an operand (POSIX stdin sentinel), not a flag: it has no
+        // char after the dash, so it falls through to positional handling. What
+        // reaches here with a leading '-' is an unknown long flag ("--foo").
         else if (argv[i][0] == '-' && argv[i][1] != '\0')
         {
             std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
