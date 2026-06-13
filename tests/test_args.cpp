@@ -110,6 +110,23 @@ TEST(args, unknown_short_flag_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── lone "-" operand (POSIX stdin sentinel) ──────────────────────────────────
+
+TEST(args, lone_dash_is_model_path)
+{
+    ParseResult r = run({ "-" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.model_path == "-");
+}
+
+TEST(args, lone_dash_after_flag)
+{
+    ParseResult r = run({ "-s", "flat", "-" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.shading, 1);
+    ASSERT_TRUE(r.args.model_path == "-");
+}
+
 // ─── error: extra positional ──────────────────────────────────────────────────
 
 TEST(args, two_positional_args_is_error)

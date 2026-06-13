@@ -619,7 +619,9 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        else if (argv[i][0] == '-')
+        // A lone "-" is an operand (POSIX stdin sentinel), not a flag: fall
+        // through to positional handling rather than rejecting it.
+        else if (argv[i][0] == '-' && argv[i][1] != '\0')
         {
             std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
             return fail(1);
