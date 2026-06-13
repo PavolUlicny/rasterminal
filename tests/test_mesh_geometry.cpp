@@ -896,8 +896,8 @@ TEST(ao, stl_load_runs_compute_ao)
 
 TEST(ao, ply_load_runs_compute_ao)
 {
-    // PLY + ao=true must run compute_ao() (unlike STL where ext=="stl" skips it).
-    // Same concave-pit geometry as ao/concave_vertex_darkened: vertex 0 → ao = 0.85.
+    // PLY + ao=true must run compute_ao(). Same concave-pit geometry as
+    // ao/concave_vertex_darkened: vertex 0 → ao = 0.85.
     const std::string ply = "ply\n"
                             "format ascii 1.0\n"
                             "element vertex 5\n"
