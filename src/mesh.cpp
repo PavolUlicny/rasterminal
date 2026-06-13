@@ -552,7 +552,12 @@ void Mesh::compute_tangents()
 // For each vertex, the centroid of its edge-connected neighbors is computed.
 // The vector from the vertex to that centroid, projected onto the vertex normal,
 // gives the curvature sign: positive = concave (cavity) → darken; negative =
-// convex → keep at 1.  This runs at load time so it costs nothing per frame.
+// convex → keep at 1.  The projection is divided by the local RMS edge length, so
+// the measure is a scale-invariant depth/width ratio rather than a pure direction:
+// a shallow dip (small offset relative to edge spacing) barely darkens while a true
+// cavity still does. Normalizing the offset instead — as an earlier version did —
+// discarded depth, so sub-edge surface noise on scanned meshes read as full-strength
+// cavities and speckled the result.  This runs at load time so it costs nothing per frame.
 
 void Mesh::compute_ao(int n_threads)
 {
@@ -612,25 +617,31 @@ void Mesh::compute_ao(int n_threads)
             const vec3 &p = vertices[i].pos;
             const vec3 &N = vertices[i].normal;
 
-            // Centroid of neighboring positions.
+            // Centroid of neighboring positions, plus the summed squared edge length so the
+            // curvature can be normalized by spacing instead of by its own magnitude.
             vec3 centroid{};
+            float edge_sq_sum = 0.0f;
             for (int ai = adj_start[i]; ai < adj_start[i + 1]; ai++)
             {
-                centroid += vertices[adj_list[static_cast<size_t>(ai)]].pos;
+                const vec3 &q = vertices[adj_list[static_cast<size_t>(ai)]].pos;
+                centroid += q;
+                edge_sq_sum += (q - p).length_sq();
             }
-            centroid = centroid * (1.0f / static_cast<float>(deg));
+            const float inv_deg = 1.0f / static_cast<float>(deg);
+            centroid = centroid * inv_deg;
 
-            const vec3 d = centroid - p;
-            const float len_sq = d.length_sq();
-            if (len_sq < 1e-16f)
+            // RMS edge length: one sqrt per vertex. Zero means all neighbors coincide with the
+            // vertex (degenerate fan) — no curvature is defined, so leave it fully lit.
+            const float mean_edge = std::sqrt(edge_sq_sum * inv_deg);
+            if (mean_edge < 1e-12f)
             {
                 vertices[i].ao = 1.0f;
                 continue;
             }
 
-            // Positive curvature = concave = cavity → reduce AO.
+            // Signed depth/width ratio. Positive = concave = cavity → reduce AO.
             // Clamp so convex surfaces stay at 1 and deep cavities don't go fully black.
-            const float curvature = dot(d * (1.0f / std::sqrt(len_sq)), N);
+            const float curvature = dot(centroid - p, N) / mean_edge;
             vertices[i].ao = 1.0f - clamp(curvature * 0.5f, 0.0f, 0.15f);
         }
     };

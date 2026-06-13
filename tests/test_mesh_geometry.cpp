@@ -804,8 +804,9 @@ TEST(tangents, zero_normal_fallback_is_finite)
 TEST(ao, concave_vertex_darkened)
 {
     // Pyramid pit: vertex 0 at origin, 4 rim vertices at z=1.
-    // Centroid of vertex 0's neighbors = (0,0,1); normal = (0,0,1);
-    // curvature = 1.0 → ao = 1 − clamp(0.5, 0, 0.15) = 0.85.
+    // Centroid of vertex 0's neighbors = (0,0,1); normal = (0,0,1); RMS edge = sqrt(2).
+    // curvature = dot((0,0,1),(0,0,1)) / sqrt(2) = 0.707
+    //   → ao = 1 − clamp(0.354, 0, 0.15) = 0.85 (still clamped, so the value is unchanged).
     const std::string obj = "v 0 0 0\n"
                             "v 1 0 1\n"
                             "v 0 1 1\n"
@@ -864,7 +865,7 @@ TEST(ao, stl_load_runs_compute_ao)
     // STL now consumes stl_reader's shared (deduplicated) vertices, so compute_ao runs for STL
     // like every other format (the old ext=="stl" skip is gone). Same concave pyramid pit as
     // ao/concave_vertex_darkened and ao/ply_load_runs_compute_ao: a center vertex at (0,0,0)
-    // shared by 4 facets, rim at z=1 → curvature 1.0 → ao = 0.85. The center is written
+    // shared by 4 facets, rim at z=1 → curvature 1/sqrt(2) → clamps to ao = 0.85. The center is written
     // bit-identically in every facet so stl_reader welds it into one shared, 4-incident vertex.
     auto facet = [](const char *a, const char *b, const char *c)
     {
@@ -925,8 +926,8 @@ TEST(ao, ply_load_runs_compute_ao)
 TEST(ao, convex_vertex_stays_at_one)
 {
     // Spike tip at origin, 4 base verts at z=-1.
-    // Tip normal = (0,0,1); centroid of neighbors = (0,0,-1);
-    // curvature = dot((0,0,-1),(0,0,1)) = -1 (convex) → clamp(-0.5,0,0.15)=0 → ao=1.0.
+    // Tip normal = (0,0,1); centroid of neighbors = (0,0,-1); RMS edge = sqrt(2).
+    // curvature = dot((0,0,-1),(0,0,1)) / sqrt(2) = -0.707 (convex) → clamp(-0.354,0,0.15)=0 → ao=1.0.
     const std::string obj = "v 0 0 0\n"
                             "v 1 0 -1\n"
                             "v 0 1 -1\n"
@@ -940,6 +941,36 @@ TEST(ao, convex_vertex_stays_at_one)
     Mesh m;
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
     ASSERT_NEAR(m.vertices[0].ao, 1.0f, 1e-5f);
+}
+
+TEST(ao, shallow_concavity_darkens_less_than_deep)
+{
+    // The point of the magnitude-aware curvature: depth matters relative to spacing, so a shallow
+    // dip darkens far less than a deep one of the same width. The old normalized formula discarded
+    // depth and gave both the SAME 0.85 — reverting to dot(normalize(d), N) fails this test.
+    //
+    // Same 4-facet pyramid pit as ao/concave_vertex_darkened, parameterized by rim height z.
+    auto pit = [](const char *z)
+    {
+        return std::string("v 0 0 0\n") + "v 1 0 " + z + "\n" + "v 0 1 " + z + "\n" + "v -1 0 " + z + "\n" + "v 0 -1 " +
+               z + "\n" + "f 1 2 3\nf 1 3 4\nf 1 4 5\nf 1 5 2\n";
+    };
+
+    // Deep pit, rim z=1: curvature 1/sqrt(2)=0.707 → clamps to 0.15 → ao 0.85 (as the sibling test).
+    TmpFile deep_f(tmp_path("rast_ao_deep.obj"), pit("1"));
+    Mesh deep;
+    ASSERT_TRUE(deep.load_model(deep_f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    ASSERT_NEAR(deep.vertices[0].ao, 0.85f, 1e-4f);
+
+    // Shallow pit, rim z=0.1: centroid offset 0.1, RMS edge sqrt(1.01)=1.005, curvature 0.0995,
+    // *0.5=0.0497 (below the 0.15 clamp) → ao = 1 - 0.0497 = 0.9503.
+    TmpFile shallow_f(tmp_path("rast_ao_shallow.obj"), pit("0.1"));
+    Mesh shallow;
+    ASSERT_TRUE(shallow.load_model(shallow_f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    ASSERT_NEAR(shallow.vertices[0].ao, 0.9503f, 1e-3f);
+
+    // The shallow dip must be visibly lighter than the deep one (the regression the fix targets).
+    ASSERT_TRUE(shallow.vertices[0].ao > deep.vertices[0].ao + 0.05f);
 }
 
 TEST(mesh, load_model_sets_has_double_sided_false_for_obj)
