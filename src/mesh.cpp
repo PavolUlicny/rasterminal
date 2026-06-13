@@ -149,7 +149,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         has_transparent = has_transparent || has_vertex_alpha;
 
         compute_tangents();
-        if (ao && ext != "stl")
+        if (ao)
         {
             compute_ao(n_threads);
         }

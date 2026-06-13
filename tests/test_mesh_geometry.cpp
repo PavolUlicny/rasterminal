@@ -859,27 +859,38 @@ TEST(ao, disabled_skips_computation)
     }
 }
 
-TEST(ao, stl_load_skips_compute_ao)
+TEST(ao, stl_load_runs_compute_ao)
 {
-    // STL uses unshared vertices so compute_ao is explicitly skipped (ext=="stl" guard).
-    // All vertex ao values must stay at the loader default of 1.0.
-    TmpFile f(
-        tmp_path("rast_ao_stl.stl"), "solid test\n"
-                                     "facet normal 0 0 1\n"
-                                     "  outer loop\n"
-                                     "    vertex 0 0 0\n"
-                                     "    vertex 1 0 0\n"
-                                     "    vertex 0 1 0\n"
-                                     "  endloop\n"
-                                     "endfacet\n"
-                                     "endsolid test\n"
-    );
-    Mesh m;
-    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true));
-    for (const auto &v : m.vertices)
+    // STL now consumes stl_reader's shared (deduplicated) vertices, so compute_ao runs for STL
+    // like every other format (the old ext=="stl" skip is gone). Same concave pyramid pit as
+    // ao/concave_vertex_darkened and ao/ply_load_runs_compute_ao: a center vertex at (0,0,0)
+    // shared by 4 facets, rim at z=1 → curvature 1.0 → ao = 0.85. The center is written
+    // bit-identically in every facet so stl_reader welds it into one shared, 4-incident vertex.
+    auto facet = [](const char *a, const char *b, const char *c)
     {
-        ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
+        return std::string("facet normal 0 0 0\n  outer loop\n    vertex ") + a + "\n    vertex " + b +
+               "\n    vertex " + c + "\n  endloop\nendfacet\n";
+    };
+    const std::string stl = "solid test\n" + facet("0 0 0", "1 0 1", "0 1 1") + facet("0 0 0", "0 1 1", "-1 0 1") +
+                            facet("0 0 0", "-1 0 1", "0 -1 1") + facet("0 0 0", "0 -1 1", "1 0 1") + "endsolid test\n";
+    TmpFile f(tmp_path("rast_ao_stl_concave.stl"), stl);
+    Mesh m;
+    // crease_angle 180 = full smoothing so the pit faces stay merged at the center (see above).
+    ASSERT_TRUE(m.load_model(f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+
+    // stl_reader sorts coords, so the center isn't vertices[0] — find it by position.
+    int center = -1;
+    for (size_t i = 0; i < m.vertices.size(); i++)
+    {
+        const vec3 &p = m.vertices[i].pos;
+        if (std::abs(p.x) < 1e-5f && std::abs(p.y) < 1e-5f && std::abs(p.z) < 1e-5f)
+        {
+            center = static_cast<int>(i);
+            break;
+        }
     }
+    ASSERT_TRUE(center >= 0);
+    ASSERT_NEAR(m.vertices[static_cast<size_t>(center)].ao, 0.85f, 1e-4f);
 }
 
 TEST(ao, ply_load_runs_compute_ao)
