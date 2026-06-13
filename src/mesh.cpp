@@ -68,9 +68,9 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     // body is wrapped so any of these becomes a fail-loud "could not load" rather than unwinding
     // out of main() into std::terminate. The guard must span the post-load steps too, not just the
     // dispatch: compute_ao() and optimize_vertex_cache() allocate large buffers and spawn threads.
-    bool ok = false;
     try
     {
+        bool ok = false;
         if (ext == "obj")
         {
             ok = load_obj(path, n_threads, crease_cos);
@@ -89,6 +89,19 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         }
 
         if (!ok)
+        {
+            clear();
+            return false;
+        }
+
+        // Reject non-finite vertex positions before any post-load work. No format loader
+        // validates finiteness, and a NaN/Inf position would otherwise poison normals, the
+        // bounding box, and the camera auto-fit (which frames to the bbox sphere) — a single
+        // junk vertex blows up the whole view. One scan here covers every format uniformly.
+        if (std::any_of(
+                vertices.begin(), vertices.end(), [](const Vertex &v)
+                { return !std::isfinite(v.pos.x) || !std::isfinite(v.pos.y) || !std::isfinite(v.pos.z); }
+            ))
         {
             clear();
             return false;
