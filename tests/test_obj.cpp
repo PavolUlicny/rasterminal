@@ -28,6 +28,55 @@ TEST(obj_valid, mtl_multi_material_loaded)
     }
 }
 
+TEST(obj_valid, crease_split_across_multi_material)
+{
+    // A 90 deg fold whose two faces use different materials. compute_normals splits the
+    // shared edge BEFORE optimize_vertex_cache runs its per-material-group reorder, so the
+    // crease split and the per-group remap must both survive: each origin half keeps its
+    // axis-aligned face normal, and the two triangles keep their distinct material_idx.
+    TmpFile mtl(
+        tmp_path("rast_crease_mm.mtl"), "newmtl red\nKd 0.9 0.1 0.1\n"
+                                        "newmtl blue\nKd 0.1 0.2 0.9\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_crease_mm.obj"), "mtllib rast_crease_mm.mtl\n"
+                                        "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+                                        "usemtl red\nf 1 2 3\n"
+                                        "usemtl blue\nf 2 1 4\n"
+    );
+    Mesh m = load_ok(obj.path);
+
+    int at_origin = 0;
+    bool saw_z = false;
+    bool saw_y = false;
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            if (v.normal.z > 0.99f)
+            {
+                saw_z = true;
+            }
+            if (v.normal.y > 0.99f)
+            {
+                saw_y = true;
+            }
+        }
+    }
+    ASSERT_EQ(at_origin, 2);     // 90 deg > 60 deg crease → split despite the material boundary
+    ASSERT_TRUE(saw_z && saw_y); // each half kept its own axis-aligned face normal
+
+    uint32_t lo = m.triangles.front().material_idx;
+    uint32_t hi = lo;
+    for (const auto &t : m.triangles)
+    {
+        lo = std::min(lo, t.material_idx);
+        hi = std::max(hi, t.material_idx);
+    }
+    ASSERT_TRUE(hi != lo); // two distinct materials still assigned after the per-group optimize
+}
+
 TEST(obj_valid, quad_multi_face_triangulates_to_twelve)
 {
     // 6 quads (a cube) fan-triangulated → 12 triangles.
@@ -206,6 +255,21 @@ TEST(reject, obj_oob_texcoord_index)
                                                  "v 0 1 0\n"
                                                  "vt 0 0\n"
                                                  "f 1/2 2/2 3/2\n"
+    );
+    assert_rejects(t.path);
+}
+
+TEST(reject, obj_non_finite_vertex)
+{
+    // An overflowing exponent (1e400) parses to +inf in tinyobjloader's float reader. A
+    // non-finite position must be rejected: load_model scans positions after the loader
+    // returns and fails loud (mesh.cpp), since inf would poison normals/bbox/camera-fit.
+    // (A bare "nan"/"inf" token can't be used — tinyobj's parser fails them to 0.0.)
+    TmpFile t(
+        tmp_path("rasterminal_test_inf.obj"), "v 1e400 0 0\n"
+                                              "v 1 0 0\n"
+                                              "v 0 1 0\n"
+                                              "f 1 2 3\n"
     );
     assert_rejects(t.path);
 }
