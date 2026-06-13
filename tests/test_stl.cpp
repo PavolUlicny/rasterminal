@@ -243,7 +243,7 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
     ASSERT_NEAR(m.vertices[1].pos.x, 4.0f, 1e-5f);
     ASSERT_NEAR(m.vertices[2].pos.x, 7.0f, 1e-5f);
 
-    // ao is hardcoded to 1.0 in the expansion loop (STL has no AO data).
+    // ao is hardcoded to 1.0 when copying stl_reader's vertices (STL has no AO data).
     for (const Vertex &v : m.vertices)
     {
         ASSERT_NEAR(v.ao, 1.0f, 1e-6f);
@@ -276,57 +276,16 @@ TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
     }
 }
 
-TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
+TEST(stl_valid, binary_two_triangles_dedup_shared_edge)
 {
-    // The loader re-expands stl_reader's deduplicated output to 3 unshared
-    // vertices per triangle. Verify counts and triangle index offsets for n=2.
-    std::string s(80, 'X');
-    emit_u32_le(s, 2); // two triangles
-    for (int tri = 0; tri < 2; tri++)
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            emit_f32_le(s, 0.0f); // normal (ignored)
-        }
-        // Non-degenerate triangle, shifted per tri so no vertex deduplication.
-        emit_f32_le(s, static_cast<float>(tri * 10));
-        emit_f32_le(s, 0.0f);
-        emit_f32_le(s, 0.0f); // v0
-        emit_f32_le(s, static_cast<float>((tri * 10) + 1));
-        emit_f32_le(s, 0.0f);
-        emit_f32_le(s, 0.0f); // v1
-        emit_f32_le(s, static_cast<float>(tri * 10));
-        emit_f32_le(s, 1.0f);
-        emit_f32_le(s, 0.0f); // v2
-        s.push_back(0);
-        s.push_back(0); // attr
-    }
-    TmpFile t(tmp_path("rasterminal_test_2tri.stl"), s);
-    Mesh m = load_ok(t.path);
-
-    ASSERT_EQ(m.vertices.size(), size_t{ 6 });
-    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
-    // Second triangle's indices must be offset by vert_base=3.
-    ASSERT_EQ(m.triangles[0].v[0], 0u);
-    ASSERT_EQ(m.triangles[0].v[1], 1u);
-    ASSERT_EQ(m.triangles[0].v[2], 2u);
-    ASSERT_EQ(m.triangles[1].v[0], 3u);
-    ASSERT_EQ(m.triangles[1].v[1], 4u);
-    ASSERT_EQ(m.triangles[1].v[2], 5u);
-}
-
-TEST(stl_valid, smooth_angle_is_noop_faceted_always)
-{
-    // STL is ALWAYS faceted: load_stl expands to 3 unshared vertices per triangle and calls
-    // compute_normals with no weld map (mesh_stl.cpp), so no two triangles share a vertex
-    // index and the crease angle has no adjacency to act on. This pins that --smooth-angle is
-    // a silent no-op for STL — the same file at crease 0 and crease 180 must produce byte-
-    // identical, per-face (never blended) normals. (The dedup+weld that would make crease
-    // meaningful lives only on an abandoned branch; main keeps the unshared layout.)
+    // The loader consumes stl_reader's deduplicated output directly: two triangles sharing an
+    // edge must collapse the two shared corners into single vertex indices, NOT re-expand to
+    // 6 unshared verts. This pins the dedup — a re-introduced expansion would make the count 6.
     //
-    // Two triangles share the edge (0,0,0)-(1,0,0) at a 90 deg fold: triangle A in XY
-    // (normal +Z), triangle B folded into XZ (normal +Y). A crease-aware loader would blend
-    // them toward 45 deg at crease 180; the faceted loader must not.
+    // Two coplanar triangles tile a unit square in the XY plane (both wound CCW from +Z, so the
+    // dihedral is 0 deg and compute_normals never crease-splits the shared verts at any angle):
+    // A = (0,0,0)-(1,0,0)-(1,1,0), B = (0,0,0)-(1,1,0)-(0,1,0). They share the diagonal edge
+    // (0,0,0)-(1,1,0), so the four unique positions are the square's corners.
     std::string s(80, 'X');
     emit_u32_le(s, 2); // two triangles
     auto emit_tri = [&](float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
@@ -347,30 +306,112 @@ TEST(stl_valid, smooth_angle_is_noop_faceted_always)
         s.push_back(0);
         s.push_back(0); // attr
     };
+    emit_tri(0, 0, 0, 1, 0, 0, 1, 1, 0);
+    emit_tri(0, 0, 0, 1, 1, 0, 0, 1, 0);
+    TmpFile t(tmp_path("rasterminal_test_2tri.stl"), s);
+    Mesh m = load_ok(t.path);
+
+    ASSERT_EQ(m.vertices.size(), size_t{ 4 }); // 6 corners -> 4 unique positions
+    ASSERT_EQ(m.triangles.size(), size_t{ 2 });
+
+    // The two triangles must reference exactly two common vertex indices (the shared edge).
+    int shared = 0;
+    for (const uint32_t a : m.triangles[0].v)
+    {
+        for (const uint32_t b : m.triangles[1].v)
+        {
+            shared += (a == b) ? 1 : 0;
+        }
+    }
+    ASSERT_EQ(shared, 2);
+}
+
+// Emits a binary STL with the two triangles of a 90 deg fold sharing edge (0,0,0)-(1,0,0):
+// triangle A in XY (normal +Z), triangle B folded into XZ (normal +Y). Shared corners
+// deduplicate to a single vertex index, so the crease angle has adjacency to act on.
+static std::string stl_90deg_fold()
+{
+    std::string s(80, 'X');
+    emit_u32_le(s, 2);
+    auto emit_tri = [&](float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            emit_f32_le(s, 0.0f); // normal (ignored)
+        }
+        emit_f32_le(s, ax);
+        emit_f32_le(s, ay);
+        emit_f32_le(s, az);
+        emit_f32_le(s, bx);
+        emit_f32_le(s, by);
+        emit_f32_le(s, bz);
+        emit_f32_le(s, cx);
+        emit_f32_le(s, cy);
+        emit_f32_le(s, cz);
+        s.push_back(0);
+        s.push_back(0); // attr
+    };
     emit_tri(0, 0, 0, 1, 0, 0, 0, 1, 0); // +Z face
     emit_tri(1, 0, 0, 0, 0, 0, 0, 0, 1); // +Y face
-    TmpFile t(tmp_path("rasterminal_test_stl_facet.stl"), s);
+    return s;
+}
+
+TEST(stl_valid, smooth_angle_controls_crease)
+{
+    // STL now consumes stl_reader's shared (deduplicated) vertices, so --smooth-angle is no
+    // longer a no-op: the crease angle decides whether a shared edge smooths or hard-splits,
+    // exactly like OBJ/PLY. Same 90 deg fold loaded at the two extremes must differ.
+    TmpFile t(tmp_path("rasterminal_test_stl_facet.stl"), stl_90deg_fold());
 
     Mesh faceted;
     ASSERT_TRUE(faceted.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/0.0f));
     Mesh smoothed;
     ASSERT_TRUE(smoothed.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
 
-    // Unshared layout: 3 vertices per triangle, regardless of the crease angle.
+    // crease 0: the shared verts split back into per-face wedges -> 6 verts, and every normal is
+    // its own face's axis-aligned normal (never a 45 deg blend) — visually identical to the old
+    // always-faceted output, which is exactly what --smooth-angle 0 must preserve.
     ASSERT_EQ(faceted.vertices.size(), size_t{ 6 });
-    ASSERT_EQ(smoothed.vertices.size(), size_t{ 6 });
-
-    // Crease angle changes nothing — normals are identical between the two loads, and every
-    // normal is its own face's axis-aligned normal (never a 45 deg blend of the two faces).
-    for (size_t i = 0; i < faceted.vertices.size(); i++)
+    for (const Vertex &v : faceted.vertices)
     {
-        const vec3 nf = faceted.vertices[i].normal;
-        const vec3 ns = smoothed.vertices[i].normal;
-        ASSERT_NEAR(nf.x, ns.x, 1e-6f);
-        ASSERT_NEAR(nf.y, ns.y, 1e-6f);
-        ASSERT_NEAR(nf.z, ns.z, 1e-6f);
-        ASSERT_TRUE(nf.z > 0.99f || nf.y > 0.99f); // axis-aligned, not blended
+        ASSERT_TRUE(v.normal.z > 0.99f || v.normal.y > 0.99f);
     }
+
+    // crease 180: shared verts stay merged -> 4 verts; the two on the shared edge carry the
+    // blended normal normalize(+Z + +Y) ~ (0, 0.707, 0.707), the two others stay axis-aligned.
+    ASSERT_EQ(smoothed.vertices.size(), size_t{ 4 });
+    int blended = 0;
+    for (const Vertex &v : smoothed.vertices)
+    {
+        if (v.normal.y > 0.6f && v.normal.z > 0.6f)
+        {
+            ASSERT_NEAR(v.normal.y, 0.70710678f, 1e-3f);
+            ASSERT_NEAR(v.normal.z, 0.70710678f, 1e-3f);
+            blended++;
+        }
+        else
+        {
+            ASSERT_TRUE(v.normal.z > 0.99f || v.normal.y > 0.99f);
+        }
+    }
+    ASSERT_EQ(blended, 2); // the two shared-edge vertices
+}
+
+TEST(stl_valid, crease_threshold_brackets_split_stl)
+{
+    // The crease comparison must be genuinely wired through the STL path, not just the 0/180
+    // extremes: the same 90 deg fold one degree on either side of the dihedral flips between a
+    // hard split (6 verts) and a merge (4 verts). Guards against a future re-expansion or a
+    // mis-gated crease that would silently revert STL to always-faceted.
+    TmpFile t(tmp_path("rasterminal_test_stl_crease_bracket.stl"), stl_90deg_fold());
+
+    Mesh just_below; // crease 89 < 90 deg dihedral -> split
+    ASSERT_TRUE(just_below.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/89.0f));
+    ASSERT_EQ(just_below.vertices.size(), size_t{ 6 });
+
+    Mesh just_above; // crease 91 > 90 deg dihedral -> merge
+    ASSERT_TRUE(just_above.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/91.0f));
+    ASSERT_EQ(just_above.vertices.size(), size_t{ 4 });
 }
 
 TEST(reject, stl_header_read_under_5_bytes)

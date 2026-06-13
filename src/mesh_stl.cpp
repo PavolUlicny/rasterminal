@@ -94,30 +94,28 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
 
     materials.push_back(Material{});
 
-    // Expand stl_reader's deduplicated output to 3 unshared vertices per triangle.
-    // Dedup produces random index access into the vertex array which defeats the
-    // hardware prefetcher; sequential layout [3i, 3i+1, 3i+2] is measurably faster
-    // on high-poly models. AO is also skipped for STL in load_model() — isolated
-    // vertices produce no adjacency so ao stays at 1 everywhere anyway.
-    vertices.reserve(n_tris * 3);
-    triangles.reserve(n_tris);
+    // Consume stl_reader's deduplicated output directly: coords holds one entry per unique
+    // position and tris indexes into it, so shared corners become shared vertex indices.
+    // This is what lets compute_normals smooth across sub-crease edges (OBJ/PLY parity);
+    // re-expanding to unshared corners — as this loader once did — discarded the weld and
+    // forced STL to render permanently faceted, with --smooth-angle a silent no-op.
+    const size_t n_verts = coords.size() / 3;
+    vertices.reserve(n_verts);
+    for (size_t v = 0; v < n_verts; v++)
+    {
+        Vertex vert{};
+        vert.pos = { coords[3 * v], coords[(3 * v) + 1], coords[(3 * v) + 2] };
+        vert.ao = 1.0f;
+        vertices.push_back(vert);
+    }
 
+    triangles.reserve(n_tris);
     for (size_t i = 0; i < n_tris; i++)
     {
-        const auto base = static_cast<uint32_t>(vertices.size());
-        for (int j = 0; j < 3; j++)
-        {
-            const unsigned int vi = tris[(3 * i) + static_cast<size_t>(j)];
-            Vertex v{};
-            v.pos = { coords[3 * static_cast<size_t>(vi)], coords[(3 * static_cast<size_t>(vi)) + 1],
-                      coords[(3 * static_cast<size_t>(vi)) + 2] };
-            v.ao = 1.0f;
-            vertices.push_back(v);
-        }
         Triangle t;
-        t.v[0] = base;
-        t.v[1] = base + 1;
-        t.v[2] = base + 2;
+        t.v[0] = static_cast<uint32_t>(tris[3 * i]);
+        t.v[1] = static_cast<uint32_t>(tris[(3 * i) + 1]);
+        t.v[2] = static_cast<uint32_t>(tris[(3 * i) + 2]);
         t.material_idx = 0;
         triangles.push_back(t);
     }
