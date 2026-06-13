@@ -554,6 +554,38 @@ TEST(reject, ply_missing_xyz_properties)
     assert_rejects(t.path);
 }
 
+TEST(reject, ply_non_finite_vertex)
+{
+    // A genuine +inf float (0x7F800000) in a binary-LE vertex must be rejected by
+    // load_model's post-load finiteness scan. Binary is deliberate: tinyply's ASCII reader
+    // rejects a bare "inf"/"nan" token on its own (a pre-existing path), so only a raw
+    // bit-pattern actually exercises the new finiteness guard rather than the parser.
+    std::string s = "ply\n"
+                    "format binary_little_endian 1.0\n"
+                    "element vertex 3\n"
+                    "property float x\n"
+                    "property float y\n"
+                    "property float z\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "end_header\n";
+    emit_u32_le(s, 0x7F800000u); // v0.x = +inf
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 0);
+    emit_f32_le(s, 1);
+    emit_f32_le(s, 0);
+    s.push_back(3); // list count (uchar)
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    TmpFile t(tmp_path("rasterminal_test_ply_inf.ply"), s);
+    assert_rejects(t.path);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  UV PROPERTY NAME FALLBACKS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1228,6 +1260,75 @@ TEST(ply_valid, crease_smoothing_splits_hard_edge)
         }
     }
     ASSERT_EQ(at_origin, 2); // split because 90 deg > 60 deg default crease
+}
+
+TEST(ply_valid, crease_shallow_fold_stays_smooth)
+{
+    // The complement of the hard-edge case: a ~11 deg fold (< 60 deg default crease) keeps
+    // the shared origin a single merged vertex with a blended normal. PLY shares vertex
+    // elements across faces, so the standard path has real adjacency for crease smoothing.
+    TmpFile t(
+        tmp_path("rast_ply_crease_soft.ply"), "ply\nformat ascii 1.0\n"
+                                              "element vertex 4\n"
+                                              "property float x\nproperty float y\nproperty float z\n"
+                                              "element face 2\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "end_header\n"
+                                              "0 0 0\n1 0 0\n0 1 0\n0 -1 0.2\n"
+                                              "3 0 1 2\n"
+                                              "3 1 0 3\n"
+    );
+    Mesh m = load_ok(t.path);
+    int at_origin = 0;
+    vec3 n{};
+    for (const auto &v : m.vertices)
+    {
+        if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+        {
+            at_origin++;
+            n = v.normal;
+        }
+    }
+    ASSERT_EQ(at_origin, 1); // shallow fold stays merged
+    ASSERT_NEAR(n.length(), 1.0f, 1e-5f);
+    ASSERT_TRUE(n.z > 0.9f && n.y > 0.0f); // blend of +Z and the tilted face
+}
+
+TEST(ply_valid, crease_threshold_controls_split)
+{
+    // Same 90 deg fold; the forwarded crease angle decides the outcome, mirroring the OBJ
+    // coverage. PLY had only the default-crease hard-edge case before.
+    const char *ply = "ply\nformat ascii 1.0\n"
+                      "element vertex 4\n"
+                      "property float x\nproperty float y\nproperty float z\n"
+                      "element face 2\n"
+                      "property list uchar int vertex_indices\n"
+                      "end_header\n"
+                      "0 0 0\n1 0 0\n0 1 0\n0 0 1\n"
+                      "3 0 1 2\n"
+                      "3 1 0 3\n";
+    TmpFile t(tmp_path("rast_ply_crease_thresh.ply"), ply);
+
+    auto count_origin = [](const Mesh &m) -> int
+    {
+        int c = 0;
+        for (const auto &v : m.vertices)
+        {
+            if (v.pos.x == 0.0f && v.pos.y == 0.0f && v.pos.z == 0.0f)
+            {
+                c++;
+            }
+        }
+        return c;
+    };
+
+    Mesh smooth;
+    ASSERT_TRUE(smooth.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+    ASSERT_EQ(count_origin(smooth), 1); // 90 deg < 180 deg threshold → merged
+
+    Mesh hard;
+    ASSERT_TRUE(hard.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/45.0f));
+    ASSERT_EQ(count_origin(hard), 2); // 90 deg > 45 deg threshold → split
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
