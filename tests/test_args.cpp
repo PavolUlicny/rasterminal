@@ -157,6 +157,21 @@ TEST(args, lone_dash_after_flag)
     ASSERT_TRUE(r.args.model_path == "-");
 }
 
+TEST(args, lone_dash_then_operand_is_error)
+{
+    // '-' is the (only) operand; a second operand is one too many.
+    ParseResult r = run({ "-", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, operand_then_lone_dash_is_error)
+{
+    ParseResult r = run({ "m.obj", "-" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // ─── error: extra positional ──────────────────────────────────────────────────
 
 TEST(args, two_positional_args_is_error)
@@ -209,6 +224,14 @@ TEST(args, double_dash_does_not_trigger_help)
     ParseResult r = run({ "--", "--help" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "--help");
+}
+
+TEST(args, double_dash_then_lone_dash_is_model)
+{
+    // A '-' after "--" is an ordinary operand, just like any other token.
+    ParseResult r = run({ "--", "-" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.model_path == "-");
 }
 
 // ─── error: missing value ─────────────────────────────────────────────────────
@@ -648,6 +671,225 @@ TEST(args, cluster_unknown_char_is_error)
     ParseResult r = run({ "-Sz", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cluster_unknown_char_first_is_error)
+{
+    // Order does not matter: an unknown leading char errors before the valid 'S'.
+    ParseResult r = run({ "-zS", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, single_short_flag_is_length_one_cluster)
+{
+    // A lone short flag is just a length-one cluster; the refactor must not
+    // regress solo short flags.
+    ParseResult r = run({ "-S", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.n_threads, -1);
+}
+
+TEST(args, cluster_repeated_spin)
+{
+    // 'S' is a no-arg flag and keeps the cluster going; repeats are idempotent.
+    ParseResult r = run({ "-SS", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+}
+
+TEST(args, cluster_many_spins_then_value_flag)
+{
+    ParseResult r = run({ "-SSSj4", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.n_threads, 4);
+}
+
+// Exit flags ('h'/'V') short-circuit the whole parse from anywhere in a cluster.
+
+TEST(args, cluster_version_first_short_circuits)
+{
+    ParseResult r = run({ "-VS" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, cluster_help_short_circuits_before_unknown)
+{
+    // 'h' exits 0 before the unknown 'z' would error.
+    ParseResult r = run({ "-hz" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+TEST(args, cluster_version_short_circuits_before_unknown)
+{
+    ParseResult r = run({ "-Vz" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 0);
+}
+
+// Optional-int flags ('j'/'f'/'B') last in a cluster: compact value, next-token
+// value, or bare (default).
+
+TEST(args, cluster_spin_threads_bare_no_digit)
+{
+    // 'j' ends the cluster and the next token is not an integer → all cores (0).
+    ParseResult r = run({ "-Sj", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.n_threads, 0);
+    ASSERT_TRUE(r.args.model_path == "m.obj");
+}
+
+TEST(args, cluster_spin_fps_compact)
+{
+    ParseResult r = run({ "-Sf120", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.fps, 120);
+}
+
+TEST(args, cluster_spin_fps_bare)
+{
+    // Bare 'f' → uncapped (0).
+    ParseResult r = run({ "-Sf", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.fps, 0);
+}
+
+TEST(args, cluster_spin_fps_next_token)
+{
+    ParseResult r = run({ "-Sf", "120", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.fps, 120);
+}
+
+TEST(args, cluster_spin_bench_compact)
+{
+    ParseResult r = run({ "-SB50", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.bench, 50);
+}
+
+TEST(args, cluster_spin_bench_next_token)
+{
+    ParseResult r = run({ "-SB", "50", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.bench, 50);
+}
+
+// Mandatory-value flags ('s'/'b'/'l'/'w'/'c'/'t') in a cluster: compact value.
+
+TEST(args, cluster_spin_bg_compact)
+{
+    // "white" contains 'h' and 't' (themselves flags) — proof the value is taken
+    // verbatim and its chars are not re-parsed as further cluster flags.
+    ParseResult r = run({ "-Sbwhite", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.bg, 2);
+}
+
+TEST(args, cluster_spin_lighting_compact)
+{
+    ParseResult r = run({ "-Slsingle", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.lighting, 1);
+}
+
+TEST(args, cluster_spin_wireframe_compact)
+{
+    ParseResult r = run({ "-Swred", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.wireframe_color, 1);
+}
+
+TEST(args, cluster_spin_cull_on_compact)
+{
+    ParseResult r = run({ "-Scon", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_TRUE(r.args.cull);
+}
+
+// Mandatory-value flags last in a cluster pull the next argv token.
+
+TEST(args, cluster_spin_shading_next_token)
+{
+    ParseResult r = run({ "-Ss", "phong", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_EQ(r.args.shading, 3);
+}
+
+TEST(args, cluster_spin_texture_next_token)
+{
+    ParseResult r = run({ "-St", "off", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_FALSE(r.args.texture);
+}
+
+// A value flag greedily consumes the rest of the token, so a later flag char is
+// treated as that flag's value (and validated as such), never as its own flag.
+
+TEST(args, cluster_value_flag_consumes_following_flag_char)
+{
+    // 's' after the cull flag is "-c"'s value → invalid boolean → error.
+    ParseResult r = run({ "-Scs", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cluster_optint_consumes_following_flag_char)
+{
+    // 'S' after the fps flag is "-f"'s value → not an integer → error.
+    ParseResult r = run({ "-SfS", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// Error edges inside a cluster.
+
+TEST(args, cluster_value_flag_missing_value_is_error)
+{
+    // 'c' ends the cluster with no following token → missing value.
+    ParseResult r = run({ "-Sc" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cluster_value_flag_equals_is_rejected)
+{
+    // Same getopt-style rule as a solo short flag: "=phong" is the value verbatim.
+    ParseResult r = run({ "-Ss=phong", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cluster_threads_compact_nondigit_is_error)
+{
+    ParseResult r = run({ "-Sjx", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, cluster_then_double_dash_dash_model)
+{
+    // A cluster, then "--", then a '-'-prefixed operand: all three cooperate.
+    ParseResult r = run({ "-S", "--", "-m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.spin);
+    ASSERT_TRUE(r.args.model_path == "-m.obj");
 }
 
 // ─── --wireframe-color ────────────────────────────────────────────────────────
