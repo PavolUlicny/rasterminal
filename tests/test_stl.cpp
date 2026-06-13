@@ -236,7 +236,10 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
     ASSERT_EQ(m.triangles[0].material_idx, 0u);
     ASSERT_FALSE(m.has_vertex_colors);
 
-    // Positions; stl_reader preserves declaration order for a single triangle.
+    // Positions. NOTE: stl_reader deduplicates by sorting coords lexicographically
+    // (RemoveDoubles), so the output order is sorted-by-position, NOT declaration order.
+    // These coords are intentionally already ascending — (1,2,3)<(4,5,6)<(7,8,9) — so
+    // index order matches; do not change them to non-sorted values without reordering the asserts.
     ASSERT_NEAR(m.vertices[0].pos.x, 1.0f, 1e-5f);
     ASSERT_NEAR(m.vertices[0].pos.y, 2.0f, 1e-5f);
     ASSERT_NEAR(m.vertices[0].pos.z, 3.0f, 1e-5f);
