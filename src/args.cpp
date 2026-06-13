@@ -293,9 +293,28 @@ ParseResult parse_args(int argc, char *argv[])
 
     bool saw_bench_size = false;
     bool saw_bench_warmup = false;
+    bool end_of_options = false;
 
     for (int i = 1; i < argc; i++)
     {
+        // POSIX Guideline 10: the first "--" terminates option parsing; every
+        // token after it is a positional operand, even one beginning with '-'.
+        if (!end_of_options && std::strcmp(argv[i], "--") == 0)
+        {
+            end_of_options = true;
+            continue;
+        }
+        if (end_of_options)
+        {
+            if (!args.model_path.empty())
+            {
+                std::fprintf(stderr, "Error: unexpected argument '%s'\n", argv[i]);
+                return fail(1);
+            }
+            args.model_path = argv[i];
+            continue;
+        }
+
         // Split --flag=value → flag name + value pointer.
         // For --flag value or -f value forms, eq_val stays nullptr.
         const char *eq_val = nullptr;

@@ -119,6 +119,51 @@ TEST(args, two_positional_args_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── "--" end-of-options terminator (POSIX Guideline 10) ──────────────────────
+
+TEST(args, double_dash_allows_dash_prefixed_model)
+{
+    ParseResult r = run({ "--", "-file.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.model_path == "-file.obj");
+}
+
+TEST(args, double_dash_with_normal_model)
+{
+    ParseResult r = run({ "--", "model.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.model_path == "model.obj");
+}
+
+TEST(args, double_dash_after_flags)
+{
+    ParseResult r = run({ "-s", "flat", "--", "-m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.shading, 1);
+    ASSERT_TRUE(r.args.model_path == "-m.obj");
+}
+
+TEST(args, double_dash_alone_is_no_model_error)
+{
+    ParseResult r = run({ "--" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, double_dash_two_operands_is_error)
+{
+    ParseResult r = run({ "--", "a.obj", "b.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, double_dash_does_not_trigger_help)
+{
+    ParseResult r = run({ "--", "--help" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.model_path == "--help");
+}
+
 // ─── error: missing value ─────────────────────────────────────────────────────
 
 TEST(args, missing_value_for_shading_is_error)
