@@ -158,6 +158,32 @@ TEST(reject, stl_binary_zero_triangles)
     assert_rejects(t.path);
 }
 
+TEST(reject, stl_non_finite_vertex)
+{
+    // A NaN position (0x7FC00000) in an otherwise valid 1-triangle binary STL. The binary
+    // parse succeeds, but load_model's post-load finiteness scan rejects it before the NaN
+    // can poison normals/bbox/camera-fit.
+    std::string s(80, 'X');
+    emit_u32_le(s, 1); // tri_count = 1
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(s, 0.0f); // normal (ignored)
+    }
+    emit_u32_le(s, 0x7FC00000u); // v0.x = NaN
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    s.push_back(0);
+    s.push_back(0); // attribute bytes
+    TmpFile t(tmp_path("rasterminal_test_stl_nan.stl"), s);
+    assert_rejects(t.path);
+}
+
 TEST(reject, stl_ascii_no_facets)
 {
     TmpFile t(
@@ -287,6 +313,64 @@ TEST(stl_valid, binary_two_triangles_unshared_vertex_expansion)
     ASSERT_EQ(m.triangles[1].v[0], 3u);
     ASSERT_EQ(m.triangles[1].v[1], 4u);
     ASSERT_EQ(m.triangles[1].v[2], 5u);
+}
+
+TEST(stl_valid, smooth_angle_is_noop_faceted_always)
+{
+    // STL is ALWAYS faceted: load_stl expands to 3 unshared vertices per triangle and calls
+    // compute_normals with no weld map (mesh_stl.cpp), so no two triangles share a vertex
+    // index and the crease angle has no adjacency to act on. This pins that --smooth-angle is
+    // a silent no-op for STL — the same file at crease 0 and crease 180 must produce byte-
+    // identical, per-face (never blended) normals. (The dedup+weld that would make crease
+    // meaningful lives only on an abandoned branch; main keeps the unshared layout.)
+    //
+    // Two triangles share the edge (0,0,0)-(1,0,0) at a 90 deg fold: triangle A in XY
+    // (normal +Z), triangle B folded into XZ (normal +Y). A crease-aware loader would blend
+    // them toward 45 deg at crease 180; the faceted loader must not.
+    std::string s(80, 'X');
+    emit_u32_le(s, 2); // two triangles
+    auto emit_tri = [&](float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            emit_f32_le(s, 0.0f); // normal (ignored)
+        }
+        emit_f32_le(s, ax);
+        emit_f32_le(s, ay);
+        emit_f32_le(s, az);
+        emit_f32_le(s, bx);
+        emit_f32_le(s, by);
+        emit_f32_le(s, bz);
+        emit_f32_le(s, cx);
+        emit_f32_le(s, cy);
+        emit_f32_le(s, cz);
+        s.push_back(0);
+        s.push_back(0); // attr
+    };
+    emit_tri(0, 0, 0, 1, 0, 0, 0, 1, 0); // +Z face
+    emit_tri(1, 0, 0, 0, 0, 0, 0, 0, 1); // +Y face
+    TmpFile t(tmp_path("rasterminal_test_stl_facet.stl"), s);
+
+    Mesh faceted;
+    ASSERT_TRUE(faceted.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/0.0f));
+    Mesh smoothed;
+    ASSERT_TRUE(smoothed.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
+
+    // Unshared layout: 3 vertices per triangle, regardless of the crease angle.
+    ASSERT_EQ(faceted.vertices.size(), size_t{ 6 });
+    ASSERT_EQ(smoothed.vertices.size(), size_t{ 6 });
+
+    // Crease angle changes nothing — normals are identical between the two loads, and every
+    // normal is its own face's axis-aligned normal (never a 45 deg blend of the two faces).
+    for (size_t i = 0; i < faceted.vertices.size(); i++)
+    {
+        const vec3 nf = faceted.vertices[i].normal;
+        const vec3 ns = smoothed.vertices[i].normal;
+        ASSERT_NEAR(nf.x, ns.x, 1e-6f);
+        ASSERT_NEAR(nf.y, ns.y, 1e-6f);
+        ASSERT_NEAR(nf.z, ns.z, 1e-6f);
+        ASSERT_TRUE(nf.z > 0.99f || nf.y > 0.99f); // axis-aligned, not blended
+    }
 }
 
 TEST(reject, stl_header_read_under_5_bytes)
