@@ -9,6 +9,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <string>
 #include <thread>
 #include <utility>
@@ -58,108 +60,131 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         }
     }
 
+    // load_obj/ply/stl/gltf signal malformed input by returning false (rolling back via
+    // MeshSnapshot). A failure can also surface as an exception: a bad_alloc when an allocation
+    // overshoots available memory — in the parse, OR in the post-load compute_ao /
+    // optimize_vertex_cache work on a huge mesh — a std::system_error if a worker thread can't be
+    // spawned, or compute_normals' uint32-index length_error sentinel. The whole load-and-process
+    // body is wrapped so any of these becomes a fail-loud "could not load" rather than unwinding
+    // out of main() into std::terminate. The guard must span the post-load steps too, not just the
+    // dispatch: compute_ao() and optimize_vertex_cache() allocate large buffers and spawn threads.
     bool ok = false;
-    if (ext == "obj")
+    try
     {
-        ok = load_obj(path, n_threads, crease_cos);
-    }
-    else if (ext == "ply")
-    {
-        ok = load_ply(path, crease_cos);
-    }
-    else if (ext == "stl")
-    {
-        ok = load_stl(path, crease_cos);
-    }
-    else if (ext == "gltf" || ext == "glb")
-    {
-        ok = load_gltf(path, n_threads, crease_cos);
-    }
+        if (ext == "obj")
+        {
+            ok = load_obj(path, n_threads, crease_cos);
+        }
+        else if (ext == "ply")
+        {
+            ok = load_ply(path, crease_cos);
+        }
+        else if (ext == "stl")
+        {
+            ok = load_stl(path, crease_cos);
+        }
+        else if (ext == "gltf" || ext == "glb")
+        {
+            ok = load_gltf(path, n_threads, crease_cos);
+        }
 
-    if (!ok)
+        if (!ok)
+        {
+            clear();
+            return false;
+        }
+
+        has_double_sided =
+            std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.double_sided; });
+        has_metallic =
+            std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.metallic > 0.0f; });
+        has_normal_scale = std::any_of(
+            materials.begin(), materials.end(),
+            [](const Material &m) { return m.normal_tex >= 0 && m.normal_scale != 1.0f; }
+        );
+        has_occlusion =
+            std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
+        has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
+        has_transparent = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.blend; });
+
+        // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
+        // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
+        // Mesh-level flag drops materials whose factor is zero — emissive_tex without a non-zero
+        // factor cannot contribute and would only waste per-frame setup work.
+        has_emissive = std::any_of(
+            materials.begin(), materials.end(),
+            [](const Material &m) { return m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
+        );
+
+        // Per-vertex alpha only matters when some vertex is actually translucent. An all-opaque
+        // alpha array is very common (vec4 COLOR_0 with every w == 1) and would otherwise be dragged
+        // through compute_normals' welding split and optimize_vertex_cache's remap for nothing, and
+        // read per-fragment in the transparent pass — all to multiply by 1. Drop it so opaque models
+        // (and opaque vertices of blend models) pay zero; the transparent path treats a missing array
+        // as alpha 1. The loader has already finished its normal-split, so the array is length-matched
+        // here; clearing keeps the parallel-array invariant (size 0) consistent for the passes below.
+        if (has_vertex_alpha &&
+            std::none_of(vertex_alpha.begin(), vertex_alpha.end(), [](float a) { return a < 1.0f; }))
+        {
+            vertex_alpha.clear();
+            has_vertex_alpha = false;
+        }
+
+        // Per-vertex alpha that survived the clear guard carries at least one translucent vertex, so it
+        // makes the mesh transparent even when no material declares blend — this is how PLY (which has
+        // no per-material opacity mode) routes its translucent triangles to the transparent pass.
+        has_transparent = has_transparent || has_vertex_alpha;
+
+        compute_tangents();
+        if (ao && ext != "stl")
+        {
+            compute_ao(n_threads);
+        }
+
+        optimize_vertex_cache(n_threads);
+
+        // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a blend
+        // tail. The classification is PER-TRIANGLE, not per-material: a triangle is transparent if its
+        // material blends, or — for formats whose opacity is per-vertex (PLY) — any of its vertices is
+        // translucent. This keeps a mostly-opaque mesh with localized translucency mostly on the fast
+        // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass and
+        // remain shadow casters (shadow.cpp bounds its occluder loop by opaque_count); only the
+        // genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
+        // optimize_vertex_cache's within-group order (its vertex-cache/overdraw locality survives), and
+        // runs after optimize so triangle vertex indices are final — it only moves whole Triangle
+        // structs. Opaque meshes (has_transparent == false) skip it and are unchanged.
+        opaque_count = static_cast<uint32_t>(triangles.size());
+        if (has_transparent)
+        {
+            const float *va = has_vertex_alpha ? vertex_alpha.data() : nullptr;
+            const auto is_opaque_tri = [&](const Triangle &t)
+            {
+                if (mat_at(t.material_idx).blend)
+                {
+                    return false;
+                }
+                if (va && (va[t.v[0]] < 1.0f || va[t.v[1]] < 1.0f || va[t.v[2]] < 1.0f))
+                {
+                    return false;
+                }
+                return true;
+            };
+            const auto mid = std::stable_partition(triangles.begin(), triangles.end(), is_opaque_tri);
+            opaque_count = static_cast<uint32_t>(mid - triangles.begin());
+        }
+
+        return true;
+    }
+    catch (const std::exception &e)
     {
+        // Any load/post-process exception ends here: surface the reason (this distinguishes
+        // resource exhaustion or an internal error from a normal malformed-file rejection, which
+        // returns false without throwing), then fail loud with a clean rollback. main() prints the
+        // user-facing "failed to load" summary on the false return.
+        std::fprintf(stderr, "note: load of '%s' raised an exception: %s\n", path.c_str(), e.what());
         clear();
         return false;
     }
-
-    has_double_sided =
-        std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.double_sided; });
-    has_metallic = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.metallic > 0.0f; });
-    has_normal_scale = std::any_of(
-        materials.begin(), materials.end(),
-        [](const Material &m) { return m.normal_tex >= 0 && m.normal_scale != 1.0f; }
-    );
-    has_occlusion =
-        std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
-    has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
-    has_transparent = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.blend; });
-
-    // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
-    // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
-    // Mesh-level flag drops materials whose factor is zero — emissive_tex without a non-zero
-    // factor cannot contribute and would only waste per-frame setup work.
-    has_emissive = std::any_of(
-        materials.begin(), materials.end(),
-        [](const Material &m) { return m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
-    );
-
-    // Per-vertex alpha only matters when some vertex is actually translucent. An all-opaque
-    // alpha array is very common (vec4 COLOR_0 with every w == 1) and would otherwise be dragged
-    // through compute_normals' welding split and optimize_vertex_cache's remap for nothing, and
-    // read per-fragment in the transparent pass — all to multiply by 1. Drop it so opaque models
-    // (and opaque vertices of blend models) pay zero; the transparent path treats a missing array
-    // as alpha 1. The loader has already finished its normal-split, so the array is length-matched
-    // here; clearing keeps the parallel-array invariant (size 0) consistent for the passes below.
-    if (has_vertex_alpha && std::none_of(vertex_alpha.begin(), vertex_alpha.end(), [](float a) { return a < 1.0f; }))
-    {
-        vertex_alpha.clear();
-        has_vertex_alpha = false;
-    }
-
-    // Per-vertex alpha that survived the clear guard carries at least one translucent vertex, so it
-    // makes the mesh transparent even when no material declares blend — this is how PLY (which has
-    // no per-material opacity mode) routes its translucent triangles to the transparent pass.
-    has_transparent = has_transparent || has_vertex_alpha;
-
-    compute_tangents();
-    if (ao && ext != "stl")
-    {
-        compute_ao(n_threads);
-    }
-
-    optimize_vertex_cache(n_threads);
-
-    // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a blend
-    // tail. The classification is PER-TRIANGLE, not per-material: a triangle is transparent if its
-    // material blends, or — for formats whose opacity is per-vertex (PLY) — any of its vertices is
-    // translucent. This keeps a mostly-opaque mesh with localized translucency mostly on the fast
-    // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass and
-    // remain shadow casters (shadow.cpp bounds its occluder loop by opaque_count); only the
-    // genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
-    // optimize_vertex_cache's within-group order (its vertex-cache/overdraw locality survives), and
-    // runs after optimize so triangle vertex indices are final — it only moves whole Triangle
-    // structs. Opaque meshes (has_transparent == false) skip it and are unchanged.
-    opaque_count = static_cast<uint32_t>(triangles.size());
-    if (has_transparent)
-    {
-        const float *va = has_vertex_alpha ? vertex_alpha.data() : nullptr;
-        const auto is_opaque_tri = [&](const Triangle &t)
-        {
-            if (mat_at(t.material_idx).blend)
-            {
-                return false;
-            }
-            if (va && (va[t.v[0]] < 1.0f || va[t.v[1]] < 1.0f || va[t.v[2]] < 1.0f))
-            {
-                return false;
-            }
-            return true;
-        };
-        const auto mid = std::stable_partition(triangles.begin(), triangles.end(), is_opaque_tri);
-        opaque_count = static_cast<uint32_t>(mid - triangles.begin());
-    }
-
-    return true;
 }
 
 // ─── Mesh::compute_normals ────────────────────────────────────────────────────
