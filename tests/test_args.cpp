@@ -2,6 +2,7 @@
 #include "../src/args.h"
 
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 // Build a fake argv and call parse_args with stdout/stderr redirected to
@@ -45,6 +46,58 @@ static ParseResult run(std::initializer_list<const char *> tokens)
     }
 
     return result;
+}
+
+// ─── program_name (diagnostic prefix) ───────────────────────────────────────────
+
+TEST(args, program_name_strips_unix_path)
+{
+    ASSERT_TRUE(std::strcmp(program_name("/usr/local/bin/rasterminal"), "rasterminal") == 0);
+}
+
+TEST(args, program_name_bare_is_unchanged)
+{
+    ASSERT_TRUE(std::strcmp(program_name("rasterminal"), "rasterminal") == 0);
+}
+
+TEST(args, program_name_strips_relative_prefix)
+{
+    ASSERT_TRUE(std::strcmp(program_name("./rasterminal"), "rasterminal") == 0);
+}
+
+TEST(args, program_name_strips_windows_path_keeps_exe)
+{
+    ASSERT_TRUE(std::strcmp(program_name("C:\\tools\\rasterminal.exe"), "rasterminal.exe") == 0);
+}
+
+TEST(args, program_name_strips_windows_mixed_separators)
+{
+    ASSERT_TRUE(std::strcmp(program_name("C:/Program Files\\app\\rasterminal.exe"), "rasterminal.exe") == 0);
+}
+
+TEST(args, program_name_strips_windows_unc_path)
+{
+    ASSERT_TRUE(std::strcmp(program_name("\\\\server\\share\\rasterminal.exe"), "rasterminal.exe") == 0);
+}
+
+TEST(args, program_name_windows_trailing_backslash_falls_back)
+{
+    ASSERT_TRUE(std::strcmp(program_name("C:\\tools\\"), "rasterminal") == 0);
+}
+
+TEST(args, program_name_null_falls_back)
+{
+    ASSERT_TRUE(std::strcmp(program_name(nullptr), "rasterminal") == 0);
+}
+
+TEST(args, program_name_empty_falls_back)
+{
+    ASSERT_TRUE(std::strcmp(program_name(""), "rasterminal") == 0);
+}
+
+TEST(args, program_name_trailing_separator_falls_back)
+{
+    ASSERT_TRUE(std::strcmp(program_name("/usr/bin/"), "rasterminal") == 0);
 }
 
 // ─── defaults ─────────────────────────────────────────────────────────────────

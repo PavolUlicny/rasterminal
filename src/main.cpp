@@ -246,9 +246,9 @@ int main(int argc, char *argv[])
     {
         std::fprintf(
             stderr,
-            "Error: failed to load '%s'\n"
-            "       Supported formats: .obj, .ply, .stl, .gltf, .glb\n",
-            args.model_path.c_str()
+            "%s: failed to load '%s'\n"
+            "Supported formats: .obj, .ply, .stl, .gltf, .glb\n",
+            program_name(argv[0]), args.model_path.c_str()
         );
         return 1;
     }

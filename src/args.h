@@ -37,3 +37,9 @@ struct ParseResult
 };
 
 [[nodiscard]] ParseResult parse_args(int argc, char *argv[]);
+
+// Basename of argv[0] — the name the program was invoked as — for use as the
+// diagnostic prefix ("progname: message", the standard Unix convention).
+// Splits on '/' or '\\' (Windows paths); falls back to "rasterminal" when
+// argv0 is null, empty, or ends in a separator.
+[[nodiscard]] const char *program_name(const char *argv0);

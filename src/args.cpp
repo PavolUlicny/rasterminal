@@ -12,10 +12,30 @@
 #include <cstring>
 #include <string>
 
+const char *program_name(const char *argv0)
+{
+    if (!argv0 || !*argv0)
+    {
+        return "rasterminal";
+    }
+    const char *base = argv0;
+    for (const char *p = argv0; *p != '\0'; ++p)
+    {
+        if (*p == '/' || *p == '\\')
+        {
+            base = p + 1;
+        }
+    }
+    return (*base != '\0') ? base : "rasterminal"; // trailing-separator guard
+}
+
 ParseResult parse_args(int argc, char *argv[])
 {
     ParseResult result;
     ParsedArgs &args = result.args;
+
+    // Diagnostic prefix: the name the program was invoked as (basename of argv[0]).
+    const char *prog = program_name(argc > 0 ? argv[0] : nullptr);
 
     auto fail = [&](int code) -> ParseResult &
     {
@@ -30,45 +50,45 @@ ParseResult parse_args(int argc, char *argv[])
     {
         if (i + 1 >= argc)
         {
-            std::fprintf(stderr, "Error: %s requires a value\n", flag);
+            std::fprintf(stderr, "%s: %s requires a value\n", prog, flag);
             return nullptr;
         }
         return argv[++i];
     };
 
-    auto parse_threads = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_threads = [prog](const char *flag, const char *val, int &out) -> bool
     {
         char *end = nullptr;
         errno = 0;
         const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v <= 0 || v > INT_MAX || errno == ERANGE)
         {
-            std::fprintf(stderr, "Error: %s requires a positive integer, got '%s'\n", flag, val);
+            std::fprintf(stderr, "%s: %s requires a positive integer, got '%s'\n", prog, flag, val);
             return false;
         }
         out = static_cast<int>(v);
         return true;
     };
 
-    auto parse_nonneg_int = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_nonneg_int = [prog](const char *flag, const char *val, int &out) -> bool
     {
         char *end = nullptr;
         errno = 0;
         const long v = std::strtol(val, &end, 10);
         if (end == val || *end != '\0' || v < 0 || v > INT_MAX || errno == ERANGE)
         {
-            std::fprintf(stderr, "Error: %s requires a non-negative integer, got '%s'\n", flag, val);
+            std::fprintf(stderr, "%s: %s requires a non-negative integer, got '%s'\n", prog, flag, val);
             return false;
         }
         out = static_cast<int>(v);
         return true;
     };
 
-    auto parse_size = [](const char *flag, const char *val, int &w, int &h) -> bool
+    auto parse_size = [prog](const char *flag, const char *val, int &w, int &h) -> bool
     {
-        auto err = [flag, val]() -> bool
+        auto err = [prog, flag, val]() -> bool
         {
-            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n", flag, val);
+            std::fprintf(stderr, "%s: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n", prog, flag, val);
             return false;
         };
         const char *sep = std::strchr(val, 'x');
@@ -112,7 +132,7 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_shading = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_shading = [prog](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
         std::transform(
@@ -138,16 +158,16 @@ ParseResult parse_args(int argc, char *argv[])
         {
             std::fprintf(
                 stderr,
-                "Error: %s: invalid value '%s'"
+                "%s: %s: invalid value '%s'"
                 " (expected wireframe|flat|gouraud|phong or 1-4)\n",
-                flag, val
+                prog, flag, val
             );
             return false;
         }
         return true;
     };
 
-    auto parse_bg = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_bg = [prog](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
         std::transform(
@@ -169,16 +189,16 @@ ParseResult parse_args(int argc, char *argv[])
         {
             std::fprintf(
                 stderr,
-                "Error: %s: invalid value '%s'"
+                "%s: %s: invalid value '%s'"
                 " (expected black|gray|white or 1-3)\n",
-                flag, val
+                prog, flag, val
             );
             return false;
         }
         return true;
     };
 
-    auto parse_lighting = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_lighting = [prog](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
         std::transform(
@@ -200,16 +220,16 @@ ParseResult parse_args(int argc, char *argv[])
         {
             std::fprintf(
                 stderr,
-                "Error: %s: invalid value '%s'"
+                "%s: %s: invalid value '%s'"
                 " (expected dual|single|flat or 1-3)\n",
-                flag, val
+                prog, flag, val
             );
             return false;
         }
         return true;
     };
 
-    auto parse_bool = [](const char *flag, const char *val, bool &out) -> bool
+    auto parse_bool = [prog](const char *flag, const char *val, bool &out) -> bool
     {
         std::string v = val;
         std::transform(
@@ -227,16 +247,16 @@ ParseResult parse_args(int argc, char *argv[])
         {
             std::fprintf(
                 stderr,
-                "Error: %s: invalid value '%s'"
+                "%s: %s: invalid value '%s'"
                 " (expected on|off, 1|0, true|false, yes|no, y|n)\n",
-                flag, val
+                prog, flag, val
             );
             return false;
         }
         return true;
     };
 
-    auto parse_wireframe_color = [](const char *flag, const char *val, int &out) -> bool
+    auto parse_wireframe_color = [prog](const char *flag, const char *val, int &out) -> bool
     {
         std::string v = val;
         std::transform(
@@ -270,23 +290,23 @@ ParseResult parse_args(int argc, char *argv[])
         {
             std::fprintf(
                 stderr,
-                "Error: %s: invalid value '%s'"
+                "%s: %s: invalid value '%s'"
                 " (expected white|red|green|yellow|cyan|magenta or 1-6)\n",
-                flag, val
+                prog, flag, val
             );
             return false;
         }
         return true;
     };
 
-    auto parse_angle = [](const char *flag, const char *val, float &out) -> bool
+    auto parse_angle = [prog](const char *flag, const char *val, float &out) -> bool
     {
         char *end = nullptr;
         errno = 0;
         const float v = std::strtof(val, &end);
         if (end == val || *end != '\0' || errno == ERANGE || !std::isfinite(v) || v < 0.0f || v > 180.0f)
         {
-            std::fprintf(stderr, "Error: %s: invalid value '%s' (expected a number in [0, 180])\n", flag, val);
+            std::fprintf(stderr, "%s: %s: invalid value '%s' (expected a number in [0, 180])\n", prog, flag, val);
             return false;
         }
         out = v;
@@ -295,58 +315,61 @@ ParseResult parse_args(int argc, char *argv[])
 
     auto print_version = []() { std::printf("rasterminal %s\n", RASTERMINAL_VERSION); };
 
-    auto print_help = []()
+    auto print_help = [prog]()
     {
-        std::printf("Usage: rasterminal [options] <model>\n"
-                    "\n"
-                    "Render a 3D model in the terminal using unicode half-block characters\n"
-                    "and 24-bit ANSI color.\n"
-                    "\n"
-                    "Supported formats:\n"
-                    "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
-                    "  .ply        ASCII or binary (little/big-endian)\n"
-                    "  .stl        ASCII or binary\n"
-                    "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
-                    "\n"
-                    "Options:\n"
-                    "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
-                    "                                  wireframe|flat|gouraud|phong  or  1-4\n"
-                    "  -b,     --bg <color>           Initial background color (default: black)\n"
-                    "                                  black|gray|white  or  1-3\n"
-                    "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
-                    "                                  dual|single|flat  or  1-3\n"
-                    "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
-                    "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
-                    "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
-                    "                                  on|off, 1|0, true|false, yes|no, y|n\n"
-                    "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
-                    "                                  on|off, 1|0, true|false, yes|no, y|n\n"
-                    "  -S,     --spin                 Start with auto-rotation enabled\n"
-                    "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
-                    "                                  bare -j/--threads uses all cores, -j N uses N\n"
-                    "  -f [N], --fps [N]              Frame cap (default: 60)\n"
-                    "                                  bare -f/--fps uncapped, -f N caps at N fps\n"
-                    "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200)\n"
-                    "                                  prints timing + fps + throughput to stderr\n"
-                    "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
-                    "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
-                    "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
-                    "                                  0=faceted, 180=smooth\n"
-                    "                                  ignored when an OBJ authors smoothing groups\n"
-                    "          --no-shadow            Disable shadow map\n"
-                    "          --no-ao                Disable ambient occlusion\n"
-                    "          --no-hud               Hide the HUD status line\n"
-                    "  -h,     --help                 Show this message\n"
-                    "  -V,     --version              Show version and exit\n"
-                    "\n"
-                    "Controls:\n"
-                    "  1-4          Shading mode           B       Cycle background\n"
-                    "  Space        Toggle spin            L       Cycle lighting\n"
-                    "  WASD/arrows  Orbit camera           R       Reset view\n"
-                    "  +/-          Zoom                   C       Cycle wireframe color\n"
-                    "  Mouse drag   Orbit                  K       Toggle backface culling\n"
-                    "  Scroll       Zoom                   T       Toggle textures\n"
-                    "  Q/Escape     Quit\n");
+        std::printf(
+            "Usage: %s [options] <model>\n"
+            "\n"
+            "Render a 3D model in the terminal using unicode half-block characters\n"
+            "and 24-bit ANSI color.\n"
+            "\n"
+            "Supported formats:\n"
+            "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
+            "  .ply        ASCII or binary (little/big-endian)\n"
+            "  .stl        ASCII or binary\n"
+            "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
+            "\n"
+            "Options:\n"
+            "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
+            "                                  wireframe|flat|gouraud|phong  or  1-4\n"
+            "  -b,     --bg <color>           Initial background color (default: black)\n"
+            "                                  black|gray|white  or  1-3\n"
+            "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
+            "                                  dual|single|flat  or  1-3\n"
+            "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
+            "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
+            "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
+            "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+            "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
+            "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+            "  -S,     --spin                 Start with auto-rotation enabled\n"
+            "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
+            "                                  bare -j/--threads uses all cores, -j N uses N\n"
+            "  -f [N], --fps [N]              Frame cap (default: 60)\n"
+            "                                  bare -f/--fps uncapped, -f N caps at N fps\n"
+            "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200)\n"
+            "                                  prints timing + fps + throughput to stderr\n"
+            "          --bench-size WxH       Bench framebuffer size in pixels (default: 200x120)\n"
+            "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
+            "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
+            "                                  0=faceted, 180=smooth\n"
+            "                                  ignored when an OBJ authors smoothing groups\n"
+            "          --no-shadow            Disable shadow map\n"
+            "          --no-ao                Disable ambient occlusion\n"
+            "          --no-hud               Hide the HUD status line\n"
+            "  -h,     --help                 Show this message\n"
+            "  -V,     --version              Show version and exit\n"
+            "\n"
+            "Controls:\n"
+            "  1-4          Shading mode           B       Cycle background\n"
+            "  Space        Toggle spin            L       Cycle lighting\n"
+            "  WASD/arrows  Orbit camera           R       Reset view\n"
+            "  +/-          Zoom                   C       Cycle wireframe color\n"
+            "  Mouse drag   Orbit                  K       Toggle backface culling\n"
+            "  Scroll       Zoom                   T       Toggle textures\n"
+            "  Q/Escape     Quit\n",
+            prog
+        );
     };
 
     bool saw_bench_size = false;
@@ -366,7 +389,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (!args.model_path.empty())
             {
-                std::fprintf(stderr, "Error: unexpected argument '%s'\n", argv[i]);
+                std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, argv[i]);
                 return fail(1);
             }
             args.model_path = argv[i];
@@ -500,7 +523,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             print_help();
@@ -510,7 +533,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             print_version();
@@ -520,7 +543,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.spin = true;
@@ -529,7 +552,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.ao = false;
@@ -538,7 +561,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.shadow = false;
@@ -547,7 +570,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (eq_val != nullptr)
             {
-                std::fprintf(stderr, "Error: %s does not take a value\n", flag);
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.hud = false;
@@ -669,7 +692,7 @@ ParseResult parse_args(int argc, char *argv[])
                 }
                 else
                 {
-                    std::fprintf(stderr, "Error: unknown flag '-%c'\n", c);
+                    std::fprintf(stderr, "%s: unknown flag '-%c'\n", prog, c);
                     return fail(1);
                 }
             }
@@ -679,12 +702,12 @@ ParseResult parse_args(int argc, char *argv[])
         // reaches here with a leading '-' is an unknown long flag ("--foo").
         else if (argv[i][0] == '-' && argv[i][1] != '\0')
         {
-            std::fprintf(stderr, "Error: unknown flag '%s'\n", argv[i]);
+            std::fprintf(stderr, "%s: unknown flag '%s'\n", prog, argv[i]);
             return fail(1);
         }
         else if (!args.model_path.empty())
         {
-            std::fprintf(stderr, "Error: unexpected argument '%s'\n", argv[i]);
+            std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, argv[i]);
             return fail(1);
         }
         else
@@ -695,21 +718,23 @@ ParseResult parse_args(int argc, char *argv[])
 
     if (saw_bench_size && args.bench < 1)
     {
-        std::fprintf(stderr, "Error: --bench-size requires --bench\n");
+        std::fprintf(stderr, "%s: --bench-size requires --bench\n", prog);
         return fail(1);
     }
     if (saw_bench_warmup && args.bench < 1)
     {
-        std::fprintf(stderr, "Error: --bench-warmup requires --bench\n");
+        std::fprintf(stderr, "%s: --bench-warmup requires --bench\n", prog);
         return fail(1);
     }
 
     if (args.model_path.empty())
     {
         std::fprintf(
-            stderr, "Error: no model specified\n"
-                    "       Usage: rasterminal [options] <model>\n"
-                    "       Run 'rasterminal --help' for more information.\n"
+            stderr,
+            "%s: no model specified\n"
+            "Usage: %s [options] <model>\n"
+            "Run '%s --help' for more information.\n",
+            prog, prog, prog
         );
         return fail(1);
     }
