@@ -56,15 +56,24 @@ namespace platform
     } // namespace detail
 #endif
 
-    inline void enable_raw_mode()
+    // Output-side console setup (UTF-8 + ANSI). Idempotent. Split out of enable_raw_mode
+    // so it can run before any output — incl. the UTF-8 in --version — which on Windows
+    // happens before the main loop and thus before raw mode would otherwise set the CP.
+    inline void init_console_output()
     {
 #ifdef _WIN32
-        // Enable ANSI output and UTF-8.
         SetConsoleOutputCP(65001);
         HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
         GetConsoleMode(hout, &mode);
         SetConsoleMode(hout, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+#endif
+    }
+
+    inline void enable_raw_mode()
+    {
+#ifdef _WIN32
+        init_console_output();
 #else
         termios raw = {};
         tcgetattr(STDIN_FILENO, &raw);
