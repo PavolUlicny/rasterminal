@@ -1,5 +1,6 @@
 #include "args.h"
 
+#include "platform.h"
 #include "version.h"
 
 #include <algorithm>
@@ -313,7 +314,26 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto print_version = []() { std::printf("rasterminal %s\n", RASTERMINAL_VERSION); };
+    auto print_version = []()
+    {
+        // UTF-8 author bytes need the console CP set before printing — this path exits
+        // before the main loop's enable_raw_mode would do it. Other early-exit paths
+        // (--help, --bench, errors) print pure ASCII, so they leave console state alone.
+        platform::init_console_output();
+        // GNU-standard --version block (cf. gnulib version-etc): canonical name +
+        // version, copyright, license, generic free-software/no-warranty blurb,
+        // then a blank line and the author. Name is a constant, never argv[0].
+        std::printf(
+            "rasterminal %s\n"
+            "Copyright (C) %s %s\n"
+            "License MIT: <https://opensource.org/license/mit>\n"
+            "This is free software: you are free to change and redistribute it.\n"
+            "There is NO WARRANTY, to the extent permitted by law.\n"
+            "\n"
+            "Written by %s.\n",
+            RASTERMINAL_VERSION, RASTERMINAL_COPYRIGHT_YEAR, RASTERMINAL_AUTHOR, RASTERMINAL_AUTHOR
+        );
+    };
 
     auto print_help = [prog]()
     {
