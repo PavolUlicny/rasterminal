@@ -387,8 +387,11 @@ ParseResult parse_args(int argc, char *argv[])
             "  +/-          Zoom                   C       Cycle wireframe color\n"
             "  Mouse drag   Orbit                  K       Toggle backface culling\n"
             "  Scroll       Zoom                   T       Toggle textures\n"
-            "  Q/Escape     Quit\n",
-            prog
+            "  Q/Escape     Quit\n"
+            "\n"
+            "Report bugs to: <%s/issues>\n"
+            "Home page: <%s>\n",
+            prog, RASTERMINAL_HOMEPAGE, RASTERMINAL_HOMEPAGE
         );
     };
 
