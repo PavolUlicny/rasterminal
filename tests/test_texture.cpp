@@ -276,6 +276,162 @@ TEST(texture, sample_rgba_flips_v_axis)
     ASSERT_NEAR(c.z, 1.0f, 1e-4f); // blue channel confirms row1 was sampled
 }
 
+// ─── wrap modes ───────────────────────────────────────────────────────────────
+// 2×1 reference texture: texel0 = red (u→0), texel1 = blue (u→1). With width 2 the
+// bilinear fx = u*(width-1) = u, so u=0 is pure red, u=1 pure blue, u=0.5 the midpoint.
+static Texture wrap_ref()
+{
+    return make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+}
+
+static void expect_rgb_near(const vec3 &a, const vec3 &b, float eps = 1e-4f)
+{
+    ASSERT_NEAR(a.x, b.x, eps);
+    ASSERT_NEAR(a.y, b.y, eps);
+    ASSERT_NEAR(a.z, b.z, eps);
+}
+
+TEST(texture_wrap, default_is_repeat)
+{
+    Texture t;
+    ASSERT_TRUE(t.wrap_s == WrapMode::Repeat);
+    ASSERT_TRUE(t.wrap_t == WrapMode::Repeat);
+}
+
+TEST(texture_wrap, explicit_repeat_matches_default_for_out_of_range)
+{
+    // Setting Repeat explicitly must reproduce the historical fract() exactly.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Repeat;
+    t.wrap_t = WrapMode::Repeat;
+    expect_rgb_near(t.sample_rgb(1.25f, 0.5f), t.sample_rgb(0.25f, 0.5f));
+    expect_rgb_near(t.sample_rgb(-0.75f, 0.5f), t.sample_rgb(0.25f, 0.5f));
+}
+
+TEST(texture_wrap, clamp_holds_high_edge_texel)
+{
+    // u=2.0 clamps to 1.0 → pure blue (edge held), NOT red as Repeat would wrap it to.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Clamp;
+    expect_rgb_near(t.sample_rgb(2.0f, 0.5f), t.sample_rgb(1.0f, 0.5f));
+    ASSERT_NEAR(t.sample_rgb(2.0f, 0.5f).z, 1.0f, 1e-4f); // blue, no opposite-edge bleed
+    ASSERT_NEAR(t.sample_rgb(2.0f, 0.5f).x, 0.0f, 1e-4f);
+}
+
+TEST(texture_wrap, clamp_holds_low_edge_texel)
+{
+    // u=-0.5 clamps to 0.0 → pure red.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Clamp;
+    expect_rgb_near(t.sample_rgb(-0.5f, 0.5f), t.sample_rgb(0.0f, 0.5f));
+    ASSERT_NEAR(t.sample_rgb(-0.5f, 0.5f).x, 1.0f, 1e-4f);
+}
+
+TEST(texture_wrap, clamp_extreme_coords_stay_in_bounds)
+{
+    // Huge magnitudes must fold to the edge texel with no OOB read / NaN.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Clamp;
+    expect_rgb_near(t.sample_rgb(1e6f, 0.5f), t.sample_rgb(1.0f, 0.5f));
+    expect_rgb_near(t.sample_rgb(-1e6f, 0.5f), t.sample_rgb(0.0f, 0.5f));
+}
+
+TEST(texture_wrap, clamp_interior_unchanged)
+{
+    // In-range coords are identical to Repeat.
+    Texture t = wrap_ref();
+    Texture r = wrap_ref();
+    t.wrap_s = WrapMode::Clamp;
+    expect_rgb_near(t.sample_rgb(0.5f, 0.5f), r.sample_rgb(0.5f, 0.5f));
+}
+
+TEST(texture_wrap, mirror_reflects_in_first_repeat)
+{
+    // [1,2] mirrors [0,1]: u=1.25→0.75, u=1.75→0.25.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Mirror;
+    expect_rgb_near(t.sample_rgb(1.25f, 0.5f), t.sample_rgb(0.75f, 0.5f));
+    expect_rgb_near(t.sample_rgb(1.75f, 0.5f), t.sample_rgb(0.25f, 0.5f));
+}
+
+TEST(texture_wrap, mirror_identity_in_second_period)
+{
+    // [2,3] is identity again; u=2.25→0.25, u=2.0→0.0.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Mirror;
+    expect_rgb_near(t.sample_rgb(2.25f, 0.5f), t.sample_rgb(0.25f, 0.5f));
+    expect_rgb_near(t.sample_rgb(2.0f, 0.5f), t.sample_rgb(0.0f, 0.5f));
+}
+
+TEST(texture_wrap, mirror_reflects_negative)
+{
+    // u=-0.25 mirrors to 0.25.
+    Texture t = wrap_ref();
+    t.wrap_s = WrapMode::Mirror;
+    expect_rgb_near(t.sample_rgb(-0.25f, 0.5f), t.sample_rgb(0.25f, 0.5f));
+}
+
+TEST(texture_wrap, per_axis_independent)
+{
+    // wrap_s=Clamp, wrap_t=Repeat: u must clamp while v wraps, on a texture that depends
+    // on both axes. sample(2.0, 1.3) == sample(1.0, 0.3): u 2→clamp 1, v 1.3→wrap 0.3.
+    Texture t = make_tex(2, 2, { 255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255 });
+    t.wrap_s = WrapMode::Clamp;
+    t.wrap_t = WrapMode::Repeat;
+    expect_rgb_near(t.sample_rgb(2.0f, 1.3f), t.sample_rgb(1.0f, 0.3f));
+}
+
+TEST(texture_wrap, sample_rgba_clamp_holds_edge_alpha)
+{
+    // The rgba fold is a separate copy; confirm it clamps identically incl. alpha.
+    Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
+    t.wrap_s = WrapMode::Clamp;
+    vec4 a = t.sample_rgba(2.0f, 0.5f);
+    vec4 b = t.sample_rgba(1.0f, 0.5f);
+    ASSERT_NEAR(a.w, b.w, 1e-4f);
+    ASSERT_NEAR(a.w, 100.0f / 255.0f, 1e-4f);
+}
+
+TEST(texture_wrap, sample_rgba_mirror_matches_reflection)
+{
+    Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
+    t.wrap_s = WrapMode::Mirror;
+    vec4 a = t.sample_rgba(1.25f, 0.5f);
+    vec4 b = t.sample_rgba(0.75f, 0.5f);
+    ASSERT_NEAR(a.x, b.x, 1e-4f);
+    ASSERT_NEAR(a.z, b.z, 1e-4f);
+    ASSERT_NEAR(a.w, b.w, 1e-4f);
+}
+
+TEST(texture_wrap, clamp_on_v_folds_before_flip)
+{
+    // 1×2: image row0 (top)=red, row1 (bottom)=blue. wrap_t=Clamp must fold v into [0,1]
+    // and THEN v-flip (same order as Repeat). v=2.0 → clamp 1.0 → flip 0 → row0 (red);
+    // v=-0.5 → clamp 0.0 → flip 1 → row1 (blue).
+    Texture t = make_tex(1, 2, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    t.wrap_t = WrapMode::Clamp;
+    ASSERT_NEAR(t.sample_rgb(0.0f, 2.0f).x, 1.0f, 1e-4f);
+    ASSERT_NEAR(t.sample_rgb(0.0f, -0.5f).z, 1.0f, 1e-4f);
+}
+
+TEST(texture_wrap, degenerate_1x1_safe_under_all_modes)
+{
+    // A 1×1 texture must return its single texel for any coordinate under any mode.
+    for (WrapMode m : { WrapMode::Repeat, WrapMode::Clamp, WrapMode::Mirror })
+    {
+        Texture t = solid(255, 128, 0);
+        t.wrap_s = m;
+        t.wrap_t = m;
+        for (float u : { -1e6f, -0.3f, 0.5f, 1.7f, 1e6f })
+        {
+            vec3 c = t.sample_rgb(u, u);
+            ASSERT_NEAR(c.x, 1.0f, 1e-4f);
+            ASSERT_NEAR(c.y, 128.0f / 255.0f, 1e-4f);
+            ASSERT_NEAR(c.z, 0.0f, 1e-4f);
+        }
+    }
+}
+
 TEST(texture_load, load_failure_preserves_previous_data)
 {
     Texture t = solid(255, 0, 0);

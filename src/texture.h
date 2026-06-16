@@ -9,6 +9,16 @@
 #include <string>
 #include <vector>
 
+// How out-of-[0,1] UV coordinates fold back into the texture. Closed set: glTF defines
+// exactly these three, MTL only Repeat/Clamp, PLY/STL none. Default Repeat keeps every
+// loader that does not set it (and all historical output) unchanged.
+enum class WrapMode : uint8_t
+{
+    Repeat,
+    Clamp,
+    Mirror
+};
+
 // A 2-D RGBA texture loaded from an image file.
 // Supports JPEG, PNG, BMP, TGA, GIF, and more via stb_image.
 struct Texture
@@ -16,6 +26,8 @@ struct Texture
     int width = 0;
     int height = 0;
     std::vector<uint8_t> pixels; // RGBA, row-major, top-left first
+    WrapMode wrap_s = WrapMode::Repeat;
+    WrapMode wrap_t = WrapMode::Repeat;
 
     // Load a texture from disk.  Returns false and leaves the object unchanged on error.
     [[nodiscard]] bool load(const std::string &path);
@@ -37,15 +49,53 @@ struct Texture
 
     [[nodiscard]] bool valid() const { return width > 0 && height > 0; }
 
+    // Fold a single normalised coordinate into [0, 1] per wrap mode.
+    [[nodiscard]] static float wrap_coord(float c, WrapMode m) noexcept
+    {
+        switch (m)
+        {
+        case WrapMode::Clamp:
+            return clamp(c, 0.0f, 1.0f);
+        case WrapMode::Mirror:
+        {
+            const float t = c - (2.0f * std::floor(c * 0.5f)); // [0, 2): triangle-wave period
+            return 1.0f - std::fabs(t - 1.0f);
+        }
+        case WrapMode::Repeat:
+        default:
+            return c - std::floor(c);
+        }
+    }
+
+    // Fold (u, v) into [0, 1] per the texture's wrap modes. The all-Repeat case (the
+    // overwhelming majority) runs the historical fract() verbatim behind one
+    // perfectly-predicted branch (the mode is constant per texture), so it stays
+    // byte-identical at the cost of that single branch; non-repeat textures take the
+    // cold general path. The bilinear tap downstream stays
+    // min(x0+1, width-1): that clamped tap is exactly today's Repeat behaviour (the
+    // seam-column blend is left unchanged) and is correct for Clamp and at the Mirror fold.
+    void wrap_uv(float &u, float &v) const noexcept
+    {
+        if (wrap_s == WrapMode::Repeat && wrap_t == WrapMode::Repeat)
+        {
+            u = u - std::floor(u);
+            v = v - std::floor(v);
+        }
+        else
+        {
+            u = wrap_coord(u, wrap_s);
+            v = wrap_coord(v, wrap_t);
+        }
+    }
+
     // Sample the texture at normalised (u, v) with bilinear interpolation.
-    // UV coordinates repeat (wrap mode).
+    // Out-of-range UVs fold per wrap_s/wrap_t (default Repeat).
     // V is flipped so that OBJ convention (v = 0 at bottom) maps correctly
     // to image storage order (row 0 at top).
     // Returns RGB in [0, 1].
     [[nodiscard]] vec3 sample_rgb(float u, float v) const
     {
-        u = u - std::floor(u);
-        v = v - std::floor(v);
+        wrap_uv(u, v);
         v = 1.0f - v;
 
         const float fx = u * static_cast<float>(width - 1);
@@ -78,8 +128,7 @@ struct Texture
     // callers (nmap, stex) pay no alpha computation cost.
     [[nodiscard]] vec4 sample_rgba(float u, float v) const
     {
-        u = u - std::floor(u);
-        v = v - std::floor(v);
+        wrap_uv(u, v);
         v = 1.0f - v;
 
         const float fx = u * static_cast<float>(width - 1);
