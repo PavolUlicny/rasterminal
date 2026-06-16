@@ -138,12 +138,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     MeshSnapshot snap(*this);
 
     // Resolve external files relative to the glTF directory.
-    std::string dir;
-    const size_t slash = path.find_last_of("/\\");
-    if (slash != std::string::npos)
-    {
-        dir = path.substr(0, slash + 1);
-    }
+    const std::string dir = dir_of(path);
 
     const cgltf_options opts{};
     cgltf_data *data = nullptr;

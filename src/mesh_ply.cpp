@@ -207,13 +207,8 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     MeshSnapshot snap(*this);
 
     // A `comment TextureFile <name>` filename is resolved relative to the PLY
-    // file's directory (mirrors load_obj's obj_dir).
-    std::string ply_dir;
-    const size_t dir_slash = path.find_last_of("/\\");
-    if (dir_slash != std::string::npos)
-    {
-        ply_dir = path.substr(0, dir_slash + 1);
-    }
+    // file's directory.
+    const std::string ply_dir = dir_of(path);
 
     std::ifstream ss(path, std::ios::binary);
     if (!ss.is_open())

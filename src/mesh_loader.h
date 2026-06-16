@@ -5,8 +5,19 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <string>
 #include <thread>
 #include <vector>
+
+// Directory portion of a model path, including the trailing separator, or ""
+// when the path has none (file in CWD). Used by loaders to resolve sibling
+// files (textures, external buffers) relative to the model. Splits on both
+// '/' and '\\' so Windows-style paths in cross-platform assets resolve too.
+inline std::string dir_of(const std::string &path)
+{
+    const size_t slash = path.find_last_of("/\\");
+    return (slash == std::string::npos) ? std::string() : path.substr(0, slash + 1);
+}
 
 // RAII snapshot of Mesh state for transactional loader rollback.
 // Construct at the top of a loader; call commit() on the success path.

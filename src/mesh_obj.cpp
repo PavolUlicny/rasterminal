@@ -69,12 +69,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     MeshSnapshot snap(*this);
 
     // Texture paths in MTL are resolved relative to the OBJ file's directory.
-    std::string obj_dir;
-    const size_t slash = path.find_last_of("/\\");
-    if (slash != std::string::npos)
-    {
-        obj_dir = path.substr(0, slash + 1);
-    }
+    const std::string obj_dir = dir_of(path);
 
     tinyobj::ObjReaderConfig cfg;
     cfg.mtl_search_path = obj_dir;
