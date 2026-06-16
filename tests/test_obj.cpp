@@ -1062,6 +1062,77 @@ TEST(obj_valid, shared_map_kd_deduplicates_texture)
     ASSERT_EQ(m.materials[2].diffuse_tex, 0);
 }
 
+TEST(obj_valid, mtl_clamp_on_sets_clamp_wrap)
+{
+    // map_Kd -clamp on → both axes Clamp (MTL has no per-axis / mirror).
+    TmpFile bmp(tmp_path("rast_clamp_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_clamp_tex.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -clamp on rast_clamp_tex.bmp\n");
+    TmpFile obj(
+        tmp_path("rast_clamp_tex.obj"), "mtllib rast_clamp_tex.mtl\n"
+                                        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                        "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Clamp);
+}
+
+TEST(obj_valid, mtl_no_clamp_defaults_to_repeat)
+{
+    TmpFile bmp(tmp_path("rast_noclamp_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("rast_noclamp_tex.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd rast_noclamp_tex.bmp\n");
+    TmpFile obj(
+        tmp_path("rast_noclamp_tex.obj"), "mtllib rast_noclamp_tex.mtl\n"
+                                          "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                          "usemtl M\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Repeat);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Repeat);
+}
+
+TEST(obj_valid, mtl_clamp_dedup_splits)
+{
+    // Same image clamped in A, tiled in B → two slots with different wrap (the (name,clamp) key).
+    TmpFile bmp(tmp_path("rast_clampsplit_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(
+        tmp_path("rast_clampsplit_tex.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd -clamp on rast_clampsplit_tex.bmp\n"
+                                             "newmtl B\nKd 1 1 1\nmap_Kd rast_clampsplit_tex.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_clampsplit_tex.obj"), "mtllib rast_clampsplit_tex.mtl\n"
+                                             "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                             "usemtl A\nf 1 2 3\n"
+                                             "usemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 2 });
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[1].diffuse_tex)].wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[2].diffuse_tex)].wrap_s == WrapMode::Repeat);
+}
+
+TEST(obj_valid, mtl_clamp_dedup_keeps)
+{
+    // Same image, same clamp in both materials → one slot (no dedup regression).
+    TmpFile bmp(tmp_path("rast_clampkeep_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(
+        tmp_path("rast_clampkeep_tex.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd -clamp on rast_clampkeep_tex.bmp\n"
+                                            "newmtl B\nKd 1 1 1\nmap_Kd -clamp on rast_clampkeep_tex.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("rast_clampkeep_tex.obj"), "mtllib rast_clampkeep_tex.mtl\n"
+                                            "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                            "usemtl A\nf 1 2 3\n"
+                                            "usemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Clamp);
+}
+
 TEST(obj_valid, parallel_decode_two_distinct_textures)
 {
     // Two materials naming two distinct map_Kd files. Loaded with n_threads=4 so

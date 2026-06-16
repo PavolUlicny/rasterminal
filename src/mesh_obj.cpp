@@ -107,24 +107,33 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     materials.push_back(Material{});
 
     // Register a texture by name (relative to obj_dir), returning its slot index.
-    // Each distinct name is registered once (dedup); the actual decode is deferred
-    // and run in parallel after material parsing. Empty name -> no texture (-1).
+    // Each distinct (name, clamp) is registered once (dedup); the actual decode is
+    // deferred and run in parallel after material parsing. Empty name -> no texture (-1).
+    // clamp is MTL's `-clamp on` (both axes -> Clamp, no mirror); it is part of the key
+    // because the same image used clamped in one material and tiled in another needs two
+    // slots with different wrap modes.
+    struct ObjTexRequest
+    {
+        std::string path;
+        bool clamp;
+    };
     std::unordered_map<std::string, int> tex_cache;
-    std::vector<std::string> tex_requests;
-    auto load_tex = [&](const std::string &name) -> int
+    std::vector<ObjTexRequest> tex_requests;
+    auto load_tex = [&](const std::string &name, bool clamp) -> int
     {
         if (name.empty())
         {
             return -1;
         }
-        const auto it = tex_cache.find(name);
+        const std::string key = (clamp ? "1:" : "0:") + name;
+        const auto it = tex_cache.find(key);
         if (it != tex_cache.end())
         {
             return it->second;
         }
         const int idx = static_cast<int>(tex_requests.size());
-        tex_requests.push_back(obj_dir + name);
-        tex_cache.emplace(name, idx);
+        tex_requests.push_back({ obj_dir + name, clamp });
+        tex_cache.emplace(key, idx);
         return idx;
     };
 
@@ -138,10 +147,11 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         // Ka → Kd fallback: if ambient is all-zero (absent or unset), use diffuse.
         const bool ka_zero = (m.ambient[0] == 0.0f && m.ambient[1] == 0.0f && m.ambient[2] == 0.0f);
         mat.ambient = ka_zero ? mat.diffuse : vec3{ m.ambient[0], m.ambient[1], m.ambient[2] };
-        mat.diffuse_tex = load_tex(m.diffuse_texname);
-        mat.specular_tex = load_tex(m.specular_texname);
+        mat.diffuse_tex = load_tex(m.diffuse_texname, m.diffuse_texopt.clamp);
+        mat.specular_tex = load_tex(m.specular_texname, m.specular_texopt.clamp);
         // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
-        mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname) : load_tex(m.bump_texname);
+        mat.normal_tex = !m.normal_texname.empty() ? load_tex(m.normal_texname, m.normal_texopt.clamp)
+                                                   : load_tex(m.bump_texname, m.bump_texopt.clamp);
         // Clamp Ke to [0, 1e6] per channel: emission is physically non-negative (glTF enforces
         // the same via emissiveFactor's `minimum: 0.0`). Lower bound stops a negative from
         // subtracting from lit colour; upper bound stops a hostile +Inf at the source, before
@@ -156,7 +166,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
         if (emissive_active)
         {
-            mat.emissive_tex = load_tex(m.emissive_texname);
+            mat.emissive_tex = load_tex(m.emissive_texname, m.emissive_texopt.clamp);
         }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
@@ -343,13 +353,18 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         compute_normals(crease_cos, &weld, n_pos, use_groups ? &smooth_groups : nullptr);
     }
 
-    // tex_requests holds obj_dir-resolved paths, decoded in parallel.
+    // tex_requests holds obj_dir-resolved paths + the -clamp flag, decoded in parallel.
     decode_textures(
         textures, materials, tex_requests.size(), n_threads,
         [&](size_t i) -> Texture
         {
             Texture tex;
-            (void)tex.load(tex_requests[i]);
+            (void)tex.load(tex_requests[i].path);
+            if (tex_requests[i].clamp)
+            {
+                tex.wrap_s = WrapMode::Clamp;
+                tex.wrap_t = WrapMode::Clamp;
+            }
             return tex;
         }
     );
