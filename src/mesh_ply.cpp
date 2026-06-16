@@ -1,6 +1,7 @@
 #include "mesh.h"
 #include "light.h"
 #include "mesh_loader.h"
+#include "texture.h"
 
 #include <array>
 #include <cstdint>
@@ -153,6 +154,50 @@ namespace
         }
     };
 
+    // Returns the filename from the first `TextureFile <name>` PLY header comment
+    // (tinyply strips the leading "comment "), or "" if none. The whole remainder
+    // after the token is taken verbatim so names with spaces survive; only
+    // surrounding whitespace is trimmed. Match is case-sensitive — MeshLab's exact
+    // spelling — to avoid false hits on unrelated comments.
+    std::string ply_texture_file(const std::vector<std::string> &comments)
+    {
+        auto is_ws = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
+        static const std::string token = "TextureFile";
+        for (const std::string &c : comments)
+        {
+            size_t i = 0;
+            while (i < c.size() && is_ws(c[i]))
+            {
+                i++;
+            }
+            if (c.compare(i, token.size(), token) != 0)
+            {
+                continue;
+            }
+            // The token must end here (whitespace or end-of-string), not be the
+            // prefix of a longer word like `TextureFileFoo`.
+            size_t j = i + token.size();
+            if (j < c.size() && !is_ws(c[j]))
+            {
+                continue;
+            }
+            while (j < c.size() && is_ws(c[j]))
+            {
+                j++;
+            }
+            size_t end = c.size();
+            while (end > j && is_ws(c[end - 1]))
+            {
+                end--;
+            }
+            if (end > j)
+            {
+                return c.substr(j, end - j);
+            }
+        }
+        return "";
+    }
+
 } // namespace
 
 // ─── Mesh::load_ply ───────────────────────────────────────────────────────────
@@ -160,6 +205,15 @@ namespace
 bool Mesh::load_ply(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);
+
+    // A `comment TextureFile <name>` filename is resolved relative to the PLY
+    // file's directory (mirrors load_obj's obj_dir).
+    std::string ply_dir;
+    const size_t dir_slash = path.find_last_of("/\\");
+    if (dir_slash != std::string::npos)
+    {
+        ply_dir = path.substr(0, dir_slash + 1);
+    }
 
     std::ifstream ss(path, std::ios::binary);
     if (!ss.is_open())
@@ -755,6 +809,36 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         else
         {
             compute_normals(crease_cos);
+        }
+    }
+
+    // PLY albedo binding: `comment TextureFile <name>` (MeshLab / photogrammetry
+    // convention; PLY has no material system). Only meaningful with UVs to sample
+    // it, so a UV-less file skips the potentially multi-MB decode entirely. The
+    // single default material at index 0 covers every triangle. A missing or
+    // undecodable file is silently dropped (decode_textures compacts the slot out,
+    // leaving diffuse_tex at -1), consistent with the OBJ/glTF loaders.
+    const bool has_uv = (uvs != nullptr) || (tc != nullptr);
+    const std::string tex_name = has_uv ? ply_texture_file(file.get_comments()) : std::string();
+    if (!tex_name.empty())
+    {
+        // Routed through decode_textures even though PLY only ever has this one
+        // fixed texture (so the helper's parallel dispatch and index compaction are
+        // dead here). Deliberate: it keeps the "failed decode -> drop, leave the
+        // *_tex index at -1" policy in one place shared with the OBJ/glTF loaders,
+        // rather than reimplementing the drop inline. The count==1 cost is nil.
+        decode_textures(
+            textures, materials, 1, /*n_threads=*/1,
+            [&](size_t) -> Texture
+            {
+                Texture tex;
+                (void)tex.load(ply_dir + tex_name);
+                return tex;
+            }
+        );
+        if (!textures.empty())
+        {
+            materials[0].diffuse_tex = 0;
         }
     }
 

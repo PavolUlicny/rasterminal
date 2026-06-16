@@ -73,6 +73,10 @@ struct Mesh
 
     // Load geometry from a PLY file (ASCII or binary little/big-endian).
     // Supports vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
+    // A `comment TextureFile <name>` header (MeshLab / photogrammetry convention)
+    // binds an albedo texture to the default material, resolved relative to the PLY
+    // directory; only honoured when the mesh has UVs, and a missing/undecodable file
+    // is silently dropped (consistent with the OBJ/glTF loaders).
     // crease_cos is forwarded to compute_normals() when normals are absent.
     // Returns false on failure.
     bool load_ply(const std::string &path, float crease_cos = -1.0f);
