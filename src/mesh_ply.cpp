@@ -811,8 +811,14 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     // convention; PLY has no material system). Only meaningful with UVs to sample
     // it, so a UV-less file skips the potentially multi-MB decode entirely. The
     // single default material at index 0 covers every triangle. A missing or
-    // undecodable file is silently dropped (decode_textures compacts the slot out,
-    // leaving diffuse_tex at -1), consistent with the OBJ/glTF loaders.
+    // undecodable file is silently dropped — decode_textures leaves `textures`
+    // empty, so the guard below skips the assignment and diffuse_tex stays at its
+    // -1 default. Silent-drop is consistent with the OBJ/glTF loaders.
+    //
+    // The name is always resolved relative to ply_dir (prepended unconditionally),
+    // so an absolute or already-rooted name yields a broken path and drops the
+    // texture. This matches load_obj's MTL handling and the bare-relative-filename
+    // convention every PLY exporter actually uses; not special-cased.
     const bool has_uv = (uvs != nullptr) || (tc != nullptr);
     const std::string tex_name = has_uv ? ply_texture_file(file.get_comments()) : std::string();
     if (!tex_name.empty())
