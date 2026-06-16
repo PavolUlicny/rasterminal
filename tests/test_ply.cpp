@@ -1,3 +1,4 @@
+#include "inline_bmp.h"
 #include "loader_util.h"
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1905,4 +1906,215 @@ TEST(ply_valid, binary_le_face_texcoord_float64)
     const Triangle &tri = m.triangles[0];
     ASSERT_NEAR(m.vertices[tri.v[0]].uv.x, 0.1f, 1e-5f);
     ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  comment TextureFile  (MeshLab / photogrammetry albedo binding)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// The texture name is resolved relative to the PLY's directory; tmp_path() puts
+// the .ply and the .bmp in the same temp dir, so the comment carries the bare
+// BMP filename. k1x1_red_bmp (inline_bmp.h) decodes via stb to RGBA {255,0,0,255}.
+
+TEST(ply_valid, texturefile_with_uvs_loads)
+{
+    // Per-vertex UVs + a TextureFile comment → diffuse texture bound to material 0.
+    TmpFile bmp(tmp_path("rast_tf_basic.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(
+        tmp_path("rast_tf_basic.ply"), "ply\nformat ascii 1.0\n"
+                                       "comment TextureFile rast_tf_basic.bmp\n"
+                                       "element vertex 3\n"
+                                       "property float x\nproperty float y\nproperty float z\n"
+                                       "property float u\nproperty float v\n"
+                                       "element face 1\n"
+                                       "property list uchar int vertex_indices\n"
+                                       "end_header\n"
+                                       "0 0 0 0.0 0.0\n"
+                                       "1 0 0 1.0 0.0\n"
+                                       "0 1 0 0.0 1.0\n"
+                                       "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].valid());
+    const vec3 c = m.textures[0].sample_rgb(0.0f, 0.0f);
+    ASSERT_NEAR(c.x, 1.0f, 1e-3f);
+    ASSERT_NEAR(c.y, 0.0f, 1e-3f);
+    ASSERT_NEAR(c.z, 0.0f, 1e-3f);
+}
+
+TEST(ply_valid, texturefile_face_list_texcoord)
+{
+    // UVs via face-list texcoord (split-by-UV path) still satisfies the has_uv gate.
+    TmpFile bmp(tmp_path("rast_tf_ftc.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(
+        tmp_path("rast_tf_ftc.ply"), "ply\nformat ascii 1.0\n"
+                                     "comment TextureFile rast_tf_ftc.bmp\n"
+                                     "element vertex 3\n"
+                                     "property float x\nproperty float y\nproperty float z\n"
+                                     "element face 1\n"
+                                     "property list uchar int vertex_indices\n"
+                                     "property list uchar float texcoord\n"
+                                     "end_header\n"
+                                     "0 0 0\n1 0 0\n0 1 0\n"
+                                     "3 0 1 2  6 0.1 0.2 0.3 0.4 0.5 0.6\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].valid());
+}
+
+TEST(ply_valid, texturefile_missing_file_silent_drop)
+{
+    // Comment names a file that does not exist: load still succeeds, no texture
+    // bound (matches OBJ/glTF silent-drop on a failed decode).
+    TmpFile t(
+        tmp_path("rast_tf_missing.ply"), "ply\nformat ascii 1.0\n"
+                                         "comment TextureFile rast_tf_does_not_exist.bmp\n"
+                                         "element vertex 3\n"
+                                         "property float x\nproperty float y\nproperty float z\n"
+                                         "property float u\nproperty float v\n"
+                                         "element face 1\n"
+                                         "property list uchar int vertex_indices\n"
+                                         "end_header\n"
+                                         "0 0 0 0.0 0.0\n"
+                                         "1 0 0 1.0 0.0\n"
+                                         "0 1 0 0.0 1.0\n"
+                                         "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_TRUE(m.textures.empty());
+}
+
+TEST(ply_valid, texturefile_without_uvs_ignored)
+{
+    // TextureFile present but the mesh has no UVs: the comment is ignored entirely
+    // (a texture with nothing to sample it would just be wasted RAM).
+    TmpFile bmp(tmp_path("rast_tf_nouv.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(
+        tmp_path("rast_tf_nouv.ply"), "ply\nformat ascii 1.0\n"
+                                      "comment TextureFile rast_tf_nouv.bmp\n"
+                                      "element vertex 3\n"
+                                      "property float x\nproperty float y\nproperty float z\n"
+                                      "element face 1\n"
+                                      "property list uchar int vertex_indices\n"
+                                      "end_header\n"
+                                      "0 0 0\n1 0 0\n0 1 0\n"
+                                      "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_TRUE(m.textures.empty());
+}
+
+TEST(ply_valid, texturefile_first_wins)
+{
+    // Two TextureFile comments: the first (valid) is taken, the second ignored
+    // (PLY has no per-face texture binding, so extra images are unusable).
+    TmpFile bmp(tmp_path("rast_tf_first.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(
+        tmp_path("rast_tf_first.ply"), "ply\nformat ascii 1.0\n"
+                                       "comment TextureFile rast_tf_first.bmp\n"
+                                       "comment TextureFile rast_tf_bogus.bmp\n"
+                                       "element vertex 3\n"
+                                       "property float x\nproperty float y\nproperty float z\n"
+                                       "property float u\nproperty float v\n"
+                                       "element face 1\n"
+                                       "property list uchar int vertex_indices\n"
+                                       "end_header\n"
+                                       "0 0 0 0.0 0.0\n"
+                                       "1 0 0 1.0 0.0\n"
+                                       "0 1 0 0.0 1.0\n"
+                                       "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].valid());
+}
+
+TEST(ply_valid, texturefile_name_with_spaces)
+{
+    // The whole remainder after the token is the filename — names with spaces
+    // must survive (no whitespace tokenizing).
+    TmpFile bmp(tmp_path("rast tf spaced.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(
+        tmp_path("rast_tf_spaced.ply"), "ply\nformat ascii 1.0\n"
+                                        "comment TextureFile rast tf spaced.bmp\n"
+                                        "element vertex 3\n"
+                                        "property float x\nproperty float y\nproperty float z\n"
+                                        "property float u\nproperty float v\n"
+                                        "element face 1\n"
+                                        "property list uchar int vertex_indices\n"
+                                        "end_header\n"
+                                        "0 0 0 0.0 0.0\n"
+                                        "1 0 0 1.0 0.0\n"
+                                        "0 1 0 0.0 1.0\n"
+                                        "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_TRUE(m.textures[0].valid());
+}
+
+TEST(ply_valid, texturefile_no_comment_no_texture)
+{
+    // Baseline: a textured PLY with no TextureFile comment never binds a texture.
+    TmpFile t(
+        tmp_path("rast_tf_none.ply"), "ply\nformat ascii 1.0\n"
+                                      "element vertex 3\n"
+                                      "property float x\nproperty float y\nproperty float z\n"
+                                      "property float u\nproperty float v\n"
+                                      "element face 1\n"
+                                      "property list uchar int vertex_indices\n"
+                                      "end_header\n"
+                                      "0 0 0 0.0 0.0\n"
+                                      "1 0 0 1.0 0.0\n"
+                                      "0 1 0 0.0 1.0\n"
+                                      "3 0 1 2\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_TRUE(m.textures.empty());
+}
+
+TEST(ply_valid, texturefile_binary_le)
+{
+    // Comment parsing is independent of the data encoding — the header is ASCII
+    // either way. Binary-LE body with per-vertex UVs + a TextureFile comment.
+    std::string s = "ply\nformat binary_little_endian 1.0\n"
+                    "comment TextureFile rast_tf_bin.bmp\n"
+                    "element vertex 3\n"
+                    "property float x\nproperty float y\nproperty float z\n"
+                    "property float u\nproperty float v\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "end_header\n";
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 0.0f);
+    emit_f32_le(s, 1.0f);
+    s.push_back(3); // face index list count
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    TmpFile bmp(tmp_path("rast_tf_bin.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile t(tmp_path("rast_tf_bin.ply"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_TRUE(m.textures[0].valid());
 }
