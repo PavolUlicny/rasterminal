@@ -131,6 +131,21 @@ namespace
         }
         return tex->image;
     }
+
+    // glTF sampler wrap -> WrapMode. A null sampler (texture declared none) defaults to
+    // Repeat per the glTF spec; cgltf reports 0 for an omitted field, which also maps to Repeat.
+    WrapMode to_wrap_mode(cgltf_wrap_mode w)
+    {
+        switch (w)
+        {
+        case cgltf_wrap_mode_clamp_to_edge:
+            return WrapMode::Clamp;
+        case cgltf_wrap_mode_mirrored_repeat:
+            return WrapMode::Mirror;
+        default:
+            return WrapMode::Repeat;
+        }
+    }
 } // namespace
 
 bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
@@ -258,24 +273,40 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     {
         const cgltf_image *primary;
         const cgltf_image *fallback; // nullptr when none
+        WrapMode wrap_s;
+        WrapMode wrap_t;
     };
 
     // Register a texture, returning its slot index. Each distinct decode is registered
     // once; the actual decode is deferred and run in parallel after the scene walk. Slot
-    // order follows first-encounter order. Dedup is keyed on the (primary, fallback) pair,
-    // not the primary alone: two basisu textures can share one KTX2 source yet declare
-    // different ordinary-source fallbacks, and each must keep its own fallback. (Trade-off:
-    // that rare same-source/different-fallback pattern then transcodes the shared KTX2
-    // twice; the common no-fallback / identical-fallback cases still dedup to one decode.)
-    using TexKey = std::pair<const cgltf_image *, const cgltf_image *>;
+    // order follows first-encounter order. Dedup is keyed on (primary, fallback, wrap_s,
+    // wrap_t), not the images alone: wrap mode is a property of the (image, sampler) pair =
+    // the glTF texture, so two textures sharing one image but different samplers must stay
+    // distinct slots. (The fallback is in the key for the same reason as before: two basisu
+    // textures can share one KTX2 source yet declare different ordinary-source fallbacks.
+    // Trade-off: those rare splits decode the shared source twice; the common case dedups.)
+    struct TexKey
+    {
+        const cgltf_image *primary;
+        const cgltf_image *fallback;
+        WrapMode wrap_s;
+        WrapMode wrap_t;
+        bool operator==(const TexKey &o) const
+        {
+            return primary == o.primary && fallback == o.fallback && wrap_s == o.wrap_s && wrap_t == o.wrap_t;
+        }
+    };
     struct TexKeyHash
     {
         size_t operator()(const TexKey &k) const
         {
             // The 64-bit FNV-prime mix is computed wide, then truncated to size_t (a no-op at
-            // LP64; an accepted hash truncation at ILP32 where size_t is 32-bit).
+            // LP64; an accepted hash truncation at ILP32 where size_t is 32-bit). The two wrap
+            // enums fold into the low bits (each <4, so a 2-bit shift keeps them disjoint).
+            const uint64_t wrap = (static_cast<uint64_t>(k.wrap_s) << 2U) | static_cast<uint64_t>(k.wrap_t);
             return static_cast<size_t>(
-                (std::hash<const void *>{}(k.first) * 1099511628211ULL) ^ std::hash<const void *>{}(k.second)
+                ((std::hash<const void *>{}(k.primary) * 1099511628211ULL) ^ std::hash<const void *>{}(k.fallback)) +
+                wrap
             );
         }
     };
@@ -288,6 +319,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         {
             return -1;
         }
+        const WrapMode wrap_s = tex->sampler ? to_wrap_mode(tex->sampler->wrap_s) : WrapMode::Repeat;
+        const WrapMode wrap_t = tex->sampler ? to_wrap_mode(tex->sampler->wrap_t) : WrapMode::Repeat;
         // Fallback applies only when an extension source (KTX2 or WebP) was preferred over a
         // distinct ordinary source on the same texture, i.e. the picked primary is not the
         // plain image itself.
@@ -303,14 +336,14 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         // source) and degrades gracefully, so we mirror the spec's single fallback slot rather
         // than invent an inter-extension chain.
         const cgltf_image *fallback = (tex->image && primary != tex->image) ? tex->image : nullptr;
-        const TexKey key{ primary, fallback };
+        const TexKey key{ primary, fallback, wrap_s, wrap_t };
         const auto it = tex_cache.find(key);
         if (it != tex_cache.end())
         {
             return it->second;
         }
         const int idx = static_cast<int>(tex_requests.size());
-        tex_requests.push_back({ primary, fallback });
+        tex_requests.push_back({ primary, fallback, wrap_s, wrap_t });
         tex_cache.emplace(key, idx);
         return idx;
     };
@@ -971,6 +1004,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             {
                 tex = decode_one(req.fallback);
             }
+            tex.wrap_s = req.wrap_s;
+            tex.wrap_t = req.wrap_t;
             return tex;
         }
     );

@@ -2052,6 +2052,136 @@ TEST(gltf_valid, parallel_decode_failure_compacts_and_remaps)
     ASSERT_EQ(m.materials[2].diffuse_tex, -1);
 }
 
+// ─── Group: sampler wrap modes ────────────────────────────────────────────────
+
+// One-triangle GLB: single material whose baseColorTexture is image 0 (embedded BMP),
+// with caller-supplied `textures` and `samplers` JSON segments. `samplers` is the full
+// "samplers":[...], segment or "" for none.
+static std::string sampler_glb(const std::string &textures, const std::string &samplers)
+{
+    std::string bin;
+    emit_tri_verts(bin);                                                            // 36 @ 0
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp)); // 58 @ 36
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"material\":0}]}],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+        "\"textures\":" +
+        textures +
+        ","
+        "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}]," +
+        samplers +
+        "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+        "\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+        "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":94}]}";
+    return make_glb(json, bin);
+}
+
+TEST(gltf_sampler, wrap_clamp_repeat_per_axis)
+{
+    // wrapS=33071 (CLAMP_TO_EDGE), wrapT=10497 (REPEAT) — carried independently per axis.
+    TmpFile f(
+        tmp_path("rast_wrap_cr.glb"),
+        sampler_glb(R"([{"source":0,"sampler":0}])", R"("samplers":[{"wrapS":33071,"wrapT":10497}],)")
+    );
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Repeat);
+}
+
+TEST(gltf_sampler, wrap_mirror)
+{
+    // wrapS=33648 (MIRRORED_REPEAT).
+    TmpFile f(
+        tmp_path("rast_wrap_mirror.glb"),
+        sampler_glb(R"([{"source":0,"sampler":0}])", R"("samplers":[{"wrapS":33648,"wrapT":33648}],)")
+    );
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Mirror);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Mirror);
+}
+
+TEST(gltf_sampler, no_sampler_defaults_to_repeat)
+{
+    // Texture with no sampler → both axes Repeat (glTF spec default).
+    TmpFile f(tmp_path("rast_wrap_nosamp.glb"), sampler_glb(R"([{"source":0}])", ""));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Repeat);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Repeat);
+}
+
+TEST(gltf_sampler, omitted_wrap_fields_default_to_repeat)
+{
+    // Sampler present but wrapS/wrapT omitted → cgltf reports default repeat.
+    TmpFile f(tmp_path("rast_wrap_empty.glb"), sampler_glb(R"([{"source":0,"sampler":0}])", R"("samplers":[{}],)"));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Repeat);
+    ASSERT_TRUE(m.textures[0].wrap_t == WrapMode::Repeat);
+}
+
+TEST(gltf_sampler, dedup_splits_on_differing_sampler)
+{
+    // Two textures share image 0 but reference different samplers (CLAMP vs REPEAT). Wrap
+    // belongs to the (image, sampler) pair, so they must NOT collapse — two distinct slots.
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":1}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":1}}}],"
+                             "\"textures\":[{\"source\":0,\"sampler\":0},{\"source\":0,\"sampler\":1}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"samplers\":[{\"wrapS\":33071,\"wrapT\":33071},{\"wrapS\":10497,\"wrapT\":10497}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+    TmpFile f(tmp_path("rast_wrap_split.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 2 });
+    ASSERT_TRUE(m.materials.size() >= 3);
+    const Texture &a = m.textures[static_cast<size_t>(m.materials[1].diffuse_tex)];
+    const Texture &b = m.textures[static_cast<size_t>(m.materials[2].diffuse_tex)];
+    ASSERT_TRUE(a.wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(b.wrap_s == WrapMode::Repeat);
+}
+
+TEST(gltf_sampler, dedup_keeps_identical_sampler)
+{
+    // Two textures, same image, same sampler → still one decoded slot (no dedup regression).
+    std::string bin;
+    emit_tri_verts(bin);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
+                             "{\"attributes\":{\"POSITION\":0},\"material\":0},"
+                             "{\"attributes\":{\"POSITION\":0},\"material\":1}]}],"
+                             "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}},"
+                             "{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":1}}}],"
+                             "\"textures\":[{\"source\":0,\"sampler\":0},{\"source\":0,\"sampler\":0}],"
+                             "\"images\":[{\"bufferView\":1,\"mimeType\":\"image/bmp\"}],"
+                             "\"samplers\":[{\"wrapS\":33071,\"wrapT\":33071}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\","
+                             "\"min\":[-1,-1,0],\"max\":[1,1,0]}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+                             "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":58}],"
+                             "\"buffers\":[{\"byteLength\":94}]}";
+    TmpFile f(tmp_path("rast_wrap_keep.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Clamp);
+}
+
 // ─── Group W: primitive without POSITION attribute ────────────────────────────
 
 TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
