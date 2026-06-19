@@ -73,7 +73,12 @@ struct Renderer
     // Single-pass geometry + rasterize over this worker's stolen triangle chunks.
     // S == Opaque is the original opaque path (byte-identical codegen); S == Transparent
     // shades blend triangles and pushes fragments into this worker's A-buffer arena.
-    template <Sink S> void raster_triangles(int worker_id);
+    // M selects the shading path (Flat/Gouraud/Phong) at compile time so the per-triangle
+    // mode branch folds away; Wireframe never reaches the worker pool.
+    template <Sink S, ShadingMode M> void raster_triangles(int worker_id);
+
+    // Bridge the runtime m_smode to the compile-time M instantiation of raster_triangles.
+    template <Sink S> void dispatch_raster(int worker_id);
 
     // Resolve pass: composite each owned pixel's fragment list back-to-front over the
     // opaque colour already in the framebuffer.

@@ -98,8 +98,10 @@ Renderer::~Renderer()
 // is identical to the pre-transparency single pass. S == Transparent processes the
 // blend tail [opaque_count, total) and pushes shaded fragments into this worker's
 // A-buffer arena instead (the per-pixel resolve composites them later).
+// M selects the shading path at compile time: the Flat/Gouraud/Phong dispatch folds
+// to `if constexpr`, so each instantiation carries only its own shading code.
 
-template <Sink S> void Renderer::raster_triangles(int worker_id)
+template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 {
     const Mesh *mesh = m_mesh;
     const mat4 &vp = m_vp;
@@ -111,26 +113,28 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
     const float near_plane = m_near_plane;
     const int width = m_width;
     const int height = m_height;
-    const ShadingMode smode = m_smode;
     const bool do_cull = m_cull_backfaces;
     const bool show_tex = m_show_texture;
     // Texture toggle gates only the emissive texture sample. The authored factor
     // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
     // even when diffuse_tex is hidden by the toggle.
     const bool show_emissive = mesh->has_emissive && show_tex;
-    const bool show_metallic = mesh->has_metallic && show_tex;
-    const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
-    const bool show_occlusion = mesh->has_occlusion && show_tex;
+    // Phong-only locals: unused in the Flat/Gouraud instantiations (those branches compile out).
+    [[maybe_unused]] const bool show_metallic = mesh->has_metallic && show_tex;
+    [[maybe_unused]] const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
+    [[maybe_unused]] const bool show_occlusion = mesh->has_occlusion && show_tex;
     const bool mesh_has_unlit = mesh->has_unlit;
     Framebuffer *fb = m_fb;
-    const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
-    const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
+    // Flat/Gouraud-only locals: unused in the Phong instantiation (it derives the shadow
+    // light split inside rasterize_phong).
+    [[maybe_unused]] const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
+    [[maybe_unused]] const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
     // Opaque steals [0, opaque_count); transparent steals the blend tail
     // [opaque_count, total). render() seeds m_tri_cursor to the matching start.
     const int total = static_cast<int>(S == Sink::Opaque ? m_opaque_count : mesh->triangles.size());
     const int work = (S == Sink::Opaque) ? total : (total - static_cast<int>(m_opaque_count));
-    const vec3 *p_tans = (smode == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
+    const vec3 *p_tans = (M == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
     const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
     [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
 
@@ -296,7 +300,7 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
                             );
                         }
                     }
-                    else if (smode == ShadingMode::Phong)
+                    else if constexpr (M == ShadingMode::Phong)
                     {
                         // a.color/b.color/c.color already encode the has_vertex_colors
                         // condition: they are {1,1,1} when p_vcols == nullptr (set at
@@ -341,7 +345,7 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
                         vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
                         vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
 
-                        if (smode == ShadingMode::Flat)
+                        if constexpr (M == ShadingMode::Flat)
                         {
                             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                             if (flip_normals)
@@ -488,6 +492,30 @@ template <Sink S> void Renderer::raster_triangles(int worker_id)
     else
     {
         steal_loop();
+    }
+}
+
+// ─── Renderer::dispatch_raster ────────────────────────────────────────────────
+// Pick the compile-time M instantiation of raster_triangles from the runtime shading
+// mode. m_smode is a frame input (written once under the lock before workers wake),
+// so this read is as safe as the other m_* reads inside raster_triangles. Wireframe
+// is handled single-threaded in render() and never dispatches to the pool.
+
+template <Sink S> void Renderer::dispatch_raster(int worker_id)
+{
+    switch (m_smode)
+    {
+    case ShadingMode::Flat:
+        raster_triangles<S, ShadingMode::Flat>(worker_id);
+        break;
+    case ShadingMode::Gouraud:
+        raster_triangles<S, ShadingMode::Gouraud>(worker_id);
+        break;
+    case ShadingMode::Phong:
+        raster_triangles<S, ShadingMode::Phong>(worker_id);
+        break;
+    case ShadingMode::Wireframe:
+        break;
     }
 }
 
@@ -638,10 +666,10 @@ void Renderer::worker_func(int worker_id)
         switch (pass)
         {
         case Pass::Opaque:
-            raster_triangles<Sink::Opaque>(worker_id);
+            dispatch_raster<Sink::Opaque>(worker_id);
             break;
         case Pass::TransAccum:
-            raster_triangles<Sink::Transparent>(worker_id);
+            dispatch_raster<Sink::Transparent>(worker_id);
             break;
         case Pass::Resolve:
             resolve_pixels();
