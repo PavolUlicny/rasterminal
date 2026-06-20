@@ -111,7 +111,7 @@ struct Renderer
     Framebuffer *m_fb = nullptr;
 
     std::atomic<int> m_tri_cursor{ 0 };   // work-stealing cursor across all workers
-    std::atomic<int> m_pixel_cursor{ 0 }; // pixel-range cursor for the Resolve pass
+    std::atomic<int> m_pixel_cursor{ 0 }; // row-band cursor for the Resolve pass
     std::atomic<int> m_active{ 0 };       // workers not yet done with the current frame
     int m_generation = 0;                 // bumped before each dispatch to wake workers
     bool m_stop = false;                  // set by destructor to terminate worker loops
@@ -125,4 +125,12 @@ struct Renderer
     // head[idx] holds the most-recent fragment ref ((worker_id<<32)|node) or SENTINEL.
     std::vector<std::atomic<uint64_t>> m_frag_head;
     std::vector<std::vector<Fragment>> m_arenas; // one per worker; reused across frames
+    std::vector<TouchBox> m_touch_box;           // one per worker; touched-pixel extent for Resolve
+
+    // Resolve sweep extent (merged transparent bounding box) + row-band steal chunk.
+    // Set in render() after the accumulate barrier; read by resolve_pixels() for the column
+    // bounds [x0,x1] and last row y1. The y-start (box.y0) seeds m_pixel_cursor in render().
+    TouchBox m_res_box; // default-empty; never read before render() assigns it (resolve only
+                        // dispatches inside the non-empty-box guard)
+    int m_res_row_chunk = 1;
 };

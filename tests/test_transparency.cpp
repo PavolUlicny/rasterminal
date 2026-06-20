@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,102 @@ TEST(transparency, shared_edge_no_double_blend)
             ASSERT_TRUE(c.g < 10 && c.b < 10);
         }
     }
+}
+
+// ─── bounding-box-limited resolve ────────────────────────────────────────────────
+
+// The resolve pass sweeps only the transparent region (the merged per-worker touched-pixel
+// box), not the whole framebuffer. A single small blend triangle must composite inside its
+// projection while every pixel outside the box keeps the exact background — proving the box
+// neither under-covers (drops the composite) nor over-covers (touches the background).
+TEST(transparency, localized_blend_leaves_outside_untouched)
+{
+    Renderer r(4); // multi-threaded: per-worker boxes get merged
+    Mesh m;
+    // Unit triangle at z=0 → screen x∈[18,22], y∈[8,12] (see make_test_camera).
+    add_unlit_tri(m, { -1.0f, -1.0f, 0.0f }, { 1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f, 0.0f }, RED, 0.5f, /*blend=*/true);
+    finalize(m, /*opaque_count=*/0);
+
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear({ 0, 0, 255 });
+    r.render(m, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+
+    // Inside the triangle: 0.5*red + 0.5*blue = (128, 0, 128).
+    assert_pixel_near(fb, 20, 10, { 128, 0, 128 }, 2);
+    // Far outside the box: exact background, byte-for-byte (never visited by resolve).
+    for (const auto &p : { std::pair{ 2, 2 }, std::pair{ 38, 2 }, std::pair{ 2, 18 }, std::pair{ 38, 18 } })
+    {
+        const Color c = fb.get_pixel(p.first, p.second);
+        ASSERT_TRUE(c.r == 0 && c.g == 0 && c.b == 255);
+    }
+}
+
+// Two blend triangles in separated screen regions: the merged box must span both, so both
+// composite. The gap between them stays background (it is inside the box's bounds but no
+// fragment landed there, so its head stayed SENTINEL).
+TEST(transparency, two_disjoint_regions_both_resolved)
+{
+    Renderer r(4);
+    Mesh m;
+    // Left region → screen x∈[12,16]; right region → x∈[24,28]; gap at x=20.
+    add_unlit_tri(m, { -4.0f, -1.0f, 0.0f }, { -2.0f, -1.0f, 0.0f }, { -3.0f, 1.0f, 0.0f }, RED, 0.5f, /*blend=*/true);
+    add_unlit_tri(m, { 2.0f, -1.0f, 0.0f }, { 4.0f, -1.0f, 0.0f }, { 3.0f, 1.0f, 0.0f }, RED, 0.5f, /*blend=*/true);
+    finalize(m, /*opaque_count=*/0);
+
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear({ 0, 0, 255 });
+    r.render(m, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+
+    assert_pixel_near(fb, 14, 10, { 128, 0, 128 }, 4); // left region composited
+    assert_pixel_near(fb, 26, 10, { 128, 0, 128 }, 4); // right region composited
+    const Color gap = fb.get_pixel(20, 10);            // gap between them: untouched background
+    ASSERT_TRUE(gap.r == 0 && gap.g == 0 && gap.b == 255);
+}
+
+// Each worker accumulates its touched-pixel box in a worker-local variable (kept off the
+// shared, cache-line-adjacent box array to avoid false sharing under heavy overdraw); render()
+// then merges the per-worker boxes. This stresses that merge: four high-overdraw clusters in
+// the screen corners, with enough stacked triangles (256 total > 4 work-stealing chunks) that
+// the clusters land on different workers. Every cluster must composite — dropping or mismerging
+// any worker's box would leave that corner at the background — while the central gap, touched by
+// no worker, stays the exact background.
+TEST(transparency, multi_worker_box_merge_covers_all_regions)
+{
+    Renderer r(4);
+    Mesh m;
+    // Cluster centres (world); map to screen via screen_x = 20 + 2x, screen_y = 10 - 2y.
+    // 64 stacked layers each → 256 triangles → spans 4 chunks (chunk size 64).
+    for (const vec3 &c : { vec3{ -5.0f, 2.5f, 0.0f },   // TL ≈ (10, 5)
+                           vec3{ 5.0f, 2.5f, 0.0f },    // TR ≈ (30, 5)
+                           vec3{ -5.0f, -2.5f, 0.0f },  // BL ≈ (10, 15)
+                           vec3{ 5.0f, -2.5f, 0.0f } }) // BR ≈ (30, 15)
+    {
+        for (int layer = 0; layer < 64; layer++)
+        {
+            add_unlit_tri(
+                m, { c.x - 1.0f, c.y - 1.0f, c.z }, { c.x + 1.0f, c.y - 1.0f, c.z }, { c.x, c.y + 1.0f, c.z }, RED,
+                0.5f, /*blend=*/true
+            );
+        }
+    }
+    finalize(m, /*opaque_count=*/0);
+
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear({ 0, 0, 255 });
+    r.render(m, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+
+    // 64 layers of 0.5-over-red drive each corner cluster to ~fully red (blue ≈ 0.5^64).
+    for (const auto &p : { std::pair{ 10, 5 }, std::pair{ 30, 5 }, std::pair{ 10, 15 }, std::pair{ 30, 15 } })
+    {
+        const Color c = fb.get_pixel(p.first, p.second);
+        ASSERT_TRUE(c.r > 240 && c.b < 30);
+    }
+    // Central gap: never touched by any worker → exact background.
+    const Color mid = fb.get_pixel(20, 10);
+    ASSERT_TRUE(mid.r == 0 && mid.g == 0 && mid.b == 255);
 }
 
 // ─── interaction with opaque geometry ───────────────────────────────────────────

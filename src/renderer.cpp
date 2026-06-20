@@ -64,7 +64,8 @@ Renderer::Renderer(int n_threads)
     //  N = exactly N, clamped to [1, hw]
     const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw : n_threads;
     m_n_workers = std::clamp(req, 1, hw);
-    m_arenas.resize(static_cast<size_t>(m_n_workers)); // one transparent-fragment arena per worker
+    m_arenas.resize(static_cast<size_t>(m_n_workers));    // one transparent-fragment arena per worker
+    m_touch_box.resize(static_cast<size_t>(m_n_workers)); // one touched-pixel box per worker
     m_threads.reserve(static_cast<size_t>(m_n_workers));
     for (int t = 0; t < m_n_workers; t++)
     {
@@ -146,6 +147,12 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     {
         m_arenas[static_cast<size_t>(worker_id)].clear();
     }
+    // Worker-local touched-pixel box. push() updates this (L1-hot, no coherence traffic)
+    // rather than m_touch_box[worker_id] directly: the per-worker boxes are cache-line
+    // adjacent, so per-push writes there would false-share catastrophically under the
+    // millions of pushes a high-overdraw transparent mesh generates. Merged out once below.
+    // NOLINTNEXTLINE(misc-const-correctness) — not const: mutated through abuf.box in push()
+    [[maybe_unused]] TouchBox local_box; // default-empty (NSDMI)
     const ABuffer abuf = [&]
     {
         ABuffer a;
@@ -153,6 +160,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         {
             a.head = m_frag_head.data();
             a.nodes = &m_arenas[static_cast<size_t>(worker_id)];
+            a.box = &local_box;
             a.worker_id = static_cast<uint32_t>(worker_id);
         }
         return a;
@@ -488,6 +496,9 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
             // resolve still composites + self-cleans — so the frame loses a few fragments
             // under extreme overdraw rather than crashing or corrupting the next frame.
         }
+        // Publish the accumulated extent once. On the bad_alloc path local_box still bounds
+        // exactly the heads this worker did set (push updates it only after the head swap).
+        m_touch_box[static_cast<size_t>(worker_id)] = local_box;
     }
     else
     {
@@ -520,9 +531,11 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
 }
 
 // ─── Renderer::resolve_pixels ─────────────────────────────────────────────────
-// Transparent resolve pass: each worker steals disjoint pixel ranges and composites
-// that pixel's accumulated fragment list back-to-front over the opaque colour already
-// in the framebuffer. The common single-layer pixel takes a fast path that composites the
+// Transparent resolve pass: each worker steals disjoint row bands within the merged
+// transparent bounding box (set by render()) and composites that pixel's accumulated
+// fragment list back-to-front over the opaque colour already in the framebuffer. Pixels
+// outside the box were never touched (heads still SENTINEL), so the sweep skips them.
+// The common single-layer pixel takes a fast path that composites the
 // lone fragment directly, skipping the gather vector and the sort entirely; only multi-layer
 // pixels build and sort the stack. Disjoint pixels + the post-accumulate barrier make the
 // single-threaded get_pixel/set_pixel safe here (no two workers touch one slot; the
@@ -533,112 +546,121 @@ void Renderer::resolve_pixels()
 {
     Framebuffer *fb = m_fb;
     const int width = m_width;
-    const int total_px = width * m_height;
-    constexpr int PX_CHUNK = 4096;
+    const int x0 = m_res_box.x0;
+    const int x1 = m_res_box.x1;
+    const int y1 = m_res_box.y1;
+    const int chunk = m_res_row_chunk;
     constexpr float inv255 = 1.0f / 255.0f;
 
     std::vector<Fragment> stack; // reused across pixels; per-worker, no sharing
 
+    // Steal row bands over the box's rows: columns [x0,x1], from the box top (m_pixel_cursor,
+    // seeded by render()) down to the last row y1. Only these rows can hold a non-SENTINEL head.
     while (true)
     {
-        const int start = m_pixel_cursor.fetch_add(PX_CHUNK, std::memory_order_relaxed);
-        if (start >= total_px)
+        const int r0 = m_pixel_cursor.fetch_add(chunk, std::memory_order_relaxed);
+        if (r0 > y1)
         {
             break;
         }
-        const int end = std::min(start + PX_CHUNK, total_px);
-        for (int idx = start; idx < end; idx++)
+        const int r1 = std::min(r0 + chunk - 1, y1);
+        for (int y = r0; y <= r1; y++)
         {
-            const uint64_t ref = m_frag_head[static_cast<size_t>(idx)].load(std::memory_order_relaxed);
-            if (ref == ABuffer::SENTINEL)
+            int idx = (y * width) + x0;
+            for (int x = x0; x <= x1; x++, idx++)
             {
-                continue;
-            }
-
-            // Composite the chain over the opaque colour already in the framebuffer. color_at is
-            // just a load (order-independent), so read the base first and let both paths fold into dst.
-            const Color base = fb->color_at(static_cast<size_t>(idx));
-            vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
-                      static_cast<float>(base.b) * inv255 };
-
-            // uint32_t cast on the worker-id index (mirrors the arena-slot cast): the ref packs it
-            // in the high 32 bits so it fits, and uint64_t->uint32_t is a real narrowing on both LP64
-            // and ILP32 — unlike a size_t cast, which is useless (==uint64_t) on LP64.
-            const Fragment &f0 = m_arenas[static_cast<uint32_t>(ref >> 32u)][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
-            if (f0.next == ABuffer::SENTINEL)
-            {
-                // Fast path: the overwhelmingly common single-layer pixel. One OVER step, no
-                // vector touch and no allocation, so the bad_alloc guard below is never entered.
-                dst = f0.color * f0.alpha + dst * (1.0f - f0.alpha);
-            }
-            else
-            {
-                // Gather this pixel's chain. push_back is the only allocating call in resolve;
-                // guard it like the accumulate pass so an OOM here can't escape worker_func (a
-                // std::thread entry) into std::terminate. On OOM we composite nothing for this
-                // pixel (it keeps its opaque colour) — but the head reset below still runs
-                // UNCONDITIONALLY, so no stale non-sentinel head survives to corrupt the next
-                // frame (the self-cleaning invariant the design relies on). Far less likely than
-                // accumulate OOM: the chain's fragments were already allocated in that pass.
-                stack.clear();
-                try
+                const uint64_t ref = m_frag_head[static_cast<size_t>(idx)].load(std::memory_order_relaxed);
+                if (ref == ABuffer::SENTINEL)
                 {
-                    uint64_t r = ref;
-                    while (r != ABuffer::SENTINEL)
+                    continue;
+                }
+
+                // Composite the chain over the opaque colour already in the framebuffer. color_at is
+                // just a load (order-independent), so read the base first and let both paths fold into dst.
+                const Color base = fb->color_at(static_cast<size_t>(idx));
+                vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
+                          static_cast<float>(base.b) * inv255 };
+
+                // uint32_t cast on the worker-id index (mirrors the arena-slot cast): the ref packs it
+                // in the high 32 bits so it fits, and uint64_t->uint32_t is a real narrowing on both LP64
+                // and ILP32 — unlike a size_t cast, which is useless (==uint64_t) on LP64.
+                const Fragment &f0 =
+                    m_arenas[static_cast<uint32_t>(ref >> 32u)][static_cast<uint32_t>(ref & 0xFFFFFFFFu)];
+                if (f0.next == ABuffer::SENTINEL)
+                {
+                    // Fast path: the overwhelmingly common single-layer pixel. One OVER step, no
+                    // vector touch and no allocation, so the bad_alloc guard below is never entered.
+                    dst = f0.color * f0.alpha + dst * (1.0f - f0.alpha);
+                }
+                else
+                {
+                    // Gather this pixel's chain. push_back is the only allocating call in resolve;
+                    // guard it like the accumulate pass so an OOM here can't escape worker_func (a
+                    // std::thread entry) into std::terminate. On OOM we composite nothing for this
+                    // pixel (it keeps its opaque colour) — but the head reset below still runs
+                    // UNCONDITIONALLY, so no stale non-sentinel head survives to corrupt the next
+                    // frame (the self-cleaning invariant the design relies on). Far less likely than
+                    // accumulate OOM: the chain's fragments were already allocated in that pass.
+                    stack.clear();
+                    try
                     {
-                        const Fragment &f =
-                            m_arenas[static_cast<uint32_t>(r >> 32u)][static_cast<uint32_t>(r & 0xFFFFFFFFu)];
-                        stack.push_back(f);
-                        r = f.next;
+                        uint64_t r = ref;
+                        while (r != ABuffer::SENTINEL)
+                        {
+                            const Fragment &f =
+                                m_arenas[static_cast<uint32_t>(r >> 32u)][static_cast<uint32_t>(r & 0xFFFFFFFFu)];
+                            stack.push_back(f);
+                            r = f.next;
+                        }
+                    }
+                    catch (const std::bad_alloc &)
+                    {
+                        stack.clear();
+                    }
+
+                    // Back-to-front: composite far (greater depth) fragments first. The depth ties are
+                    // broken on the fragment payload so the composite is reproducible: the A-buffer chain
+                    // order is nondeterministic (cross-worker atomic exchanges) and the alpha-OVER is not
+                    // commutative, so without a deterministic tie-break two coplanar fragments at one pixel
+                    // would flicker frame-to-frame. Fragments equal on every field are identical, so their
+                    // relative order then cannot affect the result. (The size > 1 guard also skips an
+                    // OOM-emptied stack.)
+                    if (stack.size() > 1)
+                    {
+                        std::sort(
+                            stack.begin(), stack.end(),
+                            [](const Fragment &lhs, const Fragment &rhs)
+                            {
+                                if (lhs.depth != rhs.depth)
+                                {
+                                    return lhs.depth > rhs.depth;
+                                }
+                                if (lhs.color.x != rhs.color.x)
+                                {
+                                    return lhs.color.x < rhs.color.x;
+                                }
+                                if (lhs.color.y != rhs.color.y)
+                                {
+                                    return lhs.color.y < rhs.color.y;
+                                }
+                                if (lhs.color.z != rhs.color.z)
+                                {
+                                    return lhs.color.z < rhs.color.z;
+                                }
+                                return lhs.alpha < rhs.alpha;
+                            }
+                        );
+                    }
+
+                    for (const Fragment &f : stack)
+                    {
+                        dst = f.color * f.alpha + dst * (1.0f - f.alpha);
                     }
                 }
-                catch (const std::bad_alloc &)
-                {
-                    stack.clear();
-                }
 
-                // Back-to-front: composite far (greater depth) fragments first. The depth ties are
-                // broken on the fragment payload so the composite is reproducible: the A-buffer chain
-                // order is nondeterministic (cross-worker atomic exchanges) and the alpha-OVER is not
-                // commutative, so without a deterministic tie-break two coplanar fragments at one pixel
-                // would flicker frame-to-frame. Fragments equal on every field are identical, so their
-                // relative order then cannot affect the result. (The size > 1 guard also skips an
-                // OOM-emptied stack.)
-                if (stack.size() > 1)
-                {
-                    std::sort(
-                        stack.begin(), stack.end(),
-                        [](const Fragment &x, const Fragment &y)
-                        {
-                            if (x.depth != y.depth)
-                            {
-                                return x.depth > y.depth;
-                            }
-                            if (x.color.x != y.color.x)
-                            {
-                                return x.color.x < y.color.x;
-                            }
-                            if (x.color.y != y.color.y)
-                            {
-                                return x.color.y < y.color.y;
-                            }
-                            if (x.color.z != y.color.z)
-                            {
-                                return x.color.z < y.color.z;
-                            }
-                            return x.alpha < y.alpha;
-                        }
-                    );
-                }
-
-                for (const Fragment &f : stack)
-                {
-                    dst = f.color * f.alpha + dst * (1.0f - f.alpha);
-                }
+                fb->set_color_at(static_cast<size_t>(idx), vec3_to_color(dst));
+                m_frag_head[static_cast<size_t>(idx)].store(ABuffer::SENTINEL, std::memory_order_relaxed);
             }
-
-            fb->set_color_at(static_cast<size_t>(idx), vec3_to_color(dst));
-            m_frag_head[static_cast<size_t>(idx)].store(ABuffer::SENTINEL, std::memory_order_relaxed);
         }
     }
 }
@@ -853,7 +875,47 @@ void Renderer::render(
         m_tri_cursor.store(static_cast<int>(m_opaque_count), std::memory_order_relaxed);
         dispatch(Pass::TransAccum);
 
-        m_pixel_cursor.store(0, std::memory_order_relaxed);
-        dispatch(Pass::Resolve);
+        // Merge the per-worker touched-pixel boxes so the Resolve sweep covers only the
+        // transparent region instead of the whole frame. Merge straight into m_res_box (the
+        // member resolve_pixels() reads — workers can't see a render() stack local); reset it
+        // to empty first since it persists across frames. An empty merged box means zero
+        // fragments were pushed (a box only grows inside push, after the head is published),
+        // so every head is still SENTINEL — nothing to composite or self-clean, skip the
+        // whole pass (also subsumes the fully-occluded / fully-culled transparent case).
+        //
+        // A single AABB degrades to ~full-frame when transparency occupies separated screen
+        // regions (objects in opposite corners), so the gap between them is still swept. That
+        // is the floor, not a regression: the sweep is bounded by `=` the old unconditional
+        // full-frame sweep (identical SENTINEL checks), and the per-push box cost is in the
+        // noise — measured neutral-to-faster even in that worst case. A multi-box / per-tile
+        // dirty mask would tighten the sweep but adds per-frame cost that loses on the common
+        // single-region case, so it is deliberately not done.
+        //
+        // An empty box ({INT_MAX, INT_MIN}) is the identity for this min/max reduction, so
+        // workers that pushed nothing fold in without a guard and leave the result empty.
+        m_res_box = TouchBox{};
+        for (int w = 0; w < m_n_workers; w++)
+        {
+            const TouchBox &b = m_touch_box[static_cast<size_t>(w)];
+            m_res_box.x0 = std::min(m_res_box.x0, b.x0);
+            m_res_box.y0 = std::min(m_res_box.y0, b.y0);
+            m_res_box.x1 = std::max(m_res_box.x1, b.x1);
+            m_res_box.y1 = std::max(m_res_box.y1, b.y1);
+        }
+        if (!m_res_box.empty())
+        {
+            // Steal in row bands: enough bands for balance, capped so a tall box doesn't
+            // over-fragment the cursor. At least one row so a short box still dispatches.
+            // A wide-but-short box (bh < workers) under-parallelizes (some workers idle), but
+            // benched faster than the old full-frame sweep even at 1-2 rows × deep overdraw:
+            // those few rows' pixels are contiguous (≈one old chunk → already ≈serial there),
+            // and the box skips the rest of the frame's SENTINEL scan. Not worth an aspect-aware
+            // column-band fallback.
+            const int bh = m_res_box.y1 - m_res_box.y0 + 1;
+            m_res_row_chunk = std::clamp(bh / (m_n_workers * 8), 1, 64);
+            // Seed the row cursor to the box top; resolve_pixels() reads the y-start from here.
+            m_pixel_cursor.store(m_res_box.y0, std::memory_order_relaxed);
+            dispatch(Pass::Resolve);
+        }
     }
 }

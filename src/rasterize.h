@@ -6,7 +6,9 @@
 #include "shadow.h"
 #include "texture.h"
 
+#include <algorithm>
 #include <atomic>
+#include <climits>
 #include <cstdint>
 #include <vector>
 
@@ -52,31 +54,59 @@ struct Fragment // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
     uint64_t next;
 };
 
+// Screen-space bounding box of the pixels a worker actually wrote a transparent
+// fragment to, accumulated during the Transparent pass and merged after the barrier
+// so the Resolve pass sweeps only the transparent region instead of the whole frame.
+// Inverted init = empty; all ops are nothrow int min/max (kept off the bad_alloc paths).
+struct TouchBox
+{
+    // Default = empty; every use is a freshly constructed box (per-worker local or the merge
+    // accumulator), so the inverted-init NSDMI is the only state setter — no reset() needed.
+    int x0 = INT_MAX, y0 = INT_MAX, x1 = INT_MIN, y1 = INT_MIN;
+
+    [[nodiscard]] bool empty() const noexcept { return x1 < x0; }
+};
+
 // Per-pixel linked-list A-buffer handle handed to the Transparent rasterizer. `head`
 // is the framebuffer-sized array of per-pixel chain heads (shared across workers);
 // `nodes` is THIS worker's private arena (no cross-worker contention on append). Only
 // head[idx].exchange is shared, and it is uncontended except where two workers cover
-// the same pixel in one frame.
+// the same pixel in one frame. `box` accumulates this worker's touched-pixel extent.
 struct ABuffer
 {
     static constexpr uint64_t SENTINEL = ~static_cast<uint64_t>(0);
 
     std::atomic<uint64_t> *head = nullptr;
     std::vector<Fragment> *nodes = nullptr;
+    TouchBox *box = nullptr;
     uint32_t worker_id = 0;
 
-    // Append a shaded fragment for pixel `idx`. push_back runs first so a bad_alloc
-    // leaves `head` untouched (no chain pointing at a non-existent node); the worker
-    // loop catches it and stops. Then publish the node by swapping it to the chain
-    // head and linking the previous head as its successor. const: only the pointees
-    // (head array, node arena) are mutated, not the ABuffer's own pointer members.
-    void push(size_t idx, float depth, const vec3 &color, float alpha) const
+    // Append a shaded fragment for pixel `idx` at screen (x,y). push_back runs first so
+    // a bad_alloc leaves `head` untouched (no chain pointing at a non-existent node); the
+    // worker loop catches it and stops. Then publish the node by swapping it to the chain
+    // head and linking the previous head as its successor. The box update is last and
+    // nothrow — reached only once head[idx] is published, so the invariant "head set ⇒
+    // pixel inside box" holds even if push_back throws (box stays untouched then). const:
+    // only the pointees (head array, node arena, box) are mutated, not ABuffer's own members.
+    //
+    // Keep the box update PER-PUSH and post-publish — do not hoist/batch it per-triangle or
+    // per-scanline (it looks cheaper: O(tris) min/max instead of O(frags)). A deferred flush
+    // is exactly the code a mid-triangle bad_alloc skips on its way to the worker catch, which
+    // would strand the already-published heads #1..k of that triangle OUTSIDE the merged box →
+    // the box-bounded resolve never resets them → next frame reads stale non-SENTINEL heads.
+    // The only exception-safe hoist (pre-loop, by clamped tri AABB) loses the occluded-skip and
+    // loosens the box, eroding the resolve win; the per-push cost benchmarked neutral anyway.
+    void push(size_t idx, int x, int y, float depth, const vec3 &color, float alpha) const
     {
         const auto my_idx = static_cast<uint32_t>(nodes->size());
         nodes->push_back(Fragment{ depth, color, alpha, SENTINEL });
         const uint64_t my_ref = (static_cast<uint64_t>(worker_id) << 32u) | my_idx;
         const uint64_t prev = head[idx].exchange(my_ref, std::memory_order_relaxed);
         (*nodes)[my_idx].next = prev;
+        box->x0 = std::min(box->x0, x);
+        box->x1 = std::max(box->x1, x);
+        box->y0 = std::min(box->y0, y);
+        box->y1 = std::max(box->y1, y);
     }
 };
 

@@ -456,7 +456,7 @@ void rasterize(
                 const float a = base_alpha * tex_a * vca;
                 if (a >= ALPHA_EPS)
                 {
-                    abuf->push(idx, depth, col, a);
+                    abuf->push(idx, x, y, depth, col, a);
                 }
             }
             else
@@ -849,7 +849,7 @@ void rasterize_phong(
                 const float a = mat.alpha * tex_a * vca;
                 if (a >= ALPHA_EPS)
                 {
-                    abuf->push(idx, depth, color, a);
+                    abuf->push(idx, x, y, depth, color, a);
                 }
             }
             else
