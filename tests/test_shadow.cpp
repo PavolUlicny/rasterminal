@@ -225,7 +225,7 @@ TEST(shadow, cutout_honours_diffuse_uv_set)
             v.pos = p;
             v.uv = { 0.25f, 0.5f }; // set 0 → texel0 (opaque); off the wrap boundary
             m.vertices.push_back(v);
-            m.uv1.push_back({ 0.75f, 0.5f }); // set 1 → texel1 (transparent)
+            m.uv1.emplace_back(0.75f, 0.5f); // set 1 → texel1 (transparent)
         }
         m.has_uv1 = true;
 
