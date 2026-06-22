@@ -1,8 +1,12 @@
 #include "draco_cube_alpha.h"
 #include "draco_cube_bitstream.h"
 #include "draco_cube_color.h"
+#include "draco_tri_uv1.h"
+#include "inline_bmp.h"
 #include "loader_util.h"
 
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -501,3 +505,62 @@ TEST(gltf_draco, missing_accessors_array_fails)
 //     can't overflow it. draco_encoder won't emit a >4-component COLOR attribute from
 //     standard input (it'd require a hand-crafted generic attribute), so the guard is
 //     reasoning-covered rather than fixture-tested; the clamp makes it safe regardless.
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TEXCOORD_1 (second UV set) decoded from the Draco bitstream.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(gltf_draco, decode_texcoord1_second_uv_set)
+{
+    // The Draco primitive carries TEXCOORD_0 (uid 1) and TEXCOORD_1 (uid 2). A baseColorTexture
+    // bound to texCoord:1 references the second set, so the loader keeps uv1 (has_uv1) and decodes
+    // it from the bitstream (not a uv0 copy). Bespoke GLB: make_draco_glb has no material slots, so
+    // the JSON is hand-built here with an embedded BMP after the Draco buffer view.
+    std::string bin(reinterpret_cast<const char *>(kDracoTriUv1), kDracoTriUv1Len);
+    while (bin.size() % 4 != 0)
+    {
+        bin.push_back('\0'); // 4-byte align the image that follows
+    }
+    const size_t bmp_off = bin.size();
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
+
+    const std::string json = R"({"asset":{"version":"2.0"},)"
+                             R"("extensionsUsed":["KHR_draco_mesh_compression"],)"
+                             R"("extensionsRequired":["KHR_draco_mesh_compression"],)"
+                             R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{"mesh":0}],)"
+                             R"("meshes":[{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2},)"
+                             R"("indices":3,"material":0,"mode":4,"extensions":{"KHR_draco_mesh_compression":)"
+                             R"({"bufferView":0,"attributes":{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2}}}}]}],)"
+                             R"("materials":[{"pbrMetallicRoughness":{"baseColorTexture":{"index":0,"texCoord":1}}}],)"
+                             R"("textures":[{"source":0}],"images":[{"bufferView":1,"mimeType":"image/bmp"}],)"
+                             R"("accessors":[)"
+                             R"({"componentType":5126,"count":3,"type":"VEC3","min":[-1,-1,0],"max":[1,1,0]},)"
+                             R"({"componentType":5126,"count":3,"type":"VEC2"},)"
+                             R"({"componentType":5126,"count":3,"type":"VEC2"},)"
+                             R"({"componentType":5125,"count":3,"type":"SCALAR"}],)"
+                             R"("bufferViews":[{"buffer":0,"byteOffset":0,"byteLength":)" +
+                             std::to_string(kDracoTriUv1Len) + R"(},{"buffer":0,"byteOffset":)" +
+                             std::to_string(bmp_off) + R"(,"byteLength":)" + std::to_string(sizeof(k1x1_red_bmp)) +
+                             R"(}],)" + R"("buffers":[{"byteLength":)" + std::to_string(bin.size()) + R"(}]})";
+
+    TmpFile f(tmp_path("rast_draco_uv1.glb"), assemble_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), 3u);
+    ASSERT_EQ(m.triangles.size(), 1u);
+    ASSERT_TRUE(m.has_uv1);
+    ASSERT_EQ(m.uv1.size(), m.vertices.size());
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(static_cast<int>(m.materials[1].diffuse_map.uv_set), 1);
+    // uv1 input (0.2,0.3) is stored v-flipped → (0.2,0.7); no uv0 vertex sits there
+    // ((0,1)/(1,1)/(0.5,0)), so finding it proves the real second set was decoded, not copied.
+    // Loose tolerance for the 16-bit quantization round-trip.
+    bool found = false;
+    for (const vec2 &t : m.uv1)
+    {
+        if (std::fabs(t.x - 0.2f) < 0.02f && std::fabs(t.y - 0.7f) < 0.02f)
+        {
+            found = true;
+        }
+    }
+    ASSERT_TRUE(found);
+}

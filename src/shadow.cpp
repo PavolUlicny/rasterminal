@@ -154,15 +154,18 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
 
             const Material &mat = mesh.mat_at(tri.material_idx);
             const Texture *atex =
-                (mat.alpha_cutoff > 0.0f && mat.diffuse_tex >= 0) ? mesh.tex_at(mat.diffuse_tex) : nullptr;
+                (mat.alpha_cutoff > 0.0f && mat.diffuse_map.tex >= 0) ? mesh.tex_at(mat.diffuse_map.tex) : nullptr;
             vec2 uva{};
             vec2 uvb{};
             vec2 uvc{};
             if (atex)
             {
-                uva = mesh.vertices[tri.v[0]].uv;
-                uvb = mesh.vertices[tri.v[1]].uv;
-                uvc = mesh.vertices[tri.v[2]].uv;
+                // Honour the base-colour binding's UV set: a cutout authored against TEXCOORD_1
+                // must mask the shadow with the same coordinates the colour pass uses.
+                const vec2 *p1 = (mesh.has_uv1 && mat.diffuse_map.uv_set != 0) ? mesh.uv1.data() : nullptr;
+                uva = p1 ? p1[tri.v[0]] : mesh.vertices[tri.v[0]].uv;
+                uvb = p1 ? p1[tri.v[1]] : mesh.vertices[tri.v[1]].uv;
+                uvc = p1 ? p1[tri.v[2]] : mesh.vertices[tri.v[2]].uv;
             }
 
             // Slope-scale bias: surfaces nearly tangent to the light direction need a

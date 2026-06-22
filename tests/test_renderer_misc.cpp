@@ -82,7 +82,7 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
     t.height = 2;
     t.pixels.resize(16, 0); // r=g=b=a=0
     mesh.textures.push_back(std::move(t));
-    mesh.materials[0].diffuse_tex = 0;
+    mesh.materials[0].diffuse_map.tex = 0;
     mesh.materials[0].alpha_cutoff = 0.5f;
 
     r.show_texture = true;
@@ -115,7 +115,7 @@ TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
     t.height = 2;
     t.pixels.resize(16, 0);
     mesh.textures.push_back(std::move(t));
-    mesh.materials[0].diffuse_tex = 0;
+    mesh.materials[0].diffuse_map.tex = 0;
     mesh.materials[0].alpha_cutoff = 0.5f;
 
     r.show_texture = false; // disables both tex and alpha_cutoff

@@ -109,7 +109,7 @@ TEST(gltf_ktx2, embedded_basisu_texture_decodes_with_correct_layout)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
     const Texture &t = m.textures[static_cast<size_t>(idx)];
@@ -161,7 +161,7 @@ TEST(gltf_ktx2, basisu_source_preferred_over_fallback_image)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6); // KTX2 (6x6) chosen, not the 2x2 PNG fallback
@@ -202,7 +202,7 @@ TEST(gltf_ktx2, falls_back_to_ordinary_source_when_ktx2_fails)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0); // not dropped — fell back to the PNG
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 2); // the 2x2 PNG fallback, since the KTX2 transcode failed
@@ -239,7 +239,7 @@ TEST(gltf_ktx2, external_uri_ktx2_decodes)
     Mesh m = load_ok(gltf_file.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6);
@@ -274,7 +274,7 @@ TEST(gltf_ktx2, external_uri_percent_encoded_filename_decodes)
     Mesh m = load_ok(gltf_file.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0); // decoded — the %20 was decoded to a space and the file opened
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6);
@@ -295,7 +295,7 @@ TEST(gltf_ktx2, corrupt_basisu_drops_texture_but_loads)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].diffuse_tex, -1); // decode failed -> slot dropped, load still ok
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, -1); // decode failed -> slot dropped, load still ok
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -335,7 +335,7 @@ TEST(gltf_ktx2, data_uri_basisu_decodes)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
     const Texture &t = m.textures[static_cast<size_t>(idx)];

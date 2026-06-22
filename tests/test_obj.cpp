@@ -353,7 +353,7 @@ TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
     ASSERT_NEAR(m.materials[1].diffuse.x, 0.5f, 1e-5f);
     ASSERT_NEAR(m.materials[1].specular.x, 0.7f, 1e-5f);
     // Texture file doesn't exist, so specular_tex stays -1.
-    ASSERT_EQ(m.materials[1].specular_tex, -1);
+    ASSERT_EQ(m.materials[1].specular_map.tex, -1);
 }
 
 TEST(obj_valid, mtl_ke_emissive_parsed)
@@ -369,7 +369,7 @@ TEST(obj_valid, mtl_ke_emissive_parsed)
     ASSERT_NEAR(m.materials[1].emissive.x, 1.0f, 1e-5f);
     ASSERT_NEAR(m.materials[1].emissive.y, 0.5f, 1e-5f);
     ASSERT_NEAR(m.materials[1].emissive.z, 0.25f, 1e-5f);
-    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, -1);
     ASSERT_TRUE(m.has_emissive);
 }
 
@@ -403,7 +403,7 @@ TEST(obj_valid, mtl_no_ke_means_no_emissive)
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
     ASSERT_NEAR(m.materials[1].emissive.x, 0.0f, 1e-6f);
-    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, -1);
     ASSERT_FALSE(m.has_emissive);
 }
 
@@ -609,7 +609,7 @@ TEST(obj_valid, mtl_map_kn_normal_tex_missing_file)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].normal_tex, -1);
+    ASSERT_EQ(m.materials[1].normal_map.tex, -1);
 }
 
 TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
@@ -877,7 +877,7 @@ TEST(obj_valid, mtl_map_kd_real_file_sets_diffuse_tex)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
@@ -892,7 +892,7 @@ TEST(obj_valid, mtl_map_ks_real_file_sets_specular_tex)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].specular_tex, 0);
+    ASSERT_EQ(m.materials[1].specular_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
@@ -909,7 +909,7 @@ TEST(obj_valid, mtl_map_kn_real_file_sets_normal_tex)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_TRUE(m.materials[1].normal_map.tex >= 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
@@ -926,7 +926,7 @@ TEST(obj_valid, mtl_map_ke_real_file_sets_emissive_tex)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].emissive_tex, 0);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
     ASSERT_TRUE(m.has_emissive);
 }
@@ -947,7 +947,7 @@ TEST(obj_valid, mtl_map_ke_without_ke_stays_dark)
     ASSERT_TRUE(m.materials.size() >= 2);
     // Loader skips load_tex on zero-factor materials — saves a multi-MB stb_image_load and
     // permanent RAM for a texture no fragment will ever sample.
-    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, -1);
     ASSERT_TRUE(m.textures.empty());
     ASSERT_NEAR(m.materials[1].emissive.x, 0.0f, 1e-6f);
     ASSERT_NEAR(m.materials[1].emissive.y, 0.0f, 1e-6f);
@@ -990,7 +990,7 @@ TEST(obj_valid, mtl_map_ke_without_ke_skips_decode_even_if_file_missing)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].emissive_tex, -1);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, -1);
     ASSERT_NEAR(m.materials[1].emissive.x, 0.0f, 1e-6f);
     ASSERT_NEAR(m.materials[1].emissive.y, 0.0f, 1e-6f);
     ASSERT_NEAR(m.materials[1].emissive.z, 0.0f, 1e-6f);
@@ -1000,7 +1000,7 @@ TEST(obj_valid, mtl_map_ke_without_ke_skips_decode_even_if_file_missing)
 TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
 {
     // A non-existent map_Ke file fails decoding; decode_textures must compact it
-    // out and remap emissive_tex through fix(m.emissive_tex). Without that fix,
+    // out and remap emissive_tex through fix(m.emissive_map.tex). Without that fix,
     // emissive_tex would either stay pointing at a hole or rebind to the wrong slot.
     TmpFile bmp(tmp_path("rast_ke_remap_kd.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile mtl(
@@ -1018,8 +1018,8 @@ TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
     // Failed emissive decode is dropped; diffuse_tex must remap to the surviving slot 0.
-    ASSERT_EQ(m.materials[1].emissive_tex, -1);
-    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[1].emissive_map.tex, -1);
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
@@ -1036,7 +1036,7 @@ TEST(obj_valid, mtl_map_bump_fallback_when_map_kn_absent)
     );
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_TRUE(m.materials[1].normal_tex >= 0);
+    ASSERT_TRUE(m.materials[1].normal_map.tex >= 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
 }
 
@@ -1058,8 +1058,8 @@ TEST(obj_valid, shared_map_kd_deduplicates_texture)
     Mesh m = load_ok(obj.path);
     ASSERT_TRUE(m.materials.size() >= 3);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
-    ASSERT_EQ(m.materials[1].diffuse_tex, 0);
-    ASSERT_EQ(m.materials[2].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, 0);
+    ASSERT_EQ(m.materials[2].diffuse_map.tex, 0);
 }
 
 TEST(obj_valid, mtl_clamp_on_sets_clamp_wrap)
@@ -1110,8 +1110,8 @@ TEST(obj_valid, mtl_clamp_dedup_splits)
     Mesh m = load_ok(obj.path);
     ASSERT_EQ(m.textures.size(), size_t{ 2 });
     ASSERT_TRUE(m.materials.size() >= 3);
-    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[1].diffuse_tex)].wrap_s == WrapMode::Clamp);
-    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[2].diffuse_tex)].wrap_s == WrapMode::Repeat);
+    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[1].diffuse_map.tex)].wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(m.textures[static_cast<size_t>(m.materials[2].diffuse_map.tex)].wrap_s == WrapMode::Repeat);
 }
 
 TEST(obj_valid, mtl_clamp_dedup_keeps)
@@ -1154,9 +1154,9 @@ TEST(obj_valid, parallel_decode_two_distinct_textures)
     ASSERT_TRUE(ok);
     ASSERT_EQ(m.textures.size(), size_t{ 2 });
     ASSERT_TRUE(m.materials.size() >= 3);
-    ASSERT_TRUE(m.materials[1].diffuse_tex >= 0);
-    ASSERT_TRUE(m.materials[2].diffuse_tex >= 0);
-    ASSERT_TRUE(m.materials[1].diffuse_tex != m.materials[2].diffuse_tex);
+    ASSERT_TRUE(m.materials[1].diffuse_map.tex >= 0);
+    ASSERT_TRUE(m.materials[2].diffuse_map.tex >= 0);
+    ASSERT_TRUE(m.materials[1].diffuse_map.tex != m.materials[2].diffuse_map.tex);
 }
 
 TEST(obj_valid, face_without_usemtl_uses_default_material)

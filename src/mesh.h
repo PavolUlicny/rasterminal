@@ -26,12 +26,16 @@ struct Mesh
     std::vector<Vertex> vertices;
     std::vector<Triangle> triangles;
     std::vector<Material> materials; // index 0 is always the default white material
-    std::vector<Texture> textures;   // loaded on demand; Material::diffuse_tex / normal_tex index here
+    std::vector<Texture> textures;   // loaded on demand; Material::diffuse_map.tex / normal_map.tex index here
     std::vector<vec3> tangents;      // per-vertex tangents; always vertices.size() after load_model()
     std::vector<vec3> vertex_colors; // per-vertex RGB; populated only when has_vertex_colors is true
     std::vector<float> vertex_alpha; // per-vertex opacity (COLOR_0 / PLY alpha); only when has_vertex_alpha
+    std::vector<vec2> uv1;           // second UV set (glTF TEXCOORD_1); parallel, populated only when has_uv1
     bool has_vertex_colors = false;  // true when any loader populates vertex_colors (PLY, OBJ, glTF COLOR_0)
     bool has_vertex_alpha = false;   // true when any loader populates per-vertex alpha (transparent path only)
+    bool has_uv1 = false;            // true when glTF TEXCOORD_1 is present AND referenced by some texture's texCoord;
+                                     // when set, uv1.size() == vertices.size() and a uv_set==1 texture binding exists
+                                     // (otherwise the loader drops uv1 and forces every TexSlot::uv_set back to 0)
     bool has_transparent = false;    // true if any material blends OR any vertex is translucent; gates the
                                      // transparent render passes. When set, opaque_count MUST be valid: the
                                      // render and shadow passes trust the range split and do NOT re-test per

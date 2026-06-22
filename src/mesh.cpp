@@ -27,8 +27,10 @@ void Mesh::clear()
     tangents.clear();
     vertex_colors.clear();
     vertex_alpha.clear();
+    uv1.clear();
     has_vertex_colors = false;
     has_vertex_alpha = false;
+    has_uv1 = false;
     has_transparent = false;
     opaque_count = 0;
     has_double_sided = false;
@@ -113,16 +115,16 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.metallic > 0.0f; });
         has_normal_scale = std::any_of(
             materials.begin(), materials.end(),
-            [](const Material &m) { return m.normal_tex >= 0 && m.normal_scale != 1.0f; }
+            [](const Material &m) { return m.normal_map.tex >= 0 && m.normal_scale != 1.0f; }
         );
         has_occlusion =
-            std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_tex >= 0; });
+            std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.occlusion_map.tex >= 0; });
         has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
         has_transparent = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.blend; });
 
         // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
         // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
-        // Mesh-level flag drops materials whose factor is zero — emissive_tex without a non-zero
+        // Mesh-level flag drops materials whose factor is zero — emissive_map without a non-zero
         // factor cannot contribute and would only waste per-frame setup work.
         has_emissive = std::any_of(
             materials.begin(), materials.end(),
@@ -330,6 +332,7 @@ void Mesh::compute_normals(
     // when the parallel-array invariant already holds. vertex_alpha mirrors it.
     const bool has_vcol = (vertex_colors.size() == n_verts);
     const bool has_valpha = (vertex_alpha.size() == n_verts);
+    const bool has_uv1_arr = (uv1.size() == n_verts);
 
     for (size_t g = 0; g < n_groups; g++)
     {
@@ -466,6 +469,10 @@ void Mesh::compute_normals(
                     {
                         vertex_alpha.push_back(vertex_alpha[ov]);
                     }
+                    if (has_uv1_arr)
+                    {
+                        uv1.push_back(uv1[ov]);
+                    }
                     if (has_weld)
                     {
                         // A split inherits its source's group id so any later
@@ -497,6 +504,13 @@ void Mesh::compute_tangents()
 {
     tangents.assign(vertices.size(), vec3{});
 
+    // Tangents must be built from the UV set the normal map samples (glTF spec). This is
+    // well-defined per vertex even with mixed UV sets: glTF primitives never share vertices
+    // across our merged array and glTF passes no weld to compute_normals, so every triangle
+    // incident to a vertex carries one material — hence one normal-map set — and the
+    // accumulation never mixes sets at a vertex. uv1 is null for every non-glTF format.
+    const vec2 *p_uv1 = has_uv1 ? uv1.data() : nullptr;
+
     // Accumulate tangent vectors from each triangle's UV layout.
     // For triangle (P0,P1,P2) with UVs (u0,v0),(u1,v1),(u2,v2):
     //   T = (dP1*dv2 - dP2*dv1) / (du1*dv2 - du2*dv1)
@@ -506,12 +520,17 @@ void Mesh::compute_tangents()
         const Vertex &v1 = vertices[tri.v[1]];
         const Vertex &v2 = vertices[tri.v[2]];
 
+        const bool s1 = p_uv1 && mat_at(tri.material_idx).normal_map.uv_set != 0;
+        const vec2 uv0 = s1 ? p_uv1[tri.v[0]] : v0.uv;
+        const vec2 uv1v = s1 ? p_uv1[tri.v[1]] : v1.uv;
+        const vec2 uv2 = s1 ? p_uv1[tri.v[2]] : v2.uv;
+
         const vec3 dp1 = v1.pos - v0.pos;
         const vec3 dp2 = v2.pos - v0.pos;
-        const float du1 = v1.uv.x - v0.uv.x;
-        const float dv1 = v1.uv.y - v0.uv.y;
-        const float du2 = v2.uv.x - v0.uv.x;
-        const float dv2 = v2.uv.y - v0.uv.y;
+        const float du1 = uv1v.x - uv0.x;
+        const float dv1 = uv1v.y - uv0.y;
+        const float du2 = uv2.x - uv0.x;
+        const float dv2 = uv2.y - uv0.y;
 
         const float det = (du1 * dv2) - (du2 * dv1);
         if (std::abs(det) < 1e-8f)
@@ -808,6 +827,15 @@ void Mesh::optimize_vertex_cache(int n_threads)
     {
         vertex_alpha.resize(nv, 1.0f);
     }
+    // uv1 has no constant fill (its degrade value is each vertex's own uv0), so pad the
+    // loop form rather than resize(); defensive — the loader/compute_normals keep it matched.
+    if (has_uv1 && uv1.size() < nv)
+    {
+        for (size_t v = uv1.size(); v < nv; v++)
+        {
+            uv1.push_back(vertices[v].uv);
+        }
+    }
 
     std::vector<Vertex> new_verts(new_nv);
     std::vector<vec3> new_tans(new_nv);
@@ -820,6 +848,11 @@ void Mesh::optimize_vertex_cache(int n_threads)
     if (has_vertex_alpha)
     {
         new_valpha.resize(new_nv);
+    }
+    std::vector<vec2> new_uv1;
+    if (has_uv1)
+    {
+        new_uv1.resize(new_nv);
     }
 
     for (size_t v = 0; v < nv; v++)
@@ -837,6 +870,10 @@ void Mesh::optimize_vertex_cache(int n_threads)
         if (has_vertex_alpha)
         {
             new_valpha[remap[v]] = vertex_alpha[v];
+        }
+        if (has_uv1)
+        {
+            new_uv1[remap[v]] = uv1[v];
         }
     }
 
@@ -857,5 +894,9 @@ void Mesh::optimize_vertex_cache(int n_threads)
     if (has_vertex_alpha)
     {
         vertex_alpha = std::move(new_valpha);
+    }
+    if (has_uv1)
+    {
+        uv1 = std::move(new_uv1);
     }
 }

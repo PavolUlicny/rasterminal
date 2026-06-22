@@ -118,7 +118,8 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
                  v0.uv + (v1.uv - v0.uv) * t,
                  v0.ao + ((v1.ao - v0.ao) * t),
                  v0.color + (v1.color - v0.color) * t,
-                 v0.color_a + ((v1.color_a - v0.color_a) * t) };
+                 v0.color_a + ((v1.color_a - v0.color_a) * t),
+                 v0.uv1 + (v1.uv1 - v0.uv1) * t };
     };
 
     if (n == 1)
@@ -257,6 +258,10 @@ void rasterize(
     int y_max,
     const Texture *etex,
     vec3 emissive,
+    vec2 uv1a,
+    vec2 uv1b,
+    vec2 uv1c,
+    const Material *mat,
     const ABuffer *abuf,
     float base_alpha,
     float caa,
@@ -287,6 +292,17 @@ void rasterize(
     // contribution regardless of texture, so the texture sample is skippable too.
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
+
+    // Per-slot UV set (glTF TEXCOORD_n). diffuse and emissive are the only textures this
+    // (Flat/Gouraud/unlit) rasterizer samples; uv_set comes from mat (null ⇒ set 0, e.g. tests
+    // and non-glTF). need_uv1 gates the second perspective-correct interpolation, so when false
+    // the per-pixel uv1v compute is skipped entirely; the residue on the no-uv1 path is one
+    // loop-invariant-conditioned select (`set ? uv1v : uv`) per sampled texture, which benches in
+    // the noise (full-PBR Phong is ~0%). Loop-invariant flags — hoisted above the y-loop.
+    const uint8_t diffuse_set = mat ? mat->diffuse_map.uv_set : uint8_t{ 0 };
+    const uint8_t emissive_set = mat ? mat->emissive_map.uv_set : uint8_t{ 0 };
+    const bool need_uv1 =
+        ((tex != nullptr) && diffuse_set != 0) || (do_emissive && (etex != nullptr) && emissive_set != 0);
 
     // Transparent: per-edge top-left flags so a pixel center landing exactly on a shared edge
     // is owned by one triangle (no double-composited seam). The barycentric gradients are
@@ -355,7 +371,8 @@ void rasterize(
             float pwc = 0.0f;
             float w_corr = 1.0f;
             vec3 cutout_rgb;
-            vec2 uv{}; // shared by cutout pre-pass, diffuse sample, and emissive sample
+            vec2 uv{};   // TEXCOORD_0, shared by cutout pre-pass, diffuse sample, and emissive sample
+            vec2 uv1v{}; // TEXCOORD_1, computed only when need_uv1; selected per sampler below
             if (has_cutout)
             {
                 pwa = ba * inv_wa;
@@ -363,7 +380,12 @@ void rasterize(
                 pwc = bc * inv_wc;
                 w_corr = 1.0f / (pwa + pwb + pwc);
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                const vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                if (need_uv1)
+                {
+                    uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
+                }
+                const vec2 d_uv = diffuse_set ? uv1v : uv;
+                const vec4 ta = tex->sample_rgba(d_uv.x, d_uv.y);
                 if (ta.w < alpha_cutoff)
                 {
                     ba += ba_dx;
@@ -410,6 +432,10 @@ void rasterize(
             if (!has_cutout && ((tex != nullptr) || (do_emissive && (etex != nullptr))))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                if (need_uv1)
+                {
+                    uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
+                }
             }
 
             // Per-pixel shadow test using interpolated world position.
@@ -437,7 +463,8 @@ void rasterize(
                 float tex_a = 1.0f;
                 if (tex)
                 {
-                    const vec4 t = tex->sample_rgba(uv.x, uv.y);
+                    const vec2 d_uv = diffuse_set ? uv1v : uv;
+                    const vec4 t = tex->sample_rgba(d_uv.x, d_uv.y);
                     col = col * vec3{ t.x, t.y, t.z };
                     tex_a = t.w;
                 }
@@ -446,7 +473,8 @@ void rasterize(
                     vec3 e = emissive;
                     if (etex)
                     {
-                        e = e * etex->sample_rgb(uv.x, uv.y);
+                        const vec2 e_uv = emissive_set ? uv1v : uv;
+                        e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                     }
                     col = col + e;
                 }
@@ -463,7 +491,8 @@ void rasterize(
             {
                 if (tex)
                 {
-                    col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y));
+                    const vec2 d_uv = diffuse_set ? uv1v : uv;
+                    col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y));
                 }
 
                 // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
@@ -476,7 +505,8 @@ void rasterize(
                     vec3 e = emissive;
                     if (etex)
                     {
-                        e = e * etex->sample_rgb(uv.x, uv.y);
+                        const vec2 e_uv = emissive_set ? uv1v : uv;
+                        e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                     }
                     col = col + e;
                 }
@@ -546,6 +576,9 @@ void rasterize_phong(
     bool apply_normal_scale,
     const Texture *octex,
     float occlusion_strength,
+    vec2 uv1a,
+    vec2 uv1b,
+    vec2 uv1c,
     const ABuffer *abuf,
     float caa,
     float cab,
@@ -575,13 +608,32 @@ void rasterize_phong(
     const bool is_metallic = (mat.metallic > 0.0f);
     // ORM packing (glTF): when occlusion and metallic-roughness reference the same image,
     // load_tex dedups them to one Texture* — sample once and reuse the AO read for metalness.
-    const bool occ_is_mr = (octex != nullptr && octex == mrtex);
+    // The UV sets must also match: two bindings can dedup to one Texture* (the cache key ignores
+    // texCoord) yet select different UV sets, in which case the samples differ and can't be shared.
+    const bool occ_is_mr = (octex != nullptr && octex == mrtex && mat.occlusion_map.uv_set == mat.mr_map.uv_set);
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
     // The factor is passed in so callers can override it (e.g. tests); the UI texture
     // toggle only controls whether etex is sampled (see show_emissive in renderer.cpp).
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
+
+    // Per-slot UV set (glTF TEXCOORD_n), read from mat. need_uv1 gates the second perspective-
+    // correct interpolation, so when false the per-pixel uv1v compute is skipped entirely; the
+    // residue on the no-uv1 path is one loop-invariant-conditioned select (`set ? uv1v : uv`) per
+    // sampled texture (up to ~5 here), which benches in the noise — full-PBR Phong (the max-select
+    // case) measured ~0%. All loop-invariant — hoisted above the y-loop. specular_map is MTL-only
+    // (always set 0) but read uniformly. occ_is_mr shares one sample, so it shares mr's set.
+    const uint8_t diffuse_set = mat.diffuse_map.uv_set;
+    const uint8_t normal_set = mat.normal_map.uv_set;
+    const uint8_t specular_set = mat.specular_map.uv_set;
+    const uint8_t mr_set = mat.mr_map.uv_set;
+    const uint8_t emissive_set = mat.emissive_map.uv_set;
+    const uint8_t occ_set = mat.occlusion_map.uv_set;
+    const bool need_uv1 = ((tex != nullptr) && diffuse_set != 0) || ((nmap != nullptr) && normal_set != 0) ||
+                          ((stex != nullptr) && specular_set != 0) || ((mrtex != nullptr) && mr_set != 0) ||
+                          ((octex != nullptr) && occ_set != 0) ||
+                          (do_emissive && (etex != nullptr) && emissive_set != 0);
 
     // Transparent fill-rule flags (see rasterize() for the rationale); compile out for Opaque.
     [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
@@ -638,7 +690,8 @@ void rasterize_phong(
             float pwc = 0.0f;
             float w_corr = 1.0f;
             vec3 cutout_rgb;
-            vec2 uv{}; // hoisted: shared by cutout pre-pass and nmap/stex below
+            vec2 uv{};   // hoisted: TEXCOORD_0, shared by cutout pre-pass and nmap/stex/etc below
+            vec2 uv1v{}; // TEXCOORD_1, computed only when need_uv1; selected per sampler below
             if (has_cutout)
             {
                 pwa = ba * inv_wa;
@@ -646,7 +699,12 @@ void rasterize_phong(
                 pwc = bc * inv_wc;
                 w_corr = 1.0f / (pwa + pwb + pwc);
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
-                const vec4 ta = tex->sample_rgba(uv.x, uv.y);
+                if (need_uv1)
+                {
+                    uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
+                }
+                const vec2 d_uv = diffuse_set ? uv1v : uv;
+                const vec4 ta = tex->sample_rgba(d_uv.x, d_uv.y);
                 if (ta.w < mat.alpha_cutoff)
                 {
                     ba += ba_dx;
@@ -694,6 +752,10 @@ void rasterize_phong(
             if (!has_cutout && (tex || nmap || stex || mrtex || octex || (do_emissive && etex)))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
+                if (need_uv1)
+                {
+                    uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
+                }
             }
 
             // Normal mapping: sample tangent-space normal, rotate into world space via TBN.
@@ -702,7 +764,8 @@ void rasterize_phong(
                 const vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
-                vec3 nm = nmap->sample_rgb(uv.x, uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
+                const vec2 n_uv = normal_set ? uv1v : uv;
+                vec3 nm = nmap->sample_rgb(n_uv.x, n_uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
                 // glTF normalScale: scales X/Y of the tangent-space normal (Z unchanged) before TBN.
                 // apply_normal_scale is loop-invariant; mesh-level gate keeps default-scale paths free.
                 if (apply_normal_scale)
@@ -729,7 +792,8 @@ void rasterize_phong(
             vec3 occ_sample{}; // valid only when octex != nullptr; reused as the MR sample when occ_is_mr
             if (octex)
             {
-                occ_sample = octex->sample_rgb(uv.x, uv.y);
+                const vec2 o_uv = occ_set ? uv1v : uv;
+                occ_sample = octex->sample_rgb(o_uv.x, o_uv.y);
                 ao = 1.0f + (occlusion_strength * (occ_sample.x - 1.0f));
             }
 
@@ -751,9 +815,10 @@ void rasterize_phong(
             [[maybe_unused]] float tex_a = 1.0f; // NOLINT(misc-const-correctness)
             if (tex)
             {
+                const vec2 d_uv = diffuse_set ? uv1v : uv;
                 if constexpr (S == Sink::Transparent)
                 {
-                    const vec4 t = tex->sample_rgba(uv.x, uv.y);
+                    const vec4 t = tex->sample_rgba(d_uv.x, d_uv.y);
                     const vec3 tc{ t.x, t.y, t.z };
                     use_diffuse = use_diffuse * tc;
                     use_ambient = use_ambient * tc;
@@ -762,14 +827,15 @@ void rasterize_phong(
                 else
                 {
                     // Reuse the rgba sample from the cutout pre-pass when active.
-                    const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(uv.x, uv.y);
+                    const vec3 tc = has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y);
                     use_diffuse = use_diffuse * tc;
                     use_ambient = use_ambient * tc;
                 }
             }
             if (stex)
             {
-                use_specular = use_specular * stex->sample_rgb(uv.x, uv.y);
+                const vec2 s_uv = specular_set ? uv1v : uv;
+                use_specular = use_specular * stex->sample_rgb(s_uv.x, s_uv.y);
             }
 
             // Vertex color tint: skip entirely when all vertices are white (common case).
@@ -791,7 +857,8 @@ void rasterize_phong(
                 if (mrtex)
                 {
                     // G=roughness, B=metallic. Reuse the occlusion sample when ORM-packed (same image).
-                    const vec3 mr = occ_is_mr ? occ_sample : mrtex->sample_rgb(uv.x, uv.y);
+                    const vec2 m_uv = mr_set ? uv1v : uv;
+                    const vec3 mr = occ_is_mr ? occ_sample : mrtex->sample_rgb(m_uv.x, m_uv.y);
                     metalness *= mr.z;
                     use_shin = roughness_to_shininess(mat.roughness * mr.y);
                 }
@@ -836,7 +903,8 @@ void rasterize_phong(
                 vec3 e = emissive;
                 if (etex)
                 {
-                    e = e * etex->sample_rgb(uv.x, uv.y);
+                    const vec2 e_uv = emissive_set ? uv1v : uv;
+                    e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                 }
                 color = color + e;
             }
@@ -897,6 +965,10 @@ template void rasterize<Sink::Opaque>(
     int,
     const Texture *,
     vec3,
+    vec2,
+    vec2,
+    vec2,
+    const Material *,
     const ABuffer *,
     float,
     float,
@@ -930,6 +1002,10 @@ template void rasterize<Sink::Transparent>(
     int,
     const Texture *,
     vec3,
+    vec2,
+    vec2,
+    vec2,
+    const Material *,
     const ABuffer *,
     float,
     float,
@@ -981,6 +1057,9 @@ template void rasterize_phong<Sink::Opaque>(
     bool,
     const Texture *,
     float,
+    vec2,
+    vec2,
+    vec2,
     const ABuffer *,
     float,
     float,
@@ -1030,6 +1109,9 @@ template void rasterize_phong<Sink::Transparent>(
     bool,
     const Texture *,
     float,
+    vec2,
+    vec2,
+    vec2,
     const ABuffer *,
     float,
     float,

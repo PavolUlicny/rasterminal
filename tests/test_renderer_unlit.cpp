@@ -156,7 +156,7 @@ TEST(renderer_unlit, modulates_diffuse_texture)
 
     Mesh white = make_unlit_triangle({ 1.0f, 1.0f, 1.0f });
     white.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // green
-    white.materials[0].diffuse_tex = 0;
+    white.materials[0].diffuse_map.tex = 0;
     Framebuffer fb1(40, 20, /*headless=*/true);
     fb1.clear();
     r.render(white, cam, &light, 1, { 0.0f, 0.0f, 0.0f }, fb1);
@@ -164,7 +164,7 @@ TEST(renderer_unlit, modulates_diffuse_texture)
 
     Mesh grey = make_unlit_triangle({ 0.5f, 0.5f, 0.5f });
     grey.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
-    grey.materials[0].diffuse_tex = 0;
+    grey.materials[0].diffuse_map.tex = 0;
     Framebuffer fb2(40, 20, /*headless=*/true);
     fb2.clear();
     r.render(grey, cam, &light, 1, { 0.0f, 0.0f, 0.0f }, fb2);
@@ -219,7 +219,7 @@ TEST(renderer_unlit, alpha_cutout_discards)
         t.pixels[i] = 0; // alpha 0 → below cutoff everywhere
     }
     mesh.textures.push_back(std::move(t));
-    mesh.materials[0].diffuse_tex = 0;
+    mesh.materials[0].diffuse_map.tex = 0;
     mesh.materials[0].alpha_cutoff = 0.5f;
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();

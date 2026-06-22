@@ -110,7 +110,7 @@ TEST(gltf_webp, embedded_webp_texture_decodes_with_correct_layout)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
     const Texture &t = m.textures[static_cast<size_t>(idx)];
@@ -143,7 +143,7 @@ TEST(gltf_webp, image_routed_by_content_not_declared_webp_type)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_TRUE(t.valid());
@@ -184,7 +184,7 @@ TEST(gltf_webp, webp_source_preferred_over_fallback_image)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6); // WebP (6x2) chosen, not the 2x2 PNG fallback
@@ -223,7 +223,7 @@ TEST(gltf_webp, falls_back_to_ordinary_source_when_webp_fails)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0); // not dropped — fell back to the PNG
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 2); // the 2x2 PNG fallback, since the WebP decode failed
@@ -262,7 +262,7 @@ TEST(gltf_webp, basisu_preferred_over_webp)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6); // KTX2 (6x6) chosen over WebP (4x4)
@@ -298,7 +298,7 @@ TEST(gltf_webp, external_uri_webp_decodes)
     Mesh m = load_ok(gltf_file.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6);
@@ -317,7 +317,7 @@ TEST(gltf_webp, corrupt_webp_drops_texture_but_loads)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].diffuse_tex, -1); // decode failed -> slot dropped, load still ok
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, -1); // decode failed -> slot dropped, load still ok
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -334,7 +334,7 @@ TEST(gltf_webp, animated_webp_dropped_but_loads)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    ASSERT_EQ(m.materials[1].diffuse_tex, -1); // animation rejected -> slot dropped, load ok
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, -1); // animation rejected -> slot dropped, load ok
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -367,7 +367,7 @@ TEST(gltf_webp, data_uri_webp_decodes)
     Mesh m = load_ok(f.path);
 
     ASSERT_TRUE(m.materials.size() >= 2);
-    const int idx = m.materials[1].diffuse_tex;
+    const int idx = m.materials[1].diffuse_map.tex;
     ASSERT_TRUE(idx >= 0);
     ASSERT_TRUE(idx < static_cast<int>(m.textures.size()));
     const Texture &t = m.textures[static_cast<size_t>(idx)];

@@ -348,6 +348,23 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         return idx;
     };
 
+    // True once any texture binding selects TEXCOORD_1 (textureInfo.texCoord == 1). Combined
+    // after the walk with whether any primitive actually provided TEXCOORD_1 to set Mesh::has_uv1.
+    bool any_uv1_referenced = false;
+
+    // Resolve a binding's UV set. glTF caps meaningfully at two sets here: texCoord 1 selects
+    // TEXCOORD_1; 0 — or an unsupported texCoord >= 2 — degrades to TEXCOORD_0. A reference to an
+    // absent set is reconciled after the walk (see the finalize block), not here.
+    auto bind_uv_set = [&](const cgltf_texture_view &view) -> uint8_t
+    {
+        if (view.texcoord == 1)
+        {
+            any_uv1_referenced = true;
+            return 1;
+        }
+        return 0;
+    };
+
     // Map a cgltf_material to our Blinn-Phong Material.
     auto map_mat = [&](const cgltf_material *m) -> Material
     {
@@ -366,20 +383,24 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         mat.roughness = pbr.roughness_factor;
         if (pbr.metallic_roughness_texture.texture)
         {
-            mat.metallic_roughness_tex = load_tex(pbr.metallic_roughness_texture.texture);
+            mat.mr_map.tex = load_tex(pbr.metallic_roughness_texture.texture);
+            mat.mr_map.uv_set = bind_uv_set(pbr.metallic_roughness_texture);
         }
         if (pbr.base_color_texture.texture)
         {
-            mat.diffuse_tex = load_tex(pbr.base_color_texture.texture);
+            mat.diffuse_map.tex = load_tex(pbr.base_color_texture.texture);
+            mat.diffuse_map.uv_set = bind_uv_set(pbr.base_color_texture);
         }
         if (m->normal_texture.texture)
         {
-            mat.normal_tex = load_tex(m->normal_texture.texture);
+            mat.normal_map.tex = load_tex(m->normal_texture.texture);
+            mat.normal_map.uv_set = bind_uv_set(m->normal_texture);
             mat.normal_scale = m->normal_texture.scale;
         }
         if (m->occlusion_texture.texture)
         {
-            mat.occlusion_tex = load_tex(m->occlusion_texture.texture);
+            mat.occlusion_map.tex = load_tex(m->occlusion_texture.texture);
+            mat.occlusion_map.uv_set = bind_uv_set(m->occlusion_texture);
             // cgltf: scale field == occlusionTexture.strength. Spec caps it at [0,1] but cgltf
             // does not enforce; clamp so an out-of-range value can't drive ao negative per-pixel.
             mat.occlusion_strength = clamp(m->occlusion_texture.scale, 0.0f, 1.0f);
@@ -412,7 +433,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
         if (emissive_active && m->emissive_texture.texture)
         {
-            mat.emissive_tex = load_tex(m->emissive_texture.texture);
+            mat.emissive_map.tex = load_tex(m->emissive_texture.texture);
+            mat.emissive_map.uv_set = bind_uv_set(m->emissive_texture);
         }
         mat.double_sided = m->double_sided;
         mat.unlit = m->unlit;
@@ -462,6 +484,41 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // Set by visit() when a Draco primitive fails to decode; checked after the
     // walk so a corrupt bitstream fails the whole load (visit() returns void).
     bool draco_error = false;
+
+    // True once any primitive provides TEXCOORD_1; gates the parallel uv1 array.
+    bool building_uv1 = false;
+
+    // Maintain the parallel uv1 array (glTF TEXCOORD_1) for one primitive's vertex range
+    // [vert_base, vert_base + n). On the first TEXCOORD_1-bearing primitive, back-fill every
+    // earlier vertex with its own uv0 (so a uv_set==1 sample on a vertex that lacks a real
+    // second set degrades to TEXCOORD_0); thereafter every primitive contributes n entries —
+    // the real flipped uv1 when has_real, else a copy of that vertex's uv0. This keeps
+    // uv1.size() == vertices.size() once building, so compute_normals/optimize carry it like
+    // vertex_colors. read(i) is only invoked when has_real. Shared by the accessor and Draco paths.
+    auto append_uv1 = [&](size_t vert_base, size_t n, bool has_real, auto &&read)
+    {
+        if (has_real && !building_uv1)
+        {
+            building_uv1 = true;
+            // Sized for the spike this absorbs: the back-fill loop + this primitive together push
+            // exactly vertices.size() entries, so one alloc covers both. Later primitives grow it
+            // again (amortized O(1)) — deliberately matching the per-primitive growth of the sibling
+            // vertex_colors/vertex_alpha arrays rather than pre-walking the scene for a global total.
+            uv1.reserve(vertices.size());
+            for (size_t k = 0; k < vert_base; k++)
+            {
+                uv1.push_back(vertices[k].uv);
+            }
+        }
+        if (!building_uv1)
+        {
+            return;
+        }
+        for (size_t i = 0; i < n; i++)
+        {
+            uv1.push_back(has_real ? read(i) : vertices[vert_base + i].uv);
+        }
+    };
 
     // Walk the scene graph recursively, applying world transforms.
     std::function<void(const cgltf_node *)> visit = [&](const cgltf_node *node)
@@ -565,6 +622,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     int pos_id = -1;
                     int norm_id = -1;
                     int uv_id = -1;
+                    int uv1_id = -1;
                     int color_id = -1;
                     for (size_t k = 0; k < dc.attributes_count; k++)
                     {
@@ -581,6 +639,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                         else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
                         {
                             uv_id = uid;
+                        }
+                        else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 1)
+                        {
+                            uv1_id = uid;
                         }
                         else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
                         {
@@ -606,7 +668,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 
                     DracoMesh dm;
                     if (!decode_draco_mesh(
-                            cbytes, dc.buffer_view->size, static_cast<uint32_t>(pos_id), norm_id, uv_id, color_id, dm
+                            cbytes, dc.buffer_view->size, static_cast<uint32_t>(pos_id), norm_id, uv_id, uv1_id,
+                            color_id, dm
                         ))
                     {
                         draco_error = true;
@@ -617,6 +680,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     const size_t vert_base = vertices.size();
                     const bool has_dn = !dm.normals.empty();
                     const bool has_du = !dm.uvs.empty();
+                    const bool has_du1 = !dm.uvs1.empty();
                     const bool has_dc = !dm.colors.empty();
                     // dm.colors_alpha is non-empty only when COLOR_0 was 4-component. Honour that
                     // opacity only under alphaMode=BLEND — the same vec4-under-BLEND gate the accessor
@@ -658,6 +722,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                             vertex_alpha[vert_base + i] = dm.colors_alpha[i];
                         }
                     }
+                    append_uv1(
+                        vert_base, n_verts, has_du1,
+                        [&](size_t i) -> vec2 { return { dm.uvs1[(i * 2) + 0], 1.0f - dm.uvs1[(i * 2) + 1] }; }
+                    );
                     if (has_dn)
                     {
                         has_normals = true;
@@ -697,6 +765,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 const cgltf_accessor *pos_acc = nullptr;
                 const cgltf_accessor *norm_acc = nullptr;
                 const cgltf_accessor *uv_acc = nullptr;
+                const cgltf_accessor *uv1_acc = nullptr;
                 const cgltf_accessor *color_acc = nullptr;
 
                 for (size_t ai = 0; ai < prim.attributes_count; ai++)
@@ -713,6 +782,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 0)
                     {
                         uv_acc = attr.data;
+                    }
+                    else if (attr.type == cgltf_attribute_type_texcoord && attr.index == 1)
+                    {
+                        uv1_acc = attr.data;
                     }
                     else if (attr.type == cgltf_attribute_type_color && attr.index == 0)
                     {
@@ -754,6 +827,16 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     v.ao = 1.0f;
                     vertices.push_back(v);
                 }
+
+                append_uv1(
+                    vert_base, n_verts, uv1_acc != nullptr,
+                    [&](size_t i) -> vec2
+                    {
+                        float uv[2];
+                        cgltf_accessor_read_float(uv1_acc, i, uv, 2);
+                        return { uv[0], 1.0f - uv[1] };
+                    }
+                );
 
                 if (norm_acc)
                 {
@@ -867,6 +950,35 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     if (has_vertex_alpha && vertex_alpha.size() < vertices.size())
     {
         vertex_alpha.resize(vertices.size(), 1.0f);
+    }
+
+    // Reconcile TEXCOORD_1 (run before compute_normals so the split carries uv1, and before
+    // tangents/optimize). uv1 is worth keeping only when the geometry actually provided a second
+    // set (building_uv1) AND some texture binding references it (any_uv1_referenced). Otherwise
+    // drop it and force every binding back to set 0 — this covers both "referenced but absent"
+    // (degrade per runtime-loader convention, like a missing texture) and "present but unused"
+    // (read-then-drop). When kept, append_uv1 already holds uv1.size() == vertices.size(); the
+    // defensive pad mirrors the vertex_colors block above for any future partial-fill path.
+    has_uv1 = building_uv1 && any_uv1_referenced;
+    if (!has_uv1)
+    {
+        uv1.clear();
+        for (Material &m : materials)
+        {
+            m.diffuse_map.uv_set = 0;
+            m.specular_map.uv_set = 0;
+            m.normal_map.uv_set = 0;
+            m.emissive_map.uv_set = 0;
+            m.mr_map.uv_set = 0;
+            m.occlusion_map.uv_set = 0;
+        }
+    }
+    else if (uv1.size() < vertices.size())
+    {
+        for (size_t i = uv1.size(); i < vertices.size(); i++)
+        {
+            uv1.push_back(vertices[i].uv);
+        }
     }
 
     if (!has_normals)

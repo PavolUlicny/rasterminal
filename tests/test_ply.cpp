@@ -1935,7 +1935,7 @@ TEST(ply_valid, texturefile_with_uvs_loads)
                                        "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
     ASSERT_TRUE(m.textures[0].valid());
     const vec3 c = m.textures[0].sample_rgb(0.0f, 0.0f);
@@ -1961,7 +1961,7 @@ TEST(ply_valid, texturefile_face_list_texcoord)
                                      "3 0 1 2  6 0.1 0.2 0.3 0.4 0.5 0.6\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
     ASSERT_TRUE(m.textures[0].valid());
 }
@@ -1985,7 +1985,7 @@ TEST(ply_valid, texturefile_missing_file_silent_drop)
                                          "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, -1);
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -2006,7 +2006,7 @@ TEST(ply_valid, texturefile_without_uvs_ignored)
                                       "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, -1);
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -2031,7 +2031,7 @@ TEST(ply_valid, texturefile_first_wins)
                                        "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, 0);
     ASSERT_EQ(m.textures.size(), size_t{ 1 });
     ASSERT_TRUE(m.textures[0].valid());
 }
@@ -2056,7 +2056,7 @@ TEST(ply_valid, texturefile_name_with_spaces)
                                         "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, 0);
     ASSERT_TRUE(m.textures[0].valid());
 }
 
@@ -2077,7 +2077,7 @@ TEST(ply_valid, texturefile_no_comment_no_texture)
                                       "3 0 1 2\n"
     );
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, -1);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, -1);
     ASSERT_TRUE(m.textures.empty());
 }
 
@@ -2115,6 +2115,6 @@ TEST(ply_valid, texturefile_binary_le)
     TmpFile bmp(tmp_path("rast_tf_bin.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile t(tmp_path("rast_tf_bin.ply"), s);
     Mesh m = load_ok(t.path);
-    ASSERT_EQ(m.materials[0].diffuse_tex, 0);
+    ASSERT_EQ(m.materials[0].diffuse_map.tex, 0);
     ASSERT_TRUE(m.textures[0].valid());
 }

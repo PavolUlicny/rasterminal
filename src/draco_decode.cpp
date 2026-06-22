@@ -34,7 +34,7 @@ namespace
 } // namespace
 
 bool decode_draco_mesh(
-    const void *data, size_t size, uint32_t pos_id, int normal_id, int uv_id, int color_id, DracoMesh &out
+    const void *data, size_t size, uint32_t pos_id, int normal_id, int uv_id, int uv1_id, int color_id, DracoMesh &out
 )
 {
     draco::DecoderBuffer buf;
@@ -54,6 +54,7 @@ bool decode_draco_mesh(
     }
     const draco::PointAttribute *nrm = attr_or_null(*mesh, normal_id);
     const draco::PointAttribute *uv = attr_or_null(*mesh, uv_id);
+    const draco::PointAttribute *uv1 = attr_or_null(*mesh, uv1_id);
     const draco::PointAttribute *col = attr_or_null(*mesh, color_id);
 
     // Partial file-size-based bound (per CLAUDE.md "Loader security"): catches the
@@ -88,6 +89,10 @@ bool decode_draco_mesh(
     {
         out.uvs.resize(n * 2);
     }
+    if (uv1)
+    {
+        out.uvs1.resize(n * 2);
+    }
     if (col)
     {
         out.colors.resize(n * 3);
@@ -107,6 +112,10 @@ bool decode_draco_mesh(
         if (uv)
         {
             uv->ConvertValue<float>(uv->mapped_index(pi), 2, &out.uvs[i * 2]);
+        }
+        if (uv1)
+        {
+            uv1->ConvertValue<float>(uv1->mapped_index(pi), 2, &out.uvs1[i * 2]);
         }
         if (col)
         {
