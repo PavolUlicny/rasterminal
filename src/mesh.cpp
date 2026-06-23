@@ -520,6 +520,12 @@ void Mesh::compute_tangents()
         const Vertex &v1 = vertices[tri.v[1]];
         const Vertex &v2 = vertices[tri.v[2]];
 
+        // Tangents are built from the raw normal-map UV set; a KHR_texture_transform on that
+        // binding is deliberately NOT folded in here. The transform is applied only at sample
+        // time (rasterize_phong), matching three.js / the glTF Sample Viewer — the spec is
+        // silent on rotating the tangent frame. A rotated/sheared normal-map transform thus
+        // leaves the TBN basis un-rotated relative to the sampled normal (mis-lit bumps in
+        // that edge case); pure translation / uniform scale is unaffected.
         const bool s1 = p_uv1 && mat_at(tri.material_idx).normal_map.uv_set != 0;
         const vec2 uv0 = s1 ? p_uv1[tri.v[0]] : v0.uv;
         const vec2 uv1v = s1 ? p_uv1[tri.v[1]] : v1.uv;
