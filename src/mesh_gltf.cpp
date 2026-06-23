@@ -387,6 +387,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         {
             tc = view.transform.texcoord;
         }
+        // Only TEXCOORD_0 and _1 are stored; texCoord >= 2 deliberately degrades to set 0.
+        // The spec asks clients to support at least two UV sets (SHOULD, not MUST), and >2
+        // sets are vanishingly rare — supporting them means parallel uv2/uv3… arrays through
+        // the whole pipeline, out of proportion to the gain.
         slot.uv_set = (tc == 1) ? uint8_t{ 1 } : uint8_t{ 0 };
         if (tc == 1)
         {
