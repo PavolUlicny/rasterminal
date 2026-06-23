@@ -304,6 +304,10 @@ void rasterize(
     const uint8_t emissive_set = mat ? mat->emissive_map.uv_set : uint8_t{ 0 };
     const bool need_uv1 =
         ((tex != nullptr) && diffuse_set != 0) || (do_emissive && (etex != nullptr) && emissive_set != 0);
+    // KHR_texture_transform (per-slot, gates the post-select affine; null mat ⇒ none). When no
+    // slot carries one the residue is a hoisted bool + a predicted not-taken branch per sampler.
+    const bool diffuse_xf = mat && mat->diffuse_map.has_transform;
+    const bool emissive_xf = mat && mat->emissive_map.has_transform;
 
     // Transparent: per-edge top-left flags so a pixel center landing exactly on a shared edge
     // is owned by one triangle (no double-composited seam). The barycentric gradients are
@@ -385,7 +389,11 @@ void rasterize(
                 {
                     uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
                 }
-                const vec2 d_uv = diffuse_set ? uv1v : uv;
+                vec2 d_uv = diffuse_set ? uv1v : uv;
+                if (diffuse_xf)
+                {
+                    d_uv = apply_tex_transform(mat->diffuse_map, d_uv);
+                }
                 const vec4 ta = tex->sample_rgba(d_uv.x, d_uv.y);
                 if (ta.w < alpha_cutoff)
                 {
@@ -464,7 +472,11 @@ void rasterize(
                 float tex_a = 1.0f;
                 if (tex)
                 {
-                    const vec2 d_uv = diffuse_set ? uv1v : uv;
+                    vec2 d_uv = diffuse_set ? uv1v : uv;
+                    if (diffuse_xf)
+                    {
+                        d_uv = apply_tex_transform(mat->diffuse_map, d_uv);
+                    }
                     const vec4 t = tex->sample_rgba(d_uv.x, d_uv.y);
                     col = col * vec3{ t.x, t.y, t.z };
                     tex_a = t.w;
@@ -474,7 +486,11 @@ void rasterize(
                     vec3 e = emissive;
                     if (etex)
                     {
-                        const vec2 e_uv = emissive_set ? uv1v : uv;
+                        vec2 e_uv = emissive_set ? uv1v : uv;
+                        if (emissive_xf)
+                        {
+                            e_uv = apply_tex_transform(mat->emissive_map, e_uv);
+                        }
                         e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                     }
                     col = col + e;
@@ -492,7 +508,13 @@ void rasterize(
             {
                 if (tex)
                 {
-                    const vec2 d_uv = diffuse_set ? uv1v : uv;
+                    vec2 d_uv = diffuse_set ? uv1v : uv;
+                    // When has_cutout the colour reuses cutout_rgb (already transformed in the
+                    // pre-pass), so an affine here would be computed and discarded — skip it.
+                    if (diffuse_xf && !has_cutout)
+                    {
+                        d_uv = apply_tex_transform(mat->diffuse_map, d_uv);
+                    }
                     col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y));
                 }
 
@@ -506,7 +528,11 @@ void rasterize(
                     vec3 e = emissive;
                     if (etex)
                     {
-                        const vec2 e_uv = emissive_set ? uv1v : uv;
+                        vec2 e_uv = emissive_set ? uv1v : uv;
+                        if (emissive_xf)
+                        {
+                            e_uv = apply_tex_transform(mat->emissive_map, e_uv);
+                        }
                         e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                     }
                     col = col + e;
@@ -609,9 +635,10 @@ void rasterize_phong(
     const bool is_metallic = (mat.metallic > 0.0f);
     // ORM packing (glTF): when occlusion and metallic-roughness reference the same image,
     // load_tex dedups them to one Texture* — sample once and reuse the AO read for metalness.
-    // The UV sets must also match: two bindings can dedup to one Texture* (the cache key ignores
-    // texCoord) yet select different UV sets, in which case the samples differ and can't be shared.
-    const bool occ_is_mr = (octex != nullptr && octex == mrtex && mat.occlusion_map.uv_set == mat.mr_map.uv_set);
+    // The addressing must also match: the cache key is image-only (ignores texCoord and
+    // KHR_texture_transform), so two bindings can dedup to one Texture* yet differ in UV set or
+    // transform, in which case the samples land at different texels and can't be shared.
+    const bool occ_is_mr = (octex != nullptr && octex == mrtex && same_uv_mapping(mat.occlusion_map, mat.mr_map));
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
     // The factor is passed in so callers can override it (e.g. tests); the UI texture
@@ -635,6 +662,15 @@ void rasterize_phong(
                           ((stex != nullptr) && specular_set != 0) || ((mrtex != nullptr) && mr_set != 0) ||
                           ((octex != nullptr) && occ_set != 0) ||
                           (do_emissive && (etex != nullptr) && emissive_set != 0);
+    // KHR_texture_transform per slot: gates the post-select affine. Loop-invariant; the no-transform
+    // residue is a hoisted bool + a predicted not-taken branch per sampler (same class as the uv1
+    // selects). occ_is_mr shares mr's sample, so it shares mr's transform.
+    const bool diffuse_xf = mat.diffuse_map.has_transform;
+    const bool normal_xf = mat.normal_map.has_transform;
+    const bool specular_xf = mat.specular_map.has_transform;
+    const bool mr_xf = mat.mr_map.has_transform;
+    const bool occ_xf = mat.occlusion_map.has_transform;
+    const bool emissive_xf = mat.emissive_map.has_transform;
 
     // Transparent fill-rule flags (see rasterize() for the rationale); compile out for Opaque.
     [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
@@ -704,7 +740,11 @@ void rasterize_phong(
                 {
                     uv1v = (uv1a * pwa + uv1b * pwb + uv1c * pwc) * w_corr;
                 }
-                const vec2 d_uv = diffuse_set ? uv1v : uv;
+                vec2 d_uv = diffuse_set ? uv1v : uv;
+                if (diffuse_xf)
+                {
+                    d_uv = apply_tex_transform(mat.diffuse_map, d_uv);
+                }
                 const vec4 ta = tex->sample_rgba(d_uv.x, d_uv.y);
                 if (ta.w < mat.alpha_cutoff)
                 {
@@ -765,7 +805,11 @@ void rasterize_phong(
                 const vec3 tan = (tana * pwa + tanb * pwb + tanc * pwc) * w_corr;
 
                 // Unpack normal map texel from [0,1] to [-1,1].
-                const vec2 n_uv = normal_set ? uv1v : uv;
+                vec2 n_uv = normal_set ? uv1v : uv;
+                if (normal_xf)
+                {
+                    n_uv = apply_tex_transform(mat.normal_map, n_uv);
+                }
                 vec3 nm = nmap->sample_rgb(n_uv.x, n_uv.y) * 2.0f - vec3{ 1.0f, 1.0f, 1.0f };
                 // glTF normalScale: scales X/Y of the tangent-space normal (Z unchanged) before TBN.
                 // apply_normal_scale is loop-invariant; mesh-level gate keeps default-scale paths free.
@@ -793,7 +837,11 @@ void rasterize_phong(
             vec3 occ_sample{}; // valid only when octex != nullptr; reused as the MR sample when occ_is_mr
             if (octex)
             {
-                const vec2 o_uv = occ_set ? uv1v : uv;
+                vec2 o_uv = occ_set ? uv1v : uv;
+                if (occ_xf)
+                {
+                    o_uv = apply_tex_transform(mat.occlusion_map, o_uv);
+                }
                 occ_sample = octex->sample_rgb(o_uv.x, o_uv.y);
                 ao = 1.0f + (occlusion_strength * (occ_sample.x - 1.0f));
             }
@@ -816,7 +864,14 @@ void rasterize_phong(
             [[maybe_unused]] float tex_a = 1.0f; // NOLINT(misc-const-correctness)
             if (tex)
             {
-                const vec2 d_uv = diffuse_set ? uv1v : uv;
+                vec2 d_uv = diffuse_set ? uv1v : uv;
+                // Transparent always samples here; Opaque reuses cutout_rgb when has_cutout (already
+                // transformed in the pre-pass), discarding any affine. has_cutout is false in the
+                // Transparent sink (MASK and BLEND are mutually exclusive), so this still transforms there.
+                if (diffuse_xf && !has_cutout)
+                {
+                    d_uv = apply_tex_transform(mat.diffuse_map, d_uv);
+                }
                 if constexpr (S == Sink::Transparent)
                 {
                     const vec4 t = tex->sample_rgba(d_uv.x, d_uv.y);
@@ -835,7 +890,11 @@ void rasterize_phong(
             }
             if (stex)
             {
-                const vec2 s_uv = specular_set ? uv1v : uv;
+                vec2 s_uv = specular_set ? uv1v : uv;
+                if (specular_xf)
+                {
+                    s_uv = apply_tex_transform(mat.specular_map, s_uv);
+                }
                 use_specular = use_specular * stex->sample_rgb(s_uv.x, s_uv.y);
             }
 
@@ -857,8 +916,14 @@ void rasterize_phong(
                 float metalness = mat.metallic;
                 if (mrtex)
                 {
-                    // G=roughness, B=metallic. Reuse the occlusion sample when ORM-packed (same image).
-                    const vec2 m_uv = mr_set ? uv1v : uv;
+                    // G=roughness, B=metallic. Reuse the occlusion sample when ORM-packed (same image);
+                    // occ_is_mr implies an identical transform (same_uv_mapping), so skip m_uv's affine
+                    // when reusing — it would be discarded.
+                    vec2 m_uv = mr_set ? uv1v : uv;
+                    if (mr_xf && !occ_is_mr)
+                    {
+                        m_uv = apply_tex_transform(mat.mr_map, m_uv);
+                    }
                     const vec3 mr = occ_is_mr ? occ_sample : mrtex->sample_rgb(m_uv.x, m_uv.y);
                     metalness *= mr.z;
                     use_shin = roughness_to_shininess(mat.roughness * mr.y);
@@ -904,7 +969,11 @@ void rasterize_phong(
                 vec3 e = emissive;
                 if (etex)
                 {
-                    const vec2 e_uv = emissive_set ? uv1v : uv;
+                    vec2 e_uv = emissive_set ? uv1v : uv;
+                    if (emissive_xf)
+                    {
+                        e_uv = apply_tex_transform(mat.emissive_map, e_uv);
+                    }
                     e = e * etex->sample_rgb(e_uv.x, e_uv.y);
                 }
                 color = color + e;

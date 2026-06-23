@@ -39,17 +39,54 @@ inline float roughness_to_shininess(float roughness) noexcept
     return ((1.0f - roughness) * 126.0f) + 2.0f;
 }
 
-// One texture binding: the slot index into Mesh::textures (-1 = none) plus the
-// UV set it samples (glTF textureInfo.texCoord: 0 = TEXCOORD_0, 1 = TEXCOORD_1).
-// uv_set is always 0 for non-glTF loaders and is clamped to {0,1} at load (a
-// reference to an absent set degrades to 0 — see mesh_gltf.cpp). KHR_texture_transform
-// will extend this struct with offset/rotation/scale; the rasterizer already reads
-// per-slot data from here so that lands without new call-site plumbing.
+// One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it
+// samples (glTF textureInfo.texCoord: 0 = TEXCOORD_0, 1 = TEXCOORD_1), and an optional
+// KHR_texture_transform. uv_set is always 0 for non-glTF loaders and is clamped to {0,1}
+// at load (a reference to an absent set degrades to 0 — see mesh_gltf.cpp).
+//
+// has_transform/t[] carry KHR_texture_transform. t is a 2x3 affine applied to the
+// interpolated UV before sampling: feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5.
+// The glTF spec defines the transform on v-down UVs, but we store UVs v-flipped (and
+// sample re-flips), so the loader folds flip∘transform∘flip into t (see bake_transform in
+// mesh_gltf.cpp). Identity by default; callers gate the per-pixel apply on has_transform.
 struct TexSlot
 {
     int tex = -1;
     uint8_t uv_set = 0;
+    bool has_transform = false;
+    float t[6] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
 };
+
+// Apply a TexSlot's baked KHR_texture_transform affine to an interpolated UV. Identity
+// when the slot has no transform, but callers gate on has_transform to skip it entirely.
+inline vec2 apply_tex_transform(const TexSlot &s, vec2 uv) noexcept
+{
+    return { (s.t[0] * uv.x) + (s.t[1] * uv.y) + s.t[2], (s.t[3] * uv.x) + (s.t[4] * uv.y) + s.t[5] };
+}
+
+// Two slots address the texture identically — same UV set and same KHR_texture_transform — so a
+// sample taken for one can be reused for the other. Used by the ORM fast path: the texture cache
+// dedups by image only (not texCoord/transform), so two bindings sharing a Texture* may still
+// differ in either. The baked t[] is bit-identical for equal authored transforms (same arithmetic
+// on the same inputs), so exact comparison is correct here.
+inline bool same_uv_mapping(const TexSlot &a, const TexSlot &b) noexcept
+{
+    if (a.uv_set != b.uv_set || a.has_transform != b.has_transform)
+    {
+        return false;
+    }
+    if (a.has_transform)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            if (a.t[i] != b.t[i])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
 
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 // NOTE: when adding a new *_map TexSlot, also update the remap loop in

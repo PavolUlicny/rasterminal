@@ -352,17 +352,50 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // after the walk with whether any primitive actually provided TEXCOORD_1 to set Mesh::has_uv1.
     bool any_uv1_referenced = false;
 
-    // Resolve a binding's UV set. glTF caps meaningfully at two sets here: texCoord 1 selects
-    // TEXCOORD_1; 0 — or an unsupported texCoord >= 2 — degrades to TEXCOORD_0. A reference to an
-    // absent set is reconciled after the walk (see the finalize block), not here.
-    auto bind_uv_set = [&](const cgltf_texture_view &view) -> uint8_t
+    // Bake KHR_texture_transform into a slot's 2x3 affine. The spec composes
+    // T = translate · rotate · scale on v-down glTF UVs. We store UVs v-flipped (uv.y =
+    // 1 - v_gltf) and Texture::sample re-flips, so applying T directly would mirror the
+    // rotation and invert the v-offset. Fold flip∘T∘flip into one affine acting on stored
+    // UVs (c=cos, s=sin, sx/sy=scale, ox/oy=offset); see TexSlot in light.h. Animated
+    // transforms are not handled — this bakes the static authored values once at load.
+    auto bake_transform = [](TexSlot &slot, const cgltf_texture_transform &tr)
     {
-        if (view.texcoord == 1)
+        const float c = std::cos(tr.rotation);
+        const float s = std::sin(tr.rotation);
+        const float sx = tr.scale[0];
+        const float sy = tr.scale[1];
+        const float ox = tr.offset[0];
+        const float oy = tr.offset[1];
+        slot.has_transform = true;
+        slot.t[0] = c * sx;
+        slot.t[1] = s * sy;
+        slot.t[2] = ox - (s * sy);
+        slot.t[3] = -s * sx;
+        slot.t[4] = c * sy;
+        slot.t[5] = 1.0f - oy - (c * sy);
+    };
+
+    // Resolve a binding's UV set and KHR_texture_transform. glTF caps meaningfully at two
+    // sets here: texCoord 1 selects TEXCOORD_1; 0 — or an unsupported texCoord >= 2 —
+    // degrades to TEXCOORD_0. KHR_texture_transform's own texcoord (when present) overrides
+    // textureInfo.texCoord per spec. A reference to an absent set is reconciled after the
+    // walk (see the finalize block), not here.
+    auto bind_slot = [&](TexSlot &slot, const cgltf_texture_view &view)
+    {
+        int tc = view.texcoord;
+        if (view.has_transform && view.transform.has_texcoord)
+        {
+            tc = view.transform.texcoord;
+        }
+        slot.uv_set = (tc == 1) ? uint8_t{ 1 } : uint8_t{ 0 };
+        if (tc == 1)
         {
             any_uv1_referenced = true;
-            return 1;
         }
-        return 0;
+        if (view.has_transform)
+        {
+            bake_transform(slot, view.transform);
+        }
     };
 
     // Map a cgltf_material to our Blinn-Phong Material.
@@ -384,23 +417,23 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         if (pbr.metallic_roughness_texture.texture)
         {
             mat.mr_map.tex = load_tex(pbr.metallic_roughness_texture.texture);
-            mat.mr_map.uv_set = bind_uv_set(pbr.metallic_roughness_texture);
+            bind_slot(mat.mr_map, pbr.metallic_roughness_texture);
         }
         if (pbr.base_color_texture.texture)
         {
             mat.diffuse_map.tex = load_tex(pbr.base_color_texture.texture);
-            mat.diffuse_map.uv_set = bind_uv_set(pbr.base_color_texture);
+            bind_slot(mat.diffuse_map, pbr.base_color_texture);
         }
         if (m->normal_texture.texture)
         {
             mat.normal_map.tex = load_tex(m->normal_texture.texture);
-            mat.normal_map.uv_set = bind_uv_set(m->normal_texture);
+            bind_slot(mat.normal_map, m->normal_texture);
             mat.normal_scale = m->normal_texture.scale;
         }
         if (m->occlusion_texture.texture)
         {
             mat.occlusion_map.tex = load_tex(m->occlusion_texture.texture);
-            mat.occlusion_map.uv_set = bind_uv_set(m->occlusion_texture);
+            bind_slot(mat.occlusion_map, m->occlusion_texture);
             // cgltf: scale field == occlusionTexture.strength. Spec caps it at [0,1] but cgltf
             // does not enforce; clamp so an out-of-range value can't drive ao negative per-pixel.
             mat.occlusion_strength = clamp(m->occlusion_texture.scale, 0.0f, 1.0f);
@@ -434,7 +467,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         if (emissive_active && m->emissive_texture.texture)
         {
             mat.emissive_map.tex = load_tex(m->emissive_texture.texture);
-            mat.emissive_map.uv_set = bind_uv_set(m->emissive_texture);
+            bind_slot(mat.emissive_map, m->emissive_texture);
         }
         mat.double_sided = m->double_sided;
         mat.unlit = m->unlit;

@@ -234,7 +234,16 @@ ShadowMap build_shadow_map(const Mesh &mesh, const Light &light, int n_threads)
                     {
                         if (atex)
                         {
-                            const vec2 uv = uva * ba + uvb * bb + uvc * bc;
+                            vec2 uv = uva * ba + uvb * bb + uvc * bc;
+                            // Apply the base-colour binding's KHR_texture_transform so the shadow masks
+                            // with the same authored UV mapping (set + transform) as the colour pass. The
+                            // interpolation differs (affine in light space here vs perspective-correct in
+                            // camera space), so a heavily tiled transform can misalign the hole edge
+                            // sub-pixel — harmless for an approximate shadow map.
+                            if (mat.diffuse_map.has_transform)
+                            {
+                                uv = apply_tex_transform(mat.diffuse_map, uv);
+                            }
                             if (atex->sample_rgba(uv.x, uv.y).w < mat.alpha_cutoff)
                             {
                                 ba += ba_dx;

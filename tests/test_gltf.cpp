@@ -2865,3 +2865,238 @@ TEST(gltf_valid, normal_map_texcoord1_drives_tangents)
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KHR_texture_transform
+// ═══════════════════════════════════════════════════════════════════════════
+
+// baseColorTexture with KHR_texture_transform (offset + scale, no rotation) → the slot bakes
+// the flip-folded 2x3 affine. With rotation 0: c=1,s=0, so for offset (ox,oy) and scale
+// (sx,sy) the coefficients are {sx,0,ox, 0,sy,1-oy-sy} — exercising the v-flip terms (a02 has
+// no rotation contribution here, a12 = 1 - oy - sy carries the fold).
+TEST(gltf_valid, texture_transform_bakes_affine)
+{
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);                                                // POSITION  36 @ 0
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f);                  // TEXCOORD_0 24 @ 36
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // BMP 58 @ 60
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"TEXCOORD_0\":1},\"material\":0}]}],"
+        "\"extensionsUsed\":[\"KHR_texture_transform\"],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0,"
+        "\"extensions\":{\"KHR_texture_transform\":{\"offset\":[0.1,0.2],\"scale\":[2.0,3.0]}}}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":118}]}";
+
+    TmpFile f(tmp_path("rast_tex_transform.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &d = m.materials[1].diffuse_map;
+    ASSERT_TRUE(d.has_transform);
+    const float expect[6] = { 2.0f, 0.0f, 0.1f, 0.0f, 3.0f, 1.0f - 0.2f - 3.0f };
+    for (int i = 0; i < 6; i++)
+    {
+        if (std::fabs(d.t[i] - expect[i]) > 1e-5f)
+        {
+            ASSERT_FAIL("baked KHR_texture_transform affine coefficient mismatch");
+        }
+    }
+}
+
+// KHR_texture_transform's own texCoord overrides textureInfo.texCoord (spec). baseColorTexture
+// declares texCoord 0 but the transform declares texCoord 1, and TEXCOORD_1 is present → the
+// slot resolves to set 1.
+TEST(gltf_valid, texture_transform_texcoord_override)
+{
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);                                                // POSITION  36 @ 0
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f);                  // TEXCOORD_0 24 @ 36
+    emit_uvs(bin, 0.2f, 0.3f, 0.8f, 0.3f, 0.5f, 0.9f);                  // TEXCOORD_1 24 @ 60
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // BMP 58 @ 84
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"TEXCOORD_0\":1,\"TEXCOORD_1\":2},\"material\":0}]}],"
+        "\"extensionsUsed\":[\"KHR_texture_transform\"],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0,\"texCoord\":0,"
+        "\"extensions\":{\"KHR_texture_transform\":{\"texCoord\":1}}}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":3,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"},"
+        "{\"bufferView\":2,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":84,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":142}]}";
+
+    TmpFile f(tmp_path("rast_tex_transform_override.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.has_uv1);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_TRUE(m.materials[1].diffuse_map.has_transform);
+    ASSERT_EQ(static_cast<int>(m.materials[1].diffuse_map.uv_set), 1);
+}
+
+// A baseColorTexture with no KHR_texture_transform → has_transform false and t stays identity,
+// so apply_tex_transform is a no-op even if (incorrectly) invoked.
+TEST(gltf_valid, texture_transform_absent_is_identity)
+{
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size);
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"TEXCOORD_0\":1},\"material\":0}]}],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":118}]}";
+
+    TmpFile f(tmp_path("rast_tex_transform_absent.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &d = m.materials[1].diffuse_map;
+    ASSERT_FALSE(d.has_transform);
+    const float identity[6] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+    for (int i = 0; i < 6; i++)
+    {
+        if (std::fabs(d.t[i] - identity[i]) > 1e-6f)
+        {
+            ASSERT_FAIL("no-transform slot must keep an identity affine");
+        }
+    }
+}
+
+// Keystone correctness test for the v-flip fold, independent of bake_transform's own derivation.
+// Author a non-trivial offset+rotation+scale, load it (running the real bake), then for several
+// UV points assert that our full pipeline — store v-flip (uv.y = 1 - v_gltf) → baked affine →
+// the sampler's internal v-flip — lands on the EXACT image pixel glTF's v-down transform intends.
+// The expected value encodes the glTF KHR_texture_transform spec matrix (T = translate·rotate·
+// scale, v down) directly, with no flip; the flip lives only in the implementation path. So a
+// wrong flip fold or rotation sign makes expected != actual. This is the one check that catches a
+// bad derivation (the exact-coefficient test above only pins the formula against itself).
+TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
+{
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);                                                // POSITION  36 @ 0
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f);                  // TEXCOORD_0 24 @ 36
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // BMP 58 @ 60
+
+    const float ox = 0.1f, oy = 0.2f, rot = 0.5f, sx = 1.5f, sy = 2.0f;
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"TEXCOORD_0\":1},\"material\":0}]}],"
+        "\"extensionsUsed\":[\"KHR_texture_transform\"],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0,"
+        "\"extensions\":{\"KHR_texture_transform\":{\"offset\":[0.1,0.2],\"rotation\":0.5,\"scale\":[1.5,2.0]}}}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":118}]}";
+
+    TmpFile f(tmp_path("rast_tex_transform_spec.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &d = m.materials[1].diffuse_map;
+    ASSERT_TRUE(d.has_transform);
+
+    const float c = std::cos(rot), s = std::sin(rot);
+    const vec2 pts[] = { { 0.0f, 0.0f }, { 0.3f, 0.2f }, { 1.0f, 1.0f }, { 0.7f, 0.4f } };
+    for (const vec2 &p : pts)
+    {
+        const float u_g = p.x, v_g = p.y;
+        // glTF spec transform in v-down space (translate · rotate · scale).
+        const float u_exp = (c * sx * u_g) - (s * sy * v_g) + ox;
+        const float v_exp = (s * sx * u_g) + (c * sy * v_g) + oy;
+        // Our pipeline: stored UV is v-flipped; the sampler re-flips internally, so the image pixel
+        // it reads sits at glTF-space (feed.x, 1 - feed.y).
+        const vec2 feed = apply_tex_transform(d, vec2{ u_g, 1.0f - v_g });
+        const float u_act = feed.x;
+        const float v_act = 1.0f - feed.y;
+        if (std::fabs(u_act - u_exp) > 1e-4f || std::fabs(v_act - v_exp) > 1e-4f)
+        {
+            ASSERT_FAIL("baked transform does not reproduce glTF v-down sampling for a UV point");
+        }
+    }
+}
+
+// A transform that specifies only offset → cgltf defaults scale to [1,1] (not [0,0]), so the
+// texture is shifted, not collapsed. Guards the cgltf default our bake depends on across bumps.
+TEST(gltf_valid, texture_transform_defaults_scale_to_one)
+{
+    constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
+    std::string bin;
+    emit_tri_verts(bin);
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f, 1.0f);
+    bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size);
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
+        "{\"POSITION\":0,\"TEXCOORD_0\":1},\"material\":0}]}],"
+        "\"extensionsUsed\":[\"KHR_texture_transform\"],"
+        "\"materials\":[{\"pbrMetallicRoughness\":{\"baseColorTexture\":{\"index\":0,"
+        "\"extensions\":{\"KHR_texture_transform\":{\"offset\":[0.25,0.0]}}}}}],"
+        "\"textures\":[{\"source\":0}],"
+        "\"images\":[{\"bufferView\":2,\"mimeType\":\"image/bmp\"}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24},"
+        "{\"buffer\":0,\"byteOffset\":60,\"byteLength\":58}],"
+        "\"buffers\":[{\"byteLength\":118}]}";
+
+    TmpFile f(tmp_path("rast_tex_transform_defscale.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &d = m.materials[1].diffuse_map;
+    ASSERT_TRUE(d.has_transform);
+    // scale 1, rotation 0, offset.u 0.25 → {1,0,0.25, 0,1,0} (a12 = 1 - 0 - 1 = 0).
+    const float expect[6] = { 1.0f, 0.0f, 0.25f, 0.0f, 1.0f, 0.0f };
+    for (int i = 0; i < 6; i++)
+    {
+        if (std::fabs(d.t[i] - expect[i]) > 1e-5f)
+        {
+            ASSERT_FAIL("offset-only transform must keep unit scale (cgltf default), not collapse");
+        }
+    }
+}

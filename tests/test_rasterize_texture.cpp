@@ -971,6 +971,54 @@ TEST(rasterize, diffuse_uv_set_selects_texcoord1)
     }
 }
 
+// KHR_texture_transform reaches the sampler: a 2×1 red|blue texture sampled at uv0 (red half)
+// shifts to the blue half once the diffuse slot carries a +0.5 u-offset affine. Proves the
+// post-select transform apply in rasterize().
+TEST(rasterize, diffuse_texture_transform_shifts_sample)
+{
+    Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec3 zero{};
+    vec2 uv0{ 0.25f, 0.5f }; // red texel centre; +0.5 u-offset lands on the blue texel
+
+    const auto run = [&](Framebuffer &fb, bool xf)
+    {
+        Material mat;
+        if (xf)
+        {
+            mat.diffuse_map.has_transform = true;
+            mat.diffuse_map.t[0] = 1.0f;
+            mat.diffuse_map.t[1] = 0.0f;
+            mat.diffuse_map.t[2] = 0.5f; // u += 0.5
+            mat.diffuse_map.t[3] = 0.0f;
+            mat.diffuse_map.t[4] = 1.0f;
+            mat.diffuse_map.t[5] = 0.0f;
+        }
+        rasterize(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, white, white, zero, zero, zero, uv0, uv0, uv0,
+            &tex, 0.0f, nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+        );
+    };
+
+    Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
+    run(fb0, false); // no transform → red half
+    run(fb1, true);  // +0.5 u-offset → blue half
+
+    ASSERT_TRUE(was_drawn(fb0, 20, 10));
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    const Color c0 = fb0.get_pixel(20, 10);
+    const Color c1 = fb1.get_pixel(20, 10);
+    if (c0.r <= c0.b)
+    {
+        ASSERT_FAIL("no transform should sample the red half (R > B)");
+    }
+    if (c1.b <= c1.r)
+    {
+        ASSERT_FAIL("u-offset transform should sample the blue half (B > R)");
+    }
+}
+
 // Phong path: the diffuse binding's uv_set (read from mat) selects which set the diffuse
 // sample uses, exactly as in rasterize(). 2×1 red|blue texture; uv0→red, uv1→blue.
 TEST(rasterize_phong, diffuse_uv_set_selects_texcoord1)
@@ -1012,6 +1060,155 @@ TEST(rasterize_phong, diffuse_uv_set_selects_texcoord1)
     if (c1.b <= c1.r)
     {
         ASSERT_FAIL("phong uv_set 1 should sample the blue half (B > R)");
+    }
+}
+
+// Phong path: KHR_texture_transform on the diffuse slot shifts the sampled texel, mirroring the
+// rasterize() case. 2×1 red|blue texture; a +0.5 u-offset moves the red sample to blue.
+TEST(rasterize_phong, diffuse_texture_transform_shifts_sample)
+{
+    Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f }, ambient{ 0.4f, 0.4f, 0.4f };
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv0{ 0.25f, 0.5f }; // red texel; +0.5 u-offset lands on blue
+
+    const auto run = [&](Framebuffer &fb, bool xf)
+    {
+        Material mat{};
+        mat.specular = { 0.0f, 0.0f, 0.0f }; // keep red/blue clean
+        if (xf)
+        {
+            mat.diffuse_map.has_transform = true;
+            mat.diffuse_map.t[0] = 1.0f;
+            mat.diffuse_map.t[1] = 0.0f;
+            mat.diffuse_map.t[2] = 0.5f;
+            mat.diffuse_map.t[3] = 0.0f;
+            mat.diffuse_map.t[4] = 1.0f;
+            mat.diffuse_map.t[5] = 0.0f;
+        }
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &tex, nullptr, nullptr, nullptr,
+            0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, nullptr, 1.0f, uv0, uv0, uv0
+        );
+    };
+
+    Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
+    run(fb0, false);
+    run(fb1, true);
+
+    ASSERT_TRUE(was_drawn(fb0, 20, 10));
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    const Color c0 = fb0.get_pixel(20, 10);
+    const Color c1 = fb1.get_pixel(20, 10);
+    if (c0.r <= c0.b)
+    {
+        ASSERT_FAIL("phong no transform should sample the red half (R > B)");
+    }
+    if (c1.b <= c1.r)
+    {
+        ASSERT_FAIL("phong u-offset transform should sample the blue half (B > R)");
+    }
+}
+
+// Per-slot routing of the transform beyond diffuse: the occlusion slot carries a +0.5 u-offset
+// while diffuse is untransformed. The occlusion R channel scales ambient, so shifting the
+// occlusion sample from the bright texel to the dark one darkens the result — proving each slot
+// applies its own transform (and that the non-diffuse Phong sample sites are wired).
+TEST(rasterize_phong, occlusion_texture_transform_independent_of_diffuse)
+{
+    Texture occ = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 0, 255 }); // texel0 bright, texel1 dark
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f }, ambient{ 1.0f, 1.0f, 1.0f };
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv0{ 0.25f, 0.5f }; // occlusion texel0 (bright); +0.5 u-offset → texel1 (dark)
+
+    const auto run = [&](Framebuffer &fb, bool xf)
+    {
+        Material mat{};
+        mat.diffuse = { 0.3f, 0.0f, 0.0f };
+        mat.ambient = { 0.5f, 0.0f, 0.0f };
+        mat.specular = { 0.0f, 0.0f, 0.0f };
+        if (xf)
+        {
+            mat.occlusion_map.has_transform = true;
+            mat.occlusion_map.t[0] = 1.0f;
+            mat.occlusion_map.t[1] = 0.0f;
+            mat.occlusion_map.t[2] = 0.5f;
+            mat.occlusion_map.t[3] = 0.0f;
+            mat.occlusion_map.t[4] = 1.0f;
+            mat.occlusion_map.t[5] = 0.0f;
+        }
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
+            nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &occ, 1.0f, uv0, uv0, uv0
+        );
+    };
+
+    Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
+    run(fb0, false); // bright occlusion texel → brighter
+    run(fb1, true);  // transform → dark occlusion texel → darker
+
+    ASSERT_TRUE(was_drawn(fb0, 20, 10));
+    ASSERT_TRUE(was_drawn(fb1, 20, 10));
+    const Color c0 = fb0.get_pixel(20, 10);
+    const Color c1 = fb1.get_pixel(20, 10);
+    if (c0.r <= c1.r + 30)
+    {
+        ASSERT_FAIL(
+            "occlusion transform should shift to the dark texel (clearly darker): got R0=" +
+            std::to_string(static_cast<int>(c0.r)) + " R1=" + std::to_string(static_cast<int>(c1.r))
+        );
+    }
+}
+
+// Cutout pre-pass honours the diffuse transform: a 2×1 texture with an opaque texel0 and a fully
+// transparent texel1, alpha_cutoff active. uv0 samples opaque (fragment kept) but a +0.5 u-offset
+// shifts the alpha sample to the transparent texel → the fragment is discarded (not drawn). This
+// exercises the transform application in the cutout pre-pass, distinct from the colour sample.
+TEST(rasterize, cutout_pre_pass_honours_diffuse_transform)
+{
+    Texture tex = make_tex_rgba(2, 1, { 255, 255, 255, 255, 255, 255, 255, 0 }); // texel0 opaque, texel1 transparent
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec3 zero{};
+    vec2 uv0{ 0.25f, 0.5f }; // opaque texel; +0.5 u-offset → transparent texel
+
+    const auto run = [&](Framebuffer &fb, bool xf)
+    {
+        Material mat;
+        if (xf)
+        {
+            mat.diffuse_map.has_transform = true;
+            mat.diffuse_map.t[0] = 1.0f;
+            mat.diffuse_map.t[1] = 0.0f;
+            mat.diffuse_map.t[2] = 0.5f;
+            mat.diffuse_map.t[3] = 0.0f;
+            mat.diffuse_map.t[4] = 1.0f;
+            mat.diffuse_map.t[5] = 0.0f;
+        }
+        rasterize(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, white, white, zero, zero, zero, uv0, uv0, uv0,
+            &tex, 0.5f, nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+        );
+    };
+
+    Framebuffer fb0(40, 20, /*headless=*/true), fb1(40, 20, /*headless=*/true);
+    run(fb0, false); // opaque texel → fragment kept
+    run(fb1, true);  // transform → transparent texel → fragment discarded
+
+    ASSERT_TRUE(was_drawn(fb0, 20, 10));
+    if (was_drawn(fb1, 20, 10))
+    {
+        ASSERT_FAIL("cutout pre-pass should sample the transformed (transparent) texel and discard");
     }
 }
 
@@ -1114,6 +1311,63 @@ TEST(rasterize_phong, orm_dedup_different_uv_sets_samples_mr_independently)
     {
         ASSERT_FAIL(
             "mr on set 1 (metal 1) must sample independently of the set-0 occlusion read: got RA=" +
+            std::to_string(static_cast<int>(cA.r)) + " RB=" + std::to_string(static_cast<int>(cB.r))
+        );
+    }
+}
+
+// Symmetric to the uv_set case above, for KHR_texture_transform: occlusion and MR dedup to one
+// Texture* on the SAME uv set, but MR carries a +1.0 u-offset transform while occlusion has none.
+// The transforms differ, so occ_is_mr must be false and MR must sample its own (transformed)
+// texel — not reuse the occlusion sample. Guards the same_uv_mapping transform check.
+TEST(rasterize_phong, orm_dedup_different_transforms_samples_mr_independently)
+{
+    Texture tex = make_tex_rgba(2, 1, { 64, 128, 0, 255, 64, 128, 255, 255 }); // B: texel0=0, texel1=255
+    tex.wrap_s = WrapMode::Clamp;                                              // pure texel reads at u=0 / u=1
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f }, white{ 1.0f, 1.0f, 1.0f };
+    vec3 eye{ 0.0f, 0.0f, 5.0f }, ambient{ 0.05f, 0.05f, 0.05f };
+    Light light{};
+    light.direction = { 0.0f, 0.0f, 1.0f };
+    light.color = { 1.0f, 1.0f, 1.0f };
+    vec2 uv0{ 0.0f, 0.5f }; // → texel0 (metal 0); occlusion (no transform) reads this
+
+    const auto run = [&](Framebuffer &fb, bool mr_xf)
+    {
+        Material mat{};
+        mat.diffuse = { 0.5f, 0.0f, 0.0f };
+        mat.ambient = { 0.5f, 0.0f, 0.0f };
+        mat.metallic = 1.0f;
+        // Both bindings on set 0; only MR carries a +1.0 u-offset → reads texel1 (metal 1).
+        if (mr_xf)
+        {
+            mat.mr_map.has_transform = true;
+            mat.mr_map.t[0] = 1.0f;
+            mat.mr_map.t[1] = 0.0f;
+            mat.mr_map.t[2] = 1.0f; // u += 1.0 → texel1 under Clamp
+            mat.mr_map.t[3] = 0.0f;
+            mat.mr_map.t[4] = 1.0f;
+            mat.mr_map.t[5] = 0.0f;
+        }
+        rasterize_phong(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
+            nullptr, 0, 19, &tex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &tex, 1.0f, uv0, uv0, uv0
+        );
+    };
+
+    Framebuffer fbA(40, 20, /*headless=*/true), fbB(40, 20, /*headless=*/true);
+    run(fbA, true);  // MR transform → texel1 → metal 1 → red specular → bright R
+    run(fbB, false); // no MR transform → occ_is_mr reuse → texel0 → metal 0 → dim R
+
+    ASSERT_TRUE(was_drawn(fbA, 20, 10));
+    ASSERT_TRUE(was_drawn(fbB, 20, 10));
+    const Color cA = fbA.get_pixel(20, 10);
+    const Color cB = fbB.get_pixel(20, 10);
+    if (cA.r <= cB.r + 100)
+    {
+        ASSERT_FAIL(
+            "MR with its own transform must not reuse the occlusion sample: got RA=" +
             std::to_string(static_cast<int>(cA.r)) + " RB=" + std::to_string(static_cast<int>(cB.r))
         );
     }
