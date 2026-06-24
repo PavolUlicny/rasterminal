@@ -86,9 +86,11 @@ struct Mesh
     bool load_ply(const std::string &path, float crease_cos = -1.0f);
 
     // Load geometry from an STL file (ASCII or binary).
-    // No UV or material support (STL has none). Normals are always recomputed
-    // for smooth per-vertex shading (crease_cos has no effect — STL vertices are
-    // unshared, so there is nothing to merge). Returns false on failure.
+    // No UV or material support (STL has none). Normals are always recomputed;
+    // since the loader consumes stl_reader's deduplicated shared vertices,
+    // crease_cos drives crease-angle smoothing as in the other formats
+    // (crease_cos == 0 splits every shared vertex back into per-face wedges =
+    // faceted). Returns false on failure.
     bool load_stl(const std::string &path, float crease_cos = -1.0f);
 
     // Load geometry from a glTF or GLB file.
