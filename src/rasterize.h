@@ -23,11 +23,15 @@ struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
     vec3 pos;     // world-space position
     vec3 normal;  // world-space normal
     vec3 tangent; // world-space tangent (for TBN normal mapping)
-    vec2 uv;      // texture coordinates
+    vec2 uv;      // texture coordinates (TEXCOORD_0)
     float ao;
     vec3 color = { 1.0f, 1.0f,
-                   1.0f }; // vertex color (white = no tint); at end so existing aggregate inits keep working
-    float color_a = 1.0f;  // per-vertex opacity (COLOR_0/PLY alpha); 1 = opaque; only read by the transparent pass
+                   1.0f };     // vertex color (white = no tint); at end so existing aggregate inits keep working
+    float color_a = 1.0f;      // per-vertex opacity (COLOR_0/PLY alpha); 1 = opaque; only read by the transparent pass
+    vec2 uv1 = { 0.0f, 0.0f }; // second texture coordinates (glTF TEXCOORD_1); appended last (like color/color_a)
+                               // so inserting it does NOT shift the offsets of the hot fields (pos/normal/color/ao)
+                               // that the per-vertex lit paths read repeatedly — keeping their codegen baseline-
+                               // identical. Only read when the material binds a uv_set==1 texture; == {} otherwise.
 };
 
 // ─── Transparency: A-buffer ───────────────────────────────────────────────────
@@ -153,9 +157,13 @@ void rasterize(
     int y_max,
     const Texture *etex = nullptr,            // emissive texture (modulates emissive factor)
     vec3 emissive = vec3{ 0.0f, 0.0f, 0.0f }, // emissive factor (added post-color)
-    const ABuffer *abuf = nullptr,            // Transparent only: per-pixel fragment sink
-    float base_alpha = 1.0f,                  // Transparent only: material base opacity (mat.alpha)
-    float caa = 1.0f,                         // Transparent only: per-vertex opacity at a/b/c
+    vec2 uv1a = {},                           // second UV set (TEXCOORD_1) at a/b/c; sampled when a slot selects it
+    vec2 uv1b = {},
+    vec2 uv1c = {},
+    const Material *mat = nullptr, // per-slot uv_set (and future texture-transform) source; null ⇒ all set 0
+    const ABuffer *abuf = nullptr, // Transparent only: per-pixel fragment sink
+    float base_alpha = 1.0f,       // Transparent only: material base opacity (mat.alpha)
+    float caa = 1.0f,              // Transparent only: per-vertex opacity at a/b/c
     float cab = 1.0f,
     float cac = 1.0f
 );
@@ -210,8 +218,11 @@ void rasterize_phong(
     bool apply_normal_scale = false,          // gates the glTF normalScale per-pixel multiply (Mesh::has_normal_scale)
     const Texture *octex = nullptr,  // glTF occlusion texture; R channel overrides baked AO (Mesh::has_occlusion)
     float occlusion_strength = 1.0f, // occlusionTexture.strength: ao = 1 + strength*(R-1)
-    const ABuffer *abuf = nullptr,   // Transparent only: per-pixel fragment sink
-    float caa = 1.0f,                // Transparent only: per-vertex opacity at a/b/c (mat.alpha read from mat)
+    vec2 uv1a = {},                  // second UV set (TEXCOORD_1) at a/b/c; per-slot uv_set read from mat
+    vec2 uv1b = {},
+    vec2 uv1c = {},
+    const ABuffer *abuf = nullptr, // Transparent only: per-pixel fragment sink
+    float caa = 1.0f,              // Transparent only: per-vertex opacity at a/b/c (mat.alpha read from mat)
     float cab = 1.0f,
     float cac = 1.0f
 );

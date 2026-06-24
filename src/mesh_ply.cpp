@@ -812,7 +812,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     // it, so a UV-less file skips the potentially multi-MB decode entirely. The
     // single default material at index 0 covers every triangle. A missing or
     // undecodable file is silently dropped — decode_textures leaves `textures`
-    // empty, so the guard below skips the assignment and diffuse_tex stays at its
+    // empty, so the guard below skips the assignment and diffuse_map stays at its
     // -1 default. Silent-drop is consistent with the OBJ/glTF loaders.
     //
     // The name is always resolved relative to ply_dir (prepended unconditionally),
@@ -826,7 +826,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         // Routed through decode_textures even though PLY only ever has this one
         // fixed texture (so the helper's parallel dispatch and index compaction are
         // dead here). Deliberate: it keeps the "failed decode -> drop, leave the
-        // *_tex index at -1" policy in one place shared with the OBJ/glTF loaders,
+        // *_map.tex index at -1" policy in one place shared with the OBJ/glTF loaders,
         // rather than reimplementing the drop inline. The count==1 cost is nil.
         decode_textures(
             textures, materials, 1, /*n_threads=*/1,
@@ -839,7 +839,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         );
         if (!textures.empty())
         {
-            materials[0].diffuse_tex = 0;
+            materials[0].diffuse_map.tex = 0;
         }
     }
 

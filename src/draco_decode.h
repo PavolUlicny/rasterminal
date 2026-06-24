@@ -14,7 +14,8 @@ struct DracoMesh
 {
     std::vector<float> positions; // 3 * num_points
     std::vector<float> normals;   // 3 * num_points, or empty
-    std::vector<float> uvs;       // 2 * num_points, or empty
+    std::vector<float> uvs;       // 2 * num_points (TEXCOORD_0), or empty
+    std::vector<float> uvs1;      // 2 * num_points (TEXCOORD_1), or empty
     // RGB only: matches Mesh::vertex_colors (std::vector<vec3>). When a Draco asset
     // authors RGBA COLOR_0, the 4th component is surfaced separately in colors_alpha
     // (below) rather than dropped — colors itself stays RGB to keep the common path
@@ -30,11 +31,12 @@ struct DracoMesh
 };
 
 // Decode a Draco mesh bitstream into plain arrays. pos_id is the Draco attribute
-// unique-id for POSITION (required); normal_id / uv_id / color_id are unique-ids,
-// or -1 when that attribute is absent. Returns false on any decode failure or if
-// the POSITION attribute is missing. Takes `void *` so the byte-pointer reinterpret
-// stays a one-step static_cast inside the implementation (cgltf returns uint8_t*,
-// Draco wants char*); the project bans reinterpret_cast via clang-tidy.
+// unique-id for POSITION (required); normal_id / uv_id / uv1_id / color_id are
+// unique-ids, or -1 when that attribute is absent (uv_id = TEXCOORD_0, uv1_id =
+// TEXCOORD_1). Returns false on any decode failure or if the POSITION attribute is
+// missing. Takes `void *` so the byte-pointer reinterpret stays a one-step
+// static_cast inside the implementation (cgltf returns uint8_t*, Draco wants
+// char*); the project bans reinterpret_cast via clang-tidy.
 bool decode_draco_mesh(
-    const void *data, size_t size, uint32_t pos_id, int normal_id, int uv_id, int color_id, DracoMesh &out
+    const void *data, size_t size, uint32_t pos_id, int normal_id, int uv_id, int uv1_id, int color_id, DracoMesh &out
 );

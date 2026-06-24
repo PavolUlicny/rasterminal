@@ -5,6 +5,8 @@
 #include "../src/linalg.h"
 #include "../src/texture.h"
 
+#include <utility>
+
 // Builds a mesh with one large flat triangle in the XY plane (z=0).
 // Vertices span ±10 units so the shadow frustum comfortably covers (0,0,±5).
 static Mesh make_flat_triangle()
@@ -155,7 +157,7 @@ static Mesh make_cutout_triangle(float alpha_cutoff, uint8_t tex_alpha)
     Material mat{};
     mat.alpha_cutoff = alpha_cutoff;
     m.textures.push_back(make_shadow_tex(tex_alpha));
-    mat.diffuse_tex = 0;
+    mat.diffuse_map.tex = 0;
     m.materials.push_back(mat);
 
     Triangle tri{};
@@ -201,9 +203,188 @@ TEST(shadow, no_texture_with_cutoff_casts_shadow)
 {
     Mesh m = make_cutout_triangle(0.5f, 0); // alpha=0 texture set up...
     // ...but now clear diffuse_tex to simulate "cutoff set but no texture"
-    m.materials[1].diffuse_tex = -1;
+    m.materials[1].diffuse_map.tex = -1;
     ShadowMap sm = build_shadow_map(m, make_light_z());
     ASSERT_NEAR(sm.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
+}
+
+// The shadow alpha-cutout must mask with the base-colour binding's UV set: a cutout authored
+// on TEXCOORD_1 has to discard the shadow using set 1, not set 0. A 2×1 texture (texel0 opaque,
+// texel1 transparent) with uv0→opaque texel and uv1→transparent texel: flipping the binding's
+// uv_set flips whether the triangle casts a shadow.
+TEST(shadow, cutout_honours_diffuse_uv_set)
+{
+    const auto build = [](uint8_t uv_set) -> Mesh
+    {
+        Mesh m;
+        Vertex v{};
+        v.ao = 1.0f;
+        const vec3 pos[3] = { { -10.0f, -10.0f, 0.0f }, { 10.0f, -10.0f, 0.0f }, { 0.0f, 10.0f, 0.0f } };
+        for (const vec3 &p : pos)
+        {
+            v.pos = p;
+            v.uv = { 0.25f, 0.5f }; // set 0 → texel0 (opaque); off the wrap boundary
+            m.vertices.push_back(v);
+            m.uv1.emplace_back(0.75f, 0.5f); // set 1 → texel1 (transparent)
+        }
+        m.has_uv1 = true;
+
+        Texture tex; // 2×1: texel0 opaque, texel1 fully transparent
+        tex.width = 2;
+        tex.height = 1;
+        tex.pixels = { 255, 255, 255, 255, 255, 255, 255, 0 };
+        m.textures.push_back(std::move(tex));
+
+        m.materials.push_back({});
+        Material cut{};
+        cut.alpha_cutoff = 0.5f;
+        cut.diffuse_map.tex = 0;
+        cut.diffuse_map.uv_set = uv_set;
+        m.materials.push_back(cut);
+
+        Triangle tri{};
+        tri.v[0] = 0;
+        tri.v[1] = 1;
+        tri.v[2] = 2;
+        tri.material_idx = 1;
+        m.triangles.push_back(tri);
+        return m;
+    };
+
+    // Set 0 samples the opaque texel → cutout keeps the fragment → shadow is cast.
+    Mesh m0 = build(0);
+    ShadowMap sm0 = build_shadow_map(m0, make_light_z());
+    ASSERT_NEAR(sm0.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
+
+    // Set 1 samples the transparent texel → cutout discards → no shadow.
+    Mesh m1 = build(1);
+    ShadowMap sm1 = build_shadow_map(m1, make_light_z());
+    ASSERT_NEAR(sm1.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
+}
+
+// The shadow cutout honours the base-colour binding's KHR_texture_transform: with all UVs on the
+// opaque texel, a +0.5 u-offset transform shifts the alpha sample to the transparent texel, so the
+// cutout discards and no shadow is cast — exercising the transform apply in the shadow pre-pass.
+TEST(shadow, cutout_honours_diffuse_transform)
+{
+    const auto build = [](bool xf) -> Mesh
+    {
+        Mesh m;
+        Vertex v{};
+        v.ao = 1.0f;
+        const vec3 pos[3] = { { -10.0f, -10.0f, 0.0f }, { 10.0f, -10.0f, 0.0f }, { 0.0f, 10.0f, 0.0f } };
+        for (const vec3 &p : pos)
+        {
+            v.pos = p;
+            v.uv = { 0.25f, 0.5f }; // opaque texel0; +0.5 u-offset → transparent texel1
+            m.vertices.push_back(v);
+        }
+
+        Texture tex; // 2×1: texel0 opaque, texel1 fully transparent
+        tex.width = 2;
+        tex.height = 1;
+        tex.pixels = { 255, 255, 255, 255, 255, 255, 255, 0 };
+        m.textures.push_back(std::move(tex));
+
+        m.materials.push_back({});
+        Material cut{};
+        cut.alpha_cutoff = 0.5f;
+        cut.diffuse_map.tex = 0;
+        if (xf)
+        {
+            cut.diffuse_map.has_transform = true;
+            cut.diffuse_map.t[0] = 1.0f;
+            cut.diffuse_map.t[1] = 0.0f;
+            cut.diffuse_map.t[2] = 0.5f;
+            cut.diffuse_map.t[3] = 0.0f;
+            cut.diffuse_map.t[4] = 1.0f;
+            cut.diffuse_map.t[5] = 0.0f;
+        }
+        m.materials.push_back(cut);
+
+        Triangle tri{};
+        tri.v[0] = 0;
+        tri.v[1] = 1;
+        tri.v[2] = 2;
+        tri.material_idx = 1;
+        m.triangles.push_back(tri);
+        return m;
+    };
+
+    // No transform → opaque texel → cutout keeps → shadow is cast.
+    Mesh m0 = build(false);
+    ShadowMap sm0 = build_shadow_map(m0, make_light_z());
+    ASSERT_NEAR(sm0.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
+
+    // +0.5 u-offset transform → transparent texel → cutout discards → no shadow.
+    Mesh m1 = build(true);
+    ShadowMap sm1 = build_shadow_map(m1, make_light_z());
+    ASSERT_NEAR(sm1.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
+}
+
+// Combined path: a MASK base color on TEXCOORD_1 with a KHR_texture_transform. The shadow cutout
+// must apply the transform to the SELECTED set (uv1), matching the colour pass — not to uv0. uv1
+// reads the transparent texel (no shadow); a -0.5 u-offset shifts THAT uv1 to the opaque texel →
+// shadow is cast. If the transform were (wrongly) applied to uv0 instead, the -0.5 offset would
+// wrap uv0's 0.25 to 0.75 (transparent) and no shadow would be cast — so this discriminates.
+TEST(shadow, cutout_honours_diffuse_transform_on_uv1)
+{
+    const auto build = [](bool xf) -> Mesh
+    {
+        Mesh m;
+        Vertex v{};
+        v.ao = 1.0f;
+        const vec3 pos[3] = { { -10.0f, -10.0f, 0.0f }, { 10.0f, -10.0f, 0.0f }, { 0.0f, 10.0f, 0.0f } };
+        for (const vec3 &p : pos)
+        {
+            v.pos = p;
+            v.uv = { 0.25f, 0.5f }; // set 0 → opaque texel0
+            m.vertices.push_back(v);
+            m.uv1.emplace_back(0.75f, 0.5f); // set 1 → transparent texel1
+        }
+        m.has_uv1 = true;
+
+        Texture tex; // 2×1: texel0 opaque, texel1 fully transparent
+        tex.width = 2;
+        tex.height = 1;
+        tex.pixels = { 255, 255, 255, 255, 255, 255, 255, 0 };
+        m.textures.push_back(std::move(tex));
+
+        m.materials.push_back({});
+        Material cut{};
+        cut.alpha_cutoff = 0.5f;
+        cut.diffuse_map.tex = 0;
+        cut.diffuse_map.uv_set = 1; // sample uv1
+        if (xf)
+        {
+            cut.diffuse_map.has_transform = true;
+            cut.diffuse_map.t[0] = 1.0f;
+            cut.diffuse_map.t[1] = 0.0f;
+            cut.diffuse_map.t[2] = -0.5f; // u -= 0.5 → uv1 0.75 → 0.25 (opaque)
+            cut.diffuse_map.t[3] = 0.0f;
+            cut.diffuse_map.t[4] = 1.0f;
+            cut.diffuse_map.t[5] = 0.0f;
+        }
+        m.materials.push_back(cut);
+
+        Triangle tri{};
+        tri.v[0] = 0;
+        tri.v[1] = 1;
+        tri.v[2] = 2;
+        tri.material_idx = 1;
+        m.triangles.push_back(tri);
+        return m;
+    };
+
+    // uv1 → transparent texel → cutout discards → no shadow.
+    Mesh m0 = build(false);
+    ShadowMap sm0 = build_shadow_map(m0, make_light_z());
+    ASSERT_NEAR(sm0.in_shadow({ 0.0f, 0.0f, -5.0f }), 0.0f, 1e-6f);
+
+    // -0.5 u-offset shifts the uv1 sample to the opaque texel → shadow cast.
+    Mesh m1 = build(true);
+    ShadowMap sm1 = build_shadow_map(m1, make_light_z());
+    ASSERT_NEAR(sm1.in_shadow({ 0.0f, 0.0f, -5.0f }), 1.0f, 1e-6f);
 }
 
 // Mixed-material mesh: one opaque triangle (no cutout) and one fully-transparent
@@ -243,7 +424,7 @@ TEST(shadow, mixed_material_opaque_casts_shadow_transparent_does_not)
     Material cut{};
     cut.alpha_cutoff = 0.5f;
     m.textures.push_back(make_shadow_tex(0));
-    cut.diffuse_tex = 0;
+    cut.diffuse_map.tex = 0;
     m.materials.push_back(cut);
 
     Triangle ta{};
@@ -597,7 +778,7 @@ TEST(shadow, alpha_cutout_uv_interpolated_partial_transparency)
 
     Material cut{};
     cut.alpha_cutoff = 0.5f;
-    cut.diffuse_tex = 0;
+    cut.diffuse_map.tex = 0;
     m.textures.push_back(tex);
     m.materials.push_back(cut);
 

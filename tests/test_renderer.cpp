@@ -357,7 +357,7 @@ TEST(renderer, show_texture_toggle_changes_pixel)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // solid green
-    mesh.materials[0].diffuse_tex = 0;
+    mesh.materials[0].diffuse_map.tex = 0;
     mesh.materials[0].diffuse = { 1.0f, 1.0f, 1.0f };
     mesh.materials[0].ambient = { 1.0f, 1.0f, 1.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
@@ -418,7 +418,7 @@ TEST(renderer, zero_factor_with_emissive_texture_renders_dark)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // bright green emissive texture
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f }; // spec default: no emission
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -458,7 +458,7 @@ TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0)); // bright green emissive texture
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -495,7 +495,7 @@ TEST(renderer, gouraud_zero_factor_with_emissive_texture_renders_dark)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -533,7 +533,7 @@ TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
     r.mode = ShadingMode::Phong;
 
     Mesh mesh = make_unit_triangle();
-    mesh.materials[0].emissive_tex = -1;               // no texture: factor must be authored
+    mesh.materials[0].emissive_map.tex = -1;           // no texture: factor must be authored
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // red glow, authored
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -577,7 +577,7 @@ TEST(renderer, show_texture_toggle_preserves_authored_factor_with_texture)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // emissive texture: blue
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -619,7 +619,7 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255));
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f };
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -660,7 +660,7 @@ TEST(renderer, gouraud_show_texture_toggle_preserves_authored_factor_with_textur
 
     Mesh mesh = make_unit_triangle();
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // blue emissive texture
-    mesh.materials[0].emissive_tex = 0;
+    mesh.materials[0].emissive_map.tex = 0;
     mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
@@ -710,8 +710,8 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
     mesh.materials[0].shininess = 32.0f;
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 0));       // idx 0: black stex
     mesh.textures.push_back(make_solid_tex_rgba(2, 2, 128, 128, 255)); // idx 1: flat nmap
-    mesh.materials[0].specular_tex = 0;
-    mesh.materials[0].normal_tex = 1;
+    mesh.materials[0].specular_map.tex = 0;
+    mesh.materials[0].normal_map.tex = 1;
 
     // Baseline: same material, specular_tex/normal_tex at default -1.
     Mesh base = make_unit_triangle();

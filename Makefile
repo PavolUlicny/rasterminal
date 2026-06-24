@@ -190,14 +190,18 @@ HDRS = src/args.h \
        src/ktx2_decode.h \
        src/webp_decode.h
 
-# LTO_SUPPRESS: GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker
-# templates during the link step's recompile, and per-TU pragma context (in
-# src/draco_decode.cpp + vendor/draco/draco_impl.cpp) doesn't survive that re-emit.
-# The suppression is needed only at link time — keeping compile-time warnings active
-# for every other TU so real uninitialized-read bugs are still caught by -Werror.
-# Clang has no equivalent warning name; leave empty there.
+# LTO_SUPPRESS: per-compiler warning suppression needed only at the link step.
+#  - GCC: LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
+#    the link step's recompile, and per-TU pragma context (in src/draco_decode.cpp +
+#    vendor/draco/draco_impl.cpp) doesn't survive that re-emit.
+#  - Clang: the link rules pass the full CXXFLAGS (incl. compile-only math flags like
+#    -fno-finite-math-only) to a link-only clang++ invocation; under ThinLTO AppleClang
+#    intermittently reports those as -Wunused-command-line-argument, which -Werror makes
+#    fatal. Suppress that one warning at link time only.
+# Applied only at link — compile-time warnings stay active for every TU so real bugs
+# are still caught by -Werror.
 ifeq ($(IS_CLANG),clang)
-LTO_SUPPRESS =
+LTO_SUPPRESS = -Wno-unused-command-line-argument
 else
 LTO_SUPPRESS = -Wno-maybe-uninitialized
 endif

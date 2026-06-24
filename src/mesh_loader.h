@@ -27,7 +27,8 @@ struct MeshSnapshot
     explicit MeshSnapshot(Mesh &m)
         : m_mesh(m), m_v(m.vertices.size()), m_t(m.triangles.size()), m_mat(m.materials.size()),
           m_tex(m.textures.size()), m_tans(m.tangents.size()), m_vcols(m.vertex_colors.size()),
-          m_valpha(m.vertex_alpha.size()), m_has_vcol(m.has_vertex_colors), m_has_valpha(m.has_vertex_alpha)
+          m_valpha(m.vertex_alpha.size()), m_uv1(m.uv1.size()), m_has_vcol(m.has_vertex_colors),
+          m_has_valpha(m.has_vertex_alpha), m_has_uv1(m.has_uv1)
     {
     }
 
@@ -50,8 +51,10 @@ struct MeshSnapshot
         m_mesh.tangents.resize(m_tans);
         m_mesh.vertex_colors.resize(m_vcols);
         m_mesh.vertex_alpha.resize(m_valpha);
+        m_mesh.uv1.resize(m_uv1);
         m_mesh.has_vertex_colors = m_has_vcol;
         m_mesh.has_vertex_alpha = m_has_valpha;
+        m_mesh.has_uv1 = m_has_uv1;
     }
 
     MeshSnapshot(const MeshSnapshot &) = delete;
@@ -61,9 +64,10 @@ struct MeshSnapshot
 
   private:
     Mesh &m_mesh;
-    size_t m_v, m_t, m_mat, m_tex, m_tans, m_vcols, m_valpha;
+    size_t m_v, m_t, m_mat, m_tex, m_tans, m_vcols, m_valpha, m_uv1;
     bool m_has_vcol;
     bool m_has_valpha;
+    bool m_has_uv1;
     bool m_done = false;
 };
 
@@ -155,11 +159,11 @@ inline void decode_textures(
                 f = remap[static_cast<size_t>(f)];
             }
         };
-        fix(m.diffuse_tex);
-        fix(m.specular_tex);
-        fix(m.normal_tex);
-        fix(m.metallic_roughness_tex);
-        fix(m.emissive_tex);
-        fix(m.occlusion_tex);
+        fix(m.diffuse_map.tex);
+        fix(m.specular_map.tex);
+        fix(m.normal_map.tex);
+        fix(m.mr_map.tex);
+        fix(m.emissive_map.tex);
+        fix(m.occlusion_map.tex);
     }
 }

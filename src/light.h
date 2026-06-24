@@ -3,6 +3,7 @@
 #include "linalg.h"
 
 #include <cmath>
+#include <cstdint>
 
 // ndh^shininess given ndh² as input — lets the caller skip a sqrt in the
 // half-vector normalize. For the squaring-chain cases (32/16/8) ndh^N = (ndh²)^(N/2),
@@ -38,8 +39,58 @@ inline float roughness_to_shininess(float roughness) noexcept
     return ((1.0f - roughness) * 126.0f) + 2.0f;
 }
 
+// One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it
+// samples (glTF textureInfo.texCoord: 0 = TEXCOORD_0, 1 = TEXCOORD_1), and an optional
+// KHR_texture_transform. uv_set is always 0 for non-glTF loaders and is clamped to {0,1}
+// at load (a reference to an absent set degrades to 0 — see mesh_gltf.cpp).
+//
+// has_transform/t[] carry KHR_texture_transform. t is a 2x3 affine applied to the
+// interpolated UV before sampling: feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5.
+// The glTF spec defines the transform on v-down UVs, but we store UVs v-flipped (and sample
+// re-flips), so the loader bakes the v-flip in — net effect is the spec transform with its
+// ROTATION NEGATED (the flipY convention; see bake_transform in mesh_gltf.cpp for the full
+// derivation). Identity by default; callers gate the per-pixel apply on has_transform.
+struct TexSlot
+{
+    int tex = -1;
+    uint8_t uv_set = 0;
+    bool has_transform = false;
+    float t[6] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
+};
+
+// Apply a TexSlot's baked KHR_texture_transform affine to an interpolated UV. Identity
+// when the slot has no transform, but callers gate on has_transform to skip it entirely.
+inline vec2 apply_tex_transform(const TexSlot &s, vec2 uv) noexcept
+{
+    return { (s.t[0] * uv.x) + (s.t[1] * uv.y) + s.t[2], (s.t[3] * uv.x) + (s.t[4] * uv.y) + s.t[5] };
+}
+
+// Two slots address the texture identically — same UV set and same KHR_texture_transform — so a
+// sample taken for one can be reused for the other. Used by the ORM fast path: the texture cache
+// dedups by image only (not texCoord/transform), so two bindings sharing a Texture* may still
+// differ in either. The baked t[] is bit-identical for equal authored transforms (same arithmetic
+// on the same inputs), so exact comparison is correct here.
+inline bool same_uv_mapping(const TexSlot &a, const TexSlot &b) noexcept
+{
+    if (a.uv_set != b.uv_set || a.has_transform != b.has_transform)
+    {
+        return false;
+    }
+    if (a.has_transform)
+    {
+        for (int i = 0; i < 6; i++)
+        {
+            if (a.t[i] != b.t[i])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
-// NOTE: when adding a new *_tex field, also update the remap loop in
+// NOTE: when adding a new *_map TexSlot, also update the remap loop in
 // decode_textures() (mesh_loader.h) — it enumerates each one explicitly.
 struct Material
 {
@@ -48,15 +99,15 @@ struct Material
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
     // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
-    // Modulated by emissive_tex when present. A zero factor skips the per-pixel add and the
-    // emissive_tex sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0). For
+    // Modulated by emissive_map when present. A zero factor skips the per-pixel add and the
+    // emissive_map sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0). For
     // glTF, mesh_gltf bakes KHR_materials_emissive_strength into this factor at load.
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
-    // Texture slot indices into Mesh::textures (-1 = none).
-    int diffuse_tex = -1;
-    int specular_tex = -1;
-    int normal_tex = -1;
-    int emissive_tex = -1;
+    // Texture bindings (slot index into Mesh::textures + per-slot UV set; -1 tex = none).
+    TexSlot diffuse_map;
+    TexSlot specular_map;
+    TexSlot normal_map;
+    TexSlot emissive_map;
     // glTF normalTexture.scale: scales the X/Y components of the sampled tangent-space normal
     // before TBN transformation (spec: scaledNormal = normalize((sample*2-1) * vec3(scale,scale,1))).
     // Default 1.0 = no-op; non-glTF loaders never touch this. Mesh::has_normal_scale gates the
@@ -66,12 +117,12 @@ struct Material
     // per-pixel metallic work — non-glTF loaders leave these untouched).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
-    int metallic_roughness_tex = -1; // index into Mesh::textures (G=roughness, B=metallic), or -1 if none
+    TexSlot mr_map;         // metallic-roughness (G=roughness, B=metallic)
     // glTF occlusionTexture (Phong path only). The R channel is authored ambient occlusion; it
     // REPLACES the baked per-vertex AO per-pixel (both target the same scale — multiplying would
     // double-darken). occlusion_strength is occlusionTexture.strength: ao = 1 + strength*(R-1).
     // Mesh::has_occlusion gates the per-pixel sample; non-glTF loaders leave these untouched.
-    int occlusion_tex = -1;
+    TexSlot occlusion_map;
     float occlusion_strength = 1.0f;
     bool double_sided = false;
     float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this

@@ -118,7 +118,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     const bool show_tex = m_show_texture;
     // Texture toggle gates only the emissive texture sample. The authored factor
     // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
-    // even when diffuse_tex is hidden by the toggle.
+    // even when diffuse_map is hidden by the toggle.
     const bool show_emissive = mesh->has_emissive && show_tex;
     // Phong-only locals: unused in the Flat/Gouraud instantiations (those branches compile out).
     [[maybe_unused]] const bool show_metallic = mesh->has_metallic && show_tex;
@@ -138,6 +138,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     const vec3 *p_tans = (M == ShadingMode::Phong) ? mesh->tangents.data() : nullptr;
     const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
     [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
+    const vec2 *p_uv1 = mesh->has_uv1 ? mesh->uv1.data() : nullptr;
 
     // Transparent: this worker's private fragment arena + the shared per-pixel head
     // array. clear() keeps capacity, acting as the per-frame high-water reserve so
@@ -211,7 +212,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                 }
 
                 const Material &mat = mesh->mat_at(tri.material_idx);
-                const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_tex) : nullptr;
+                const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_map.tex) : nullptr;
 
                 const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{ 0.0f, 0.0f, 0.0f };
                 const vec3 tb = p_tans ? p_tans[tri.v[1]] : vec3{ 0.0f, 0.0f, 0.0f };
@@ -219,9 +220,14 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                 const vec3 ca = p_vcols ? p_vcols[tri.v[0]] : vec3{ 1.0f, 1.0f, 1.0f };
                 const vec3 cb = p_vcols ? p_vcols[tri.v[1]] : vec3{ 1.0f, 1.0f, 1.0f };
                 const vec3 cc = p_vcols ? p_vcols[tri.v[2]] : vec3{ 1.0f, 1.0f, 1.0f };
-                ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca };
-                ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb };
-                ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc };
+                const vec2 u1a = p_uv1 ? p_uv1[tri.v[0]] : vec2{};
+                const vec2 u1b = p_uv1 ? p_uv1[tri.v[1]] : vec2{};
+                const vec2 u1c = p_uv1 ? p_uv1[tri.v[2]] : vec2{};
+                // uv1 is ClipVert's trailing field, so color_a (1.0f default) is spelled out to
+                // reach it positionally; the transparent path overwrites color_a just below.
+                ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, ta, va.uv, va.ao, ca, 1.0f, u1a };
+                ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, tb, vb.uv, vb.ao, cb, 1.0f, u1b };
+                ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, tc, vc.uv, vc.ao, cc, 1.0f, u1c };
                 if constexpr (S == Sink::Transparent)
                 {
                     if (p_valpha)
@@ -296,7 +302,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                             rasterize<Sink::Opaque>(
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
                                 b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
-                                vec3{ 0.0f, 0.0f, 0.0f }
+                                vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat
                             );
                         }
                         else
@@ -304,7 +310,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                             rasterize<Sink::Transparent>(
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
                                 b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
-                                vec3{ 0.0f, 0.0f, 0.0f }, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                                vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a,
+                                b.color_a, c.color_a
                             );
                         }
                     }
@@ -319,12 +326,12 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
                                 a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
-                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
-                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
-                                mat.occlusion_strength
+                                show_tex ? mesh->tex_at(mat.normal_map.tex) : nullptr,
+                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, shadow_map, 0, height - 1,
+                                show_metallic ? mesh->tex_at(mat.mr_map.tex) : nullptr,
+                                show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
+                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_map.tex) : nullptr,
+                                mat.occlusion_strength, a.uv1, b.uv1, c.uv1
                             );
                         }
                         else
@@ -333,12 +340,12 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, a.pos, b.pos, c.pos, a.normal, b.normal, c.normal,
                                 a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
-                                show_tex ? mesh->tex_at(mat.normal_tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_tex) : nullptr, shadow_map, 0, height - 1,
-                                show_metallic ? mesh->tex_at(mat.metallic_roughness_tex) : nullptr,
-                                show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr, mat.emissive,
-                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_tex) : nullptr,
-                                mat.occlusion_strength, &abuf, a.color_a, b.color_a, c.color_a
+                                show_tex ? mesh->tex_at(mat.normal_map.tex) : nullptr,
+                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, shadow_map, 0, height - 1,
+                                show_metallic ? mesh->tex_at(mat.mr_map.tex) : nullptr,
+                                show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
+                                apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_map.tex) : nullptr,
+                                mat.occlusion_strength, a.uv1, b.uv1, c.uv1, &abuf, a.color_a, b.color_a, c.color_a
                             );
                         }
                     }
@@ -464,8 +471,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                             rasterize<Sink::Opaque>(
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                mat.emissive
+                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr,
+                                mat.emissive, a.uv1, b.uv1, c.uv1, &mat
                             );
                         }
                         else
@@ -473,8 +480,9 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                             rasterize<Sink::Transparent>(
                                 *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
                                 a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_tex) : nullptr,
-                                mat.emissive, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr,
+                                mat.emissive, a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a,
+                                c.color_a
                             );
                         }
                     }
