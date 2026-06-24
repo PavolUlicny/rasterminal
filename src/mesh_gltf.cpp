@@ -352,16 +352,24 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // after the walk with whether any primitive actually provided TEXCOORD_1 to set Mesh::has_uv1.
     bool any_uv1_referenced = false;
 
-    // Bake KHR_texture_transform into a slot's 2x3 affine. The spec composes
-    // T = translate · rotate · scale on v-down glTF UVs. We store UVs v-flipped (uv.y =
-    // 1 - v_gltf) and Texture::sample re-flips, so applying T directly would mirror the
-    // rotation and invert the v-offset. Fold flip∘T∘flip into one affine acting on stored
-    // UVs (c=cos, s=sin, sx/sy=scale, ox/oy=offset); see TexSlot in light.h. Animated
-    // transforms are not handled — this bakes the static authored values once at load.
+    // Bake KHR_texture_transform into a slot's 2x3 affine. The spec composes T = translate ·
+    // rotate · scale on v-down glTF UVs, but we store UVs v-flipped (uv.y = 1 - v_gltf) and the
+    // sampler re-flips. Working that full round trip through (feed = A · (u, 1 - v_g), then sample's
+    // v = 1 - feed.y) shows the texel actually read sits at the v-down coordinate Tr · R(-θ) · S · g
+    // — i.e. the spec transform with the ROTATION ANGLE NEGATED (only the sin terms flip; cos,
+    // offset and axis-aligned scale are unchanged). That -θ is the standard flipY compensation
+    // every glTF reference renderer makes for a v-flipped texture (three.js, Babylon, Filament).
+    // The naive +θ points the Khronos TextureTransformTest arrow at its dedicated red "opposite
+    // direction" marker — the asset's purpose-built diagnostic for exactly this sign slip, which
+    // our first cut hit. So sin is negated below (s = -sin); the rest of the coefficients carry the
+    // v-flip fold for the offset. Verified end-to-end against that reference render (see the
+    // matches_gltf_spec_sampling and rotation_handedness_end_to_end tests). Acts on stored UVs
+    // (c=cos, s=-sin, sx/sy=scale, ox/oy=offset); see TexSlot in light.h. Animated transforms are
+    // not handled — static authored values baked once at load.
     auto bake_transform = [](TexSlot &slot, const cgltf_texture_transform &tr)
     {
         const float c = std::cos(tr.rotation);
-        const float s = std::sin(tr.rotation);
+        const float s = -std::sin(tr.rotation);
         const float sx = tr.scale[0];
         const float sy = tr.scale[1];
         const float ox = tr.offset[0];
