@@ -164,3 +164,14 @@ struct Texture
         return top * (1.0f - ty) + bottom * ty;
     }
 };
+
+// True if every texel is achromatic (R==G==B). Early-outs on the first chromatic texel,
+// so an RGB normal map mislabeled into map_Bump costs ~O(1); a real grayscale height map
+// pays one full scan (then gets converted, which dwarfs the scan). An empty texture → false.
+[[nodiscard]] bool is_grayscale(const Texture &t);
+
+// Convert an MTL bump/height map to the tangent-space normal map the TBN rasterizer path
+// consumes. `imfchan` (-imfchan, default 'l' = luminance) selects the scalar height channel;
+// `bm` (-bm, default 1.0) scales the gradient. Honours the source texture's wrap modes at
+// the central-difference edges. Used for OBJ map_Bump/bump; see mesh_obj.cpp.
+[[nodiscard]] Texture height_to_normal_map(const Texture &src, char imfchan, float bm);

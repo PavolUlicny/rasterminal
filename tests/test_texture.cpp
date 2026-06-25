@@ -570,3 +570,221 @@ TEST(texture, uv_wraps_very_large_negative_rgba)
     ASSERT_NEAR(a.z, b.z, 1e-4f);
     ASSERT_NEAR(a.w, b.w, 1e-4f);
 }
+
+// ─── is_grayscale (bump/normal classification) ───────────────────────────────
+
+TEST(texture_bump, is_grayscale_true_for_achromatic)
+{
+    Texture t = make_tex(2, 2, { 10, 10, 10, 255, 80, 80, 80, 255, 200, 200, 200, 255, 255, 255, 255, 255 });
+    ASSERT_TRUE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_false_for_chromatic)
+{
+    // One texel with R != G ⇒ not grayscale (this is the early-out texel).
+    Texture t = make_tex(2, 1, { 50, 50, 50, 255, 10, 20, 30, 255 });
+    ASSERT_FALSE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_false_for_empty)
+{
+    Texture t;
+    ASSERT_FALSE(is_grayscale(t));
+}
+
+// ─── height_to_normal_map ────────────────────────────────────────────────────
+
+TEST(texture_bump, height_to_normal_flat_is_plus_z)
+{
+    // Constant height ⇒ zero gradient ⇒ tangent-space normal (0,0,1) ⇒ encoded (128,128,255).
+    Texture src = make_tex(2, 2, { 128, 128, 128, 255, 128, 128, 128, 255, 128, 128, 128, 255, 128, 128, 128, 255 });
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_EQ(n.width, 2);
+    ASSERT_EQ(n.height, 2);
+    for (size_t i = 0; i + 4 <= n.pixels.size(); i += 4)
+    {
+        ASSERT_EQ(n.pixels[i + 0], uint8_t{ 128 });
+        ASSERT_EQ(n.pixels[i + 1], uint8_t{ 128 });
+        ASSERT_EQ(n.pixels[i + 2], uint8_t{ 255 });
+        ASSERT_EQ(n.pixels[i + 3], uint8_t{ 255 });
+    }
+}
+
+TEST(texture_bump, height_to_normal_u_ramp_tilts_negative_x)
+{
+    // Height rises along +u; the heightfield normal tilts toward -u (n.x<0 ⇒ R<128).
+    // No v variation (height 1) ⇒ n.y==0 ⇒ G==128; z stays dominant ⇒ B>128.
+    Texture src = make_tex(3, 1, { 0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255 });
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_TRUE(n.pixels[4 + 0] < 128); // center texel (x=1): tilted toward -x
+    ASSERT_EQ(n.pixels[4 + 1], uint8_t{ 128 });
+    ASSERT_TRUE(n.pixels[4 + 2] > 128);
+}
+
+TEST(texture_bump, height_to_normal_bm_scales_tilt)
+{
+    // A larger bump multiplier steepens the gradient ⇒ R pushed further below 128.
+    Texture src = make_tex(3, 1, { 0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255 });
+    Texture n1 = height_to_normal_map(src, 'l', 1.0f);
+    Texture n4 = height_to_normal_map(src, 'l', 4.0f);
+    ASSERT_TRUE(n4.pixels[4] < n1.pixels[4]);
+}
+
+TEST(texture_bump, height_to_normal_imfchan_selects_channel)
+{
+    // R ramps, G constant. -imfchan r reads the ramp (tilt); -imfchan g reads the flat (no tilt).
+    Texture src = make_tex(3, 1, { 0, 100, 0, 255, 128, 100, 0, 255, 255, 100, 0, 255 });
+    Texture rr = height_to_normal_map(src, 'r', 1.0f);
+    Texture gg = height_to_normal_map(src, 'g', 1.0f);
+    ASSERT_TRUE(rr.pixels[4] < 128);
+    ASSERT_EQ(gg.pixels[4], uint8_t{ 128 });
+}
+
+TEST(texture_bump, height_to_normal_preserves_wrap_modes)
+{
+    Texture src = make_tex(2, 2, { 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255 });
+    src.wrap_s = WrapMode::Clamp;
+    src.wrap_t = WrapMode::Mirror;
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_TRUE(n.wrap_s == WrapMode::Clamp);
+    ASSERT_TRUE(n.wrap_t == WrapMode::Mirror);
+}
+
+// ─── is_grayscale edge cases ──────────────────────────────────────────────────
+
+TEST(texture_bump, is_grayscale_ignores_alpha)
+{
+    // Classification is on RGB only; varying alpha over equal RGB is still grayscale (a height
+    // map with an alpha channel must not be misread as a chromatic normal map).
+    Texture t = make_tex(2, 1, { 60, 60, 60, 10, 60, 60, 60, 250 });
+    ASSERT_TRUE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_detects_chromatic_last_texel)
+{
+    // The early-out must not false-negate: a chromatic texel at the very end still returns false.
+    Texture t = make_tex(3, 1, { 40, 40, 40, 255, 90, 90, 90, 255, 90, 90, 10, 255 });
+    ASSERT_FALSE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_true_1x1)
+{
+    Texture t = make_tex(1, 1, { 77, 77, 77, 255 });
+    ASSERT_TRUE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_tolerates_small_chroma)
+{
+    // A grayscale height map saved lossily (JPEG) nudges channels apart by a few levels; within
+    // the tolerance it is still recognised as grayscale.
+    Texture t = make_tex(2, 1, { 100, 103, 98, 255, 50, 50, 54, 255 });
+    ASSERT_TRUE(is_grayscale(t));
+}
+
+TEST(texture_bump, is_grayscale_rejects_beyond_tolerance)
+{
+    // A channel spread well above the tolerance is chromatic (a real normal map's spread is far
+    // larger still).
+    Texture t = make_tex(1, 1, { 100, 100, 120, 255 });
+    ASSERT_FALSE(is_grayscale(t));
+}
+
+// ─── height_to_normal_map edge cases ─────────────────────────────────────────
+
+TEST(texture_bump, height_to_normal_v_ramp_tilts_positive_y)
+{
+    // Height rises along +v (down the image rows) ⇒ the heightfield normal's y-component is
+    // positive (green > 128). Locks the dy_sign / green-channel axis. No u variation ⇒ R==128.
+    Texture src = make_tex(1, 3, { 0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255 });
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_EQ(n.pixels[4 + 0], uint8_t{ 128 }); // center texel (y=1)
+    ASSERT_TRUE(n.pixels[4 + 1] > 128);
+    ASSERT_TRUE(n.pixels[4 + 2] > 128);
+}
+
+TEST(texture_bump, height_to_normal_z_channel_always_ge_128)
+{
+    // n.z = 1 before normalization ⇒ always positive ⇒ encoded blue ≥ 128 everywhere, even
+    // across a steep full-range step at a high bump multiplier.
+    Texture src = make_tex(4, 1, { 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255 });
+    Texture n = height_to_normal_map(src, 'l', 4.0f);
+    for (size_t i = 0; i + 4 <= n.pixels.size(); i += 4)
+    {
+        ASSERT_TRUE(n.pixels[i + 2] >= 128);
+    }
+}
+
+TEST(texture_bump, height_to_normal_clamps_huge_bm)
+{
+    // A hostile finite-but-absurd -bm must be bounded so the gradient can't overflow to inf and
+    // collapse normalize() to NaN: it yields the same result as the clamp ceiling, not garbage.
+    Texture src = make_tex(3, 1, { 0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255 });
+    Texture huge = height_to_normal_map(src, 'l', 1e38f);
+    Texture cap = height_to_normal_map(src, 'l', 1e6f);
+    ASSERT_EQ(huge.pixels[4 + 0], cap.pixels[4 + 0]);
+    ASSERT_EQ(huge.pixels[4 + 1], cap.pixels[4 + 1]);
+    ASSERT_TRUE(huge.pixels[4 + 2] >= 128); // blue stays valid (no NaN collapse)
+}
+
+TEST(texture_bump, height_to_normal_bm_zero_is_flat)
+{
+    // bm scales the gradient; bm=0 ⇒ no relief ⇒ flat (128,128,255) regardless of height.
+    Texture src = make_tex(3, 1, { 0, 0, 0, 255, 200, 200, 200, 255, 255, 255, 255, 255 });
+    Texture n = height_to_normal_map(src, 'l', 0.0f);
+    ASSERT_EQ(n.pixels[4 + 0], uint8_t{ 128 });
+    ASSERT_EQ(n.pixels[4 + 1], uint8_t{ 128 });
+    ASSERT_EQ(n.pixels[4 + 2], uint8_t{ 255 });
+}
+
+TEST(texture_bump, height_to_normal_preserves_dimensions)
+{
+    constexpr int dw = 4;
+    constexpr int dh = 2;
+    const size_t bytes = static_cast<size_t>(dw) * static_cast<size_t>(dh) * 4;
+    Texture src = make_tex(dw, dh, std::vector<uint8_t>(bytes, 100));
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_EQ(n.width, dw);
+    ASSERT_EQ(n.height, dh);
+    ASSERT_EQ(n.pixels.size(), bytes);
+}
+
+TEST(texture_bump, height_to_normal_1x1_is_flat_no_crash)
+{
+    // Degenerate single texel: wrap_index folds every neighbour to the one texel ⇒ zero
+    // gradient ⇒ flat normal, no out-of-bounds read.
+    Texture src = make_tex(1, 1, { 200, 200, 200, 255 });
+    Texture n = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_EQ(n.width, 1);
+    ASSERT_EQ(n.height, 1);
+    ASSERT_EQ(n.pixels[0], uint8_t{ 128 });
+    ASSERT_EQ(n.pixels[1], uint8_t{ 128 });
+    ASSERT_EQ(n.pixels[2], uint8_t{ 255 });
+}
+
+TEST(texture_bump, height_to_normal_imfchan_alpha)
+{
+    // -imfchan m reads the alpha channel; with constant RGB, 'l' (luminance) would be flat.
+    Texture src = make_tex(3, 1, { 100, 100, 100, 0, 100, 100, 100, 128, 100, 100, 100, 255 });
+    Texture mm = height_to_normal_map(src, 'm', 1.0f);
+    Texture ll = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_TRUE(mm.pixels[4] < 128);         // alpha ramp ⇒ tilt
+    ASSERT_EQ(ll.pixels[4], uint8_t{ 128 }); // constant luminance ⇒ flat
+}
+
+TEST(texture_bump, height_to_normal_imfchan_blue_and_z_alias)
+{
+    // -imfchan b reads blue; z (depth) aliases the blue channel per the MTL convention.
+    Texture src = make_tex(3, 1, { 50, 50, 0, 255, 50, 50, 128, 255, 50, 50, 255, 255 });
+    Texture b = height_to_normal_map(src, 'b', 1.0f);
+    Texture z = height_to_normal_map(src, 'z', 1.0f);
+    ASSERT_TRUE(b.pixels[4] < 128);
+    ASSERT_EQ(b.pixels[4], z.pixels[4]);
+}
+
+TEST(texture_bump, height_to_normal_unknown_imfchan_defaults_to_luminance)
+{
+    Texture src = make_tex(3, 1, { 0, 0, 0, 255, 128, 128, 128, 255, 255, 255, 255, 255 });
+    Texture x = height_to_normal_map(src, 'x', 1.0f);
+    Texture l = height_to_normal_map(src, 'l', 1.0f);
+    ASSERT_EQ(x.pixels[4], l.pixels[4]); // unknown char falls through to the luminance branch
+}
