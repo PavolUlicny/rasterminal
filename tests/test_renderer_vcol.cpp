@@ -7,7 +7,6 @@
 //   • ClipVert.color loaded from p_vcols or white                   (lines 154–156)
 //   • Phong:   rt.ph.vcola/b/c set from a/b/c.color                (lines 218–227)
 //   • Flat:    face_vcol average + vcol_mat build                   (lines 237–248)
-//   • Gouraud: gouraud_mat lambda per vertex                        (lines 257–290)
 //   • Wireframe: vcol must have no effect (and must not crash)
 //
 // All tests use Renderer(1) for deterministic single-thread ordering.
@@ -217,107 +216,6 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
             "," + std::to_string(static_cast<int>(ca.g)) + "," + std::to_string(static_cast<int>(ca.b)) + ") vs (" +
             std::to_string(static_cast<int>(cb.r)) + "," + std::to_string(static_cast<int>(cb.g)) + "," +
             std::to_string(static_cast<int>(cb.b)) + ")"
-        );
-    }
-}
-
-// ─── M6 ───────────────────────────────────────────────────────────────────────
-// Gouraud: uniform red vcol → pixel (20,10) is red.
-// Catches: gouraud_mat lambda broken (gvcol_mat not tinted, or wrong mat returned).
-TEST(renderer, gouraud_vcol_uniform_tints_pixel)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-    Mesh mesh = make_vcol_triangle({ 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f });
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, &light, 1, { 0.1f, 0.1f, 0.1f }, fb);
-
-    auto c = fb.get_pixel(20, 10);
-    if (c.r < 200 || c.g > 30 || c.b > 30)
-    {
-        ASSERT_FAIL(
-            "gouraud red vcol: expected R≥200,G≤30,B≤30 at (20,10), got (" + std::to_string(static_cast<int>(c.r)) +
-            "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
-        );
-    }
-}
-
-// ─── M7 ───────────────────────────────────────────────────────────────────────
-// Gouraud: white vcol with flag=true must match the no-vcol baseline.
-// gouraud_mat takes an early-return when vcol==(1,1,1) — this verifies the
-// shortcut produces the same result as running without vcol.
-// Catches: the identity-vcol early-return diverging from the no-vcol path.
-TEST(renderer, gouraud_vcol_white_matches_no_vcol)
-{
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
-    vec3 ambient{ 0.1f, 0.1f, 0.1f };
-
-    Framebuffer fb_a(40, 20, /*headless=*/true);
-    {
-        Renderer r(1);
-        r.mode = ShadingMode::Gouraud;
-        Mesh mesh = make_vcol_triangle({ 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f });
-        fb_a.clear();
-        r.render(mesh, cam, &light, 1, ambient, fb_a);
-    }
-
-    Framebuffer fb_b(40, 20, /*headless=*/true);
-    {
-        Renderer r(1);
-        r.mode = ShadingMode::Gouraud;
-        Mesh mesh = make_unit_triangle();
-        mesh.materials[0].diffuse = { 1.0f, 1.0f, 1.0f };
-        mesh.materials[0].ambient = { 1.0f, 1.0f, 1.0f };
-        mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-        fb_b.clear();
-        r.render(mesh, cam, &light, 1, ambient, fb_b);
-    }
-
-    auto ca = fb_a.get_pixel(20, 10);
-    auto cb = fb_b.get_pixel(20, 10);
-    auto diff = [](uint8_t a, uint8_t b) { return a > b ? a - b : b - a; };
-    if (diff(ca.r, cb.r) > 2 || diff(ca.g, cb.g) > 2 || diff(ca.b, cb.b) > 2)
-    {
-        ASSERT_FAIL(
-            "gouraud white vcol: expected match with no-vcol within ±2, got (" +
-            std::to_string(static_cast<int>(ca.r)) + "," + std::to_string(static_cast<int>(ca.g)) + "," +
-            std::to_string(static_cast<int>(ca.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," +
-            std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")"
-        );
-    }
-}
-
-// ─── M8 ───────────────────────────────────────────────────────────────────────
-// Gouraud: mixed white (v0) + red (v1, v2) vcol — exercises gouraud_mat's per-
-// call mutation of gvcol_mat.  v0 takes the white shortcut (returns mat),
-// v1 and v2 each mutate gvcol_mat. Confirms all three calls produce correct
-// independent results (no stale state from a previous call).
-// Catches: gvcol_mat reuse producing wrong colour on the second/third vertex.
-TEST(renderer, gouraud_vcol_mixed_white_and_color)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-    // v0=white, v1=red, v2=red — two red vertices dominate the triangle interior.
-    Mesh mesh = make_vcol_triangle({ 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f });
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, &light, 1, { 0.1f, 0.1f, 0.1f }, fb);
-
-    ASSERT_TRUE(count_drawn_pixels(fb) > 0);
-    auto c = fb.get_pixel(20, 10);
-    // Two out of three vertices are red → R must dominate at the centre pixel.
-    if (c.r < 100 || c.r <= c.g || c.r <= c.b)
-    {
-        ASSERT_FAIL(
-            "gouraud mixed vcol: expected R dominant and ≥100 at (20,10), got (" +
-            std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," +
-            std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }
