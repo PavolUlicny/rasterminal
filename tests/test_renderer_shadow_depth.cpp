@@ -155,42 +155,6 @@ TEST(renderer, flat_shadow_map_darkens_occluded_pixel)
     }
 }
 
-// K3: Gouraud — same check, per-vertex shad_* path.
-TEST(renderer, gouraud_shadow_map_darkens_occluded_pixel)
-{
-    Mesh receiver = make_receiver_only();
-    Camera cam = make_test_camera();
-    Light light = make_diagonal_key_light();
-    vec3 ambient{ 0.1f, 0.0f, 0.0f };
-
-    Renderer r;
-    r.mode = ShadingMode::Gouraud;
-
-    Framebuffer fb_lit(40, 20, /*headless=*/true);
-    fb_lit.clear();
-    r.render(receiver, cam, &light, 1, ambient, fb_lit);
-    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
-    Color c_lit = fb_lit.get_pixel(20, 10);
-    if (c_lit.r < 150)
-    {
-        ASSERT_FAIL("Gouraud lit baseline R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
-    }
-
-    ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
-    Framebuffer fb_shadow(40, 20, /*headless=*/true);
-    fb_shadow.clear();
-    r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
-    ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
-    Color c_shadow = fb_shadow.get_pixel(20, 10);
-    if (c_shadow.r > 60)
-    {
-        ASSERT_FAIL(
-            "Gouraud shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) +
-            ") — shadow_map not applied"
-        );
-    }
-}
-
 // K4: Shadow map built from receiver alone — slope bias must prevent self-shadow.
 TEST(renderer, shadow_map_no_occluder_no_false_darkening)
 {
@@ -292,9 +256,9 @@ static Mesh make_vcol_receiver(vec3 color = { 1.0f, 0.0f, 0.0f })
     return m;
 }
 
-// K7: Gouraud + two lights — covers the Flat/Gouraud shadow_lights split
+// K7: Flat + two lights — covers the Flat shadow_lights split
 // (renderer.cpp:108-109), which is a separate code path from Phong's.
-TEST(renderer, gouraud_multi_light_only_key_shadowed)
+TEST(renderer, flat_multi_light_only_key_shadowed)
 {
     Mesh receiver = make_receiver_only();
     Camera cam = make_test_camera();
@@ -306,7 +270,7 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
     ShadowMap sm = build_shadow_map(make_shadow_scene(), lights[0]);
 
     Renderer r;
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Flat;
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(receiver, cam, lights, 2, ambient, fb, &sm);
@@ -315,13 +279,11 @@ TEST(renderer, gouraud_multi_light_only_key_shadowed)
     Color c = fb.get_pixel(20, 10);
     if (c.r > 60)
     {
-        ASSERT_FAIL("Gouraud multi-light: key (red) not shadowed, R=" + std::to_string(static_cast<int>(c.r)));
+        ASSERT_FAIL("Flat multi-light: key (red) not shadowed, R=" + std::to_string(static_cast<int>(c.r)));
     }
     if (c.g < 150)
     {
-        ASSERT_FAIL(
-            "Gouraud multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g))
-        );
+        ASSERT_FAIL("Flat multi-light: fill (green) incorrectly shadowed, G=" + std::to_string(static_cast<int>(c.g)));
     }
 }
 
@@ -451,54 +413,6 @@ TEST(renderer, phong_depth_order_independent)
     }
 }
 
-// L2: Gouraud — same assertions.
-TEST(renderer, gouraud_depth_order_independent)
-{
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
-    vec3 ambient{ 0.05f, 0.05f, 0.05f };
-
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-
-    Framebuffer fb_cf(40, 20, /*headless=*/true), fb_ff(40, 20, /*headless=*/true);
-    fb_cf.clear();
-    fb_ff.clear();
-
-    Mesh m_cf = make_two_z_triangles(true);
-    Mesh m_ff = make_two_z_triangles(false);
-
-    r.render(m_cf, cam, &light, 1, ambient, fb_cf);
-    r.render(m_ff, cam, &light, 1, ambient, fb_ff);
-
-    ASSERT_TRUE(was_drawn(fb_cf, 20, 10));
-    ASSERT_TRUE(was_drawn(fb_ff, 20, 10));
-
-    Color c_cf = fb_cf.get_pixel(20, 10);
-    Color c_ff = fb_ff.get_pixel(20, 10);
-
-    if (c_cf.r < 200)
-    {
-        ASSERT_FAIL("Gouraud closer-first: red not dominant, R=" + std::to_string(static_cast<int>(c_cf.r)));
-    }
-    if (c_cf.b > 30)
-    {
-        ASSERT_FAIL("Gouraud closer-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_cf.b)));
-    }
-    if (c_ff.r < 200)
-    {
-        ASSERT_FAIL("Gouraud farther-first: red not dominant, R=" + std::to_string(static_cast<int>(c_ff.r)));
-    }
-    if (c_ff.b > 30)
-    {
-        ASSERT_FAIL("Gouraud farther-first: blue leaked through, B=" + std::to_string(static_cast<int>(c_ff.b)));
-    }
-    if (c_cf.r != c_ff.r || c_cf.g != c_ff.g || c_cf.b != c_ff.b)
-    {
-        ASSERT_FAIL("Gouraud depth result differs between submission orders");
-    }
-}
-
 // L3: Flat — same assertions.
 TEST(renderer, flat_depth_order_independent)
 {
@@ -572,10 +486,10 @@ TEST(renderer, depth_value_matches_closer_triangle)
     assert_depth_near(fb, 20, 10, 0.952f, 0.005f);
 }
 
-// ─── K8/K9: Flat + Gouraud + shadow + vertex colors ──────────────────────────
+// ─── K8: Flat + shadow + vertex colors ───────────────────────────────────────
 // Exercises the combined path where both has_vertex_colors and a shadow_map are
-// active simultaneously — the flat_mat/gouraud_mat vcol tint is applied to
-// the shad_* precomputed colours as well as col_*.
+// active simultaneously — the flat_mat vcol tint is applied to the shad_*
+// precomputed colours as well as col_*.
 //
 // Red vcol receiver, diagonal key light, ambient (0.1,0,0):
 //   flat_mat.diffuse = (1,1,1)*(1,0,0) = (1,0,0)
@@ -613,38 +527,5 @@ TEST(renderer, flat_shadow_vcol_darkens_occluded_pixel)
     if (c_shadow.r > 60)
     {
         ASSERT_FAIL("Flat+vcol shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ")");
-    }
-}
-
-// K9: Gouraud shading — exercises shad_a/b/c via gouraud_mat lambda.
-TEST(renderer, gouraud_shadow_vcol_darkens_occluded_pixel)
-{
-    Mesh receiver = make_vcol_receiver();
-    Camera cam = make_test_camera();
-    Light light = make_diagonal_key_light();
-    vec3 ambient{ 0.1f, 0.0f, 0.0f };
-
-    Renderer r;
-    r.mode = ShadingMode::Gouraud;
-
-    Framebuffer fb_lit(40, 20, /*headless=*/true);
-    fb_lit.clear();
-    r.render(receiver, cam, &light, 1, ambient, fb_lit);
-    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
-    Color c_lit = fb_lit.get_pixel(20, 10);
-    if (c_lit.r < 150)
-    {
-        ASSERT_FAIL("Gouraud+vcol lit R too low (" + std::to_string(static_cast<int>(c_lit.r)) + ")");
-    }
-
-    ShadowMap sm = build_shadow_map(make_shadow_scene(), light);
-    Framebuffer fb_shadow(40, 20, /*headless=*/true);
-    fb_shadow.clear();
-    r.render(receiver, cam, &light, 1, ambient, fb_shadow, &sm);
-    ASSERT_TRUE(was_drawn(fb_shadow, 20, 10));
-    Color c_shadow = fb_shadow.get_pixel(20, 10);
-    if (c_shadow.r > 60)
-    {
-        ASSERT_FAIL("Gouraud+vcol shadowed R too high (" + std::to_string(static_cast<int>(c_shadow.r)) + ")");
     }
 }

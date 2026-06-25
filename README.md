@@ -38,7 +38,7 @@ curl -fsSL -o Duck.glb \
 ./rasterminal Duck.glb
 ```
 
-Drag with the mouse to orbit, scroll to zoom, press `Space` to spin, `1`–`4` to switch shading modes, `Q` to quit.
+Drag with the mouse to orbit, scroll to zoom, press `Space` to spin, `1`–`3` to switch shading modes, `Q` to quit.
 
 Want something denser? The Stanford bunny is a good stress test:
 
@@ -52,13 +52,9 @@ More test assets live in the [Khronos glTF Sample Assets](https://github.com/Khr
 
 ## Gallery
 
-| Wireframe | Flat |
-| --- | --- |
-| ![wireframe shading](assets/shading-wireframe.png) | ![flat shading](assets/shading-flat.png) |
-
-| Gouraud | Phong |
-| --- | --- |
-| ![gouraud shading](assets/shading-gouraud.png) | ![phong shading](assets/shading-phong.png) |
+| Wireframe | Flat | Phong |
+| --- | --- | --- |
+| ![wireframe shading](assets/shading-wireframe.png) | ![flat shading](assets/shading-flat.png) | ![phong shading](assets/shading-phong.png) |
 
 ## How it works
 
@@ -69,7 +65,7 @@ Every frame, for every triangle, rasterminal runs the same pipeline a GPU would 
 3. **Clip** — triangles crossing the near plane are split so nothing renders behind the camera; the rest are conservatively frustum-rejected.
 4. **Rasterize** — after the perspective divide, triangles are scan-converted with perspective-correct interpolation of colour, UVs, world position, and normals.
 5. **Depth test** — a z-buffer keeps the nearest fragment per pixel.
-6. **Shade** — Blinn-Phong lighting (flat per-face, Gouraud per-vertex, or Phong per-pixel), modulated by texture sampling, baked ambient occlusion, and a hard shadow map built from the key light.
+6. **Shade** — Blinn-Phong lighting (flat per-face or Phong per-pixel), modulated by texture sampling, baked ambient occlusion, and a hard shadow map built from the key light.
 7. **Blend** — transparent surfaces (glTF `BLEND`, MTL `d`/`Tr`, per-vertex alpha) are accumulated into a per-pixel fragment list, then composited back-to-front over the opaque image — exact ordering, even for interpenetrating and double-sided geometry. Fully opaque models skip this entirely.
 8. **Output** — each pair of vertically stacked pixels becomes one terminal cell: a `▀` glyph whose foreground is the top pixel and background is the bottom, in 24-bit colour.
 
@@ -146,7 +142,7 @@ rasterminal [options] <model>
 
 | Flag | Short | Default | Description |
 | --- | --- | --- | --- |
-| `--shading` | `-s` | `gouraud` | `wireframe`/`1`, `flat`/`2`, `gouraud`/`3`, `phong`/`4` |
+| `--shading` | `-s` | `phong` | `wireframe`/`1`, `flat`/`2`, `phong`/`3` |
 | `--bg` | `-b` | `black` | `black`/`1`, `gray`/`2`, `white`/`3` |
 | `--lighting` | `-l` | `dual` | `dual`/`1`, `single`/`2`, `flat`/`3` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
@@ -174,7 +170,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | `+` / `-` | Zoom in / out |
 | Left-button drag | Orbit camera |
 | Scroll wheel | Zoom |
-| `1` `2` `3` `4` | Wireframe / flat / Gouraud / Phong shading |
+| `1` `2` `3` | Wireframe / flat / Phong shading |
 | `L` | Cycle lighting (dual → single → flat) |
 | `B` | Cycle background (black → gray → white) |
 | `C` | Cycle wireframe colour |

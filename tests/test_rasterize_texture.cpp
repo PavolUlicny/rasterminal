@@ -21,7 +21,7 @@ static Texture make_tex_rgba(int w, int h, std::initializer_list<int> rgba)
     return t;
 }
 
-// rasterize() with explicit w, UVs, optional texture; shad == col (no shadow needed).
+// rasterize_flat() with explicit w, UVs, optional texture; shad == col (no shadow needed).
 static void rast_tex(
     Framebuffer &fb,
     vec3 sa,
@@ -42,9 +42,8 @@ static void rast_tex(
 )
 {
     vec3 zero{};
-    rasterize(
-        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, ca, cb, cc, zero, zero, zero, uva, uvb, uvc, tex, 0.0f, nullptr, y_min,
-        y_max
+    rasterize_flat(
+        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, zero, zero, zero, zero, uva, uvb, uvc, tex, 0.0f, nullptr, y_min, y_max
     );
 }
 
@@ -56,7 +55,7 @@ static void rast_tex(
 //   Pixel (12,10): ba=0.46875, bb=0,       bc=0.53125
 //   Pixel (20,10): ba=0.21875, bb=0.25,    bc=0.53125
 
-// ── Group A: diffuse texture in rasterize() ───────────────────────────────────
+// ── Group A: diffuse texture in rasterize_flat() ───────────────────────────────────
 
 // A1: 1×1 red texture × white vertex colour → red pixel.
 // Catches: texture multiply silently dropped.
@@ -227,7 +226,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
 
 // B2: Same 2×1 red/blue + unequal-w setup as A3, but in the Phong path.
 // At pixel (12,10): UV.x≈0.835 → blue-biased result.
-// Catches: Phong UV interpolation diverges from the Gouraud path (separate code).
+// Catches: Phong UV interpolation diverges from the rasterize_flat() path (separate code).
 TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -931,7 +930,7 @@ TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
 // ── Group T1: per-slot UV set selection (TEXCOORD_1) ──────────────────────────
 //
 // 2×1 texture (left red, right blue). uv0 samples the red half, uv1 the blue half.
-// rasterize() reads the diffuse binding's uv_set from the Material*, so flipping
+// rasterize_flat() reads the diffuse binding's uv_set from the Material*, so flipping
 // mat.diffuse_map.uv_set must switch which set the diffuse sample uses — proving the
 // second-set plumbing reaches the sampler.
 TEST(rasterize, diffuse_uv_set_selects_texcoord1)
@@ -947,9 +946,9 @@ TEST(rasterize, diffuse_uv_set_selects_texcoord1)
     {
         Material mat;
         mat.diffuse_map.uv_set = set;
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, white, white, zero, zero, zero, uv0, uv0, uv0,
-            &tex, 0.0f, nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv1, uv1, uv1, &mat
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.0f,
+            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv1, uv1, uv1, &mat
         );
     };
 
@@ -973,7 +972,7 @@ TEST(rasterize, diffuse_uv_set_selects_texcoord1)
 
 // KHR_texture_transform reaches the sampler: a 2×1 red|blue texture sampled at uv0 (red half)
 // shifts to the blue half once the diffuse slot carries a +0.5 u-offset affine. Proves the
-// post-select transform apply in rasterize().
+// post-select transform apply in rasterize_flat().
 TEST(rasterize, diffuse_texture_transform_shifts_sample)
 {
     Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
@@ -995,9 +994,9 @@ TEST(rasterize, diffuse_texture_transform_shifts_sample)
             mat.diffuse_map.t[4] = 1.0f;
             mat.diffuse_map.t[5] = 0.0f;
         }
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, white, white, zero, zero, zero, uv0, uv0, uv0,
-            &tex, 0.0f, nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.0f,
+            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
         );
     };
 
@@ -1020,7 +1019,7 @@ TEST(rasterize, diffuse_texture_transform_shifts_sample)
 }
 
 // Phong path: the diffuse binding's uv_set (read from mat) selects which set the diffuse
-// sample uses, exactly as in rasterize(). 2×1 red|blue texture; uv0→red, uv1→blue.
+// sample uses, exactly as in rasterize_flat(). 2×1 red|blue texture; uv0→red, uv1→blue.
 TEST(rasterize_phong, diffuse_uv_set_selects_texcoord1)
 {
     Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
@@ -1064,7 +1063,7 @@ TEST(rasterize_phong, diffuse_uv_set_selects_texcoord1)
 }
 
 // Phong path: KHR_texture_transform on the diffuse slot shifts the sampled texel, mirroring the
-// rasterize() case. 2×1 red|blue texture; a +0.5 u-offset moves the red sample to blue.
+// rasterize_flat() case. 2×1 red|blue texture; a +0.5 u-offset moves the red sample to blue.
 TEST(rasterize_phong, diffuse_texture_transform_shifts_sample)
 {
     Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
@@ -1195,9 +1194,9 @@ TEST(rasterize, cutout_pre_pass_honours_diffuse_transform)
             mat.diffuse_map.t[4] = 1.0f;
             mat.diffuse_map.t[5] = 0.0f;
         }
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, white, white, zero, zero, zero, uv0, uv0, uv0,
-            &tex, 0.5f, nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.5f,
+            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
         );
     };
 

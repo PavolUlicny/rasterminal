@@ -5,15 +5,15 @@
 #include <atomic>
 #include <thread>
 
-// Call rasterize() with white flat colour, no texture/shadow, on the given band.
+// Call rasterize_flat() with white flat colour, no texture/shadow, on the given band.
 static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_max)
 {
     vec3 white{ 1.0f, 1.0f, 1.0f };
     vec3 black{ 0.0f, 0.0f, 0.0f };
     vec3 zero{ 0.0f, 0.0f, 0.0f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, black, black, black, zero, zero, zero,
-        vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, nullptr, 0.0f, nullptr, y_min, y_max
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, black, zero, zero, zero, vec2{ 0.0f, 0.0f },
+        vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, nullptr, 0.0f, nullptr, y_min, y_max
     );
 }
 
@@ -352,7 +352,7 @@ TEST(framebuffer, multithread_depth_color_race)
 //
 // All values derived analytically from setup_tri's formulas and verified below.
 
-// Call rasterize() with per-vertex colours (no texture, no shadow).
+// Call rasterize_flat() with per-vertex colours (no texture, no shadow).
 static void rast_colored(
     Framebuffer &fb,
     vec3 sa,
@@ -369,8 +369,8 @@ static void rast_colored(
 )
 {
     vec3 zero{};
-    rasterize(
-        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, ca, cb, cc, zero, zero, zero, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f },
+    rasterize_flat(
+        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, zero, zero, zero, zero, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f },
         vec2{ 0.0f, 0.0f }, nullptr, 0.0f, nullptr, y_min, y_max
     );
 }
@@ -699,9 +699,9 @@ TEST(rasterize, three_identical_vertices_no_draw)
 
 TEST(rasterize, winding_agnostic_cw_also_draws)
 {
-    // rasterize() is winding-agnostic: CW triangles fill the same interior pixels
+    // rasterize_flat() is winding-agnostic: CW triangles fill the same interior pixels
     // as their CCW mirror. Backface culling is the renderer's responsibility, not
-    // rasterize()'s — it must work correctly for both winding orders.
+    // rasterize_flat()'s — it must work correctly for both winding orders.
     Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     rast(fb1, { 4.0f, 2.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, 0, 19); // CCW
     rast(fb2, { 4.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, 0, 19); // CW (b,c swapped)

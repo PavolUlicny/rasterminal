@@ -147,20 +147,16 @@ ParseResult parse_args(int argc, char *argv[])
         {
             out = 1;
         }
-        else if (v == "gouraud" || v == "3")
+        else if (v == "phong" || v == "3")
         {
             out = 2;
-        }
-        else if (v == "phong" || v == "4")
-        {
-            out = 3;
         }
         else
         {
             std::fprintf(
                 stderr,
                 "%s: %s: invalid value '%s'"
-                " (expected wireframe|flat|gouraud|phong or 1-4)\n",
+                " (expected wireframe|flat|phong or 1-3)\n",
                 prog, flag, val
             );
             return false;
@@ -350,8 +346,8 @@ ParseResult parse_args(int argc, char *argv[])
             "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
             "\n"
             "Options:\n"
-            "  -s,     --shading <mode>       Initial shading mode (default: gouraud)\n"
-            "                                  wireframe|flat|gouraud|phong  or  1-4\n"
+            "  -s,     --shading <mode>       Initial shading mode (default: phong)\n"
+            "                                  wireframe|flat|phong  or  1-3\n"
             "  -b,     --bg <color>           Initial background color (default: black)\n"
             "                                  black|gray|white  or  1-3\n"
             "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
@@ -381,7 +377,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  -V,     --version              Show version and exit\n"
             "\n"
             "Controls:\n"
-            "  1-4          Shading mode           B       Cycle background\n"
+            "  1-3          Shading mode           B       Cycle background\n"
             "  Space        Toggle spin            L       Cycle lighting\n"
             "  WASD/arrows  Orbit camera           R       Reset view\n"
             "  +/-          Zoom                   C       Cycle wireframe color\n"

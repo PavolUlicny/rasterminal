@@ -11,6 +11,15 @@ TEST(renderer, constructor_default_threads)
     ASSERT_TRUE(true); // reaching here means construction succeeded
 }
 
+// A1b: default shading mode is Phong.
+// Pins the constructor default so a future reorder of the ShadingMode enum or a
+// stray re-default can't silently change what an unconfigured Renderer renders.
+TEST(renderer, default_mode_is_phong)
+{
+    Renderer r;
+    ASSERT_TRUE(r.mode == ShadingMode::Phong);
+}
+
 // A2: extreme and edge thread counts all clamp cleanly.
 TEST(renderer, constructor_thread_count_clamping)
 {
@@ -144,34 +153,6 @@ TEST(renderer, flat_shading_renders_lit_pixel)
     }
 }
 
-// C2: Gouraud shading produces a lit centre pixel.
-TEST(renderer, gouraud_shading_renders_lit_pixel)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-    Mesh mesh = make_unit_triangle();
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
-    vec3 ambient{ 0.05f, 0.05f, 0.05f };
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, &light, 1, ambient, fb);
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r < 150)
-    {
-        ASSERT_FAIL("gouraud: R too low (" + std::to_string(static_cast<int>(c.r)) + ")");
-    }
-    if (c.g > 30)
-    {
-        ASSERT_FAIL("gouraud: G too high (" + std::to_string(static_cast<int>(c.g)) + ")");
-    }
-    if (c.b > 30)
-    {
-        ASSERT_FAIL("gouraud: B too high (" + std::to_string(static_cast<int>(c.b)) + ")");
-    }
-}
-
 // C3: Phong shading produces a lit centre pixel.
 TEST(renderer, phong_shading_renders_lit_pixel)
 {
@@ -258,7 +239,7 @@ TEST(renderer, empty_mesh_completes)
 TEST(renderer, repeated_render_deterministic)
 {
     Renderer r; // default thread count
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
@@ -283,7 +264,7 @@ TEST(renderer, repeated_render_deterministic)
 TEST(renderer, large_triangle_spans_all_bands)
 {
     Renderer r(4);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -448,7 +429,7 @@ TEST(renderer, zero_factor_with_emissive_texture_renders_dark)
     }
 }
 
-// F2b-Flat: Flat-mode parity for F2b. rasterize() (Flat/Gouraud) and rasterize_phong() are
+// F2b-Flat: Flat-mode parity for F2b. rasterize_flat() and rasterize_phong() are
 // textually independent hand-typed do_emissive gates (rasterize.cpp:289 and :500), so each
 // shading path needs its own coverage against a future `factor>0 || etex` regression.
 TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
@@ -481,44 +462,6 @@ TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
         ASSERT_FAIL(
             "Flat zero factor + emissive texture: expected near-black, got (" + std::to_string(static_cast<int>(c.r)) +
             "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
-        );
-    }
-}
-
-// F2b-Gouraud: Gouraud-mode parity for F2b. Same rasterize() call site as Flat but with
-// per-vertex lighting upstream; pinned separately so a future Gouraud-only rewire can't
-// silently drop the do_emissive gate.
-TEST(renderer, gouraud_zero_factor_with_emissive_texture_renders_dark)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-
-    Mesh mesh = make_unit_triangle();
-    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 255, 0));
-    mesh.materials[0].emissive_map.tex = 0;
-    mesh.materials[0].emissive = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-    mesh.has_emissive = true;
-
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
-    vec3 ambient{ 0.0f, 0.0f, 0.0f };
-
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.show_texture = true;
-    r.render(mesh, cam, &light, 1, ambient, fb);
-
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r > 20 || c.g > 20 || c.b > 20)
-    {
-        ASSERT_FAIL(
-            "Gouraud zero factor + emissive texture: expected near-black, got (" +
-            std::to_string(static_cast<int>(c.r)) + "," + std::to_string(static_cast<int>(c.g)) + "," +
-            std::to_string(static_cast<int>(c.b)) + ")"
         );
     }
 }
@@ -646,50 +589,6 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
     if (c.b > 20)
     {
         ASSERT_FAIL("Flat show_texture=false: blue texture leaked (B=" + std::to_string(static_cast<int>(c.b)) + ")");
-    }
-}
-
-// F2g: Gouraud-mode parity for F2d/F2f — authored factor + bound texture must survive the
-// toggle. Gouraud shares rasterize()'s emissive forwarding with Flat but reaches it via a
-// distinct per-vertex-lighting branch in the renderer, so pin it independently against a
-// future change that re-couples the factor to the texture toggle on the Gouraud path.
-TEST(renderer, gouraud_show_texture_toggle_preserves_authored_factor_with_texture)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-
-    Mesh mesh = make_unit_triangle();
-    mesh.textures.push_back(make_solid_tex_rgba(2, 2, 0, 0, 255)); // blue emissive texture
-    mesh.materials[0].emissive_map.tex = 0;
-    mesh.materials[0].emissive = { 1.0f, 0.0f, 0.0f }; // authored red factor
-    mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
-    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-    mesh.has_emissive = true;
-
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 0.0f, 0.0f, 0.0f });
-    vec3 ambient{ 0.0f, 0.0f, 0.0f };
-
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.show_texture = false;
-    r.render(mesh, cam, &light, 1, ambient, fb);
-
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r < 200)
-    {
-        ASSERT_FAIL(
-            "Gouraud show_texture=false with authored factor: expected red, got R=" +
-            std::to_string(static_cast<int>(c.r))
-        );
-    }
-    if (c.b > 20)
-    {
-        ASSERT_FAIL(
-            "Gouraud show_texture=false: blue texture leaked (B=" + std::to_string(static_cast<int>(c.b)) + ")"
-        );
     }
 }
 
@@ -868,32 +767,6 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
     {
         ASSERT_FAIL(
             "Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
-            ") — normal flip not applied"
-        );
-    }
-}
-
-// J2: Gouraud — same scene.
-TEST(renderer, gouraud_double_sided_back_face_lit_correctly)
-{
-    Mesh mesh = make_back_facing_double_sided_triangle();
-    Camera cam = make_test_camera();
-    Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
-    vec3 ambient{ 0.0f, 0.0f, 0.0f };
-
-    Renderer r;
-    r.mode = ShadingMode::Gouraud;
-    r.cull_backfaces = true;
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, &light, 1, ambient, fb);
-
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r < 150)
-    {
-        ASSERT_FAIL(
-            "Gouraud double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
             ") — normal flip not applied"
         );
     }

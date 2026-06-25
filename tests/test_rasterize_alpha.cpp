@@ -27,9 +27,9 @@ static void rast(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_
     vec3 zero{};
     vec3 white{ 1.0f, 1.0f, 1.0f };
     vec2 uv{ 0.5f, 0.5f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv, tex,
-        alpha_cutoff, nullptr, y_min, y_max
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, tex, alpha_cutoff,
+        nullptr, y_min, y_max
     );
 }
 
@@ -59,7 +59,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
 
 // A1: cutoff=0 with an opaque texture must produce the same pixel as cutoff=0.
 // Verifies the sentinel path doesn't silently branch differently.
-TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_gouraud)
+TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_flat)
 {
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     Framebuffer fb_a(40, 20, /*headless=*/true), fb_b(40, 20, /*headless=*/true);
@@ -72,9 +72,9 @@ TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_gouraud)
     ASSERT_EQ(ca.b, cb.b);
 }
 
-// A2: cutoff=0 with opaque texture is identical between Gouraud and Phong paths
+// A2: cutoff=0 with opaque texture is identical between Flat and Phong paths
 // (both should produce the same texture tint when there's no lighting variation).
-TEST(rasterize_alpha, cutoff_zero_gouraud_and_phong_both_draw)
+TEST(rasterize_alpha, cutoff_zero_flat_and_phong_both_draw)
 {
     Texture tex = make_tex(1, 1, { 255, 255, 255, 255 });
     Framebuffer fb_g(40, 20, /*headless=*/true), fb_p(40, 20, /*headless=*/true);
@@ -86,9 +86,9 @@ TEST(rasterize_alpha, cutoff_zero_gouraud_and_phong_both_draw)
 
 // ─── Group B: cutout discards transparent pixels ─────────────────────────────
 
-// B1: fully transparent texture (alpha=0) + cutoff=0.5 → pixel not drawn (Gouraud).
+// B1: fully transparent texture (alpha=0) + cutoff=0.5 → pixel not drawn (Flat).
 // Core correctness: a fully-transparent pixel must be discarded.
-TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_gouraud)
+TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex(1, 1, { 255, 0, 0, 0 }); // red but alpha=0
@@ -105,8 +105,8 @@ TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_phong)
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
 
-// B3: fully opaque texture (alpha=255) + cutoff=0.5 → pixel is drawn (Gouraud).
-TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_gouraud)
+// B3: fully opaque texture (alpha=255) + cutoff=0.5 → pixel is drawn (Flat).
+TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
@@ -125,7 +125,7 @@ TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_phong)
 
 // B5: opaque texture + cutoff active → drawn pixel colour matches cutoff=0 baseline.
 // The cutout path must still multiply the texture RGB correctly for passing pixels.
-TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_gouraud)
+TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_flat)
 {
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
     Framebuffer fb_base(40, 20, /*headless=*/true), fb_cut(40, 20, /*headless=*/true);
@@ -157,7 +157,7 @@ TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_phong)
 // C1: transparent foreground triangle must not occlude an opaque triangle behind it.
 // If discarded pixels claim z-buffer entries, the rear triangle would be invisible.
 // Setup: opaque rear triangle at depth=0.8, transparent front triangle at depth=0.3.
-TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
+TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     // Rear triangle: white, no texture, drawn first.
@@ -166,9 +166,9 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
-            nullptr, 0.0f, nullptr, 0, 19
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
+            nullptr, 0, 19
         );
     }
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -183,9 +183,9 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
-            nullptr, 0.0f, nullptr, 0, 19
+        rasterize_flat(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
+            nullptr, 0, 19
         );
     }
 
@@ -196,8 +196,8 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_gouraud)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.5f, 0.5f };
-        rasterize(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
+        rasterize_flat(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv,
             &tex_transparent, 0.5f, nullptr, 0, 19
         );
     }
@@ -267,7 +267,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 // D1: texture without cutout (alpha_cutoff=0) with opaque image → same colour
 // as cutoff active but alpha=1 image. Verifies the two paths are equivalent when
 // alpha is 1 everywhere.
-TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_gouraud)
+TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_flat)
 {
     Texture tex = make_tex(1, 1, { 150, 80, 40, 255 });
     Framebuffer fb_no(40, 20, /*headless=*/true), fb_with(40, 20, /*headless=*/true);
@@ -299,7 +299,7 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
 // cutoff = 128 * (1/255) matches how sample_rgba converts alpha bytes, making
 // the comparison bit-exact.
 
-TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_gouraud)
+TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     constexpr float cutoff = 128.0f * (1.0f / 255.0f);

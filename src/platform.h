@@ -136,8 +136,7 @@ namespace platform
         Escape, // quit
         Num1,
         Num2,
-        Num3,
-        Num4, // shading modes
+        Num3, // shading modes
         Up,
         Down, // pitch
         Left,
@@ -202,8 +201,6 @@ namespace platform
                 return Key::Num2;
             case '3':
                 return Key::Num3;
-            case '4':
-                return Key::Num4;
             case '+':
                 return Key::Plus;
             case '-':

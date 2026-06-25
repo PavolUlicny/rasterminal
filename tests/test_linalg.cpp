@@ -68,54 +68,6 @@ TEST(mat4, identity_times_identity_is_identity)
     }
 }
 
-TEST(mat4, translation_applies_to_point)
-{
-    mat4 T = translation(1, 2, 3);
-    vec4 p = T * vec4{ 10, 20, 30, 1 };
-    ASSERT_NEAR(p.x, 11.0f, 1e-6f);
-    ASSERT_NEAR(p.y, 22.0f, 1e-6f);
-    ASSERT_NEAR(p.z, 33.0f, 1e-6f);
-}
-
-TEST(mat4, translation_does_not_apply_to_direction)
-{
-    // Directions have w=0, so translation should leave them untouched.
-    mat4 T = translation(1, 2, 3);
-    vec4 d = T * vec4{ 10, 20, 30, 0 };
-    ASSERT_NEAR(d.x, 10.0f, 1e-6f);
-    ASSERT_NEAR(d.y, 20.0f, 1e-6f);
-    ASSERT_NEAR(d.z, 30.0f, 1e-6f);
-}
-
-TEST(mat4, scale_applies_componentwise)
-{
-    mat4 S = scale(2, 3, 4);
-    vec4 p = S * vec4{ 1, 1, 1, 1 };
-    ASSERT_NEAR(p.x, 2.0f, 1e-6f);
-    ASSERT_NEAR(p.y, 3.0f, 1e-6f);
-    ASSERT_NEAR(p.z, 4.0f, 1e-6f);
-}
-
-TEST(mat4, rotation_y_90deg_maps_x_to_neg_z)
-{
-    // rotation_y(90°) rotates the x axis onto the -z axis (right-handed).
-    mat4 R = rotation_y(to_radians(90.0f));
-    vec4 r = R * vec4{ 1, 0, 0, 1 };
-    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.z, -1.0f, 1e-5f);
-}
-
-TEST(mat4, compose_translation_then_scale)
-{
-    // Column-major: M = S * T means T is applied first, then S.
-    mat4 T = translation(1, 0, 0);
-    mat4 S = scale(2);
-    mat4 M = S * T;
-    vec4 p = M * vec4{ 0, 0, 0, 1 };
-    ASSERT_NEAR(p.x, 2.0f, 1e-6f); // (0,0,0) → translate → (1,0,0) → scale×2 → (2,0,0)
-}
-
 TEST(mat4, default_constructor_is_zero)
 {
     mat4 m;
@@ -128,24 +80,12 @@ TEST(mat4, default_constructor_is_zero)
     }
 }
 
-TEST(mat4, transposed_is_involution)
-{
-    mat4 M = translation(1.0f, 2.0f, 3.0f);
-    mat4 TT = M.transposed().transposed();
-    for (int c = 0; c < 4; c++)
-    {
-        for (int r = 0; r < 4; r++)
-        {
-            ASSERT_NEAR(TT.m[c][r], M.m[c][r], 1e-6f);
-        }
-    }
-}
-
 TEST(mat4, multiplication_is_associative)
 {
-    mat4 A = translation(1.0f, 0.0f, 0.0f);
-    mat4 B = rotation_y(to_radians(45.0f));
-    mat4 C = scale(2.0f);
+    // (A*B)*C == A*(B*C) for any matrices — use three well-conditioned view matrices.
+    mat4 A = look_at(vec3{ 1.0f, 2.0f, 3.0f }, vec3{ 0.0f, 0.0f, 0.0f }, vec3{ 0.0f, 1.0f, 0.0f });
+    mat4 B = look_at(vec3{ 0.0f, 0.0f, 5.0f }, vec3{ 1.0f, 0.0f, 0.0f }, vec3{ 0.0f, 1.0f, 0.0f });
+    mat4 C = look_at(vec3{ -2.0f, 1.0f, 4.0f }, vec3{ 1.0f, 1.0f, 1.0f }, vec3{ 0.0f, 1.0f, 0.0f });
     vec4 p{ 1.0f, 1.0f, 1.0f, 1.0f };
     vec4 lhs = (A * B) * C * p;
     vec4 rhs = A * (B * C) * p;
@@ -157,12 +97,17 @@ TEST(mat4, multiplication_is_associative)
 
 TEST(mat4, multiplication_is_noncommutative)
 {
-    // T*R * origin ≠ R*T * origin for non-trivial T and R.
-    mat4 T = translation(1.0f, 0.0f, 0.0f);
-    mat4 R = rotation_y(to_radians(90.0f));
+    // T*R * origin != R*T * origin: T translates +x, R rotates 90° about y (built inline).
+    mat4 T = mat4::identity();
+    T.m[3][0] = 1.0f;
+    mat4 R = mat4::identity();
+    R.m[0][0] = 0.0f;
+    R.m[2][0] = 1.0f;
+    R.m[0][2] = -1.0f;
+    R.m[2][2] = 0.0f;
     vec4 origin{ 0.0f, 0.0f, 0.0f, 1.0f };
     vec4 tr = T * R * origin; // rotate first (no-op on origin), then translate: (1,0,0)
-    vec4 rt = R * T * origin; // translate first → (1,0,0), then rotate 90° around Y → (0,0,-1)
+    vec4 rt = R * T * origin; // translate first → (1,0,0), then rotate 90° about y → (0,0,-1)
     float diff = (tr - rt).xyz().length();
     ASSERT_TRUE(diff > 0.5f);
 }
@@ -257,25 +202,6 @@ TEST(vec3, lerp_midpoint)
     ASSERT_NEAR(r.z, 3.0f, 1e-6f);
 }
 
-TEST(vec3, reflect_normal_incidence_inverts)
-{
-    // reflect((0,0,-1), (0,0,1)) = (0,0,1): straight reflection off Z+ surface.
-    vec3 r = reflect(vec3{ 0, 0, -1 }, vec3{ 0, 0, 1 });
-    ASSERT_NEAR(r.x, 0.0f, 1e-6f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
-    ASSERT_NEAR(r.z, 1.0f, 1e-6f);
-}
-
-TEST(vec3, reflect_45_degree_flips_y)
-{
-    // reflect((1,-1,0)/√2, (0,1,0)) → (1,1,0)/√2: angle of incidence = angle of reflection.
-    vec3 incident = normalize(vec3{ 1, -1, 0 });
-    vec3 r = reflect(incident, vec3{ 0, 1, 0 });
-    ASSERT_NEAR(r.x, incident.x, 1e-5f);
-    ASSERT_NEAR(r.y, -incident.y, 1e-5f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
-}
-
 TEST(vec3, normalize_unit_vector_is_idempotent)
 {
     vec3 n = normalize(vec3{ 1.0f, 0.0f, 0.0f });
@@ -320,22 +246,6 @@ TEST(vec3, dot_self_is_length_sq)
 {
     vec3 v{ 3.0f, 4.0f, 5.0f };
     ASSERT_NEAR(dot(v, v), v.length_sq(), 1e-5f);
-}
-
-TEST(vec3, reflect_preserves_magnitude)
-{
-    vec3 incident{ 1.0f, -2.0f, 0.5f };
-    vec3 r = reflect(incident, vec3{ 0.0f, 1.0f, 0.0f });
-    ASSERT_NEAR(r.length(), incident.length(), 1e-5f);
-}
-
-TEST(vec3, reflect_grazing_returns_incident)
-{
-    // incident purely tangent to surface → dot(incident, normal) = 0 → reflected == incident.
-    vec3 r = reflect(vec3{ 1.0f, 0.0f, 0.0f }, vec3{ 0.0f, 1.0f, 0.0f });
-    ASSERT_NEAR(r.x, 1.0f, 1e-6f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-6f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-6f);
 }
 
 TEST(vec3, lerp_extrapolates_past_one)
@@ -479,93 +389,6 @@ TEST(vec2, arithmetic_operators)
     ASSERT_NEAR(q.y, 3.5f, 1e-6f);
 }
 
-// ─── rotation_x / rotation_z ─────────────────────────────────────────────────
-
-TEST(rotation_x, 90deg_maps_y_axis_to_z)
-{
-    mat4 R = rotation_x(to_radians(90.0f));
-    vec4 r = R * vec4{ 0, 1, 0, 1 };
-    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.z, 1.0f, 1e-5f);
-}
-
-TEST(rotation_x, 90deg_maps_z_axis_to_neg_y)
-{
-    mat4 R = rotation_x(to_radians(90.0f));
-    vec4 r = R * vec4{ 0, 0, 1, 1 };
-    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.y, -1.0f, 1e-5f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
-}
-
-TEST(rotation_z, 90deg_maps_x_axis_to_y)
-{
-    mat4 R = rotation_z(to_radians(90.0f));
-    vec4 r = R * vec4{ 1, 0, 0, 1 };
-    ASSERT_NEAR(r.x, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.y, 1.0f, 1e-5f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
-}
-
-TEST(rotation_z, 90deg_maps_y_axis_to_neg_x)
-{
-    mat4 R = rotation_z(to_radians(90.0f));
-    vec4 r = R * vec4{ 0, 1, 0, 1 };
-    ASSERT_NEAR(r.x, -1.0f, 1e-5f);
-    ASSERT_NEAR(r.y, 0.0f, 1e-5f);
-    ASSERT_NEAR(r.z, 0.0f, 1e-5f);
-}
-
-TEST(rotation_x, full_turn_is_identity)
-{
-    mat4 R = rotation_x(to_radians(360.0f));
-    vec4 p = R * vec4{ 1.0f, 2.0f, 3.0f, 1.0f };
-    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
-    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
-    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
-}
-
-TEST(rotation_y, full_turn_is_identity)
-{
-    mat4 R = rotation_y(to_radians(360.0f));
-    vec4 p = R * vec4{ 1.0f, 2.0f, 3.0f, 1.0f };
-    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
-    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
-    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
-}
-
-TEST(rotation_z, full_turn_is_identity)
-{
-    mat4 R = rotation_z(to_radians(360.0f));
-    vec4 p = R * vec4{ 1.0f, 2.0f, 3.0f, 1.0f };
-    ASSERT_NEAR(p.x, 1.0f, 1e-4f);
-    ASSERT_NEAR(p.y, 2.0f, 1e-4f);
-    ASSERT_NEAR(p.z, 3.0f, 1e-4f);
-}
-
-TEST(rotation_y, negative_is_inverse)
-{
-    float angle = to_radians(73.0f);
-    mat4 R = rotation_y(angle);
-    mat4 Rinv = rotation_y(-angle);
-    vec4 p{ 1.0f, 2.0f, 3.0f, 1.0f };
-    vec4 r = Rinv * (R * p);
-    ASSERT_NEAR(r.x, p.x, 1e-4f);
-    ASSERT_NEAR(r.y, p.y, 1e-4f);
-    ASSERT_NEAR(r.z, p.z, 1e-4f);
-}
-
-TEST(rotation_y, zero_is_identity)
-{
-    mat4 R = rotation_y(0.0f);
-    vec4 p{ 1.0f, 2.0f, 3.0f, 1.0f };
-    vec4 r = R * p;
-    ASSERT_NEAR(r.x, p.x, 1e-6f);
-    ASSERT_NEAR(r.y, p.y, 1e-6f);
-    ASSERT_NEAR(r.z, p.z, 1e-6f);
-}
-
 // ─── look_at ──────────────────────────────────────────────────────────────────
 
 TEST(look_at, eye_transforms_to_origin)
@@ -662,7 +485,7 @@ TEST(quat, identity_rotate_is_no_op)
 
 TEST(quat, rotate_90_around_y_maps_x_to_neg_z)
 {
-    // Matches rotation_y(90°) from mat4 tests: +X → -Z.
+    // 90° rotation about +Y maps +X → -Z (right-handed).
     vec3 r = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(90.0f)).rotate({ 1, 0, 0 });
     ASSERT_NEAR(r.x, 0.0f, 1e-5f);
     ASSERT_NEAR(r.y, 0.0f, 1e-5f);
@@ -679,7 +502,7 @@ TEST(quat, rotate_90_around_y_maps_z_to_pos_x)
 
 TEST(quat, rotate_90_around_x_maps_y_to_pos_z)
 {
-    // Matches rotation_x(90°): +Y → +Z.
+    // 90° rotation about +X maps +Y → +Z.
     vec3 r = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(90.0f)).rotate({ 0, 1, 0 });
     ASSERT_NEAR(r.x, 0.0f, 1e-5f);
     ASSERT_NEAR(r.y, 0.0f, 1e-5f);

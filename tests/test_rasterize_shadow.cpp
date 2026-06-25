@@ -32,16 +32,15 @@ static Light make_light_z_shadow()
     return l;
 }
 
-// rasterize() wrapper: canonical screen triangle, caller-supplied world positions,
+// rasterize_flat() wrapper: canonical screen triangle, caller-supplied world positions,
 // lit and shadowed colors, and shadow map.
 // Screen triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 fb.
 static void rast_shadow(Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, vec3 col, vec3 shad, const ShadowMap *sm)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec2 uv{ 0.5f, 0.5f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, col, col, col, shad, shad, shad, pa, pb, pc, uv, uv, uv, nullptr, 0.0f, sm, 0,
-        19
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, col, col, col, shad, pa, pb, pc, uv, uv, uv, nullptr, 0.0f, sm, 0, 19
     );
 }
 
@@ -78,7 +77,7 @@ static void rast_phong_shadow(
 // "Above" = world z>0 (between light and occluder) → lit.
 // "Below" = world z<0 (on far side of occluder from light) → in shadow.
 
-// ── Group A: rasterize() (Gouraud/Flat path) ─────────────────────────────────
+// ── Group A: rasterize_flat() (Flat path) ─────────────────────────────────────────
 
 // S2: pa/pb/pc at z=+10 (above occluder, lit). shadow_map=nullptr and a valid
 // map must both produce the same result — lerp(col,shad,sf=0)=col in both cases.
@@ -417,10 +416,10 @@ TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
     assert_pixel_near(fb_sm5, 20, 10, fb_nosm.get_pixel(20, 10), 2);
 }
 
-// S9: rasterize() (Gouraud/Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
+// S9: rasterize_flat() (Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
 // col=red, shad=blue; sf=5/9 ≈ 0.556. Result must be strictly between fully-lit (red)
 // and fully-shadowed (blue).
-TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
+TEST(rasterize, flat_partial_shadow_lerps_between_lit_and_shadowed)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 wpos{ 0.0f, 0.0f, 0.5f }; // maps to cx=cy=1024 with identity light_vp
@@ -429,9 +428,9 @@ TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
 
     auto draw = [&](Framebuffer &fb, const ShadowMap *sm)
     {
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, red, red, blue, blue, blue, wpos, wpos, wpos, uv, uv, uv, nullptr,
-            0.0f, sm, 0, 19
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, red, red, blue, wpos, wpos, wpos, uv, uv, uv, nullptr, 0.0f, sm, 0,
+            19
         );
     };
 
@@ -469,4 +468,58 @@ TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
             "partial must be less red than fully lit: par=" + std::to_string(r_par) + " lit=" + std::to_string(r_lit)
         );
     }
+}
+
+// S10: distinct per-vertex base colours combined with an active shadow lerp.
+// The refactor collapsed three per-vertex shad colours into one uniform shad applied
+// after interpolation (col = lerp(interp_col, shad, sf)). Production never mixes the two
+// regimes — Flat passes identical vertex colours, and the only distinct-colour caller
+// (unlit) passes a null shadow map — but the function now permits it, so guard the order:
+//   sf=0 (no shadow): distinct red/green/blue still interpolate to a gradient, so the
+//                     centroid pixel must carry all three channels (not a flat colour).
+//   sf=1 (full shadow): the interpolated colour is fully replaced by the single shad, so
+//                     the centroid must equal shad regardless of the distinct vertex colours.
+// A regression that lerped per-vertex toward shad before interpolating would still pass
+// every other test (all use identical col_a/b/c); only this one distinguishes the order.
+TEST(rasterize, flat_distinct_vertex_colours_with_shadow_lerp_applies_shad_after_interp)
+{
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 wpos{ 0.0f, 0.0f, 0.5f }; // maps to cx=cy=1024 with identity light_vp
+    vec3 red{ 1.0f, 0.0f, 0.0f }, green{ 0.0f, 1.0f, 0.0f }, blue{ 0.0f, 0.0f, 1.0f };
+    vec3 shad{ 1.0f, 1.0f, 1.0f }; // white: distinct from every vertex colour and from their blend
+    vec2 uv{ 0.5f, 0.5f };
+
+    auto draw = [&](Framebuffer &fb, const ShadowMap *sm)
+    {
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, green, blue, shad, wpos, wpos, wpos, uv, uv, uv, nullptr, 0.0f, sm,
+            0, 19
+        );
+    };
+
+    ShadowMap sm0 = make_manual_sm(0); // sf=0 → if(sf>0) false → interpolated gradient
+    ShadowMap sm9 = make_manual_sm(9); // sf=1 → lerp(interp, shad, 1) = shad (white)
+
+    Framebuffer fb_lit(40, 20, /*headless=*/true), fb_shd(40, 20, /*headless=*/true);
+    draw(fb_lit, &sm0);
+    draw(fb_shd, &sm9);
+
+    ASSERT_TRUE(was_drawn(fb_lit, 20, 10));
+    ASSERT_TRUE(was_drawn(fb_shd, 20, 10));
+
+    // Unshadowed: the centroid blends all three vertices, so every channel is partially lit
+    // (none saturated, none zero). A pre-interpolation lerp toward white would also push the
+    // off-vertex channels up, so the discriminating case is the fully-shadowed run below.
+    Color lit = fb_lit.get_pixel(20, 10);
+    if (lit.r < 10 || lit.g < 10 || lit.b < 10)
+    {
+        ASSERT_FAIL("unshadowed centroid must blend all three distinct vertex colours");
+    }
+    if (lit.r > 200 || lit.g > 200 || lit.b > 200)
+    {
+        ASSERT_FAIL("unshadowed centroid must be a partial blend, no channel fully saturated");
+    }
+
+    // Fully shadowed: shad replaces the interpolated colour entirely → white.
+    assert_pixel_near(fb_shd, 20, 10, Color{ 255, 255, 255 }, 2);
 }

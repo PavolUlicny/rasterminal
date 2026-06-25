@@ -10,9 +10,8 @@ Images and recordings referenced by the top-level `README.md`.
 | `demo.cast` | asciinema recording the GIF was rendered from; re-render with `agg` (see below). |
 | `shading-wireframe.png` | Wireframe shading still. |
 | `shading-flat.png` | Flat shading still. |
-| `shading-gouraud.png` | Gouraud shading still. |
 | `shading-phong.png` | Phong shading still. |
-| `stills.tape` | vhs tape that regenerates the four shading stills. |
+| `stills.tape` | vhs tape that regenerates the three shading stills. |
 
 ## Regenerating the demo GIF
 
@@ -53,7 +52,7 @@ Then trim and render as above.
 ## Regenerating the shading stills
 
 ```sh
-vhs assets/stills.tape   # -> assets/shading-{wireframe,flat,gouraud,phong}.png
+vhs assets/stills.tape   # -> assets/shading-{wireframe,flat,phong}.png
 ```
 
 Edit the model path, font size, or camera nudge in `stills.tape`, then re-run. Also writes a
