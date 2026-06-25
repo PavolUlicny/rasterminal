@@ -453,20 +453,18 @@ void rasterize_flat(
                 const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 sf = shadow_map->in_shadow(pos);
             }
-            vec3 ca = col_a;
-            vec3 cb = col_b;
-            vec3 cc = col_c;
+            // Perspective-correct base colour. Flat passes three identical vertex colours
+            // (so this is a no-op average); the unlit path passes distinct per-vertex colours.
+            vec3 col = (col_a * pwa + col_b * pwb + col_c * pwc) * w_corr;
+
+            // Shadow lerp, applied once to the interpolated colour. shad is uniform across the
+            // triangle and the only lit caller (Flat) passes identical vertex colours, so this
+            // equals lerping each vertex toward shad before interpolating. The unlit path never
+            // sets a shadow map (sf stays 0 there), so this branch is Flat-only.
             if (sf > 0.0f)
             {
-                // shad is uniform across the triangle (Flat); lerp each per-vertex base
-                // colour toward it before the perspective-correct interpolation below so
-                // the result is byte-identical to interpolating three equal shadowed colours.
-                ca = lerp(col_a, shad, sf);
-                cb = lerp(col_b, shad, sf);
-                cc = lerp(col_c, shad, sf);
+                col = lerp(col, shad, sf);
             }
-
-            vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
 
             if constexpr (S == Sink::Transparent)
             {
