@@ -4,7 +4,10 @@
 #include <cmath>
 
 // All tests use unit-length directions. compute_lighting normalizes its normal
-// argument internally but expects light directions to already be unit.
+// argument internally but expects light directions to already be unit. The lit
+// math is driven through the production shading-params overload
+// compute_lighting(normal, v, …, diffuse, ambient, specular, shininess, ao) — the
+// same one rasterize_phong uses; a Material's fields are passed out explicitly.
 
 static constexpr float EPS = 1e-5f;
 
@@ -18,7 +21,9 @@ TEST(light, no_lights_returns_ambient_times_diffuse)
     vec3 ambient{ 0.2f, 0.2f, 0.2f };
     vec3 v{ 0, 0, 1 };
 
-    vec3 r = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 1.0f);
+    vec3 r = compute_lighting(
+        vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 1.0f
+    );
     ASSERT_NEAR(r.x, 0.1f, EPS); // 0.2 * 0.5 * 1.0
     ASSERT_NEAR(r.y, 0.1f, EPS);
     ASSERT_NEAR(r.z, 0.1f, EPS);
@@ -30,8 +35,12 @@ TEST(light, ao_scales_ambient)
     vec3 ambient{ 0.4f, 0.4f, 0.4f };
     vec3 v{ 0, 0, 1 };
 
-    vec3 full = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 1.0f);
-    vec3 half = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 0.5f);
+    vec3 full = compute_lighting(
+        vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 1.0f
+    );
+    vec3 half = compute_lighting(
+        vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 0.5f
+    );
 
     ASSERT_NEAR(half.x, full.x * 0.5f, EPS);
     ASSERT_NEAR(half.y, full.y * 0.5f, EPS);
@@ -52,8 +61,8 @@ TEST(light, ao_does_not_affect_direct_diffuse)
     vec3 v{ 0, 0, 1 };
     vec3 n{ 0, 1, 0 };
 
-    vec3 full = compute_lighting(n, v, &l, 1, ambient, mat, 1.0f);
-    vec3 zero_ao = compute_lighting(n, v, &l, 1, ambient, mat, 0.0f);
+    vec3 full = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 1.0f);
+    vec3 zero_ao = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 0.0f);
 
     // With ambient=0, full and zero_ao should be identical.
     ASSERT_NEAR(full.x, zero_ao.x, EPS);
@@ -75,7 +84,7 @@ TEST(light, perpendicular_light_gives_max_diffuse)
     vec3 v{ 0, 1, 0 }; // view along same direction → no specular peak issues
     vec3 n{ 0, 1, 0 }; // aligned with light → dot=1
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     // Diffuse = diffuse_color * light_color * dot = 1*1*1 = 1 per channel,
     // plus specular_pow(1, 32) with specular=0 → 0. Result = (1,1,1).
     ASSERT_NEAR(r.x, 1.0f, EPS);
@@ -95,7 +104,7 @@ TEST(light, back_facing_light_contributes_no_diffuse)
     vec3 v{ 0, 0, 1 };
     vec3 n{ 0, -1, 0 }; // faces away from light → dot = -1
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -113,7 +122,7 @@ TEST(light, tangential_light_contributes_no_diffuse)
     vec3 v{ 0, 0, 1 };
     vec3 n{ 0, 1, 0 }; // perpendicular to light → dot = 0, no contribution
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 0.0f, EPS);
 }
 
@@ -129,7 +138,7 @@ TEST(light, light_color_tints_diffuse)
     vec3 v{ 0, 1, 0 };
     vec3 n{ 0, 1, 0 };
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 1.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -152,7 +161,7 @@ TEST(light, specular_peaks_when_half_vector_equals_normal)
     vec3 v{ 0, 1, 0 };
     vec3 n{ 0, 1, 0 };
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 1.0f, EPS);
     ASSERT_NEAR(r.y, 1.0f, EPS);
     ASSERT_NEAR(r.z, 1.0f, EPS);
@@ -170,10 +179,13 @@ TEST(light, specular_is_strictly_smaller_off_peak)
     vec3 ambient{ 0, 0, 0 };
     vec3 n{ 0, 1, 0 };
 
-    vec3 peak = compute_lighting(n, vec3{ 0, 1, 0 }, &l, 1, ambient, mat);
+    vec3 peak =
+        compute_lighting(n, vec3{ 0, 1, 0 }, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     // View rotated 45° away from the light — half-vector no longer aligns
     // with the normal, so specular contribution drops.
-    vec3 off = compute_lighting(n, normalize(vec3{ 1, 1, 0 }), &l, 1, ambient, mat);
+    vec3 off = compute_lighting(
+        n, normalize(vec3{ 1, 1, 0 }), &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess
+    );
     ASSERT_TRUE(off.x < peak.x);
     ASSERT_TRUE(off.x >= 0.0f);
 }
@@ -194,7 +206,7 @@ TEST(light, multiple_lights_sum_their_contributions)
     vec3 v{ 0, 1, 0 };
     vec3 n{ 0, 1, 0 };
 
-    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat);
+    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 0.3f, EPS);
     ASSERT_NEAR(r.y, 0.5f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -248,32 +260,7 @@ TEST(specular_pow_sq, zero_base_returns_zero)
     ASSERT_NEAR(specular_pow_sq(0.0f, 1.0f), 0.0f, 1e-5f);
 }
 
-// ─── overload / robustness ────────────────────────────────────────────────────
-
-TEST(light, overload_derives_view_vector)
-{
-    // The pos/eye_pos overload must produce the same result as the precomputed-v
-    // overload when v = normalize(eye_pos - pos).
-    Material mat;
-    mat.diffuse = { 0.8f, 0.6f, 0.4f };
-    mat.specular = { 0.5f, 0.5f, 0.5f };
-    mat.shininess = 16.0f;
-    Light l;
-    l.direction = { 0, 1, 0 };
-    l.color = { 1, 1, 1 };
-    vec3 ambient{ 0.1f, 0.1f, 0.1f };
-    vec3 n{ 0, 1, 0 };
-    vec3 pos{ 0, 0, 0 };
-    vec3 eye_pos{ 0, 0, 5 };
-
-    vec3 v = normalize(eye_pos - pos);
-    vec3 r1 = compute_lighting(n, v, &l, 1, ambient, mat);
-    vec3 r2 = compute_lighting(pos, n, eye_pos, &l, 1, ambient, mat);
-
-    ASSERT_NEAR(r1.x, r2.x, EPS);
-    ASSERT_NEAR(r1.y, r2.y, EPS);
-    ASSERT_NEAR(r1.z, r2.z, EPS);
-}
+// ─── robustness ────────────────────────────────────────────────────────────────
 
 TEST(light, normal_is_normalized_internally)
 {
@@ -291,8 +278,9 @@ TEST(light, normal_is_normalized_internally)
     vec3 n_unit{ 0, 1, 0 };
     vec3 n_scaled{ 0, 5, 0 };
 
-    vec3 r_unit = compute_lighting(n_unit, v, &l, 1, ambient, mat);
-    vec3 r_scaled = compute_lighting(n_scaled, v, &l, 1, ambient, mat);
+    vec3 r_unit = compute_lighting(n_unit, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
+    vec3 r_scaled =
+        compute_lighting(n_scaled, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
 
     ASSERT_NEAR(r_unit.x, r_scaled.x, EPS);
     ASSERT_NEAR(r_unit.y, r_scaled.y, EPS);
@@ -317,11 +305,11 @@ TEST(light, multiple_lights_sum_specular)
     vec3 n{ 0, 1, 0 };
 
     // Individual contributions
-    vec3 r0 = compute_lighting(n, v, &ls[0], 1, ambient, mat);
-    vec3 r1 = compute_lighting(n, v, &ls[1], 1, ambient, mat);
+    vec3 r0 = compute_lighting(n, v, &ls[0], 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
+    vec3 r1 = compute_lighting(n, v, &ls[1], 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
 
     // Combined
-    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat);
+    vec3 r = compute_lighting(n, v, ls, 2, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
 
     ASSERT_NEAR(r.x, r0.x + r1.x, EPS);
     ASSERT_NEAR(r.y, r0.y + r1.y, EPS);
@@ -335,7 +323,9 @@ TEST(light, ao_zero_zeroes_ambient)
     mat.ambient = { 1.0f, 1.0f, 1.0f };
     vec3 ambient{ 0.5f, 0.5f, 0.5f };
     vec3 v{ 0, 0, 1 };
-    vec3 r = compute_lighting(vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat, 0.0f);
+    vec3 r = compute_lighting(
+        vec3{ 0, 1, 0 }, v, nullptr, 0, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, 0.0f
+    );
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
     ASSERT_NEAR(r.z, 0.0f, EPS);
@@ -355,7 +345,9 @@ TEST(light, ndh_zero_gates_specular)
     vec3 ambient{ 0, 0, 0 };
     vec3 n{ 0.0f, 1.0f, 0.0f };
 
-    vec3 r = compute_lighting(n, vec3{ 0.0f, -1.0f, 0.0f }, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(
+        n, vec3{ 0.0f, -1.0f, 0.0f }, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess
+    );
 
     ASSERT_NEAR(r.x, 0.0f, EPS);
     ASSERT_NEAR(r.y, 0.0f, EPS);
@@ -378,7 +370,7 @@ TEST(light, specular_independent_of_diffuse_branch)
     vec3 n{ 0, 1, 0 };
     vec3 v = normalize(vec3{ -1, 1, 0 }); // half-vector tilted toward n → ndh > 0
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_TRUE(r.x > 0.0f);
 }
 
@@ -399,7 +391,7 @@ TEST(light, negative_ndh_suppresses_specular)
     vec3 n{ 0.0f, 1.0f, 0.0f };
     vec3 v{ 0.0f, -3.0f, 0.0f }; // h = l+v = {0,-2,0}, ndh_raw = -2
 
-    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_NEAR(r.x, 0.8f, EPS);
     ASSERT_NEAR(r.y, 0.6f, EPS);
     ASSERT_NEAR(r.z, 0.4f, EPS);
@@ -423,7 +415,8 @@ TEST(specular_pow_sq, shininess_12_matches_power)
 
 TEST(light, assume_unit_precomputed_v_matches_regular)
 {
-    // Both overloads must produce identical output for a unit normal.
+    // The assume_unit (no internal normalize) overload must match the normalizing
+    // shading-params overload for a unit normal.
     Material mat;
     mat.diffuse = { 0.8f, 0.6f, 0.4f };
     mat.specular = { 0.3f, 0.3f, 0.3f };
@@ -435,7 +428,7 @@ TEST(light, assume_unit_precomputed_v_matches_regular)
     vec3 n{ 0.0f, 1.0f, 0.0f };
     vec3 v = normalize(vec3{ 0.0f, 1.0f, 1.0f });
 
-    vec3 r_reg = compute_lighting(n, v, &l, 1, ambient, mat);
+    vec3 r_reg = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     vec3 r_au = compute_lighting(assume_unit, n, v, &l, 1, ambient, mat);
 
     ASSERT_NEAR(r_au.x, r_reg.x, EPS);
@@ -445,7 +438,8 @@ TEST(light, assume_unit_precomputed_v_matches_regular)
 
 TEST(light, assume_unit_pos_eye_derives_v_correctly)
 {
-    // The pos/eye_pos assume_unit overload must match the regular pos/eye_pos overload.
+    // The pos/eye_pos assume_unit overload must derive v == normalize(eye_pos - pos)
+    // and match the normalizing reference fed that same v.
     Material mat;
     mat.diffuse = { 1.0f, 1.0f, 1.0f };
     mat.specular = { 0.5f, 0.5f, 0.5f };
@@ -459,7 +453,9 @@ TEST(light, assume_unit_pos_eye_derives_v_correctly)
     vec3 pos{ 0.0f, 0.0f, 0.0f };
     vec3 eye_pos{ 0.0f, 2.0f, 3.0f };
 
-    vec3 r_reg = compute_lighting(pos, normal, eye_pos, &l, 1, ambient, mat, ao);
+    vec3 r_reg = compute_lighting(
+        normal, normalize(eye_pos - pos), &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess, ao
+    );
     vec3 r_au = compute_lighting(assume_unit, pos, normal, eye_pos, &l, 1, ambient, mat, ao);
 
     ASSERT_NEAR(r_au.x, r_reg.x, EPS);

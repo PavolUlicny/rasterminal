@@ -198,33 +198,11 @@ inline void apply_light(
     }
 }
 
-// Blinn-Phong illumination summed over an array of directional lights.
-// ambient is a scene-level term added once (not per light).
-// v must be the unit view vector (normalize(eye - pos)) — precomputed by caller.
-// Returns RGB in [0, ~1+]; caller is responsible for clamping before display.
-inline vec3 compute_lighting(
-    vec3 normal,
-    const vec3 &v,
-    const Light *lights,
-    int n_lights,
-    const vec3 &ambient,
-    const Material &mat = {},
-    float ao = 1.0f
-) noexcept
-{
-    const vec3 n = normalize(normal);
-    vec3 result = ambient * mat.ambient * ao;
-    for (int i = 0; i < n_lights; i++)
-    {
-        apply_light(result, n, v, lights[i], mat);
-    }
-    return result;
-}
-
-// Shading-params overload: mirrors the (normal, v, …, Material) variant above but takes
-// only the four fields lighting actually consumes. Used by rasterize_phong to skip the
-// per-pixel Material struct copy. Behaviour is bit-identical to the Material version
-// when called with the same diffuse/ambient/specular/shininess values.
+// Blinn-Phong illumination summed over an array of directional lights, taking the four
+// shading-params fields lighting consumes (diffuse/ambient/specular/shininess) rather than a
+// Material — this lets rasterize_phong skip the per-pixel Material copy. ambient_scene is added
+// once (not per light). v must be the unit view vector (normalize(eye - pos)), precomputed by the
+// caller; normal is normalized internally. Returns RGB in [0, ~1+]; caller clamps before display.
 inline vec3 compute_lighting(
     vec3 normal,
     const vec3 &v,
@@ -245,22 +223,6 @@ inline vec3 compute_lighting(
         apply_light(result, n, v, lights[i], diffuse, specular, shininess);
     }
     return result;
-}
-
-// Convenience overload: derives v from pos and eye_pos.
-// Used by the Flat path where v is not precomputed.
-inline vec3 compute_lighting(
-    vec3 pos,
-    vec3 normal,
-    const vec3 &eye_pos,
-    const Light *lights,
-    int n_lights,
-    const vec3 &ambient,
-    const Material &mat = {},
-    float ao = 1.0f
-) noexcept
-{
-    return compute_lighting(normal, normalize(eye_pos - pos), lights, n_lights, ambient, mat, ao);
 }
 
 // assume_unit overloads: caller guarantees normal is already unit-length.
