@@ -356,6 +356,212 @@ TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
     ASSERT_EQ(m.materials[1].specular_map.tex, -1);
 }
 
+// ─── map_Bump / bump → height-map classification ─────────────────────────────
+// A real height map (grayscale, or an explicit -imfchan channel) is converted to a
+// tangent-space normal map at load; an RGB texture mislabeled under map_Bump (common
+// from Blender's legacy exporter) is kept as a normal map. See mesh_obj.cpp / texture.cpp.
+
+// 1×1 BMP of an arbitrary RGB colour (built from the inline red template; pixel bytes
+// are BGR at offset 54). stb_image decodes it to RGBA = {r, g, b, 255}.
+static std::vector<uint8_t> bmp_1x1(uint8_t r, uint8_t g, uint8_t b)
+{
+    std::vector<uint8_t> v(k1x1_red_bmp, k1x1_red_bmp + sizeof(k1x1_red_bmp));
+    v[54] = b;
+    v[55] = g;
+    v[56] = r;
+    return v;
+}
+
+static constexpr const char *kBumpObj = "mtllib bump.mtl\n"
+                                        "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                        "usemtl M\nf 1 2 3\n";
+
+TEST(obj_bump, grayscale_map_bump_converted_to_normal_map)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128); // achromatic ⇒ height map
+    TmpFile bmp(tmp_path("bump_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 0.5 0.5 0.5\nmap_Bump bump_gray.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    // Flat 1×1 height ⇒ tangent-space normal (0,0,1) ⇒ encoded (128,128,255): the B=255
+    // distinguishes the *converted* normal map from the raw grayscale source (128,128,128).
+    ASSERT_EQ(nm->pixels[0], uint8_t{ 128 });
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 255 });
+}
+
+TEST(obj_bump, chromatic_map_bump_kept_as_normal_map)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 128, 255); // R != G ⇒ mislabeled normal map
+    TmpFile bmp(tmp_path("bump_chroma.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 0.5 0.5 0.5\nmap_Bump bump_chroma.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    // Unconverted: the texels are the raw decoded RGBA, not a (_,_,255) normal.
+    ASSERT_EQ(nm->pixels[0], uint8_t{ 200 });
+    ASSERT_EQ(nm->pixels[1], uint8_t{ 128 });
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 255 });
+}
+
+TEST(obj_bump, explicit_imfchan_forces_height_on_chromatic)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 128, 64); // chromatic, but -imfchan declares scalar
+    TmpFile bmp(tmp_path("bump_chroma.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 0.5 0.5 0.5\nmap_Bump -imfchan r bump_chroma.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+
+    Mesh m = load_ok(obj.path);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    // Forced through the height path ⇒ converted (flat ⇒ (128,128,255)), not the raw (200,128,64).
+    ASSERT_EQ(nm->pixels[0], uint8_t{ 128 });
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 255 });
+}
+
+TEST(obj_bump, uppercase_imfchan_folds_to_lowercase_and_forces_height)
+{
+    // Out-of-spec uppercase channel: tinyobjloader keeps it verbatim, so without case-folding
+    // 'R' would miss the explicit-channel test and the chromatic source would be kept un-converted.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 128, 64);
+    TmpFile bmp(tmp_path("bump_chroma.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 0.5 0.5 0.5\nmap_Bump -imfchan R bump_chroma.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+
+    Mesh m = load_ok(obj.path);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    ASSERT_EQ(nm->pixels[0], uint8_t{ 128 });
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 255 });
+}
+
+TEST(obj_bump, norm_wins_over_map_bump)
+{
+    const std::vector<uint8_t> norm = bmp_1x1(10, 20, 200); // a real normal map under `norm`
+    TmpFile nbmp(tmp_path("normal.bmp"), norm.data(), norm.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 0.5 0.5 0.5\nnorm normal.bmp\nmap_Bump bump_gray.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+
+    Mesh m = load_ok(obj.path);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    // `norm` is bound directly (never classified/converted) and map_Bump is ignored entirely:
+    // only the norm texture is registered, with its raw chromatic texels intact.
+    ASSERT_EQ(m.textures.size(), size_t{ 1 });
+    ASSERT_EQ(nm->pixels[0], uint8_t{ 10 });
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 200 });
+}
+
+TEST(obj_bump, shared_grayscale_map_bump_converts_once)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128);
+    TmpFile bmp(tmp_path("bump_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("bump.mtl"), "newmtl A\nKd 1 1 1\nmap_Bump bump_gray.bmp\n"
+                              "newmtl B\nKd 1 1 1\nmap_Bump bump_gray.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("bump.obj"), "mtllib bump.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                              "usemtl A\nf 1 2 3\nusemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 3);
+    // One decoded source + one converted normal map, shared by both materials (dedup).
+    ASSERT_EQ(m.textures.size(), size_t{ 2 });
+    ASSERT_EQ(m.materials[1].normal_map.tex, m.materials[2].normal_map.tex);
+}
+
+TEST(obj_bump, distinct_bm_produces_distinct_normal_maps)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128);
+    TmpFile bmp(tmp_path("bump_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("bump.mtl"), "newmtl A\nKd 1 1 1\nmap_Bump -bm 1 bump_gray.bmp\n"
+                              "newmtl B\nKd 1 1 1\nmap_Bump -bm 3 bump_gray.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("bump.obj"), "mtllib bump.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                              "usemtl A\nf 1 2 3\nusemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    // Same source, two different -bm ⇒ two distinct converted textures (dedup key includes bm).
+    ASSERT_EQ(m.textures.size(), size_t{ 3 });
+    ASSERT_TRUE(m.materials[1].normal_map.tex != m.materials[2].normal_map.tex);
+}
+
+TEST(obj_bump, out_of_range_bm_dedups_to_one_after_clamp)
+{
+    // Two out-of-range -bm that both clamp to the same ceiling are byte-identical conversions, so
+    // the dedup (keyed on the clamped multiplier) stores one shared texture, not two.
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128);
+    TmpFile bmp(tmp_path("bump_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("bump.mtl"), "newmtl A\nKd 1 1 1\nmap_Bump -bm 1e7 bump_gray.bmp\n"
+                              "newmtl B\nKd 1 1 1\nmap_Bump -bm 1e8 bump_gray.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("bump.obj"), "mtllib bump.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                              "usemtl A\nf 1 2 3\nusemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_EQ(m.textures.size(), size_t{ 2 }); // source + one shared converted
+    ASSERT_EQ(m.materials[1].normal_map.tex, m.materials[2].normal_map.tex);
+}
+
+TEST(obj_bump, missing_map_bump_file_leaves_normal_unbound)
+{
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 1 1 1\nmap_Bump does_not_exist.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+    Mesh m = load_ok(obj.path);
+    // Decode dropped the texture ⇒ normal_map stays unbound, no conversion, no crash.
+    ASSERT_EQ(m.materials[1].normal_map.tex, -1);
+    ASSERT_EQ(m.textures.size(), size_t{ 0 });
+}
+
+TEST(obj_bump, source_shared_with_map_kd_not_corrupted_by_conversion)
+{
+    // The same image is a diffuse map on one material and a grayscale bump on another. The
+    // conversion must append a NEW normal map, never mutate the shared decoded source, so the
+    // diffuse material keeps sampling the original grayscale.
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128);
+    TmpFile bmp(tmp_path("shared_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("bump.mtl"), "newmtl D\nKd 1 1 1\nmap_Kd shared_gray.bmp\n"
+                              "newmtl B\nKd 1 1 1\nmap_Bump shared_gray.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("bump.obj"), "mtllib bump.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                              "usemtl D\nf 1 2 3\nusemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    const Texture *diff = m.tex_at(m.materials[1].diffuse_map.tex);
+    const Texture *norm = m.tex_at(m.materials[2].normal_map.tex);
+    ASSERT_TRUE(diff != nullptr);
+    ASSERT_TRUE(norm != nullptr);
+    ASSERT_EQ(diff->pixels[2], uint8_t{ 128 }); // diffuse source intact (raw grayscale)
+    ASSERT_EQ(norm->pixels[2], uint8_t{ 255 }); // normal map is the converted (B=255) copy
+    ASSERT_TRUE(m.materials[1].diffuse_map.tex != m.materials[2].normal_map.tex);
+}
+
+TEST(obj_bump, lowercase_bump_keyword_converts)
+{
+    // tinyobjloader maps the bare `bump` keyword to bump_texname alongside map_Bump/map_bump.
+    const std::vector<uint8_t> tex = bmp_1x1(64, 64, 64);
+    TmpFile bmp(tmp_path("bump_gray.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("bump.mtl"), "newmtl M\nKd 1 1 1\nbump bump_gray.bmp\n");
+    TmpFile obj(tmp_path("bump.obj"), kBumpObj);
+    Mesh m = load_ok(obj.path);
+    const Texture *nm = m.tex_at(m.materials[1].normal_map.tex);
+    ASSERT_TRUE(nm != nullptr);
+    ASSERT_EQ(nm->pixels[2], uint8_t{ 255 }); // converted
+}
+
 TEST(obj_valid, mtl_ke_emissive_parsed)
 {
     TmpFile mtl(tmp_path("rast_ke.mtl"), "newmtl M\nKe 1.0 0.5 0.25\n");

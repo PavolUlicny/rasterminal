@@ -8,8 +8,11 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <fstream>
+#include <map>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -119,6 +122,18 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     };
     std::unordered_map<std::string, int> tex_cache;
     std::vector<ObjTexRequest> tex_requests;
+
+    // map_Bump/bump bindings to resolve after decode: the slot is bound now (as a normal
+    // map), but whether it is a true height map (→ convert) or a mislabeled normal map
+    // (→ keep) can only be decided once the pixels are decoded. Keyed by material index so
+    // it survives decode_textures' failed-decode compaction/remap.
+    struct BumpBinding
+    {
+        size_t material_index;
+        float bump_multiplier;
+        char imfchan;
+    };
+    std::vector<BumpBinding> bump_bindings;
     auto load_tex = [&](const std::string &name, bool clamp) -> int
     {
         if (name.empty())
@@ -149,9 +164,30 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         mat.ambient = ka_zero ? mat.diffuse : vec3{ m.ambient[0], m.ambient[1], m.ambient[2] };
         mat.diffuse_map.tex = load_tex(m.diffuse_texname, m.diffuse_texopt.clamp);
         mat.specular_map.tex = load_tex(m.specular_texname, m.specular_texopt.clamp);
-        // Prefer map_Kn (normal_texname); fall back to map_bump (bump_texname).
-        mat.normal_map.tex = !m.normal_texname.empty() ? load_tex(m.normal_texname, m.normal_texopt.clamp)
-                                                       : load_tex(m.bump_texname, m.bump_texopt.clamp);
+        // A real normal map (`norm` → normal_texname) wins and is bound directly. The
+        // map_Bump/bump fallback is, per the MTL spec, a grayscale *height* map — but many
+        // exporters (notably Blender's legacy OBJ exporter) ship an actual RGB normal map
+        // there. Bind it as a normal map now and record the binding; after decode we classify
+        // each bump texture and convert only the true grayscale ones (see the pass below).
+        if (!m.normal_texname.empty())
+        {
+            mat.normal_map.tex = load_tex(m.normal_texname, m.normal_texopt.clamp);
+        }
+        else if (!m.bump_texname.empty())
+        {
+            // -bm and -imfchan are carried. -bm is bounded to the same finite range
+            // height_to_normal_map clamps to, applied here too so the conversion dedup key keys on
+            // the *effective* multiplier (two out-of-range -bm that clamp equal then share one
+            // texture). The -mm base/gain brightness/contrast modifier on the bump map is
+            // intentionally not applied (rare; bump strength is controlled via -bm).
+            mat.normal_map.tex = load_tex(m.bump_texname, m.bump_texopt.clamp);
+            const float bm = std::clamp(m.bump_texopt.bump_multiplier, -1e6f, 1e6f);
+            // Lower-case -imfchan once here: tinyobjloader stores the channel char verbatim, but
+            // the spec writes it lower-case, so fold an out-of-spec 'R'/'G'/… to its 'r'/'g'/…
+            // meaning rather than silently dropping it to luminance at both consumption sites.
+            const char imfchan = static_cast<char>(std::tolower(static_cast<unsigned char>(m.bump_texopt.imfchan)));
+            bump_bindings.push_back({ materials.size(), bm, imfchan });
+        }
         // Clamp Ke to [0, 1e6] per channel: emission is physically non-negative (glTF enforces
         // the same via emissiveFactor's `minimum: 0.0`). Lower bound stops a negative from
         // subtracting from lit colour; upper bound stops a hostile +Inf at the source, before
@@ -368,6 +404,76 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
             return tex;
         }
     );
+
+    // map_Bump/bump resolution: classify each decoded bump texture and convert the true
+    // height maps to tangent-space normal maps (height_to_normal_map). Chromatic textures
+    // are mislabeled normal maps (common from Blender's legacy exporter) and pass through
+    // unchanged. An explicit non-luminance -imfchan (r/g/b/m/z) forces the height path —
+    // naming a single channel only makes sense for a scalar source. (-imfchan l is the
+    // tinyobjloader default and carries no "was it written?" flag, so it is indistinguishable
+    // from absent and correctly falls through to grayscale detection.) This deliberately
+    // deviates from the MTL letter (map_Bump is unconditionally a height map) because a
+    // no-human-in-the-loop viewer must not wreck the large mislabeled-normal-map corpus;
+    // grayscale detection separates the two near-perfectly. The conversion runs serially here
+    // (not dispatched onto the worker pool like decode_textures): an OBJ binding several distinct
+    // large height maps is rare, the per-source dedup/classification logic is inherently serial,
+    // and each conversion is bounded O(w*h) — not worth a parallel split.
+    if (!bump_bindings.empty())
+    {
+        std::map<std::tuple<int, char, uint32_t>, int> converted; // (src_idx, imfchan, bm-bits) → new tex
+        std::map<int, bool> grayscale_of;                         // per-source classification, scanned once
+        for (const auto &bind : bump_bindings)
+        {
+            const int src = materials[bind.material_index].normal_map.tex;
+            if (src < 0)
+            {
+                continue; // decode dropped this texture; nothing bound
+            }
+            const char ch = bind.imfchan;
+            const bool explicit_channel = (ch == 'r' || ch == 'g' || ch == 'b' || ch == 'm' || ch == 'z');
+            if (!explicit_channel)
+            {
+                // is_grayscale is an O(w*h) scan; cache it by source so a grayscale bump shared
+                // across many materials is classified once, not once per binding.
+                const auto [cit, inserted] = grayscale_of.try_emplace(src, false);
+                if (inserted)
+                {
+                    cit->second = is_grayscale(textures[static_cast<size_t>(src)]);
+                }
+                if (!cit->second)
+                {
+                    continue; // chromatic, no explicit channel ⇒ a normal map mislabeled as bump: keep as-is
+                }
+            }
+
+            uint32_t bm_bits = 0;
+            std::memcpy(&bm_bits, &bind.bump_multiplier, sizeof bm_bits);
+            // Key on the raw imfchan, not its effective channel: 'z' aliases 'b' and unknown chars
+            // alias 'l' inside height_channel, so two materials sharing a source+bm but written with
+            // equivalent-yet-different letters convert twice. That collision needs hand-authored
+            // contradictory MTL and only wastes one duplicate texture, so it is not worth canonicalizing.
+            const auto key = std::make_tuple(src, ch, bm_bits);
+            const auto it = converted.find(key);
+            if (it != converted.end())
+            {
+                materials[bind.material_index].normal_map.tex = it->second;
+                continue;
+            }
+
+            // Append the converted normal map rather than overwriting textures[src] in place: the
+            // same source can need several distinct conversions (e.g. two materials, one height
+            // map, different -bm), each of which must read the original height data — so the source
+            // slot has to survive the whole pass. The consequence is that a bump-only grayscale
+            // source (not also bound as map_Kd/etc.) is left orphaned in textures[] once repointed,
+            // retaining its decoded RGBA buffer unused for the mesh lifetime. Accepted: reclaiming
+            // it needs a reference-aware mark-sweep over the texture slots, deferred as its own pass.
+            Texture nmap = height_to_normal_map(textures[static_cast<size_t>(src)], ch, bind.bump_multiplier);
+            const int new_idx = static_cast<int>(textures.size());
+            textures.push_back(std::move(nmap));
+            converted.emplace(key, new_idx);
+            materials[bind.material_index].normal_map.tex = new_idx;
+        }
+    }
 
     snap.commit();
     return true;
