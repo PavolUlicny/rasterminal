@@ -111,8 +111,6 @@ namespace
             return "Wireframe";
         case ShadingMode::Flat:
             return "Flat";
-        case ShadingMode::Gouraud:
-            return "Gouraud";
         case ShadingMode::Phong:
             return "Phong";
         }
@@ -381,10 +379,6 @@ int main(int argc, char *argv[])
                 }
                 else if (k == platform::Key::Num3)
                 {
-                    renderer.mode = ShadingMode::Gouraud;
-                }
-                else if (k == platform::Key::Num4)
-                {
                     renderer.mode = ShadingMode::Phong;
                 }
                 else if (k == platform::Key::B)
@@ -413,7 +407,7 @@ int main(int argc, char *argv[])
                 else if (k == platform::Key::R)
                 {
                     camera = initial_camera;
-                    renderer.mode = ShadingMode::Gouraud;
+                    renderer.mode = ShadingMode::Phong;
                     lighting_mode = 0;
                     bg_mode = 0;
                     wf_color = 0;

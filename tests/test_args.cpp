@@ -108,7 +108,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "model.obj");
     ASSERT_EQ(r.args.n_threads, -1);
-    ASSERT_EQ(r.args.shading, 2);         // gouraud
+    ASSERT_EQ(r.args.shading, 2);         // phong
     ASSERT_EQ(r.args.bg, 0);              // black
     ASSERT_EQ(r.args.lighting, 0);        // dual
     ASSERT_EQ(r.args.wireframe_color, 0); // white
@@ -358,14 +358,9 @@ TEST(args, shading_flat_by_name)
     ASSERT_EQ(run({ "--shading", "flat", "m.obj" }).args.shading, 1);
 }
 
-TEST(args, shading_gouraud_by_name)
-{
-    ASSERT_EQ(run({ "--shading", "gouraud", "m.obj" }).args.shading, 2);
-}
-
 TEST(args, shading_phong_by_name)
 {
-    ASSERT_EQ(run({ "--shading", "phong", "m.obj" }).args.shading, 3);
+    ASSERT_EQ(run({ "--shading", "phong", "m.obj" }).args.shading, 2);
 }
 
 TEST(args, shading_numeric_alias_1)
@@ -373,15 +368,20 @@ TEST(args, shading_numeric_alias_1)
     ASSERT_EQ(run({ "-s", "1", "m.obj" }).args.shading, 0);
 }
 
-TEST(args, shading_numeric_alias_4)
+TEST(args, shading_numeric_alias_3)
 {
-    ASSERT_EQ(run({ "-s", "4", "m.obj" }).args.shading, 3);
+    ASSERT_EQ(run({ "-s", "3", "m.obj" }).args.shading, 2);
+}
+
+TEST(args, shading_numeric_alias_4_is_invalid)
+{
+    ASSERT_FALSE(run({ "-s", "4", "m.obj" }).ok);
 }
 
 TEST(args, shading_case_insensitive)
 {
-    ASSERT_EQ(run({ "--shading", "PHONG", "m.obj" }).args.shading, 3);
-    ASSERT_EQ(run({ "--shading", "Gouraud", "m.obj" }).args.shading, 2);
+    ASSERT_EQ(run({ "--shading", "PHONG", "m.obj" }).args.shading, 2);
+    ASSERT_EQ(run({ "--shading", "Flat", "m.obj" }).args.shading, 1);
 }
 
 TEST(args, shading_invalid_value_is_error)
@@ -395,7 +395,7 @@ TEST(args, shading_invalid_value_is_error)
 
 TEST(args, shading_compact_short_form)
 {
-    ASSERT_EQ(run({ "-sphong", "m.obj" }).args.shading, 3);
+    ASSERT_EQ(run({ "-sphong", "m.obj" }).args.shading, 2);
     ASSERT_EQ(run({ "-swireframe", "m.obj" }).args.shading, 0);
 }
 
@@ -406,7 +406,7 @@ TEST(args, shading_equals_long_form)
 
 TEST(args, shading_compact_case_insensitive)
 {
-    ASSERT_EQ(run({ "-sPHONG", "m.obj" }).args.shading, 3);
+    ASSERT_EQ(run({ "-sPHONG", "m.obj" }).args.shading, 2);
     ASSERT_EQ(run({ "-sFLAT", "m.obj" }).args.shading, 1);
 }
 
@@ -619,7 +619,7 @@ TEST(args, multiple_flags_all_applied)
               "--cull=off", "--texture=off", "--spin", "--no-shadow", "--no-ao", "--no-hud", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
-    ASSERT_EQ(r.args.shading, 3);
+    ASSERT_EQ(r.args.shading, 2);
     ASSERT_EQ(r.args.bg, 2);
     ASSERT_EQ(r.args.lighting, 1);
     ASSERT_EQ(r.args.wireframe_color, 5);
@@ -682,7 +682,7 @@ TEST(args, cluster_spin_shading_value)
     ParseResult r = run({ "-Ssphong", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.shading, 3);
+    ASSERT_EQ(r.args.shading, 2);
 }
 
 TEST(args, cluster_spin_cull_off)
@@ -881,7 +881,7 @@ TEST(args, cluster_spin_shading_next_token)
     ParseResult r = run({ "-Ss", "phong", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.shading, 3);
+    ASSERT_EQ(r.args.shading, 2);
 }
 
 TEST(args, cluster_spin_texture_next_token)

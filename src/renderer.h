@@ -21,7 +21,6 @@ enum class ShadingMode : std::uint8_t
 {
     Wireframe,
     Flat,
-    Gouraud,
     Phong
 };
 
@@ -29,7 +28,7 @@ enum class ShadingMode : std::uint8_t
 
 struct Renderer
 {
-    ShadingMode mode = ShadingMode::Gouraud;
+    ShadingMode mode = ShadingMode::Phong;
     Color wireframe_color = { 200, 200, 200 };
     bool cull_backfaces = true;
     bool show_texture = true;
@@ -73,7 +72,7 @@ struct Renderer
     // Single-pass geometry + rasterize over this worker's stolen triangle chunks.
     // S == Opaque is the original opaque path (byte-identical codegen); S == Transparent
     // shades blend triangles and pushes fragments into this worker's A-buffer arena.
-    // M selects the shading path (Flat/Gouraud/Phong) at compile time so the per-triangle
+    // M selects the shading path (Flat/Phong) at compile time so the per-triangle
     // mode branch folds away; Wireframe never reaches the worker pool.
     template <Sink S, ShadingMode M> void raster_triangles(int worker_id);
 
@@ -105,7 +104,7 @@ struct Renderer
     const ShadowMap *m_shadow_map = nullptr;
     float m_near_plane = 0.0f;
     int m_width = 0, m_height = 0;
-    ShadingMode m_smode = ShadingMode::Gouraud;
+    ShadingMode m_smode = ShadingMode::Phong;
     bool m_cull_backfaces = true;
     bool m_show_texture = true;
     Framebuffer *m_fb = nullptr;

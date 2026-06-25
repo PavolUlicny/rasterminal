@@ -99,7 +99,7 @@ Renderer::~Renderer()
 // is identical to the pre-transparency single pass. S == Transparent processes the
 // blend tail [opaque_count, total) and pushes shaded fragments into this worker's
 // A-buffer arena instead (the per-pixel resolve composites them later).
-// M selects the shading path at compile time: the Flat/Gouraud/Phong dispatch folds
+// M selects the shading path at compile time: the Flat/Phong dispatch folds
 // to `if constexpr`, so each instantiation carries only its own shading code.
 
 template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
@@ -120,13 +120,13 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
     // even when diffuse_map is hidden by the toggle.
     const bool show_emissive = mesh->has_emissive && show_tex;
-    // Phong-only locals: unused in the Flat/Gouraud instantiations (those branches compile out).
+    // Phong-only locals: unused in the Flat instantiation (those branches compile out).
     [[maybe_unused]] const bool show_metallic = mesh->has_metallic && show_tex;
     [[maybe_unused]] const bool apply_normal_scale = mesh->has_normal_scale && show_tex;
     [[maybe_unused]] const bool show_occlusion = mesh->has_occlusion && show_tex;
     const bool mesh_has_unlit = mesh->has_unlit;
     Framebuffer *fb = m_fb;
-    // Flat/Gouraud-only locals: unused in the Phong instantiation (it derives the shadow
+    // Flat-only locals: unused in the Phong instantiation (it derives the shadow
     // light split inside rasterize_phong).
     [[maybe_unused]] const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
     [[maybe_unused]] const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
@@ -289,7 +289,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                         // KHR_materials_unlit: output baseColor * vertexColor * diffuse
                         // texture directly, bypassing lighting/shadow/ambient/emissive/
                         // normal/occlusion regardless of the active shading mode. Reuses the
-                        // flat/gouraud rasterizer with the raw base colour as the per-vertex
+                        // flat rasterizer with the raw base colour as the per-vertex
                         // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
                         // when the mesh has no vertex colours (set at ClipVert construction),
                         // so this reduces to mat.diffuse there. Shadow colours are passed as
@@ -351,138 +351,59 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                     }
                     else
                     {
-                        vec3 col_a;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always
-                                     // overwritten in Flat/Gouraud branches below
-                        vec3 col_b;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                        vec3 col_c;  // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                        vec3 shad_a; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
-                                     // when shadow_map != nullptr; written before that read
-                        vec3 shad_b; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-                        vec3 shad_c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                        // Flat shading: one compute_lighting() at the centroid, constant across
+                        // the triangle (M is always Flat here — Phong and unlit are handled above).
+                        vec3 col;
+                        vec3 shad; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
+                                   // when shadow_map != nullptr; written before that read
 
-                        if constexpr (M == ShadingMode::Flat)
+                        vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
+                        if (flip_normals)
                         {
-                            vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
-                            if (flip_normals)
+                            face_n = face_n * -1.0f;
+                        }
+                        const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
+                        const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
+                        const Material *flat_mat = &mat;
+                        Material vcol_mat;
+                        if (mesh->has_vertex_colors)
+                        {
+                            const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
+                            if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
                             {
-                                face_n = face_n * -1.0f;
-                            }
-                            const vec3 fc = (a.pos + b.pos + c.pos) * (1.0f / 3.0f);
-                            const float face_ao = (a.ao + b.ao + c.ao) * (1.0f / 3.0f);
-                            const Material *flat_mat = &mat;
-                            Material vcol_mat;
-                            if (mesh->has_vertex_colors)
-                            {
-                                const vec3 face_vcol = (a.color + b.color + c.color) * (1.0f / 3.0f);
-                                if (face_vcol.x != 1.0f || face_vcol.y != 1.0f || face_vcol.z != 1.0f)
-                                {
-                                    vcol_mat = mat;
-                                    vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
-                                    vcol_mat.ambient = vcol_mat.ambient * face_vcol;
-                                    flat_mat = &vcol_mat;
-                                }
-                            }
-                            col_a = col_b = col_c = compute_lighting(
-                                assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
-                            );
-                            if (shadow_map)
-                            {
-                                shad_a = shad_b = shad_c = compute_lighting(
-                                    assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat,
-                                    face_ao
-                                );
+                                vcol_mat = mat;
+                                vcol_mat.diffuse = vcol_mat.diffuse * face_vcol;
+                                vcol_mat.ambient = vcol_mat.ambient * face_vcol;
+                                flat_mat = &vcol_mat;
                             }
                         }
-                        else // Gouraud
+                        col = compute_lighting(
+                            assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
+                        );
+                        if (shadow_map)
                         {
-                            if (p_vcols)
-                            {
-                                Material gvcol_mat;
-                                auto gouraud_mat = [&](const vec3 &vcol) -> const Material &
-                                {
-                                    if (vcol.x == 1.0f && vcol.y == 1.0f && vcol.z == 1.0f)
-                                    {
-                                        return mat;
-                                    }
-                                    gvcol_mat = mat;
-                                    gvcol_mat.diffuse = gvcol_mat.diffuse * vcol;
-                                    gvcol_mat.ambient = gvcol_mat.ambient * vcol;
-                                    return gvcol_mat;
-                                };
-                                col_a = compute_lighting(
-                                    assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, gouraud_mat(a.color),
-                                    a.ao
-                                );
-                                col_b = compute_lighting(
-                                    assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, gouraud_mat(b.color),
-                                    b.ao
-                                );
-                                col_c = compute_lighting(
-                                    assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, gouraud_mat(c.color),
-                                    c.ao
-                                );
-                                if (shadow_map)
-                                {
-                                    shad_a = compute_lighting(
-                                        assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                        gouraud_mat(a.color), a.ao
-                                    );
-                                    shad_b = compute_lighting(
-                                        assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                        gouraud_mat(b.color), b.ao
-                                    );
-                                    shad_c = compute_lighting(
-                                        assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient,
-                                        gouraud_mat(c.color), c.ao
-                                    );
-                                }
-                            }
-                            else
-                            {
-                                col_a = compute_lighting(
-                                    assume_unit, a.pos, a.normal, eye, lights, n_lights, ambient, mat, a.ao
-                                );
-                                col_b = compute_lighting(
-                                    assume_unit, b.pos, b.normal, eye, lights, n_lights, ambient, mat, b.ao
-                                );
-                                col_c = compute_lighting(
-                                    assume_unit, c.pos, c.normal, eye, lights, n_lights, ambient, mat, c.ao
-                                );
-                                if (shadow_map)
-                                {
-                                    shad_a = compute_lighting(
-                                        assume_unit, a.pos, a.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
-                                        a.ao
-                                    );
-                                    shad_b = compute_lighting(
-                                        assume_unit, b.pos, b.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
-                                        b.ao
-                                    );
-                                    shad_c = compute_lighting(
-                                        assume_unit, c.pos, c.normal, eye, shadow_lights, n_shadow_lights, ambient, mat,
-                                        c.ao
-                                    );
-                                }
-                            }
+                            shad = compute_lighting(
+                                assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat,
+                                face_ao
+                            );
                         }
 
                         if constexpr (S == Sink::Opaque)
                         {
                             rasterize<Sink::Opaque>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
-                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr,
-                                mat.emissive, a.uv1, b.uv1, c.uv1, &mat
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, shad, shad, a.pos, b.pos,
+                                c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0,
+                                height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
+                                a.uv1, b.uv1, c.uv1, &mat
                             );
                         }
                         else
                         {
                             rasterize<Sink::Transparent>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col_a, col_b, col_c, shad_a, shad_b, shad_c,
-                                a.pos, b.pos, c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f,
-                                shadow_map, 0, height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr,
-                                mat.emissive, a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a,
-                                c.color_a
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, shad, shad, a.pos, b.pos,
+                                c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0,
+                                height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
+                                a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
                             );
                         }
                     }
@@ -526,9 +447,6 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
     {
     case ShadingMode::Flat:
         raster_triangles<S, ShadingMode::Flat>(worker_id);
-        break;
-    case ShadingMode::Gouraud:
-        raster_triangles<S, ShadingMode::Gouraud>(worker_id);
         break;
     case ShadingMode::Phong:
         raster_triangles<S, ShadingMode::Phong>(worker_id);

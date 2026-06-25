@@ -248,7 +248,7 @@ inline vec3 compute_lighting(
 }
 
 // Convenience overload: derives v from pos and eye_pos.
-// Used by Flat/Gouraud paths where v is not precomputed.
+// Used by the Flat path where v is not precomputed.
 inline vec3 compute_lighting(
     vec3 pos,
     vec3 normal,
@@ -264,8 +264,8 @@ inline vec3 compute_lighting(
 }
 
 // assume_unit overloads: caller guarantees normal is already unit-length.
-// Flat face normals and Gouraud vertex normals are always unit after load;
-// skipping normalize() saves one sqrt per Flat triangle and per Gouraud vertex.
+// Flat face normals are always unit after load (and Phong vertex normals);
+// skipping normalize() saves one sqrt per Flat triangle.
 inline vec3 compute_lighting(
     [[maybe_unused]] assume_unit_t tag,
     const vec3 &n,
