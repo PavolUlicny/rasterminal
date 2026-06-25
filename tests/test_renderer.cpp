@@ -11,7 +11,7 @@ TEST(renderer, constructor_default_threads)
     ASSERT_TRUE(true); // reaching here means construction succeeded
 }
 
-// A1b: default shading mode is Phong (was Gouraud before that mode was removed).
+// A1b: default shading mode is Phong.
 // Pins the constructor default so a future reorder of the ShadingMode enum or a
 // stray re-default can't silently change what an unconfigured Renderer renders.
 TEST(renderer, default_mode_is_phong)
