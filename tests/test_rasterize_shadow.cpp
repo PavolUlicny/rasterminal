@@ -78,7 +78,7 @@ static void rast_phong_shadow(
 // "Above" = world z>0 (between light and occluder) → lit.
 // "Below" = world z<0 (on far side of occluder from light) → in shadow.
 
-// ── Group A: rasterize() (Gouraud/Flat path) ─────────────────────────────────
+// ── Group A: rasterize() (Flat path) ─────────────────────────────────────────
 
 // S2: pa/pb/pc at z=+10 (above occluder, lit). shadow_map=nullptr and a valid
 // map must both produce the same result — lerp(col,shad,sf=0)=col in both cases.
@@ -417,10 +417,10 @@ TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
     assert_pixel_near(fb_sm5, 20, 10, fb_nosm.get_pixel(20, 10), 2);
 }
 
-// S9: rasterize() (Gouraud/Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
+// S9: rasterize() (Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
 // col=red, shad=blue; sf=5/9 ≈ 0.556. Result must be strictly between fully-lit (red)
 // and fully-shadowed (blue).
-TEST(rasterize, gouraud_partial_shadow_lerps_between_lit_and_shadowed)
+TEST(rasterize, flat_partial_shadow_lerps_between_lit_and_shadowed)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 wpos{ 0.0f, 0.0f, 0.5f }; // maps to cx=cy=1024 with identity light_vp

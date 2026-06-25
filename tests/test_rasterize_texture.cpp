@@ -227,7 +227,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
 
 // B2: Same 2×1 red/blue + unequal-w setup as A3, but in the Phong path.
 // At pixel (12,10): UV.x≈0.835 → blue-biased result.
-// Catches: Phong UV interpolation diverges from the Gouraud path (separate code).
+// Catches: Phong UV interpolation diverges from the rasterize() path (separate code).
 TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
