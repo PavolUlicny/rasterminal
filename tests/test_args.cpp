@@ -378,10 +378,10 @@ TEST(args, shading_numeric_alias_4_is_invalid)
     ASSERT_FALSE(run({ "-s", "4", "m.obj" }).ok);
 }
 
-TEST(args, shading_gouraud_is_invalid)
+TEST(args, shading_unknown_value_is_invalid)
 {
-    // gouraud was a valid value before the mode was removed; it must now be rejected.
-    ParseResult r = run({ "--shading", "gouraud", "m.obj" });
+    // An unrecognised shading name is rejected with the invalid-value exit code.
+    ParseResult r = run({ "--shading", "spline", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
