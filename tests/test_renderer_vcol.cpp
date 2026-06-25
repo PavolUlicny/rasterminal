@@ -146,6 +146,83 @@ TEST(renderer, phong_vcol_per_vertex_interpolation)
     }
 }
 
+// ─── M3b ──────────────────────────────────────────────────────────────────────
+// Phong: white vcol (all 1s) with flag=true must match the no-vcol baseline.
+// Phong tints per vertex (rt.ph.vcola/b/c); a white vcol must leave the lit
+// result identical to running with no vertex colours at all.
+// Catches: the per-vertex vcol multiply diverging from the no-vcol path when the
+//          colour is the identity (1,1,1).
+TEST(renderer, phong_vcol_white_matches_no_vcol)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    vec3 ambient{ 0.1f, 0.1f, 0.1f };
+
+    Framebuffer fb_a(40, 20, /*headless=*/true);
+    {
+        Renderer r(1);
+        r.mode = ShadingMode::Phong;
+        Mesh mesh = make_vcol_triangle({ 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, { 1.0f, 1.0f, 1.0f });
+        fb_a.clear();
+        r.render(mesh, cam, &light, 1, ambient, fb_a);
+    }
+
+    Framebuffer fb_b(40, 20, /*headless=*/true);
+    {
+        Renderer r(1);
+        r.mode = ShadingMode::Phong;
+        Mesh mesh = make_unit_triangle();
+        mesh.materials[0].diffuse = { 1.0f, 1.0f, 1.0f };
+        mesh.materials[0].ambient = { 1.0f, 1.0f, 1.0f };
+        mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+        fb_b.clear();
+        r.render(mesh, cam, &light, 1, ambient, fb_b);
+    }
+
+    auto ca = fb_a.get_pixel(20, 10);
+    auto cb = fb_b.get_pixel(20, 10);
+    auto diff = [](uint8_t a, uint8_t b) { return a > b ? a - b : b - a; };
+    if (diff(ca.r, cb.r) > 2 || diff(ca.g, cb.g) > 2 || diff(ca.b, cb.b) > 2)
+    {
+        ASSERT_FAIL(
+            "phong white vcol: expected match with no-vcol within ±2, got (" + std::to_string(static_cast<int>(ca.r)) +
+            "," + std::to_string(static_cast<int>(ca.g)) + "," + std::to_string(static_cast<int>(ca.b)) + ") vs (" +
+            std::to_string(static_cast<int>(cb.r)) + "," + std::to_string(static_cast<int>(cb.g)) + "," +
+            std::to_string(static_cast<int>(cb.b)) + ")"
+        );
+    }
+}
+
+// ─── M3c ──────────────────────────────────────────────────────────────────────
+// Phong: mixed white (v0) + red (v1, v2) vcol — Phong is now the per-vertex
+// interpolating path, so this guards correct independent per-vertex tinting (the
+// "no stale state" concern the removed Gouraud M8 once covered). v0 stays white,
+// v1/v2 are red → R must dominate at the red-weighted centre pixel.
+// Catches: vcol collapsed to a single vertex, or one vertex's tint leaking onto
+//          another.
+TEST(renderer, phong_vcol_mixed_white_and_color)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_vcol_triangle({ 1.0f, 1.0f, 1.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f });
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, { 0.1f, 0.1f, 0.1f }, fb);
+
+    ASSERT_TRUE(count_drawn_pixels(fb) > 0);
+    auto c = fb.get_pixel(20, 10);
+    // Two of three vertices are red → R must dominate at the centre pixel.
+    if (c.r < 100 || c.r <= c.g || c.r <= c.b)
+    {
+        ASSERT_FAIL(
+            "phong mixed vcol: expected R dominant and ≥100 at (20,10), got (" + std::to_string(static_cast<int>(c.r)) +
+            "," + std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+}
+
 // ─── M4 ───────────────────────────────────────────────────────────────────────
 // Flat: uniform red vcol → pixel (20,10) is red.
 // Catches: face_vcol average / vcol_mat build broken; vcol_mat.diffuse/ambient

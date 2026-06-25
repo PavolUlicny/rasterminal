@@ -11,6 +11,15 @@ TEST(renderer, constructor_default_threads)
     ASSERT_TRUE(true); // reaching here means construction succeeded
 }
 
+// A1b: default shading mode is Phong (was Gouraud before that mode was removed).
+// Pins the constructor default so a future reorder of the ShadingMode enum or a
+// stray re-default can't silently change what an unconfigured Renderer renders.
+TEST(renderer, default_mode_is_phong)
+{
+    Renderer r;
+    ASSERT_TRUE(r.mode == ShadingMode::Phong);
+}
+
 // A2: extreme and edge thread counts all clamp cleanly.
 TEST(renderer, constructor_thread_count_clamping)
 {
@@ -420,7 +429,7 @@ TEST(renderer, zero_factor_with_emissive_texture_renders_dark)
     }
 }
 
-// F2b-Flat: Flat-mode parity for F2b. rasterize() (Flat) and rasterize_phong() are
+// F2b-Flat: Flat-mode parity for F2b. rasterize_flat() and rasterize_phong() are
 // textually independent hand-typed do_emissive gates (rasterize.cpp:289 and :500), so each
 // shading path needs its own coverage against a future `factor>0 || etex` regression.
 TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
