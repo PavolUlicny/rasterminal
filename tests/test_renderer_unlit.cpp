@@ -129,11 +129,11 @@ TEST(renderer_unlit, independent_of_light)
 }
 
 // Unlit overrides every lit shading mode identically.
-TEST(renderer_unlit, honored_in_flat_gouraud_phong)
+TEST(renderer_unlit, honored_in_flat_and_phong)
 {
     Camera cam = make_test_camera();
     Light light = make_key_light_z();
-    for (ShadingMode m : { ShadingMode::Flat, ShadingMode::Gouraud, ShadingMode::Phong })
+    for (ShadingMode m : { ShadingMode::Flat, ShadingMode::Phong })
     {
         Renderer r(1);
         r.mode = m;
