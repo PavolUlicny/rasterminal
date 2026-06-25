@@ -16,7 +16,7 @@
 TEST(renderer, n_active_capped_to_half_framebuffer_height)
 {
     Renderer r(4);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -40,7 +40,7 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
 TEST(renderer, band_tris_resize_across_frames)
 {
     Renderer r(4);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_large_triangle();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -73,7 +73,7 @@ TEST(renderer, band_tris_resize_across_frames)
 TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
 
     // Fully transparent texture (RGBA all zeros).
@@ -107,7 +107,7 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
 TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_unit_triangle();
 
     Texture t;
@@ -144,7 +144,7 @@ TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
 TEST(renderer, clip_reject_removes_off_screen_triangle_mt)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
 
     Mesh mesh;
     Vertex v{};
@@ -265,7 +265,7 @@ TEST(renderer, choose_phase1_chunk_zero_tris_no_crash)
     // Back-facing triangle (flipped winding) → all tris rejected by backface cull
     // → total_tris = 0 at Phase 1 setup → choose_phase1_chunk(0, n) returns MIN_CHUNK=64.
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     r.cull_backfaces = true;
     Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
     Camera cam = make_test_camera();
