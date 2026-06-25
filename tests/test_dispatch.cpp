@@ -1,4 +1,4 @@
-#include "loader_util.h"
+#include "tests/loader_util.h"
 
 // Format-agnostic rejection tests for Mesh::load_model's extension dispatch.
 // Per-format validity and parser-level rejection live in test_obj/ply/stl.

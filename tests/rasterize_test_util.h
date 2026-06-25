@@ -1,7 +1,7 @@
 #pragma once
 
-#include "test.h"
-#include "../src/framebuffer.h"
+#include "tests/test.h"
+#include "src/framebuffer.h"
 
 #include <cstdio>
 #include <limits>

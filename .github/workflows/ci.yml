@@ -258,7 +258,9 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Run clang-format
-        run: clang-format --dry-run --Werror src/*.cpp src/*.h tests/*.cpp tests/*.h
+        run: >
+          find src tests \( -name '*.cpp' -o -name '*.h' \)
+          | xargs -r clang-format --dry-run --Werror
 
   # ── clang-tidy (Linux Clang, CMake Debug with compile_commands.json) ────────
   clang-tidy:
@@ -291,7 +293,7 @@ jobs:
 
       - name: Run clang-tidy (tests)
         run: >
-          printf '%s\n' tests/*.cpp
+          find tests -name '*.cpp'
           | xargs -r -P "$(nproc)" -n1
           clang-tidy-22 --warnings-as-errors='*' -p build --header-filter='(src|tests)/.*'
 

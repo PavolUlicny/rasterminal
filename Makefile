@@ -87,7 +87,7 @@ TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funrol
                 -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread $(VENDOR_INC) $(ARCH32)
+                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -209,40 +209,40 @@ endif
 TEST_TARGET = rasterminal_tests
 TEST_SRCS   = tests/test_main.cpp \
               tests/test_dispatch.cpp \
-              tests/test_obj.cpp \
-              tests/test_ply.cpp \
-              tests/test_stl.cpp \
-              tests/test_linalg.cpp \
-              tests/test_light.cpp \
-              tests/test_clip.cpp \
-              tests/test_camera.cpp \
-              tests/test_clip_near.cpp \
-              tests/test_texture.cpp \
-              tests/test_ktx2.cpp \
-              tests/test_webp.cpp \
-              tests/test_framebuffer.cpp \
-              tests/test_mesh_geometry.cpp \
-              tests/test_mesh_vcache.cpp \
               tests/test_args.cpp \
-              tests/test_shadow.cpp \
-              tests/test_rasterize.cpp \
-              tests/test_rasterize_texture.cpp \
-              tests/test_rasterize_vcol.cpp \
-              tests/test_rasterize_shadow.cpp \
-              tests/test_rasterize_alpha.cpp \
-              tests/test_rasterize_emissive.cpp \
-              tests/test_gltf.cpp \
-              tests/test_gltf_draco.cpp \
-              tests/test_gltf_meshopt.cpp \
-              tests/test_gltf_ktx2.cpp \
-              tests/test_gltf_webp.cpp \
-              tests/test_renderer.cpp \
-              tests/test_renderer_ao_clip.cpp \
-              tests/test_renderer_shadow_depth.cpp \
-              tests/test_renderer_vcol.cpp \
-              tests/test_renderer_misc.cpp \
-              tests/test_renderer_unlit.cpp \
-              tests/test_transparency.cpp \
+              tests/loaders/test_obj.cpp \
+              tests/loaders/test_ply.cpp \
+              tests/loaders/test_stl.cpp \
+              tests/loaders/test_gltf.cpp \
+              tests/loaders/test_gltf_draco.cpp \
+              tests/loaders/test_gltf_meshopt.cpp \
+              tests/loaders/test_gltf_ktx2.cpp \
+              tests/loaders/test_gltf_webp.cpp \
+              tests/loaders/test_mesh_geometry.cpp \
+              tests/loaders/test_mesh_vcache.cpp \
+              tests/texture/test_texture.cpp \
+              tests/texture/test_ktx2.cpp \
+              tests/texture/test_webp.cpp \
+              tests/rasterize/test_rasterize.cpp \
+              tests/rasterize/test_rasterize_texture.cpp \
+              tests/rasterize/test_rasterize_vcol.cpp \
+              tests/rasterize/test_rasterize_shadow.cpp \
+              tests/rasterize/test_rasterize_alpha.cpp \
+              tests/rasterize/test_rasterize_emissive.cpp \
+              tests/renderer/test_renderer.cpp \
+              tests/renderer/test_renderer_ao_clip.cpp \
+              tests/renderer/test_renderer_shadow_depth.cpp \
+              tests/renderer/test_renderer_vcol.cpp \
+              tests/renderer/test_renderer_misc.cpp \
+              tests/renderer/test_renderer_unlit.cpp \
+              tests/renderer/test_transparency.cpp \
+              tests/pipeline/test_camera.cpp \
+              tests/pipeline/test_clip.cpp \
+              tests/pipeline/test_clip_near.cpp \
+              tests/pipeline/test_shadow.cpp \
+              tests/pipeline/test_framebuffer.cpp \
+              tests/math/test_linalg.cpp \
+              tests/math/test_light.cpp \
               src/args.cpp \
               src/renderer.cpp \
               src/mesh.cpp \

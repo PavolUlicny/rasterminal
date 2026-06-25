@@ -1,3 +1,4 @@
+-I.
 -isystem
 vendor/cgltf
 -isystem

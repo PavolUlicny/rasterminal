@@ -5,8 +5,8 @@
 // Header-only: each translation unit gets its own `static` copy, which is
 // fine given these are tiny functions only used by tests.
 
-#include "test.h"
-#include "../src/mesh.h"
+#include "tests/test.h"
+#include "src/mesh.h"
 
 #include <cstdint>
 #include <cstdio>

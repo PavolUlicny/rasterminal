@@ -1,5 +1,5 @@
-#include "test.h"
-#include "../src/args.h"
+#include "tests/test.h"
+#include "src/args.h"
 
 #include <cstdio>
 #include <cstring>
