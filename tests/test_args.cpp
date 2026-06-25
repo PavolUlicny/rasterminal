@@ -378,6 +378,14 @@ TEST(args, shading_numeric_alias_4_is_invalid)
     ASSERT_FALSE(run({ "-s", "4", "m.obj" }).ok);
 }
 
+TEST(args, shading_gouraud_is_invalid)
+{
+    // gouraud was a valid value before the mode was removed; it must now be rejected.
+    ParseResult r = run({ "--shading", "gouraud", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 TEST(args, shading_case_insensitive)
 {
     ASSERT_EQ(run({ "--shading", "PHONG", "m.obj" }).args.shading, 2);
