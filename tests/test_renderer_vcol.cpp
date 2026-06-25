@@ -3,10 +3,10 @@
 // ─── Group M: vertex-color end-to-end through the renderer ───────────────────
 // test_rasterize_vcol.cpp (V1–V6) exercises rasterize_phong() directly.
 // These tests cover the renderer's own dispatch:
-//   • p_vcols = has_vertex_colors ? vertex_colors.data() : nullptr  (line 113)
-//   • ClipVert.color loaded from p_vcols or white                   (lines 154–156)
-//   • Phong:   rt.ph.vcola/b/c set from a/b/c.color                (lines 218–227)
-//   • Flat:    face_vcol average + vcol_mat build                   (lines 237–248)
+//   • p_vcols = has_vertex_colors ? vertex_colors.data() : nullptr
+//   • ClipVert.color loaded from p_vcols or white
+//   • Phong:   a/b/c.color passed straight through to rasterize_phong
+//   • Flat:    face_vcol average + vcol_mat build
 //   • Wireframe: vcol must have no effect (and must not crash)
 //
 // All tests use Renderer(1) for deterministic single-thread ordering.
