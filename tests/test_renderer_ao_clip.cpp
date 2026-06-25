@@ -104,14 +104,14 @@ static Mesh make_fully_behind_triangle()
 // Camera: eye=(0,0,5), near_plane=0.1. Clip w = 5 − world_z.
 // Vertices at z=4.95 have w=0.05 → behind near plane (w < 0.1).
 // All tests verify that Renderer::render() forwards clip_near results correctly
-// for both the MT (Gouraud/Phong) and wireframe code paths.
+// for both the MT (Phong/Flat) and wireframe code paths.
 
 // G1: one vertex behind near plane, two in front.
 // clip_near produces 2 output tris → pixels must be drawn (MT path).
 TEST(renderer, near_clip_one_vertex_behind_renders)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_straddling_triangle_one_behind();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -130,7 +130,7 @@ TEST(renderer, near_clip_one_vertex_behind_renders)
 TEST(renderer, near_clip_two_vertices_behind_renders)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_straddling_triangle_two_behind();
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -148,7 +148,7 @@ TEST(renderer, near_clip_two_vertices_behind_renders)
 TEST(renderer, near_clip_fully_behind_draws_nothing)
 {
     Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_fully_behind_triangle();
     Camera cam = make_test_camera();
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -307,12 +307,12 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
     fb4.clear();
     {
         Renderer r1(1);
-        r1.mode = ShadingMode::Gouraud;
+        r1.mode = ShadingMode::Phong;
         r1.render(mesh, cam, &light, 1, ambient, fb1);
     }
     {
         Renderer r4(4);
-        r4.mode = ShadingMode::Gouraud;
+        r4.mode = ShadingMode::Phong;
         r4.render(mesh, cam, &light, 1, ambient, fb4);
     }
 
@@ -331,7 +331,7 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
 TEST(renderer, many_triangles_repeated_render_resets_cursor)
 {
     Renderer r(2);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh mesh = make_grid_mesh(16, 16);
     Camera cam = make_test_camera();
     Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f });
@@ -361,7 +361,7 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
 TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 {
     Renderer r(2);
-    r.mode = ShadingMode::Gouraud;
+    r.mode = ShadingMode::Phong;
     Mesh grid = make_grid_mesh(16, 16);
     Mesh empty;
     empty.materials.push_back(Material{});
@@ -517,58 +517,6 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     if (c.r < 50 || c.r > 90)
     {
         ASSERT_FAIL("flat ao avg: R=" + std::to_string(static_cast<int>(c.r)) + " expected 50-90 (face_ao≈1/3)");
-    }
-}
-
-// I3: Gouraud — all ao=0 → all compute_lighting calls yield 0 ambient → black.
-// Catches: ao dropped from any of the three Gouraud compute_lighting calls.
-TEST(renderer, gouraud_ao_uniform_zero_darkens_pixel)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-    Mesh mesh = make_unit_triangle_ao(0.0f, 0.0f, 0.0f);
-    Camera cam = make_test_camera();
-    vec3 ambient{ 0.8f, 0.0f, 0.0f };
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, nullptr, 0, ambient, fb);
-    ASSERT_TRUE(was_drawn(fb, 20, 10));
-    Color c = fb.get_pixel(20, 10);
-    if (c.r > 5)
-    {
-        ASSERT_FAIL("gouraud ao=0: R=" + std::to_string(static_cast<int>(c.r)) + " expected ≤5");
-    }
-}
-
-// I4: Gouraud — ao=(1,0,0) → colour gradient across triangle.
-// Pixel near v0 (sa≈(12,18)) should be bright; pixel near v2 (sc≈(20,2)) dark.
-// Catches: Gouraud hardcoding ao=1 or using the wrong vertex's ao.
-TEST(renderer, gouraud_ao_interpolates_across_triangle)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Gouraud;
-    Mesh mesh = make_screen_triangle_ao(1.0f, 0.0f, 0.0f);
-    Camera cam = make_test_camera();
-    vec3 ambient{ 0.8f, 0.0f, 0.0f };
-    Framebuffer fb(40, 20, /*headless=*/true);
-    fb.clear();
-    r.render(mesh, cam, nullptr, 0, ambient, fb);
-
-    ASSERT_TRUE(was_drawn(fb, 13, 17));
-    ASSERT_TRUE(was_drawn(fb, 20, 3));
-    int r_near_a = static_cast<int>(fb.get_pixel(13, 17).r);
-    int r_near_c = static_cast<int>(fb.get_pixel(20, 3).r);
-    if (r_near_a < 120)
-    {
-        ASSERT_FAIL("gouraud ao interp: near-a R=" + std::to_string(r_near_a) + " expected ≥120");
-    }
-    if (r_near_c > 30)
-    {
-        ASSERT_FAIL("gouraud ao interp: near-c R=" + std::to_string(r_near_c) + " expected ≤30");
-    }
-    if (r_near_a - r_near_c < 80)
-    {
-        ASSERT_FAIL("gouraud ao interp: gradient=" + std::to_string(r_near_a - r_near_c) + " expected ≥80");
     }
 }
 
