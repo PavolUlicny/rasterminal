@@ -354,8 +354,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                         // Flat shading: one compute_lighting() at the centroid, constant across
                         // the triangle (M is always Flat here — Phong and unlit are handled above).
                         vec3 col;
-                        vec3 shad; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — only read
-                                   // when shadow_map != nullptr; written before that read
+                        vec3 shad; // only read when shadow_map != nullptr; written before that read
 
                         vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                         if (flip_normals)
