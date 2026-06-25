@@ -32,16 +32,15 @@ static Light make_light_z_shadow()
     return l;
 }
 
-// rasterize() wrapper: canonical screen triangle, caller-supplied world positions,
+// rasterize_flat() wrapper: canonical screen triangle, caller-supplied world positions,
 // lit and shadowed colors, and shadow map.
 // Screen triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 fb.
 static void rast_shadow(Framebuffer &fb, vec3 pa, vec3 pb, vec3 pc, vec3 col, vec3 shad, const ShadowMap *sm)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec2 uv{ 0.5f, 0.5f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, col, col, col, shad, shad, shad, pa, pb, pc, uv, uv, uv, nullptr, 0.0f, sm, 0,
-        19
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, col, col, col, shad, pa, pb, pc, uv, uv, uv, nullptr, 0.0f, sm, 0, 19
     );
 }
 
@@ -78,7 +77,7 @@ static void rast_phong_shadow(
 // "Above" = world z>0 (between light and occluder) → lit.
 // "Below" = world z<0 (on far side of occluder from light) → in shadow.
 
-// ── Group A: rasterize() (Flat path) ─────────────────────────────────────────
+// ── Group A: rasterize_flat() (Flat path) ─────────────────────────────────────────
 
 // S2: pa/pb/pc at z=+10 (above occluder, lit). shadow_map=nullptr and a valid
 // map must both produce the same result — lerp(col,shad,sf=0)=col in both cases.
@@ -417,7 +416,7 @@ TEST(rasterize_phong, partial_shadow_n_lights_zero_produces_ambient_only)
     assert_pixel_near(fb_sm5, 20, 10, fb_nosm.get_pixel(20, 10), 2);
 }
 
-// S9: rasterize() (Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
+// S9: rasterize_flat() (Flat path) with 0 < sf < 1 exercises the sf>0 lerp branch.
 // col=red, shad=blue; sf=5/9 ≈ 0.556. Result must be strictly between fully-lit (red)
 // and fully-shadowed (blue).
 TEST(rasterize, flat_partial_shadow_lerps_between_lit_and_shadowed)
@@ -429,9 +428,9 @@ TEST(rasterize, flat_partial_shadow_lerps_between_lit_and_shadowed)
 
     auto draw = [&](Framebuffer &fb, const ShadowMap *sm)
     {
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, red, red, blue, blue, blue, wpos, wpos, wpos, uv, uv, uv, nullptr,
-            0.0f, sm, 0, 19
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, red, red, red, blue, wpos, wpos, wpos, uv, uv, uv, nullptr, 0.0f, sm, 0,
+            19
         );
     };
 

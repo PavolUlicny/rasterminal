@@ -27,9 +27,9 @@ static void rast(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_
     vec3 zero{};
     vec3 white{ 1.0f, 1.0f, 1.0f };
     vec2 uv{ 0.5f, 0.5f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv, tex,
-        alpha_cutoff, nullptr, y_min, y_max
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, tex, alpha_cutoff,
+        nullptr, y_min, y_max
     );
 }
 
@@ -166,9 +166,9 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
-            nullptr, 0.0f, nullptr, 0, 19
+        rasterize_flat(
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
+            nullptr, 0, 19
         );
     }
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -183,9 +183,9 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
-            nullptr, 0.0f, nullptr, 0, 19
+        rasterize_flat(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
+            nullptr, 0, 19
         );
     }
 
@@ -196,8 +196,8 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
         vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.5f, 0.5f };
-        rasterize(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, zero, zero, uv, uv, uv,
+        rasterize_flat(
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv,
             &tex_transparent, 0.5f, nullptr, 0, 19
         );
     }

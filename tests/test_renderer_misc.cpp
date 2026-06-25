@@ -68,7 +68,7 @@ TEST(renderer, band_tris_resize_across_frames)
 //
 // Texture with alpha=0 everywhere; mat.alpha_cutoff=0.5; show_texture=true.
 // Renderer sets rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0 = 0.5.
-// rasterize() samples alpha=0 < 0.5 -> every pixel is culled -> nothing drawn.
+// rasterize_flat() samples alpha=0 < 0.5 -> every pixel is culled -> nothing drawn.
 
 TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
 {
@@ -101,7 +101,7 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
 // ─── N4: alpha_cutoff zeroed when show_texture=false ─────────────────────────
 //
 // Same mesh as N3 (alpha=0 texture, alpha_cutoff=0.5) but show_texture=false.
-// Renderer sets rt.alpha_cutoff = 0 and tex = nullptr -> rasterize() never
+// Renderer sets rt.alpha_cutoff = 0 and tex = nullptr -> rasterize_flat() never
 // samples the texture -> pixel is drawn from the material colour instead.
 
 TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)

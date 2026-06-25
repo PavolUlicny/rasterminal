@@ -19,15 +19,15 @@ static Texture make_em_tex(int w, int h, std::initializer_list<int> rgba)
     return t;
 }
 
-// rasterize() (Flat path) with optional emissive factor + texture.
+// rasterize_flat() (Flat path) with optional emissive factor + texture.
 // Lighting is zero (col_a/b/c == {0,0,0}) so any non-zero output comes from emissive.
 static void rast_emissive(Framebuffer &fb, const Texture *etex, vec3 emissive, vec2 uva, vec2 uvb, vec2 uvc)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 zero{ 0.0f, 0.0f, 0.0f };
-    rasterize(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, zero, zero, zero, zero, zero, zero, uva, uvb, uvc, nullptr,
-        0.0f, nullptr, 0, 19, etex, emissive
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, zero, zero, zero, zero, uva, uvb, uvc, nullptr, 0.0f,
+        nullptr, 0, 19, etex, emissive
     );
 }
 
@@ -47,7 +47,7 @@ static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Text
     );
 }
 
-// ─── Flat emissive in rasterize() ────────────────────────────────────────────
+// ─── Flat emissive in rasterize_flat() ────────────────────────────────────────────
 
 // Pure factor with no lit color, no texture: pixel should be the emissive colour.
 TEST(rasterize_emissive, factor_only_adds_pure_colour)

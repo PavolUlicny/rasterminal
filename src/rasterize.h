@@ -124,13 +124,15 @@ struct ABuffer
 // DDA line rasterizer with per-pixel depth testing (wireframe).
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color);
 
-// Rasterize one triangle with pre-computed per-vertex Flat/Gouraud colours.
+// Rasterize one triangle with pre-computed per-vertex base colours (Flat shading and
+// the unlit path). shad is the single shadowed colour: lit callers (Flat) carry one
+// uniform shadow colour; unlit passes a null shadow_map so shad is never read.
 // y_min/y_max define this thread's exclusive pixel row band.
 // Sink::Transparent uses sample_rgba for the diffuse (alpha = base_alpha * tex.a *
 // vertex-alpha), tests depth <= against the opaque buffer (decals visible), applies a
 // top-left fill rule, and pushes to *abuf instead of committing; Opaque is unchanged.
 template <Sink S = Sink::Opaque>
-void rasterize(
+void rasterize_flat(
     Framebuffer &fb,
     vec3 sa,
     vec3 sb,
@@ -141,9 +143,7 @@ void rasterize(
     vec3 col_a,
     vec3 col_b,
     vec3 col_c,
-    vec3 shad_a,
-    vec3 shad_b,
-    vec3 shad_c,
+    vec3 shad,
     vec3 pa,
     vec3 pb,
     vec3 pc,
@@ -170,7 +170,7 @@ void rasterize(
 
 // Rasterize one triangle with per-pixel Blinn-Phong lighting (Phong shading).
 // y_min/y_max define this thread's exclusive pixel row band.
-// Sink::Transparent behaves as in rasterize() (alpha = mat.alpha * tex.a * vertex-alpha,
+// Sink::Transparent behaves as in rasterize_flat() (alpha = mat.alpha * tex.a * vertex-alpha,
 // depth <= test, top-left fill rule, push to *abuf); Opaque is unchanged.
 template <Sink S = Sink::Opaque>
 void rasterize_phong(

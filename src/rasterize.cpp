@@ -221,18 +221,19 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     }
 }
 
-// ─── rasterize ────────────────────────────────────────────────────────────────
+// ─── rasterize_flat ───────────────────────────────────────────────────────────
 // Rasterize a triangle using screen-space barycentric coordinates.
 // sa/sb/sc hold (screen_x, screen_y, ndc_z).
 // wa/wb/wc are clip-space w values for perspective-correct interpolation.
-// col_a/b/c are per-vertex Blinn-Phong colours when lit; shad_a/b/c when in shadow.
+// col_a/b/c are per-vertex base colours (uniform for Flat lighting; per-vertex for the
+// unlit path). shad is the single uniform shadowed colour the lit pixel lerps toward.
 // pa/pb/pc are world-space positions used for the per-pixel shadow test.
 // uva/uvb/uvc are per-vertex texture coordinates.
 // tex may be nullptr if no diffuse texture is active.
 // shadow_map may be nullptr if shadows are disabled.
 
 template <Sink S>
-void rasterize(
+void rasterize_flat(
     Framebuffer &fb,
     vec3 sa,
     vec3 sb,
@@ -243,9 +244,7 @@ void rasterize(
     vec3 col_a,
     vec3 col_b,
     vec3 col_c,
-    vec3 shad_a,
-    vec3 shad_b,
-    vec3 shad_c,
+    vec3 shad,
     vec3 pa,
     vec3 pb,
     vec3 pc,
@@ -295,7 +294,7 @@ void rasterize(
     const auto stride = static_cast<size_t>(fb.width());
 
     // Per-slot UV set (glTF TEXCOORD_n). diffuse and emissive are the only textures this
-    // (Flat/Gouraud/unlit) rasterizer samples; uv_set comes from mat (null ⇒ set 0, e.g. tests
+    // (Flat/unlit) rasterizer samples; uv_set comes from mat (null ⇒ set 0, e.g. tests
     // and non-glTF). need_uv1 gates the second perspective-correct interpolation, so when false
     // the per-pixel uv1v compute is skipped entirely; the residue on the no-uv1 path is one
     // loop-invariant-conditioned select (`set ? uv1v : uv`) per sampled texture, which benches in
@@ -459,9 +458,12 @@ void rasterize(
             vec3 cc = col_c;
             if (sf > 0.0f)
             {
-                ca = lerp(col_a, shad_a, sf);
-                cb = lerp(col_b, shad_b, sf);
-                cc = lerp(col_c, shad_c, sf);
+                // shad is uniform across the triangle (Flat); lerp each per-vertex base
+                // colour toward it before the perspective-correct interpolation below so
+                // the result is byte-identical to interpolating three equal shadowed colours.
+                ca = lerp(col_a, shad, sf);
+                cb = lerp(col_b, shad, sf);
+                cc = lerp(col_c, shad, sf);
             }
 
             vec3 col = (ca * pwa + cb * pwb + cc * pwc) * w_corr;
@@ -672,7 +674,7 @@ void rasterize_phong(
     const bool occ_xf = mat.occlusion_map.has_transform;
     const bool emissive_xf = mat.emissive_map.has_transform;
 
-    // Transparent fill-rule flags (see rasterize() for the rationale); compile out for Opaque.
+    // Transparent fill-rule flags (see rasterize_flat() for the rationale); compile out for Opaque.
     [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
     [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
     [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);
@@ -756,7 +758,7 @@ void rasterize_phong(
             }
 
             // Opaque: strict depth-CAS gate. Transparent: keep at/in front of opaque (<=),
-            // never writing depth (see rasterize()).
+            // never writing depth (see rasterize_flat()).
             if constexpr (S == Sink::Opaque)
             {
                 if (!fb.depth_test_relaxed(idx, depth))
@@ -1008,7 +1010,7 @@ void rasterize_phong(
 // The rasterizer definitions live in this TU; callers in renderer.cpp (and the
 // tests) need both Sink instantiations at link time. Emit them explicitly here.
 
-template void rasterize<Sink::Opaque>(
+template void rasterize_flat<Sink::Opaque>(
     Framebuffer &,
     vec3,
     vec3,
@@ -1016,8 +1018,6 @@ template void rasterize<Sink::Opaque>(
     float,
     float,
     float,
-    vec3,
-    vec3,
     vec3,
     vec3,
     vec3,
@@ -1045,7 +1045,7 @@ template void rasterize<Sink::Opaque>(
     float,
     float
 );
-template void rasterize<Sink::Transparent>(
+template void rasterize_flat<Sink::Transparent>(
     Framebuffer &,
     vec3,
     vec3,
@@ -1053,8 +1053,6 @@ template void rasterize<Sink::Transparent>(
     float,
     float,
     float,
-    vec3,
-    vec3,
     vec3,
     vec3,
     vec3,

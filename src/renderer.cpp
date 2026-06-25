@@ -292,24 +292,24 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                         // flat rasterizer with the raw base colour as the per-vertex
                         // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
                         // when the mesh has no vertex colours (set at ClipVert construction),
-                        // so this reduces to mat.diffuse there. Shadow colours are passed as
-                        // the same value to stay initialised; the null shadow map skips them.
+                        // so this reduces to mat.diffuse there. The shadow colour is unused
+                        // (null shadow map); ua is passed for it to stay initialised.
                         const vec3 ua = mat.diffuse * a.color;
                         const vec3 ub = mat.diffuse * b.color;
                         const vec3 uc = mat.diffuse * c.color;
                         if constexpr (S == Sink::Opaque)
                         {
-                            rasterize<Sink::Opaque>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
-                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
+                            rasterize_flat<Sink::Opaque>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, a.pos, b.pos, c.pos, a.uv, b.uv,
+                                c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
                                 vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat
                             );
                         }
                         else
                         {
-                            rasterize<Sink::Transparent>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, ub, uc, a.pos, b.pos, c.pos, a.uv,
-                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
+                            rasterize_flat<Sink::Transparent>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, a.pos, b.pos, c.pos, a.uv, b.uv,
+                                c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
                                 vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a,
                                 b.color_a, c.color_a
                             );
@@ -390,20 +390,20 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 
                         if constexpr (S == Sink::Opaque)
                         {
-                            rasterize<Sink::Opaque>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, shad, shad, a.pos, b.pos,
-                                c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0,
-                                height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
-                                a.uv1, b.uv1, c.uv1, &mat
+                            rasterize_flat<Sink::Opaque>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, a.pos, b.pos, c.pos, a.uv,
+                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0, height - 1,
+                                show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive, a.uv1,
+                                b.uv1, c.uv1, &mat
                             );
                         }
                         else
                         {
-                            rasterize<Sink::Transparent>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, shad, shad, a.pos, b.pos,
-                                c.pos, a.uv, b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0,
-                                height - 1, show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
-                                a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
+                            rasterize_flat<Sink::Transparent>(
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, a.pos, b.pos, c.pos, a.uv,
+                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0, height - 1,
+                                show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive, a.uv1,
+                                b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
                             );
                         }
                     }
