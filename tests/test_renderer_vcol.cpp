@@ -194,9 +194,9 @@ TEST(renderer, phong_vcol_white_matches_no_vcol)
 }
 
 // ─── M3c ──────────────────────────────────────────────────────────────────────
-// Phong: mixed white (v0) + red (v1, v2) vcol — Phong is now the per-vertex
-// interpolating path, so this guards correct independent per-vertex tinting (the
-// "no stale state" concern the removed Gouraud M8 once covered). v0 stays white,
+// Phong: mixed white (v0) + red (v1, v2) vcol — Phong is the per-vertex
+// interpolating path, so this guards correct independent per-vertex tinting with
+// no stale state leaking between vertices. v0 stays white,
 // v1/v2 are red → R must dominate at the red-weighted centre pixel.
 // Catches: vcol collapsed to a single vertex, or one vertex's tint leaking onto
 //          another.
