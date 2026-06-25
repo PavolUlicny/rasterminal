@@ -377,7 +377,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  -V,     --version              Show version and exit\n"
             "\n"
             "Controls:\n"
-            "  1-4          Shading mode           B       Cycle background\n"
+            "  1-3          Shading mode           B       Cycle background\n"
             "  Space        Toggle spin            L       Cycle lighting\n"
             "  WASD/arrows  Orbit camera           R       Reset view\n"
             "  +/-          Zoom                   C       Cycle wireframe color\n"
