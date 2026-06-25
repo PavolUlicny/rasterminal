@@ -78,11 +78,6 @@ constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t) noexcept
     return a + (b - a) * t;
 }
 
-constexpr vec3 reflect(const vec3 &incident, const vec3 &normal) noexcept
-{
-    return incident - normal * (2.0f * dot(incident, normal));
-}
-
 // ─── vec4 ────────────────────────────────────────────────────────────────────
 
 struct vec4
@@ -145,86 +140,7 @@ struct mat4
                  (m[0][2] * v.x) + (m[1][2] * v.y) + (m[2][2] * v.z) + (m[3][2] * v.w),
                  (m[0][3] * v.x) + (m[1][3] * v.y) + (m[2][3] * v.z) + (m[3][3] * v.w) };
     }
-
-    [[nodiscard]] constexpr mat4 transposed() const noexcept
-    {
-        mat4 result;
-        for (int c = 0; c < 4; c++)
-        {
-            for (int r = 0; r < 4; r++)
-            {
-                result.m[r][c] = m[c][r];
-            }
-        }
-        return result;
-    }
 };
-
-// ─── transform factories ─────────────────────────────────────────────────────
-
-constexpr mat4 translation(float tx, float ty, float tz) noexcept
-{
-    mat4 m = mat4::identity();
-    m.m[3][0] = tx;
-    m.m[3][1] = ty;
-    m.m[3][2] = tz;
-    return m;
-}
-
-constexpr mat4 translation(const vec3 &t) noexcept
-{
-    return translation(t.x, t.y, t.z);
-}
-
-constexpr mat4 scale(float sx, float sy, float sz) noexcept
-{
-    mat4 m = mat4::identity();
-    m.m[0][0] = sx;
-    m.m[1][1] = sy;
-    m.m[2][2] = sz;
-    return m;
-}
-
-constexpr mat4 scale(float s) noexcept
-{
-    return scale(s, s, s);
-}
-
-inline mat4 rotation_x(float radians) noexcept
-{
-    mat4 m = mat4::identity();
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    m.m[1][1] = c;
-    m.m[2][1] = -s;
-    m.m[1][2] = s;
-    m.m[2][2] = c;
-    return m;
-}
-
-inline mat4 rotation_y(float radians) noexcept
-{
-    mat4 m = mat4::identity();
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    m.m[0][0] = c;
-    m.m[2][0] = s;
-    m.m[0][2] = -s;
-    m.m[2][2] = c;
-    return m;
-}
-
-inline mat4 rotation_z(float radians) noexcept
-{
-    mat4 m = mat4::identity();
-    const float c = std::cos(radians);
-    const float s = std::sin(radians);
-    m.m[0][0] = c;
-    m.m[1][0] = -s;
-    m.m[0][1] = s;
-    m.m[1][1] = c;
-    return m;
-}
 
 // ─── view / projection ───────────────────────────────────────────────────────
 
