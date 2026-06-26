@@ -267,22 +267,6 @@ TEST(framebuffer, resize_resets_depth_and_dimensions)
     ASSERT_FALSE(was_drawn(fb, 5, 5)); // depth reset: formerly drawn pixel reads as undrawn
 }
 
-TEST(framebuffer, test_and_set_depth_semantics)
-{
-    Framebuffer fb(10, 10, /*headless=*/true);
-
-    ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.5f));  // fresh: always succeeds
-    ASSERT_FALSE(fb.test_and_set_depth(5, 5, 0.6f)); // deeper: fails
-    ASSERT_FALSE(fb.test_and_set_depth(5, 5, 0.5f)); // equal: not strictly less, fails
-    ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.4f));  // shallower: succeeds
-
-    // Out-of-bounds must return false and not crash.
-    ASSERT_FALSE(fb.test_and_set_depth(-1, 5, 0.1f));
-    ASSERT_FALSE(fb.test_and_set_depth(5, -1, 0.1f));
-    ASSERT_FALSE(fb.test_and_set_depth(10, 5, 0.1f));
-    ASSERT_FALSE(fb.test_and_set_depth(5, 10, 0.1f));
-}
-
 // Two threads race writing different (depth, color) at the same pixel.
 // The shallower fragment's color must always be the one observed — depth and
 // color update atomically together, regardless of which thread's CAS landed last.

@@ -58,38 +58,6 @@ class Framebuffer
 
     void clear(Color bg = { 0, 0, 0 });
 
-    // Single-threaded only (draw_line, shadow map). Returns true if depth test passes.
-    [[nodiscard]] bool test_and_set_depth(int x, int y, float depth)
-    {
-        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
-        {
-            return false;
-        }
-        auto &slot = m_pixel[pixel_idx(x, y)];
-        const uint64_t cur = slot.load(std::memory_order_relaxed);
-        if (depth < unpack_depth(cur))
-        {
-            slot.store(pack_pixel(depth, unpack_color_bits(cur)), std::memory_order_relaxed);
-            return true;
-        }
-        return false;
-    }
-
-    // Single-threaded only: load-then-store on the packed slot's color half.
-    // Multi-threaded callers must use commit_pixel() to keep depth and color in sync.
-    // (The transparent resolve pass writes colour from multiple workers via the idx-based
-    // set_color_at() below, not this overload — see its comment for the safety contract.)
-    void set_pixel(int x, int y, Color color)
-    {
-        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
-        {
-            return;
-        }
-        auto &slot = m_pixel[pixel_idx(x, y)];
-        const uint64_t cur = slot.load(std::memory_order_relaxed);
-        slot.store(pack_pixel(unpack_depth(cur), pack_color(color)), std::memory_order_relaxed);
-    }
-
     [[nodiscard]] Color get_pixel(int x, int y) const
     {
         if (x < 0 || x >= m_width || y < 0 || y >= m_height)
@@ -97,6 +65,18 @@ class Framebuffer
             return {};
         }
         return unpack_color(unpack_color_bits(m_pixel[pixel_idx(x, y)].load(std::memory_order_relaxed)));
+    }
+
+    // Bounds-checked, read-only (x,y) depth probe — the get_pixel analog for depth. Returns
+    // +inf for out-of-bounds (mirroring get_pixel's default Color{}). Writes go through
+    // commit_pixel(); this never mutates.
+    [[nodiscard]] float depth_at(int x, int y) const
+    {
+        if (x < 0 || x >= m_width || y < 0 || y >= m_height)
+        {
+            return std::numeric_limits<float>::infinity();
+        }
+        return unpack_depth(m_pixel[pixel_idx(x, y)].load(std::memory_order_relaxed));
     }
 
     // Keeps the rejection path free of writes so reject-heavy meshes don't generate
@@ -121,9 +101,9 @@ class Framebuffer
 
     // idx-based colour read/write for the transparent resolve, peers to depth_at(idx):
     // the linear index is already in hand there, so these skip the (x,y) pixel_idx
-    // recompute and bounds branch that get_pixel/set_pixel pay. Same single-threaded
-    // contract as set_pixel — safe in resolve because workers own disjoint pixels and run
-    // post-barrier, and the colour-only store preserves the (immutable, see depth_at) depth.
+    // recompute and bounds branch that get_pixel pays. Single-threaded contract — safe in
+    // resolve because workers own disjoint pixels and run post-barrier, and the colour-only
+    // store preserves the (immutable, see depth_at) depth.
     [[nodiscard]] Color color_at(size_t idx) const noexcept
     {
         return unpack_color(unpack_color_bits(m_pixel[idx].load(std::memory_order_relaxed)));

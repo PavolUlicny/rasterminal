@@ -114,8 +114,7 @@ inline Light make_key_light_z(vec3 color = { 1.0f, 0.0f, 0.0f })
     return l;
 }
 
-// Count pixels with stored depth < +inf (i.e. something was drawn).
-// One-shot: mutates the depth buffer (like was_drawn).
+// Count pixels with stored depth < +inf (i.e. something was drawn). Read-only.
 inline int count_drawn_pixels(Framebuffer &fb)
 {
     int n = 0;

@@ -2,54 +2,29 @@
 #include "tests/rasterize_test_util.h"
 #include "src/framebuffer.h"
 
-// ─── test_and_set_depth bounds ────────────────────────────────────────────────
+// ─── get_pixel / depth_at bounds ──────────────────────────────────────────────
 
-TEST(framebuffer, test_and_set_depth_rejects_negative_x)
+TEST(framebuffer, get_pixel_oob_returns_default)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_FALSE(fb.test_and_set_depth(-1, 0, 0.5f));
-}
-
-TEST(framebuffer, test_and_set_depth_rejects_x_at_width)
-{
-    Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_FALSE(fb.test_and_set_depth(fb.width(), 0, 0.5f));
-}
-
-TEST(framebuffer, test_and_set_depth_rejects_negative_y)
-{
-    Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_FALSE(fb.test_and_set_depth(0, -1, 0.5f));
-}
-
-TEST(framebuffer, test_and_set_depth_rejects_y_at_height)
-{
-    Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_FALSE(fb.test_and_set_depth(0, fb.height(), 0.5f));
-}
-
-// ─── set_pixel / get_pixel bounds ────────────────────────────────────────────
-
-TEST(framebuffer, set_pixel_oob_silently_ignored)
-{
-    Framebuffer fb(4, 4, /*headless=*/true);
-    // OOB writes must not corrupt adjacent in-bounds pixels.
-    fb.set_pixel(-1, 0, { 1, 2, 3 });
-    fb.set_pixel(fb.width(), 0, { 1, 2, 3 });
-    fb.set_pixel(0, -1, { 1, 2, 3 });
-    fb.set_pixel(0, fb.height(), { 1, 2, 3 });
-
-    // In-bounds pixels should still be default (black).
-    Color c = fb.get_pixel(0, 0);
-    ASSERT_EQ(static_cast<int>(c.r), 0);
-    ASSERT_EQ(static_cast<int>(c.g), 0);
-    ASSERT_EQ(static_cast<int>(c.b), 0);
-
-    // get_pixel OOB returns default Color{}.
+    // get_pixel OOB returns default Color{} (no crash, no read past the buffer).
     Color oob = fb.get_pixel(-1, 0);
     ASSERT_EQ(static_cast<int>(oob.r), 0);
     ASSERT_EQ(static_cast<int>(oob.g), 0);
     ASSERT_EQ(static_cast<int>(oob.b), 0);
+    // In-bounds default is also black (sanity that the read maps correctly).
+    Color in = fb.get_pixel(0, 0);
+    ASSERT_EQ(static_cast<int>(in.r), 0);
+}
+
+TEST(framebuffer, depth_at_oob_returns_infinity)
+{
+    Framebuffer fb(4, 4, /*headless=*/true);
+    const float inf = std::numeric_limits<float>::infinity();
+    ASSERT_TRUE(fb.depth_at(-1, 0) == inf);
+    ASSERT_TRUE(fb.depth_at(fb.width(), 0) == inf);
+    ASSERT_TRUE(fb.depth_at(0, -1) == inf);
+    ASSERT_TRUE(fb.depth_at(0, fb.height()) == inf);
 }
 
 // ─── clear() ─────────────────────────────────────────────────────────────────
@@ -74,10 +49,11 @@ TEST(framebuffer, clear_resets_depth_to_infinity)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
     // Write a finite depth so depth[2,2] < +inf.
-    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.5f));
-    // After clear, depth should be +inf again — any finite value passes.
+    (void)fb.commit_pixel(2, 2, 0.5f, { 0, 0, 0 });
+    ASSERT_TRUE(fb.depth_at(2, 2) == 0.5f);
+    // After clear, depth must be +inf again.
     fb.clear();
-    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.9f));
+    ASSERT_TRUE(fb.depth_at(2, 2) == std::numeric_limits<float>::infinity());
 }
 
 // ─── resize() ────────────────────────────────────────────────────────────────
@@ -86,10 +62,10 @@ TEST(framebuffer, resize_resets_depth_to_infinity)
 {
     FdRedirect rd;
     Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.3f));
+    (void)fb.commit_pixel(1, 1, 0.3f, { 0, 0, 0 });
     fb.resize(8, 8);
-    // After resize, depth must be +inf — large finite value must pass.
-    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.999f));
+    // After resize, depth must be +inf.
+    ASSERT_TRUE(fb.depth_at(1, 1) == std::numeric_limits<float>::infinity());
 }
 
 TEST(framebuffer, resize_to_same_size_is_idempotent)
@@ -98,12 +74,12 @@ TEST(framebuffer, resize_to_same_size_is_idempotent)
     Framebuffer fb(6, 6, /*headless=*/true);
     fb.resize(6, 6);
     // Basic operations must still work after a no-op resize.
-    fb.set_pixel(3, 3, { 77, 88, 99 });
+    (void)fb.commit_pixel(3, 3, 0.5f, { 77, 88, 99 });
     Color c = fb.get_pixel(3, 3);
     ASSERT_EQ(static_cast<int>(c.r), 77);
     ASSERT_EQ(static_cast<int>(c.g), 88);
     ASSERT_EQ(static_cast<int>(c.b), 99);
-    ASSERT_TRUE(fb.test_and_set_depth(3, 3, 0.5f));
+    ASSERT_TRUE(fb.depth_at(3, 3) == 0.5f);
 }
 
 TEST(framebuffer, resize_sequence_clears_each_time)
@@ -112,24 +88,22 @@ TEST(framebuffer, resize_sequence_clears_each_time)
     Framebuffer fb(10, 10, /*headless=*/true);
 
     // Write something into the initial 10×10.
-    fb.set_pixel(5, 5, { 1, 2, 3 });
-    ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.1f));
+    (void)fb.commit_pixel(5, 5, 0.1f, { 1, 2, 3 });
 
     // Grow to 20×20: pixels should be default, depth +inf.
     fb.resize(20, 20);
     Color c = fb.get_pixel(5, 5);
     ASSERT_EQ(static_cast<int>(c.r), 0);
-    ASSERT_TRUE(fb.test_and_set_depth(5, 5, 0.8f));
+    ASSERT_TRUE(fb.depth_at(5, 5) == std::numeric_limits<float>::infinity());
 
     // Write again.
-    fb.set_pixel(3, 3, { 9, 8, 7 });
-    ASSERT_TRUE(fb.test_and_set_depth(3, 3, 0.2f));
+    (void)fb.commit_pixel(3, 3, 0.2f, { 9, 8, 7 });
 
     // Shrink to 5×5: pixels default, depth +inf.
     fb.resize(5, 5);
     Color c2 = fb.get_pixel(3, 3);
     ASSERT_EQ(static_cast<int>(c2.r), 0);
-    ASSERT_TRUE(fb.test_and_set_depth(3, 3, 0.7f));
+    ASSERT_TRUE(fb.depth_at(3, 3) == std::numeric_limits<float>::infinity());
 }
 
 // ─── construction edge cases ──────────────────────────────────────────────────
@@ -141,8 +115,7 @@ TEST(framebuffer, zero_size_construction_present_does_not_crash)
     ASSERT_EQ(fb.width(), 0);
     ASSERT_EQ(fb.height(), 0);
     fb.clear();
-    fb.set_pixel(0, 0, { 1, 2, 3 }); // OOB — silently ignored
-    fb.present();                    // must not crash on empty buffer
+    fb.present(); // must not crash on empty buffer
 }
 
 TEST(framebuffer, odd_height_present_does_not_crash)
@@ -154,8 +127,8 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     Framebuffer fb(2, 3, /*headless=*/true);
     ASSERT_EQ(fb.width(), 2);
     ASSERT_EQ(fb.height(), 3);
-    fb.set_pixel(0, 2, { 100, 150, 200 }); // row 2 — the lone odd row
-    fb.present();                          // must not crash
+    (void)fb.commit_pixel(0, 2, 0.5f, { 100, 150, 200 }); // row 2 — the lone odd row
+    fb.present();                                         // must not crash
 }
 
 // ─── headless mode ───────────────────────────────────────────────────────────
@@ -171,7 +144,7 @@ TEST(framebuffer, headless_dimensions_correct)
 TEST(framebuffer, headless_pixel_ops_work)
 {
     Framebuffer fb(6, 6, /*headless=*/true);
-    fb.set_pixel(2, 3, { 11, 22, 33 });
+    (void)fb.commit_pixel(2, 3, 0.5f, { 11, 22, 33 });
     Color c = fb.get_pixel(2, 3);
     ASSERT_EQ(static_cast<int>(c.r), 11);
     ASSERT_EQ(static_cast<int>(c.g), 22);
@@ -181,7 +154,7 @@ TEST(framebuffer, headless_pixel_ops_work)
 TEST(framebuffer, headless_clear_fills_pixels)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    fb.set_pixel(1, 1, { 99, 99, 99 });
+    (void)fb.commit_pixel(1, 1, 0.5f, { 99, 99, 99 });
     fb.clear({ 7, 8, 9 });
     Color c = fb.get_pixel(1, 1);
     ASSERT_EQ(static_cast<int>(c.r), 7);
@@ -189,20 +162,26 @@ TEST(framebuffer, headless_clear_fills_pixels)
     ASSERT_EQ(static_cast<int>(c.b), 9);
 }
 
-TEST(framebuffer, headless_depth_ops_work)
+// commit_pixel's strict-< depth gate, single-threaded (multithread_depth_color_race in
+// test_rasterize.cpp covers it under contention).
+TEST(framebuffer, commit_pixel_depth_gate)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.5f));
-    ASSERT_FALSE(fb.test_and_set_depth(1, 1, 0.9f));
-    ASSERT_TRUE(fb.test_and_set_depth(1, 1, 0.1f));
+    ASSERT_TRUE(fb.commit_pixel(1, 1, 0.5f, { 10, 0, 0 }));  // fresh (+inf): wins
+    ASSERT_FALSE(fb.commit_pixel(1, 1, 0.9f, { 0, 10, 0 })); // deeper: loses
+    ASSERT_FALSE(fb.commit_pixel(1, 1, 0.5f, { 0, 0, 10 })); // equal: not strictly less, loses
+    ASSERT_TRUE(fb.commit_pixel(1, 1, 0.1f, { 0, 10, 0 }));  // shallower: wins
+    ASSERT_TRUE(fb.depth_at(1, 1) == 0.1f);
+    Color c = fb.get_pixel(1, 1); // last winner's colour
+    ASSERT_EQ(static_cast<int>(c.g), 10);
 }
 
 TEST(framebuffer, headless_clear_resets_depth)
 {
     Framebuffer fb(4, 4, /*headless=*/true);
-    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.5f));
+    (void)fb.commit_pixel(2, 2, 0.5f, { 0, 0, 0 });
     fb.clear();
-    ASSERT_TRUE(fb.test_and_set_depth(2, 2, 0.9f)); // depth reset to +inf
+    ASSERT_TRUE(fb.depth_at(2, 2) == std::numeric_limits<float>::infinity()); // reset to +inf
 }
 
 // ─── dirty-tracking path ──────────────────────────────────────────────────────
@@ -213,11 +192,11 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
     // with most cells clean.  Verifies the dirty path doesn't crash or corrupt.
     FdRedirect rd;
     Framebuffer fb(4, 4, /*headless=*/true);
-    fb.set_pixel(0, 0, { 255, 0, 0 });
+    (void)fb.commit_pixel(0, 0, 0.5f, { 255, 0, 0 });
     fb.present(); // full-redraw path; swaps m_color ↔ m_prev_color
 
     fb.clear();
-    fb.set_pixel(2, 2, { 0, 255, 0 }); // only one cell dirty vs previous frame
+    (void)fb.commit_pixel(2, 2, 0.5f, { 0, 255, 0 }); // only one cell dirty vs previous frame
 
     // Pixel is readable before present().
     Color c = fb.get_pixel(2, 2);
@@ -347,9 +326,9 @@ TEST(framebuffer, incremental_single_skip_emits_cursor_advance)
     fb.present(); // full-redraw — establishes m_prev_color = all black
 
     fb.clear();
-    fb.set_pixel(0, 0, { 100, 0, 0 }); // col 0 dirty
-    fb.set_pixel(2, 0, { 0, 100, 0 }); // col 2 dirty; col 1 unchanged → skip=1
-    fb.present();                      // incremental path fires skip=1 branch
+    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty
+    (void)fb.commit_pixel(2, 0, 0.5f, { 0, 100, 0 }); // col 2 dirty; col 1 unchanged → skip=1
+    fb.present();                                     // incremental path fires skip=1 branch
 
     ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
 }
@@ -363,8 +342,8 @@ TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
     fb.present(); // full-redraw
 
     fb.clear();
-    fb.set_pixel(0, 0, { 100, 0, 0 }); // col 0 dirty; cols 1-4 unchanged → skip=4
-    fb.present();                      // incremental path fires skip>1 branch
+    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty; cols 1-4 unchanged → skip=4
+    fb.present();                                     // incremental path fires skip>1 branch
 
     ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
 }
@@ -398,8 +377,8 @@ TEST(framebuffer, present_incremental_dirty_at_last_column)
     fb.present();     // full-redraw
     (void)cap.read(); // drain
 
-    fb.set_pixel(3, 0, { 200, 0, 0 }); // only last column dirty
-    fb.present();                      // must not crash
+    (void)fb.commit_pixel(3, 0, 0.5f, { 200, 0, 0 }); // only last column dirty
+    fb.present();                                     // must not crash
 
     const std::string out = cap.read();
     ASSERT_TRUE(out.find("\033[1;4H") != std::string::npos); // cursor jumped to last col
@@ -413,7 +392,7 @@ TEST(framebuffer, present_height_1_does_not_crash)
     // code for any height, but this degenerate size must still produce a valid call.
     FdRedirect rd;
     Framebuffer fb(4, 1, /*headless=*/true);
-    fb.set_pixel(0, 0, { 50, 50, 50 });
+    (void)fb.commit_pixel(0, 0, 0.5f, { 50, 50, 50 });
     fb.present(); // must not crash
 }
 
@@ -465,7 +444,7 @@ TEST(framebuffer, write_byte_lut_boundary_values)
     {
         Framebuffer fb(1, 2, /*headless=*/true);
         CaptureStdout cap;
-        fb.set_pixel(0, 0, { v, 1, 2 }); // top != bot (bot stays default black)
+        (void)fb.commit_pixel(0, 0, 0.5f, { v, 1, 2 }); // top != bot (bot stays default black)
         fb.present();
         const std::string out = cap.read();
         // When fg and bg both change, the code emits a combined sequence

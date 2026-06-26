@@ -41,23 +41,22 @@ struct FdRedirect
     FdRedirect &operator=(FdRedirect &&) = delete;
 };
 
-// Returns true iff pixel (x,y) was drawn (stored depth < +inf).
-// One-shot on undrawn pixels: mutates their depth. Do not probe the same
-// undrawn pixel twice.
+// Returns true iff pixel (x,y) was drawn (stored depth < +inf). Read-only.
 static inline bool was_drawn(Framebuffer &fb, int x, int y)
 {
-    return !fb.test_and_set_depth(x, y, std::numeric_limits<float>::max());
+    return fb.depth_at(x, y) < std::numeric_limits<float>::infinity();
 }
 
-// Assert stored depth at (x,y) is within eps of D.
-// Call only after all drawing is done.
+// Assert stored depth at (x,y) is within eps of D (i.e. D-eps < depth <= D+eps).
+// Read-only; call after all drawing is done.
 static inline void assert_depth_near(Framebuffer &fb, int x, int y, float D, float eps)
 {
-    if (fb.test_and_set_depth(x, y, D + eps))
+    const float d = fb.depth_at(x, y);
+    if (d > D + eps)
     {
         ASSERT_FAIL("depth > " + std::to_string(D + eps) + " at (" + std::to_string(x) + "," + std::to_string(y) + ")");
     }
-    if (!fb.test_and_set_depth(x, y, D - eps))
+    if (d <= D - eps)
     {
         ASSERT_FAIL(
             "depth <= " + std::to_string(D - eps) + " at (" + std::to_string(x) + "," + std::to_string(y) + ")"
