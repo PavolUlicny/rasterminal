@@ -191,12 +191,23 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     const int dy = std::abs(y1 - y0);
     const int steps = std::max(dx, dy);
 
+    // Atomic depth-test + (depth,color) commit via CAS, so the wireframe pass can run
+    // concurrently across the worker pool (the rasterizer owns the viewport bounds check
+    // that commit_pixel itself does not). Single-threaded callers are byte-identical: the
+    // CAS loop runs once when uncontended, with a strict-< depth test (nearer wins).
+    const int w = fb.width();
+    const int h = fb.height();
+    const auto plot = [&](int px, int py, float z)
+    {
+        if (px >= 0 && px < w && py >= 0 && py < h)
+        {
+            fb.commit_pixel(px, py, z, color);
+        }
+    };
+
     if (steps == 0)
     {
-        if (fb.test_and_set_depth(x0, y0, a.z))
-        {
-            fb.set_pixel(x0, y0, color);
-        }
+        plot(x0, y0, a.z);
         return;
     }
 
@@ -209,12 +220,7 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     float z = a.z;
     for (int i = 0; i <= steps; i++)
     {
-        const int px = static_cast<int>(std::round(x));
-        const int py = static_cast<int>(std::round(y));
-        if (fb.test_and_set_depth(px, py, z))
-        {
-            fb.set_pixel(px, py, color);
-        }
+        plot(static_cast<int>(std::round(x)), static_cast<int>(std::round(y)), z);
         x += sx;
         y += sy;
         z += sz;
