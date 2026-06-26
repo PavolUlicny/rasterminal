@@ -65,6 +65,39 @@ namespace
         }
         return false;
     }
+
+    // Bake MTL -s (scale) / -o (origin offset) into a texture slot's 2x3 affine, the same
+    // affine glTF's KHR_texture_transform feeds (TexSlot::t in light.h, applied per-sample by
+    // apply_tex_transform). MTL authors offset/scale in OBJ's stored (v-up) UV space and has no
+    // rotation term, so this acts directly on the interpolated UV with NO v-flip fold — unlike
+    // mesh_gltf's bake_transform, whose authoring space is v-down. Scale-then-offset:
+    //   feed.u = sx*u + ox,  feed.v = sy*v + oy.
+    // The -o SIGN is deliberate: the Wavefront spec phrases -o only as "shifting the map origin",
+    // which is ambiguous, so we add the offset to the scaled coordinate to match
+    // KHR_texture_transform's scale-then-offset — this makes OBJ<->glTF round-trips of the same
+    // authored transform agree. Flip ox/oy here if a stricter literal reading is ever needed.
+    // Only the u/v components matter; the 3rd (w) value is for 3-D solid textures and is ignored,
+    // as is -t (turbulence) — a procedural noise displacement, not an affine, hence not
+    // representable here. Identity (scale 1, offset 0) leaves has_transform false so the
+    // no-transform sample fast path stays byte-identical.
+    void bake_obj_transform(TexSlot &slot, const tinyobj::texture_option_t &opt)
+    {
+        const float sx = opt.scale[0];
+        const float sy = opt.scale[1];
+        const float ox = opt.origin_offset[0];
+        const float oy = opt.origin_offset[1];
+        if (sx == 1.0f && sy == 1.0f && ox == 0.0f && oy == 0.0f)
+        {
+            return;
+        }
+        slot.has_transform = true;
+        slot.t[0] = sx;
+        slot.t[1] = 0.0f;
+        slot.t[2] = ox;
+        slot.t[3] = 0.0f;
+        slot.t[4] = sy;
+        slot.t[5] = oy;
+    }
 } // namespace
 
 bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
@@ -163,7 +196,9 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         const bool ka_zero = (m.ambient[0] == 0.0f && m.ambient[1] == 0.0f && m.ambient[2] == 0.0f);
         mat.ambient = ka_zero ? mat.diffuse : vec3{ m.ambient[0], m.ambient[1], m.ambient[2] };
         mat.diffuse_map.tex = load_tex(m.diffuse_texname, m.diffuse_texopt.clamp);
+        bake_obj_transform(mat.diffuse_map, m.diffuse_texopt);
         mat.specular_map.tex = load_tex(m.specular_texname, m.specular_texopt.clamp);
+        bake_obj_transform(mat.specular_map, m.specular_texopt);
         // A real normal map (`norm` → normal_texname) wins and is bound directly. The
         // map_Bump/bump fallback is, per the MTL spec, a grayscale *height* map — but many
         // exporters (notably Blender's legacy OBJ exporter) ship an actual RGB normal map
@@ -172,6 +207,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         if (!m.normal_texname.empty())
         {
             mat.normal_map.tex = load_tex(m.normal_texname, m.normal_texopt.clamp);
+            bake_obj_transform(mat.normal_map, m.normal_texopt);
         }
         else if (!m.bump_texname.empty())
         {
@@ -181,6 +217,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
             // texture). The -mm base/gain brightness/contrast modifier on the bump map is
             // intentionally not applied (rare; bump strength is controlled via -bm).
             mat.normal_map.tex = load_tex(m.bump_texname, m.bump_texopt.clamp);
+            bake_obj_transform(mat.normal_map, m.bump_texopt);
             const float bm = std::clamp(m.bump_texopt.bump_multiplier, -1e6f, 1e6f);
             // Lower-case -imfchan once here: tinyobjloader stores the channel char verbatim, but
             // the spec writes it lower-case, so fold an out-of-spec 'R'/'G'/… to its 'r'/'g'/…
@@ -203,6 +240,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         if (emissive_active)
         {
             mat.emissive_map.tex = load_tex(m.emissive_texname, m.emissive_texopt.clamp);
+            bake_obj_transform(mat.emissive_map, m.emissive_texopt);
         }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
         // map_d is not loaded as a separate texture — map_Kd's RGBA is used.

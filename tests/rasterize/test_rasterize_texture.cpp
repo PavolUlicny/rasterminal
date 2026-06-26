@@ -179,6 +179,82 @@ TEST(rasterize, texture_uv_wrap)
     }
 }
 
+// A6: same 2×1 red/blue texture, constant UV u=0 (→ pure red without a transform). A diffuse_map
+// affine carrying a +0.5 u offset (MTL `-o 0.5 0`) advances the sampled coordinate to u=0.5, mid
+// red↔blue, so blue must appear. Pins the OBJ -o/-s sign convention (positive offset advances the
+// sampled coordinate) through the real sample path. The material pointer (not the bare tex arg)
+// is what carries the transform — see apply_tex_transform gating in rasterize.cpp.
+TEST(rasterize, diffuse_transform_offset_advances_sampled_coord)
+{
+    Framebuffer fb(40, 20, /*headless=*/true);
+    Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    Material mat{};
+    mat.diffuse_map.has_transform = true;
+    mat.diffuse_map.t[0] = 1.0f;
+    mat.diffuse_map.t[2] = 0.5f; // +0.5 u offset
+    mat.diffuse_map.t[4] = 1.0f;
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.0f, 0.5f };
+    vec3 zero{};
+    vec2 zuv{};
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, &tex, 0.0f, nullptr,
+        0, 19, nullptr, zero, zuv, zuv, zuv, &mat
+    );
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.b < 100)
+    {
+        ASSERT_FAIL(
+            "B too low (" + std::to_string(static_cast<int>(c.b)) +
+            "): +0.5 u offset should advance u=0 to u=0.5 and pull in blue"
+        );
+    }
+    if (c.r > 200)
+    {
+        ASSERT_FAIL("R too high: offset should move the sample off the pure-red texel");
+    }
+}
+
+// A7: same 2×1 red/blue texture, constant UV u=0.4 (→ red-biased without a transform). A diffuse_map
+// affine with 2× u scale (MTL `-s 2 1`) multiplies the coordinate to u=0.8 → blue-biased. Pins that
+// scale acts on (multiplies) the sampled coordinate, in the right order (scale*u + offset), through
+// the real sample path.
+TEST(rasterize, diffuse_transform_scale_multiplies_sampled_coord)
+{
+    Framebuffer fb(40, 20, /*headless=*/true);
+    Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
+    Material mat{};
+    mat.diffuse_map.has_transform = true;
+    mat.diffuse_map.t[0] = 2.0f; // 2× u scale
+    mat.diffuse_map.t[4] = 1.0f;
+    vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
+    vec3 white{ 1.0f, 1.0f, 1.0f };
+    vec2 uv{ 0.4f, 0.5f };
+    vec3 zero{};
+    vec2 zuv{};
+    rasterize_flat(
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, &tex, 0.0f, nullptr,
+        0, 19, nullptr, zero, zuv, zuv, zuv, &mat
+    );
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    if (c.b < 150)
+    {
+        ASSERT_FAIL(
+            "B too low (" + std::to_string(static_cast<int>(c.b)) +
+            "): 2x u scale should map u=0.4 to u=0.8 and pull in blue"
+        );
+    }
+    if (c.r > 120)
+    {
+        ASSERT_FAIL("R too high: scaled-up coordinate should sample mostly the blue texel");
+    }
+}
+
 // ── Group B: diffuse texture in rasterize_phong() ────────────────────────────
 
 // B1: 1×1 gray (128,128,128) texture halves both diffuse and ambient.

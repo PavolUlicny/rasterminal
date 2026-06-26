@@ -562,6 +562,251 @@ TEST(obj_bump, lowercase_bump_keyword_converts)
     ASSERT_EQ(nm->pixels[2], uint8_t{ 255 }); // converted
 }
 
+// ─── MTL -s / -o texture transform (KHR_texture_transform analog) ─────────────
+// -s (scale) and -o (origin offset) bake per map into the TexSlot 2×3 affine (light.h),
+// the same affine apply_tex_transform feeds at sample time. MTL authors in OBJ's stored
+// (v-up) UV space with no rotation, so the bake is feed.u=sx*u+ox, feed.v=sy*v+oy with no
+// v-flip fold. -t (turbulence) and the 3rd (w) component are intentionally ignored; identity
+// leaves has_transform false (fast path). See bake_obj_transform in mesh_obj.cpp.
+
+// Reusable 1×1 diffuse texture file for the texopt cases (transform lives on the slot, not the
+// texels, so the pixel content is irrelevant — any decodable image makes load_tex bind a slot).
+static constexpr const char *kTexoptObj = "mtllib texopt.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl M\nf 1 2 3\n";
+
+TEST(obj_texopt, scale_offset_baked_into_diffuse_affine)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 3 1 -o 0.1 0.2 0 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &s = m.materials[1].diffuse_map;
+    ASSERT_TRUE(s.has_transform);
+    // feed.u = 2*u + 0.1, feed.v = 3*v + 0.2 — no rotation, no v-flip fold (OBJ v-up authoring).
+    ASSERT_NEAR(s.t[0], 2.0f, 1e-5f);
+    ASSERT_NEAR(s.t[1], 0.0f, 1e-5f);
+    ASSERT_NEAR(s.t[2], 0.1f, 1e-5f);
+    ASSERT_NEAR(s.t[3], 0.0f, 1e-5f);
+    ASSERT_NEAR(s.t[4], 3.0f, 1e-5f);
+    ASSERT_NEAR(s.t[5], 0.2f, 1e-5f);
+}
+
+TEST(obj_texopt, scale_only_single_axis_sets_transform)
+{
+    // -s on u only (v stays 1) is still non-identity ⇒ has_transform; off-diagonal/offset are 0.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 1 1 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    const TexSlot &s = m.materials[1].diffuse_map;
+    ASSERT_TRUE(s.has_transform);
+    ASSERT_NEAR(s.t[0], 2.0f, 1e-5f);
+    ASSERT_NEAR(s.t[4], 1.0f, 1e-5f);
+    ASSERT_NEAR(s.t[2], 0.0f, 1e-5f);
+    ASSERT_NEAR(s.t[5], 0.0f, 1e-5f);
+}
+
+TEST(obj_texopt, offset_only_sets_transform)
+{
+    // -o with no -s ⇒ scale stays identity (t[0]=t[4]=1), only the translation column is set.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -o 0 0.5 0 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    const TexSlot &s = m.materials[1].diffuse_map;
+    ASSERT_TRUE(s.has_transform);
+    ASSERT_NEAR(s.t[0], 1.0f, 1e-5f);
+    ASSERT_NEAR(s.t[4], 1.0f, 1e-5f);
+    ASSERT_NEAR(s.t[2], 0.0f, 1e-5f);
+    ASSERT_NEAR(s.t[5], 0.5f, 1e-5f);
+}
+
+TEST(obj_texopt, negative_scale_and_offset_baked_unclamped)
+{
+    // A negative scale (texture flip) / negative offset is a valid affine — baked verbatim, no
+    // clamp. Fail-loud/no-silent-clamp is the repo norm; the renderer's wrap modes handle the
+    // resulting out-of-[0,1] coordinates downstream.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s -1 2 1 -o -0.5 0 0 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    const TexSlot &s = m.materials[1].diffuse_map;
+    ASSERT_TRUE(s.has_transform);
+    ASSERT_NEAR(s.t[0], -1.0f, 1e-5f);
+    ASSERT_NEAR(s.t[4], 2.0f, 1e-5f);
+    ASSERT_NEAR(s.t[2], -0.5f, 1e-5f);
+    ASSERT_NEAR(s.t[5], 0.0f, 1e-5f);
+}
+
+TEST(obj_texopt, identity_leaves_no_transform)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    // Explicit identity (map_Kd) and a map with no options at all (map_Ks) must both leave the
+    // no-transform sample fast path on, byte-identical to a binding that never carried options.
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 1 1 1 -o 0 0 0 texopt.bmp\nmap_Ks texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_FALSE(m.materials[1].diffuse_map.has_transform);
+    ASSERT_FALSE(m.materials[1].specular_map.has_transform);
+}
+
+TEST(obj_texopt, turbulence_only_leaves_no_transform)
+{
+    // -t alone (no -s/-o) is identity for the affine: turbulence is a procedural noise
+    // displacement, not representable as a 2×3 matrix, so it must not even set has_transform.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -t 1 1 1 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials[1].diffuse_map.tex >= 0); // texture still bound
+    ASSERT_FALSE(m.materials[1].diffuse_map.has_transform);
+}
+
+TEST(obj_texopt, w_component_and_turbulence_ignored)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    // 3rd scale value (9) is the w axis (3-D textures) and -t is turbulence — both must not affect
+    // the 2×3 affine. Only u/v scale (2,2) is baked.
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 2 9 -t 1 1 1 texopt.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &s = m.materials[1].diffuse_map;
+    ASSERT_TRUE(s.has_transform);
+    ASSERT_NEAR(s.t[0], 2.0f, 1e-5f);
+    ASSERT_NEAR(s.t[4], 2.0f, 1e-5f);
+    // Offsets stay zero (no -o); turbulence never touches the affine.
+    ASSERT_NEAR(s.t[2], 0.0f, 1e-5f);
+    ASSERT_NEAR(s.t[5], 0.0f, 1e-5f);
+}
+
+TEST(obj_texopt, per_slot_transforms_are_independent)
+{
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 2 1 texopt.bmp\nmap_Ks -o 0.5 0.25 0 texopt.bmp\n"
+    );
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &kd = m.materials[1].diffuse_map;
+    const TexSlot &ks = m.materials[1].specular_map;
+    ASSERT_TRUE(kd.has_transform);
+    ASSERT_NEAR(kd.t[0], 2.0f, 1e-5f);
+    ASSERT_NEAR(kd.t[2], 0.0f, 1e-5f); // no -o on map_Kd
+    ASSERT_TRUE(ks.has_transform);
+    ASSERT_NEAR(ks.t[0], 1.0f, 1e-5f); // no -s on map_Ks
+    ASSERT_NEAR(ks.t[2], 0.5f, 1e-5f);
+    ASSERT_NEAR(ks.t[5], 0.25f, 1e-5f);
+}
+
+TEST(obj_texopt, transform_on_real_norm_map_baked)
+{
+    // A chromatic `norm` map is bound directly (no height conversion) — its -s/-o must still bake.
+    const std::vector<uint8_t> tex = bmp_1x1(10, 20, 200); // chromatic ⇒ real normal map
+    TmpFile bmp(tmp_path("texopt_norm.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nnorm -s 3 3 1 -o 0.2 0.4 0 texopt_norm.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    const TexSlot &nm = m.materials[1].normal_map;
+    ASSERT_TRUE(nm.has_transform);
+    ASSERT_NEAR(nm.t[0], 3.0f, 1e-5f);
+    ASSERT_NEAR(nm.t[4], 3.0f, 1e-5f);
+    ASSERT_NEAR(nm.t[2], 0.2f, 1e-5f);
+    ASSERT_NEAR(nm.t[5], 0.4f, 1e-5f);
+}
+
+TEST(obj_texopt, transform_survives_bump_to_normal_conversion)
+{
+    // A grayscale map_Bump is converted to a tangent-space normal map at load: the conversion
+    // reassigns only normal_map.tex, so the slot's baked affine must survive the repoint.
+    const std::vector<uint8_t> tex = bmp_1x1(128, 128, 128); // grayscale ⇒ bump→normal path
+    TmpFile bmp(tmp_path("texopt_bump.bmp"), tex.data(), tex.size());
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Bump -s 4 4 1 -o 0.1 0 0 texopt_bump.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    const TexSlot &nm = m.materials[1].normal_map;
+    // tex points at the *converted* normal map (B=255), and the affine is intact.
+    const Texture *t = m.tex_at(nm.tex);
+    ASSERT_TRUE(t != nullptr);
+    ASSERT_EQ(t->pixels[2], uint8_t{ 255 });
+    ASSERT_TRUE(nm.has_transform);
+    ASSERT_NEAR(nm.t[0], 4.0f, 1e-5f);
+    ASSERT_NEAR(nm.t[4], 4.0f, 1e-5f);
+    ASSERT_NEAR(nm.t[2], 0.1f, 1e-5f);
+}
+
+TEST(obj_texopt, transform_on_emissive_map_baked)
+{
+    // The emissive slot only binds (and bakes) when Ke > 0 (emissive = Ke × map_Ke).
+    TmpFile bmp(tmp_path("texopt_ke.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKe 1 1 1\nmap_Ke -s 2 5 1 texopt_ke.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    const TexSlot &em = m.materials[1].emissive_map;
+    ASSERT_TRUE(em.tex >= 0);
+    ASSERT_TRUE(em.has_transform);
+    ASSERT_NEAR(em.t[0], 2.0f, 1e-5f);
+    ASSERT_NEAR(em.t[4], 5.0f, 1e-5f);
+}
+
+TEST(obj_texopt, shared_image_distinct_transforms_dedup_one_texture)
+{
+    // The texture cache keys on (name, clamp), not the transform, so two materials sampling one
+    // image with different -s share a single decoded Texture yet keep independent slot affines.
+    const std::vector<uint8_t> tex = bmp_1x1(200, 100, 50);
+    TmpFile bmp(tmp_path("texopt.bmp"), tex.data(), tex.size());
+    TmpFile mtl(
+        tmp_path("texopt.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd -s 2 2 1 texopt.bmp\n"
+                                "newmtl B\nKd 1 1 1\nmap_Kd -s 5 5 1 texopt.bmp\n"
+    );
+    TmpFile obj(
+        tmp_path("texopt.obj"), "mtllib texopt.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                                "usemtl A\nf 1 2 3\nusemtl B\nf 1 2 3\n"
+    );
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 3);
+    ASSERT_EQ(m.textures.size(), size_t{ 1 }); // one decoded image, shared
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, m.materials[2].diffuse_map.tex);
+    ASSERT_NEAR(m.materials[1].diffuse_map.t[0], 2.0f, 1e-5f); // distinct affines
+    ASSERT_NEAR(m.materials[2].diffuse_map.t[0], 5.0f, 1e-5f);
+}
+
+TEST(obj_texopt, missing_file_leaves_orphan_transform_harmless)
+{
+    // The image fails to decode ⇒ the slot is unbound (tex = -1), but the baked affine stays on
+    // the slot. It is never sampled (no texture), so the orphan transform is harmless — this
+    // documents that the loader does not (and need not) clear it.
+    TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 2 1 does_not_exist.bmp\n");
+    TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
+
+    Mesh m = load_ok(obj.path);
+    ASSERT_TRUE(m.materials.size() >= 2);
+    ASSERT_EQ(m.materials[1].diffuse_map.tex, -1);
+    ASSERT_TRUE(m.materials[1].diffuse_map.has_transform);
+}
+
 TEST(obj_valid, mtl_ke_emissive_parsed)
 {
     TmpFile mtl(tmp_path("rast_ke.mtl"), "newmtl M\nKe 1.0 0.5 0.25\n");
