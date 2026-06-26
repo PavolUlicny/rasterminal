@@ -623,7 +623,10 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             for (size_t pi = 0; pi < node->mesh->primitives_count; pi++)
             {
                 const cgltf_primitive &prim = node->mesh->primitives[pi];
-                if (prim.type != cgltf_primitive_type_triangles)
+                // Triangle strips/fans are de-stripified into the triangle list below; points and
+                // lines have no surface to rasterize and are unsupported (dropped here).
+                if (prim.type != cgltf_primitive_type_triangles && prim.type != cgltf_primitive_type_triangle_strip &&
+                    prim.type != cgltf_primitive_type_triangle_fan)
                 {
                     continue;
                 }
@@ -920,8 +923,63 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     }
                 }
 
-                // Push triangles.
-                if (prim.indices)
+                // Push triangles. Strips/fans are de-stripified here into the triangle list; the rest
+                // of the pipeline only ever sees independent triangles. count-2 triangles, winding per
+                // glTF/GL spec (odd strip triangles swap the first two verts so all share one winding).
+                // Degenerate stitch triangles (repeated index) are kept — render-time backface/zero-area
+                // drop handles them. cgltf_validate bounds every index < n_verts but allows count<3 and
+                // non-multiples of 3, so the loop bound and the count>=3 reserve guard are load-bearing.
+                if (prim.type == cgltf_primitive_type_triangle_strip || prim.type == cgltf_primitive_type_triangle_fan)
+                {
+                    const bool fan = prim.type == cgltf_primitive_type_triangle_fan;
+                    const size_t count = prim.indices ? prim.indices->count : n_verts;
+                    const auto src = [&](size_t i) -> uint32_t {
+                        return static_cast<uint32_t>(
+                            vert_base + (prim.indices ? cgltf_accessor_read_index(prim.indices, i) : i)
+                        );
+                    };
+                    if (count >= 3)
+                    {
+                        triangles.reserve(triangles.size() + (count - 2));
+                        // Rolling window: read each source index exactly once.
+                        // cgltf_accessor_read_index re-derives the buffer pointer per call, so
+                        // re-reading the two shared edge indices on every triangle would triple
+                        // the reads. i0/i1 hold the previous two indices; for a fan i0 stays
+                        // pinned to the hub (src(0)). Parity of i (== parity of triangle i-2)
+                        // selects the strip's odd-triangle swap.
+                        uint32_t i0 = src(0);
+                        uint32_t i1 = src(1);
+                        for (size_t i = 2; i < count; i++)
+                        {
+                            const uint32_t i2 = src(i);
+                            Triangle t;
+                            if (fan || (i & 1u) == 0u)
+                            {
+                                t.v[0] = i0;
+                                t.v[1] = i1;
+                                t.v[2] = i2;
+                            }
+                            else
+                            {
+                                t.v[0] = i1;
+                                t.v[1] = i0;
+                                t.v[2] = i2;
+                            }
+                            if (flip_winding)
+                            {
+                                std::swap(t.v[1], t.v[2]);
+                            }
+                            t.material_idx = mat_idx;
+                            triangles.push_back(t);
+                            if (!fan)
+                            {
+                                i0 = i1;
+                            }
+                            i1 = i2;
+                        }
+                    }
+                }
+                else if (prim.indices)
                 {
                     const size_t n_idx = prim.indices->count;
                     triangles.reserve(triangles.size() + (n_idx / 3));
