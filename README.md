@@ -2,11 +2,11 @@
 
 [![CI](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml)
 
-A 3D model viewer and software rasterizer that runs entirely in your terminal. No GPU, no windowing system, no runtime dependencies.
+**A fast 3D model viewer in the terminal.**
 
 ![rasterminal spinning a model](assets/demo.gif)
 
-Point rasterminal at an OBJ, PLY, STL, or glTF file and it draws the model straight into your terminal — orbit with the mouse, zoom, switch shading modes, and toggle textures and lighting, all in real time. Behind the viewer is a complete software renderer: it reimplements the full GPU rasterization pipeline on the CPU — model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, hard shadow maps, and order-independent alpha-blended transparency — and paints the result with Unicode half-block characters (`▀`) and 24-bit ANSI colour. Each terminal cell carries two vertical pixels (one as the glyph's foreground, one as its background), so a plain text grid becomes a framebuffer.
+rasterminal renders 3D models on the CPU and displays them in your terminal in real time, so you can view OBJ, PLY, STL, and glTF files anywhere you have a terminal, including over SSH with no display or GPU.
 
 ## Contents
 
@@ -38,9 +38,9 @@ curl -fsSL -o Duck.glb \
 ./rasterminal Duck.glb
 ```
 
-Drag with the mouse to orbit, scroll to zoom, press `Space` to spin, `1`–`3` to switch shading modes, `Q` to quit.
+Drag with the mouse to orbit, scroll to zoom, press `Space` to spin, `1` to `3` to switch shading modes, `Q` to quit.
 
-Want something denser? The Stanford bunny is a good stress test:
+For a denser model, try the Stanford bunny:
 
 ```sh
 curl -fsSL -o bunny.stl \
@@ -48,7 +48,7 @@ curl -fsSL -o bunny.stl \
 ./rasterminal bunny.stl
 ```
 
-More test assets live in the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) repository — any `.glb`, `.gltf`, `.obj`, `.ply`, or `.stl` file works.
+More test assets live in the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) repository; any `.glb`, `.gltf`, `.obj`, `.ply`, or `.stl` file works.
 
 ## Gallery
 
@@ -58,24 +58,21 @@ More test assets live in the [Khronos glTF Sample Assets](https://github.com/Khr
 
 ## How it works
 
-Every frame, for every triangle, rasterminal runs the same pipeline a GPU would — just on the CPU:
+rasterminal implements the same rasterization pipeline a GPU runs, entirely in CPU code. Each frame, every triangle is transformed from model space through the view and projection matrices into clip space. A world-space backface test rejects roughly half of all triangles before any projection work, with double-sided materials opting out of the test and flipping their normals instead. Triangles that cross the near plane are clipped so nothing renders behind the camera, and the remainder are conservatively rejected against the view frustum.
 
-1. **Transform** — vertices go through model, view, and projection matrices into clip space.
-2. **Cull** — a world-space backface test rejects roughly half the triangles before any projection work. Double-sided materials opt out and flip their normals instead.
-3. **Clip** — triangles crossing the near plane are split so nothing renders behind the camera; the rest are conservatively frustum-rejected.
-4. **Rasterize** — after the perspective divide, triangles are scan-converted with perspective-correct interpolation of colour, UVs, world position, and normals.
-5. **Depth test** — a z-buffer keeps the nearest fragment per pixel.
-6. **Shade** — Blinn-Phong lighting (flat per-face or Phong per-pixel), modulated by texture sampling, baked ambient occlusion, and a hard shadow map built from the key light.
-7. **Blend** — transparent surfaces (glTF `BLEND`, MTL `d`/`Tr`, per-vertex alpha) are accumulated into a per-pixel fragment list, then composited back-to-front over the opaque image — exact ordering, even for interpenetrating and double-sided geometry. Fully opaque models skip this entirely.
-8. **Output** — each pair of vertically stacked pixels becomes one terminal cell: a `▀` glyph whose foreground is the top pixel and background is the bottom, in 24-bit colour.
+Surviving triangles go through the perspective divide and are scan-converted into fragments, with color, texture coordinates, world position, and normals all interpolated in a perspective-correct way across the triangle. A z-buffer keeps the nearest fragment at each pixel. Shading runs per fragment: flat shading evaluates Blinn-Phong lighting once per face, Phong shading evaluates it per pixel, and both are modulated by texture sampling, baked ambient occlusion, and a hard shadow map rendered from the key light.
 
-The work is spread across threads with a work-stealing loop: each worker claims a chunk of triangles and rasterizes it end-to-end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and colour together — no separate depth pass, no band buffers. Transparency adds two more work-stealing phases (accumulate, then resolve) only when a model actually has blended materials.
+Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha) take a separate path. Their fragments are gathered into a per-pixel list, sorted back to front, and composited over the finished opaque image, so the result is correct even where transparent geometry interpenetrates or is double-sided. Fully opaque models skip this path entirely.
+
+The finished framebuffer is then written to the terminal. Each character cell represents two vertically stacked pixels, drawn as a `▀` half-block glyph whose foreground color is the top pixel and background color is the bottom, both in 24-bit ANSI color. The whole frame is assembled in a single buffer and flushed in one write.
+
+Rendering is multi-threaded with a work-stealing scheduler. Each worker claims a chunk of triangles and rasterizes it end to end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and color into one slot, with no separate depth pre-pass. Transparency adds two further work-stealing phases, accumulate then resolve, but only for models that actually use blended materials.
 
 ## Build
 
 Two build systems are provided. Each has a **release** variant (`-march=native`, fastest on the build machine) and a **portable** variant (no `-march=native`, runs on any CPU of the target architecture). All other speed flags (`-O3 -ffast-math -funroll-loops`, LTO, and so on) apply to both.
 
-### Linux / macOS — Make (GCC or Clang)
+### Linux / macOS: Make (GCC or Clang)
 
 ```sh
 make                     # release: -O3 -march=native + all speed flags
@@ -86,12 +83,9 @@ make debug               # -O0 -g
 make test                # build and run test suite
 ```
 
-`dist` is the binary to ship: same codegen as `portable` (any CPU of the target arch) but it
-statically links libstdc++/libgcc, so it does not fail on older distros with a missing
-`GLIBCXX_…` symbol. (glibc itself stays dynamic, so the build host's glibc version is still the
-floor — build on the oldest distro you need to support, or use a fully static toolchain.)
+`dist` is the binary to ship: same portable codegen, but it statically links libstdc++/libgcc so it runs on older distros without a matching `GLIBCXX` symbol. glibc stays dynamic, so build on the oldest distro you need to support.
 
-### All platforms — CMake
+### All platforms: CMake
 
 The configurations below are also available as presets (CMake ≥ 3.21):
 
@@ -116,7 +110,7 @@ cmake --build build-debug -j
 cmake -B build-portable -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON
 cmake --build build-portable -j
 
-# Dist (portable + static libstdc++/libgcc — the release artifact)
+# Dist (portable + static libstdc++/libgcc, the release artifact)
 cmake -B build-dist -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DRASTERMINAL_STATIC_LIBSTDCXX=ON
 cmake --build build-dist -j
 
@@ -148,17 +142,18 @@ rasterminal [options] <model>
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
 | `--cull` | `-c` | `on` | `on`/`off` |
 | `--texture` | `-t` | `on` | `on`/`off` |
-| `--spin` | `-S` | off | Start with auto-rotation enabled |
+| `--spin` | `-S` | `off` | Start with auto-rotation enabled |
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
-| `--smooth-angle` | | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
+| `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
-| `--bench-size` | | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
-| `--bench-warmup` | | `20` | Warmup frames discarded before measurement; requires `--bench` |
-| `--no-shadow` | | | Disable shadow map (faster startup on large meshes) |
-| `--no-ao` | | | Disable baked ambient occlusion |
-| `--no-hud` | | | Hide the status bar |
-| `--help` | `-h` | | Print usage and exit |
+| `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
+| `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
+| `--no-shadow` | none | `on` | Disable shadow map (faster startup on large meshes) |
+| `--no-ao` | none | `on` | Disable baked ambient occlusion |
+| `--no-hud` | none | `shown` | Hide the status bar |
+| `--help` | `-h` | none | Print usage and exit |
+| `--version` | `-V` | none | Print version and exit |
 
 String values are case-insensitive. Long flags accept `--flag value` or `--flag=value`; short flags accept `-f value` or `-fvalue`.
 
@@ -173,7 +168,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | `1` `2` `3` | Wireframe / flat / Phong shading |
 | `L` | Cycle lighting (dual → single → flat) |
 | `B` | Cycle background (black → gray → white) |
-| `C` | Cycle wireframe colour |
+| `C` | Cycle wireframe color |
 | `T` | Toggle texture rendering |
 | `K` | Toggle backface culling |
 | `Space` | Toggle auto-rotation |
@@ -184,37 +179,37 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 
 | Format | Notes |
 | --- | --- |
-| OBJ / MTL | Triangles, quads, n-gons; `map_Kd` / `map_Ks` textures |
-| PLY | ASCII and binary (LE/BE); vertex and face colours |
+| OBJ / MTL | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
+| PLY | ASCII and binary (LE/BE); vertex and face colors |
 | STL | ASCII and binary |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colours, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
+| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
 
 ## Requirements
 
 Any terminal with:
 
 - UTF-8 support
-- 24-bit (truecolour) ANSI colour
+- 24-bit (truecolor) ANSI color
 - Mouse reporting (for drag-to-orbit and scroll-to-zoom)
 
 Works well with: iTerm2, kitty, WezTerm, Windows Terminal, and most modern Linux terminals.
 
 ## Project status
 
-**Pre-v1.0.0 — under active development.** Rasterminal works and is fun to play with today, but it is still maturing: expect some rough edges, and CLI flags or controls may change before v1.0.0. For a stable, polished experience, keep an eye out for the v1.0.0 release.
+Pre-1.0 and under active development. rasterminal works today, but it is still maturing: expect rough edges, and CLI flags or controls may change before 1.0.
 
 ## Third-party libraries
 
-Vendored under `vendor/` — see `THIRD_PARTY_NOTICES` for full licence texts.
+Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 
-| Library | Version | Licence | Use |
+| Library | Version | License | Use |
 | --- | --- | --- | --- |
 | [cgltf](https://github.com/jkuhlmann/cgltf) | 1.15 | MIT | glTF / GLB parsing |
 | [stb_image](https://github.com/nothings/stb) | 2.30 | MIT / Unlicense | Image loading |
 | [stl_reader](https://github.com/sreiter/stl_reader) | 2.0 | BSD-2 | STL parsing |
 | [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | 2.0.0rc13 | MIT | OBJ / MTL parsing |
 | [tinyply](https://github.com/ddiakopoulos/tinyply) | 3.0 | Public domain | PLY parsing |
-| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1 | MIT | Vertex cache / overdraw / fetch optimisation |
+| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1 | MIT | Vertex cache / overdraw / fetch optimization |
 | [draco](https://github.com/google/draco) | 1.5.7 | Apache-2.0 | Draco mesh decompression (`KHR_draco_mesh_compression`) |
 | [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_1_0r | Apache-2.0 | KTX2 / Basis Universal texture transcoding (`KHR_texture_basisu`) |
 | [zstd](https://github.com/facebook/zstd) | bundled w/ basis_universal | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
@@ -222,4 +217,4 @@ Vendored under `vendor/` — see `THIRD_PARTY_NOTICES` for full licence texts.
 
 ## License
 
-Rasterminal is released under the MIT License — see [`LICENSE`](LICENSE). Vendored third-party libraries retain their own licenses, reproduced in full in [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
+Rasterminal is released under the MIT License; see [`LICENSE`](LICENSE). Vendored third-party libraries retain their own licenses, reproduced in full in [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
