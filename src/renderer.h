@@ -63,6 +63,7 @@ struct Renderer
     enum class Pass : std::uint8_t
     {
         Opaque,
+        Wireframe,  // draw triangle edges (uniform colour, atomic CAS depth-test) across the pool
         TransAccum, // shade transparent triangles, push fragments to the per-pixel A-buffer
         Resolve     // sort + composite each pixel's fragments over the opaque colour
     };
@@ -78,6 +79,13 @@ struct Renderer
 
     // Bridge the runtime m_smode to the compile-time M instantiation of raster_triangles.
     template <Sink S> void dispatch_raster(int worker_id);
+
+    // Wireframe pass: each worker steals triangle chunks and draws their three edges as
+    // DDA lines in m_wireframe_color. No shading/texture; correctness is in draw_line's
+    // atomic CAS commit (uniform colour + order-independent depth-min ⇒ output is identical
+    // to a serial draw for any worker count). Takes no worker_id (like resolve_pixels): work
+    // is claimed from the shared m_tri_cursor, not a per-worker arena.
+    void raster_wireframe();
 
     // Resolve pass: composite each owned pixel's fragment list back-to-front over the
     // opaque colour already in the framebuffer.
@@ -107,6 +115,7 @@ struct Renderer
     ShadingMode m_smode = ShadingMode::Phong;
     bool m_cull_backfaces = true;
     bool m_show_texture = true;
+    Color m_wireframe_color = { 200, 200, 200 };
     Framebuffer *m_fb = nullptr;
 
     std::atomic<int> m_tri_cursor{ 0 };   // work-stealing cursor across all workers

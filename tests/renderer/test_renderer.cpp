@@ -120,6 +120,195 @@ TEST(renderer, wireframe_uses_wireframe_color)
     }
 }
 
+// ─── Group B2 — wireframe parallelization (multi-worker) ──────────────────────
+//
+// The wireframe pass now runs on the worker pool. Because every edge pixel is written
+// with one uniform colour and depth resolves via draw_line's atomic CAS min, the output
+// must be byte-identical for any worker count. These tests pin that, plus the cull /
+// clip_near / off-screen / degenerate edge paths under real concurrency (the sanitizer
+// CI jobs run this suite under TSAN, so they double as a data-race check).
+
+// A dense mesh that exercises every wireframe edge path at once: a grid of overlapping,
+// depth-staggered front faces (edges cross at shared pixels → CAS depth-min contention),
+// a triangle spilling far off-screen (bounds rejection in draw_line), a near-plane
+// straddler (clip_near), a back-facing single-sided triangle (culled), and a back-facing
+// double-sided one (cull bypass). ~245 triangles → spans multiple steal chunks/workers.
+static Mesh make_wireframe_stress_mesh()
+{
+    Mesh m;
+    m.materials.push_back(Material{}); // 0: single-sided
+    Material ds{};
+    ds.double_sided = true;
+    m.materials.push_back(ds); // 1: double-sided
+    m.has_double_sided = true;
+
+    auto add_tri = [&](vec3 p0, vec3 p1, vec3 p2, uint32_t mat)
+    {
+        Vertex v{};
+        v.ao = 1.0f;
+        v.normal = { 0.0f, 0.0f, 1.0f };
+        v.uv = { 0.5f, 0.5f };
+        const auto base = static_cast<uint32_t>(m.vertices.size());
+        v.pos = p0;
+        m.vertices.push_back(v);
+        v.pos = p1;
+        m.vertices.push_back(v);
+        v.pos = p2;
+        m.vertices.push_back(v);
+        Triangle t{};
+        t.v[0] = base;
+        t.v[1] = base + 1;
+        t.v[2] = base + 2;
+        t.material_idx = mat;
+        m.triangles.push_back(t);
+    };
+
+    // 12×10 grid, two overlapping front-facing triangles per cell, depth staggered.
+    for (int gy = 0; gy < 10; gy++)
+    {
+        for (int gx = 0; gx < 12; gx++)
+        {
+            const float x = -2.0f + (4.0f * (static_cast<float>(gx) / 11.0f));
+            const float y = -1.5f + (3.0f * (static_cast<float>(gy) / 9.0f));
+            const float z = -0.5f + (static_cast<float>((gx + gy) % 5) / 4.0f);
+            const float s = 0.5f; // overlaps neighbouring cells
+            add_tri({ x - s, y - s, z }, { x + s, y - s, z }, { x, y + s, z }, 0);
+            add_tri({ x + s, y + s, z }, { x - s, y + s, z }, { x, y - s, z }, 0);
+        }
+    }
+
+    add_tri({ -20.0f, -20.0f, 0.0f }, { 20.0f, -20.0f, 0.0f }, { 0.0f, 20.0f, 0.0f }, 0); // off-screen spill
+    add_tri({ -1.0f, -1.0f, 0.0f }, { 1.0f, -1.0f, 0.0f }, { 0.0f, 1.0f, 4.95f }, 0);     // near-plane straddle
+    add_tri({ -1.0f, -1.0f, 0.2f }, { 0.0f, 1.0f, 0.2f }, { 1.0f, -1.0f, 0.2f }, 0);      // back-face, culled
+    add_tri({ -1.5f, -1.0f, -0.2f }, { 0.0f, 1.0f, -0.2f }, { 1.5f, -1.0f, -0.2f }, 1);   // back-face, double-sided
+
+    return m;
+}
+
+// B2-1 (keystone): a multi-worker render must be byte-identical to a single-worker render
+// of the same scene, across thread counts and chunk boundaries.
+TEST(renderer, wireframe_multiworker_matches_singleworker)
+{
+    Mesh mesh = make_wireframe_stress_mesh();
+    Camera cam = make_test_camera();
+    const Color wfc{ 200, 150, 50 }; // distinct channels catch any channel swap
+
+    Framebuffer fb1(40, 20, /*headless=*/true);
+    fb1.clear();
+    {
+        Renderer r(1);
+        r.mode = ShadingMode::Wireframe;
+        r.wireframe_color = wfc;
+        r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb1);
+    }
+
+    for (int nthreads : { 2, 4, 8 })
+    {
+        Framebuffer fbn(40, 20, /*headless=*/true);
+        fbn.clear();
+        Renderer r(nthreads);
+        r.mode = ShadingMode::Wireframe;
+        r.wireframe_color = wfc;
+        r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fbn);
+
+        for (int y = 0; y < fb1.height(); y++)
+        {
+            for (int x = 0; x < fb1.width(); x++)
+            {
+                const Color a = fb1.get_pixel(x, y);
+                const Color b = fbn.get_pixel(x, y);
+                if (a.r != b.r || a.g != b.g || a.b != b.b)
+                {
+                    ASSERT_FAIL(
+                        "wireframe MT mismatch at (" + std::to_string(x) + "," + std::to_string(y) +
+                        ") threads=" + std::to_string(nthreads)
+                    );
+                }
+            }
+        }
+    }
+
+    // Guard the vacuous case: the stress mesh must actually draw edges (else the
+    // all-pixels-match loop above would pass trivially on two blank framebuffers).
+    ASSERT_TRUE(count_drawn_pixels(fb1) > 0);
+}
+
+// B2-2: the multi-worker path draws a visible front-facing triangle.
+TEST(renderer, wireframe_multiworker_visible_triangle_drawn)
+{
+    Renderer r(4);
+    r.mode = ShadingMode::Wireframe;
+    Mesh mesh = make_unit_triangle();
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+    ASSERT_TRUE(count_drawn_pixels(fb) > 0);
+}
+
+// B2-3: backface culling still rejects under the multi-worker path.
+TEST(renderer, wireframe_multiworker_backface_culled)
+{
+    Renderer r(4);
+    r.mode = ShadingMode::Wireframe;
+    r.cull_backfaces = true;
+    Mesh mesh = make_unit_triangle(/*flip_winding=*/true);
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+    ASSERT_TRUE(count_drawn_pixels(fb) == 0);
+}
+
+// B2-4: every drawn pixel is exactly wireframe_color under concurrency (no torn writes /
+// per-worker colour corruption). Large triangle spans all worker bands.
+TEST(renderer, wireframe_multiworker_color_uniform)
+{
+    Renderer r(4);
+    r.mode = ShadingMode::Wireframe;
+    r.wireframe_color = { 255, 0, 0 };
+    Mesh mesh = make_large_triangle();
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+
+    // Detect "drawn" via depth (was_drawn), not via non-black colour: a torn/interleaved
+    // write that corrupted a pixel to {0,0,0} must still be caught here, not filtered out as
+    // "not drawn" — corruption detection is the whole point of this test.
+    int drawn = 0;
+    for (int y = 0; y < fb.height(); y++)
+    {
+        for (int x = 0; x < fb.width(); x++)
+        {
+            if (!was_drawn(fb, x, y))
+            {
+                continue;
+            }
+            drawn++;
+            const Color c = fb.get_pixel(x, y);
+            if (c.r != 255 || c.g != 0 || c.b != 0)
+            {
+                ASSERT_FAIL("wireframe MT colour corrupted at (" + std::to_string(x) + "," + std::to_string(y) + ")");
+            }
+        }
+    }
+    ASSERT_TRUE(drawn > 0);
+}
+
+// B2-5: an empty mesh (no triangles) on the multi-worker path is a clean no-op.
+TEST(renderer, wireframe_multiworker_empty_mesh_no_crash)
+{
+    Renderer r(4);
+    r.mode = ShadingMode::Wireframe;
+    Mesh mesh; // no vertices, triangles, or materials
+    Camera cam = make_test_camera();
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+    ASSERT_TRUE(count_drawn_pixels(fb) == 0);
+}
+
 // ─── Group C — shading dispatch ───────────────────────────────────────────────
 //
 // Scene: front-facing unit triangle, red light from +Z, tiny ambient.

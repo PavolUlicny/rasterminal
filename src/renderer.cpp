@@ -101,6 +101,9 @@ Renderer::~Renderer()
 // A-buffer arena instead (the per-pixel resolve composites them later).
 // M selects the shading path at compile time: the Flat/Phong dispatch folds
 // to `if constexpr`, so each instantiation carries only its own shading code.
+//
+// raster_wireframe runs a reduced copy of this geometry front-end (steal loop, cull,
+// near-plane clip, clip_reject, ndc_to_screen); keep the two in sync when changing those.
 
 template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 {
@@ -437,8 +440,9 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 // ─── Renderer::dispatch_raster ────────────────────────────────────────────────
 // Pick the compile-time M instantiation of raster_triangles from the runtime shading
 // mode. m_smode is a frame input (written once under the lock before workers wake),
-// so this read is as safe as the other m_* reads inside raster_triangles. Wireframe
-// is handled single-threaded in render() and never dispatches to the pool.
+// so this read is as safe as the other m_* reads inside raster_triangles. Wireframe runs
+// its own Pass::Wireframe / raster_wireframe and never reaches dispatch_raster; the case
+// below is unreachable but kept so the switch stays exhaustive over ShadingMode.
 
 template <Sink S> void Renderer::dispatch_raster(int worker_id)
 {
@@ -455,6 +459,110 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
     }
 }
 
+// ─── Renderer::raster_wireframe ───────────────────────────────────────────────
+// Work-stealing wireframe pass: each worker claims triangle chunks over [0, total) and
+// draws their three edges as DDA lines in m_wireframe_color. All pixels share one colour
+// and depth resolves via draw_line's atomic CAS min, so the output is identical to a serial
+// draw for any worker count (see raster_wireframe's header in renderer.h).
+//
+// The geometry front-end here (chunked steal loop, world-space backface cull incl. the
+// double-sided bypass, near-plane fast path + clip_near straddle fallback, clip_reject,
+// ndc_to_screen) is a deliberately reduced copy of raster_triangles' — wireframe carries no
+// material/texture/tangent/vcol/uv1 attributes and no normal flip, so the two aren't worth
+// unifying. INVARIANT: if a shared front-end rule changes (cull winding, near_plane
+// semantics, chunk sizing), mirror it in BOTH this function and raster_triangles.
+
+void Renderer::raster_wireframe()
+{
+    const Mesh *mesh = m_mesh;
+    const mat4 vp = m_vp;
+    const vec3 eye = m_eye;
+    const float near_plane = m_near_plane;
+    const int width = m_width;
+    const int height = m_height;
+    const bool do_cull = m_cull_backfaces;
+    const Color wf = m_wireframe_color;
+    Framebuffer *fb = m_fb;
+
+    const int total = static_cast<int>(mesh->triangles.size());
+    const int chunk = choose_phase1_chunk(total, m_n_workers);
+    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+                            // clip_near overwrites before read
+
+    while (true)
+    {
+        const int start = m_tri_cursor.fetch_add(chunk, std::memory_order_relaxed);
+        if (start >= total)
+        {
+            break;
+        }
+        const int end = std::min(start + chunk, total);
+        for (int i = start; i < end; i++)
+        {
+            const Triangle &tri = mesh->triangles[static_cast<size_t>(i)];
+            const Vertex &va = mesh->vertices[tri.v[0]];
+            const Vertex &vb = mesh->vertices[tri.v[1]];
+            const Vertex &vc = mesh->vertices[tri.v[2]];
+
+            if (do_cull)
+            {
+                const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
+                if (dot(face_normal, eye - va.pos) <= 0.0f &&
+                    (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided))
+                {
+                    continue;
+                }
+            }
+
+            const ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao };
+            const ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao };
+            const ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao };
+
+            // Fast path: skip clip_near and its copy when no vertex is behind the near
+            // plane. clip_near runs only for the rare straddle cases.
+            const ClipVert *tris[2][3];
+            int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
+            if (cva.c.w > near_plane && cvb.c.w > near_plane && cvc.c.w > near_plane)
+            {
+                n_tris = 1;
+                tris[0][0] = &cva;
+                tris[0][1] = &cvb;
+                tris[0][2] = &cvc;
+            }
+            else
+            {
+                n_tris = clip_near(cva, cvb, cvc, clipped, near_plane);
+                for (int ti = 0; ti < n_tris; ti++)
+                {
+                    tris[ti][0] = &clipped[ti][0];
+                    tris[ti][1] = &clipped[ti][1];
+                    tris[ti][2] = &clipped[ti][2];
+                }
+            }
+
+            for (int ti = 0; ti < n_tris; ti++)
+            {
+                const ClipVert &a = *tris[ti][0];
+                const ClipVert &b = *tris[ti][1];
+                const ClipVert &c = *tris[ti][2];
+
+                if (clip_reject(a.c, b.c, c.c))
+                {
+                    continue;
+                }
+
+                const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
+                const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
+                const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
+
+                draw_line(*fb, sa, sb, wf);
+                draw_line(*fb, sb, sc, wf);
+                draw_line(*fb, sc, sa, wf);
+            }
+        }
+    }
+}
+
 // ─── Renderer::resolve_pixels ─────────────────────────────────────────────────
 // Transparent resolve pass: each worker steals disjoint row bands within the merged
 // transparent bounding box (set by render()) and composites that pixel's accumulated
@@ -463,7 +571,7 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
 // The common single-layer pixel takes a fast path that composites the
 // lone fragment directly, skipping the gather vector and the sort entirely; only multi-layer
 // pixels build and sort the stack. Disjoint pixels + the post-accumulate barrier make the
-// single-threaded get_pixel/set_pixel safe here (no two workers touch one slot; the
+// single-threaded color_at/set_color_at safe here (no two workers touch one slot; the
 // half-block 2-px-per-cell packing is a present()-only concern). Each resolved head is
 // reset to SENTINEL so the array self-cleans for the next frame.
 
@@ -615,6 +723,9 @@ void Renderer::worker_func(int worker_id)
         case Pass::Opaque:
             dispatch_raster<Sink::Opaque>(worker_id);
             break;
+        case Pass::Wireframe:
+            raster_wireframe();
+            break;
         case Pass::TransAccum:
             dispatch_raster<Sink::Transparent>(worker_id);
             break;
@@ -676,77 +787,6 @@ void Renderer::render(
     const int height = fb.height();
     const ShadowMap *active_shadow_map = (n_lights > 0) ? shadow_map : nullptr;
 
-    // ── Wireframe: single-threaded (draw_line writes to framebuffer directly) ─
-    if (mode == ShadingMode::Wireframe)
-    {
-        ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted; clip_near
-                                // overwrites before read
-        for (const Triangle &tri : mesh.triangles)
-        {
-            const Vertex &va = mesh.vertices[tri.v[0]];
-            const Vertex &vb = mesh.vertices[tri.v[1]];
-            const Vertex &vc = mesh.vertices[tri.v[2]];
-
-            if (cull_backfaces)
-            {
-                const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
-                if (dot(face_normal, eye - va.pos) <= 0.0f &&
-                    (!mesh.has_double_sided || !mesh.mat_at(tri.material_idx).double_sided))
-                {
-                    continue;
-                }
-            }
-
-            const ClipVert cva = { vp * vec4(va.pos, 1.0f), va.pos, va.normal, {}, va.uv, va.ao };
-            const ClipVert cvb = { vp * vec4(vb.pos, 1.0f), vb.pos, vb.normal, {}, vb.uv, vb.ao };
-            const ClipVert cvc = { vp * vec4(vc.pos, 1.0f), vc.pos, vc.normal, {}, vc.uv, vc.ao };
-
-            // Fast path: skip clip_near and its copy when no vertex is behind the near
-            // plane (see worker_func). clip_near runs only for the rare straddle cases.
-            const ClipVert *tris[2][3];
-            int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
-            if (cva.c.w > camera.near_plane && cvb.c.w > camera.near_plane && cvc.c.w > camera.near_plane)
-            {
-                n_tris = 1;
-                tris[0][0] = &cva;
-                tris[0][1] = &cvb;
-                tris[0][2] = &cvc;
-            }
-            else
-            {
-                n_tris = clip_near(cva, cvb, cvc, clipped, camera.near_plane);
-                for (int ti = 0; ti < n_tris; ti++)
-                {
-                    tris[ti][0] = &clipped[ti][0];
-                    tris[ti][1] = &clipped[ti][1];
-                    tris[ti][2] = &clipped[ti][2];
-                }
-            }
-
-            for (int ti = 0; ti < n_tris; ti++)
-            {
-                const ClipVert &a = *tris[ti][0];
-                const ClipVert &b = *tris[ti][1];
-                const ClipVert &c = *tris[ti][2];
-
-                if (clip_reject(a.c, b.c, c.c))
-                {
-                    continue;
-                }
-
-                const vec3 sa = ndc_to_screen(a.c.perspective_divide(), width, height);
-                const vec3 sb = ndc_to_screen(b.c.perspective_divide(), width, height);
-                const vec3 sc = ndc_to_screen(c.c.perspective_divide(), width, height);
-
-                const Color wf = wireframe_color;
-                draw_line(fb, sa, sb, wf);
-                draw_line(fb, sb, sc, wf);
-                draw_line(fb, sc, sa, wf);
-            }
-        }
-        return;
-    }
-
     // Frame inputs are written once under the lock and stay constant across all phases.
     {
         const std::scoped_lock lk(m_mutex);
@@ -763,6 +803,7 @@ void Renderer::render(
         m_smode = mode;
         m_cull_backfaces = cull_backfaces;
         m_show_texture = show_texture;
+        m_wireframe_color = wireframe_color;
         m_fb = &fb;
         // Opaque range. has_transparent meshes carry a real opaque_count from load_model;
         // for everything else the opaque pass covers all triangles (a manually built Mesh
@@ -783,6 +824,15 @@ void Renderer::render(
         std::unique_lock<std::mutex> lk(m_mutex);
         m_cv_done.wait(lk, [this] { return m_active.load(std::memory_order_acquire) == 0; });
     };
+
+    // Wireframe: a single edge-drawing pass over every triangle [0, total). No opaque /
+    // transparent split — wireframe ignores materials and draws all edges in one colour.
+    if (mode == ShadingMode::Wireframe)
+    {
+        m_tri_cursor.store(0, std::memory_order_relaxed);
+        dispatch(Pass::Wireframe);
+        return;
+    }
 
     // Phase 1: opaque geometry over [0, opaque_count).
     m_tri_cursor.store(0, std::memory_order_relaxed);
