@@ -1,0 +1,189 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # The tagged commit is expected to have already passed CI on its branch/PR (ci.yml skips
+  # tag pushes), so this workflow only builds, smoke-tests, packages, and publishes binaries.
+  check:
+    name: Verify tag matches version.h
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tag == v<RASTERMINAL_VERSION>
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver=$(grep -oP 'RASTERMINAL_VERSION\s*=\s*"\K[^"]+' src/version.h)
+          if [ "$TAG_NAME" != "v$ver" ]; then
+            echo "ERROR: tag '$TAG_NAME' does not match src/version.h ('v$ver')"
+            exit 1
+          fi
+          echo "OK: $TAG_NAME matches src/version.h"
+
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: check
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: rasterminal-${{ github.ref_name }}-linux-x86_64
+          - os: macos-latest
+            artifact: rasterminal-${{ github.ref_name }}-macos-arm64
+          - os: windows-latest
+            artifact: rasterminal-${{ github.ref_name }}-windows-x86_64
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Linux ships `make dist`: portable codegen + static libstdc++/libgcc (no host GLIBCXX
+      # dependency). macOS dist == portable (system libc++ is ABI-stable). -j bounded to the
+      # runner core count so the heavy LTO vendor TUs (basisu/draco/libwebp) can't OOM.
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: make dist -j"$(nproc)"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: make portable -j"$(getconf _NPROCESSORS_ONLN)"
+
+      # Windows: portable codegen (no /arch:AVX2) + static CRT so the .exe is self-contained
+      # (no VC++ redist). MultiThreaded runtime is selectable at configure time because
+      # CMP0091 is NEW under the project's cmake_minimum_required (>= 3.21).
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake --build build --config Release -j
+
+      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
+      - name: Verify static link (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ldd rasterminal
+          ! ldd rasterminal | grep -E 'libstdc\+\+|libgcc_s'
+
+      - name: Smoke test (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          ./rasterminal --version
+          ./rasterminal --help
+          # Real-pipeline smoke: render a tiny cube headlessly (no terminal I/O in --bench).
+          cat > cube.obj <<'EOF'
+          v -1 -1 -1
+          v  1 -1 -1
+          v  1  1 -1
+          v -1  1 -1
+          v -1 -1  1
+          v  1 -1  1
+          v  1  1  1
+          v -1  1  1
+          f 1 2 3 4
+          f 5 6 7 8
+          f 1 5 8 4
+          f 2 6 7 3
+          f 4 3 7 8
+          f 1 2 6 5
+          EOF
+          ./rasterminal --bench 5 --bench-warmup 1 cube.obj
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./build/Release/rasterminal.exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          ./build/Release/rasterminal.exe --help
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # Stage binary + license/notice files under a top-level dir so the archive extracts cleanly.
+      # THIRD_PARTY_NOTICES is mandatory: the vendored libraries' licenses require it alongside
+      # the executable.
+      - name: Package (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          stage="${{ matrix.artifact }}"
+          mkdir "$stage"
+          cp rasterminal LICENSE THIRD_PARTY_NOTICES README.md "$stage"/
+          tar czf "$stage.tar.gz" "$stage"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = "${{ matrix.artifact }}"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item build/Release/rasterminal.exe, LICENSE, THIRD_PARTY_NOTICES, README.md -Destination $stage
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ matrix.artifact }}.tar.gz
+            ${{ matrix.artifact }}.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract release notes from CHANGELOG
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          awk -v tag="## [$TAG_NAME]" \
+            'index($0,tag)==1{found=1;next} found && (/^## \[/ || /^\[[^]]+\]: /){exit} found' \
+            CHANGELOG.md > release_notes.md
+          [ -s release_notes.md ] || { echo "ERROR: No changelog entry for $TAG_NAME"; exit 1; }
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v7
+        with:
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: sha256sum rasterminal-*.tar.gz rasterminal-*.zip > checksums.txt
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # A SemVer prerelease tag (contains a hyphen, e.g. v0.1.0-alpha.1) is flagged accordingly.
+          PRE=""
+          case "$TAG_NAME" in *-*) PRE="--prerelease";; esac
+          gh release create "$TAG_NAME" $PRE \
+            --title "rasterminal $TAG_NAME" \
+            --notes-file release_notes.md \
+            rasterminal-*.tar.gz rasterminal-*.zip checksums.txt
