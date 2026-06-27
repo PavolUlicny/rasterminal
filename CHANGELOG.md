@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `install`/`uninstall` targets for both Make and CMake (GNU directory layout, `PREFIX`/`DESTDIR` overrides) installing the binary, man page, and license/notices
+- Man page (`man/rasterminal.1`)
+
 ## [v0.1.0-alpha.1] - 2026-06-27
 
 First public prerelease.
