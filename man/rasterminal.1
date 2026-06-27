@@ -1,0 +1,256 @@
+.\" Manual page for rasterminal.
+.\" Kept in sync by hand with src/args.cpp's --help text; update both together.
+.\" The .TH version and date track src/version.h; bump them when cutting a release.
+.TH RASTERMINAL 1 "2026-06-27" "rasterminal 0.1.0-alpha.1" "User Commands"
+.\" ASCII fallbacks for the accented author name: groff's -Tascii table drops
+.\" u00FD (y-acute) entirely, so without these the name renders "Ulicn" (a
+.\" letter short). utf8/latin1 still use the real glyph where the device has it.
+.\" mandoc ignores .fchar (groff extension) and substitutes its own ASCII
+.\" transliteration, so the two "unsupported request" lint notices are expected.
+.fchar \[u010D] c
+.fchar \[u00FD] y
+.SH NAME
+rasterminal \- render a 3D model in the terminal
+.SH SYNOPSIS
+.B rasterminal
+[\fIoptions\fR]
+.I model
+.SH DESCRIPTION
+.B rasterminal
+is a cross-platform 3D model viewer that renders entirely in the terminal,
+implementing the full GPU rasterization pipeline on the CPU
+(model/view/projection transforms, perspective-correct triangle rasterization,
+z-buffer depth testing, backface culling, Blinn-Phong lighting, and
+alpha-blended transparency). The result is drawn with unicode half-block
+characters and 24-bit ANSI color, two vertical pixels per terminal cell.
+.PP
+The
+.I model
+operand is required. A lone
+.B \-
+is treated as a positional operand, not stdin.
+.SH SUPPORTED FORMATS
+.TP
+.B .obj
+Wavefront OBJ with optional .mtl (diffuse/specular/normal maps).
+.TP
+.B .ply
+ASCII or binary (little- and big-endian).
+.TP
+.B .stl
+ASCII or binary.
+.TP
+.B .gltf, .glb
+glTF 2.0 (PBR materials, textures, node transforms).
+.SH OPTIONS
+.SS Initial state
+.TP
+.BR \-s ", " \-\-shading " " \fImode\fR
+Initial shading mode:
+.BR wireframe | flat | phong
+or
+.BR 1 \- 3 .
+Default:
+.BR phong .
+.TP
+.BR \-b ", " \-\-bg " " \fIcolor\fR
+Initial background color:
+.BR black | gray | white
+or
+.BR 1 \- 3
+.RB ( grey
+also accepted). Default:
+.BR black .
+.TP
+.BR \-l ", " \-\-lighting " " \fImode\fR
+Initial lighting mode:
+.BR dual | single | flat
+or
+.BR 1 \- 3 .
+Default:
+.BR dual .
+.TP
+.BR \-w ", " \-\-wireframe\-color " " \fIcolor\fR
+Initial wireframe edge color:
+.BR white | red | green | yellow | cyan | magenta
+or
+.BR 1 \- 6 .
+Default:
+.BR white .
+.TP
+.BR \-c ", " \-\-cull " " \fIon|off\fR
+Backface culling initial state. Accepts
+.BR on / off ,
+.BR 1 / 0 ,
+.BR true / false ,
+.BR yes / no ,
+.BR y / n .
+Default:
+.BR on .
+.TP
+.BR \-t ", " \-\-texture " " \fIon|off\fR
+Texture rendering initial state. Same boolean values as
+.BR \-\-cull .
+Default:
+.BR on .
+.TP
+.BR \-S ", " \-\-spin
+Start with auto-rotation enabled.
+.SS Runtime and load
+.TP
+.BR \-j ", " \-\-threads " " [\fIN\fR]
+Worker threads. Bare
+.B \-j
+uses all cores;
+.BI \-j " N"
+uses
+.IR N .
+Default:
+.BR min(hw,4) .
+.TP
+.BR \-f ", " \-\-fps " " [\fIN\fR]
+Frame cap. Bare
+.B \-f
+is uncapped;
+.BI \-f " N"
+caps at
+.I N
+fps. Default:
+.BR 60 .
+.TP
+.BR \-B ", " \-\-bench " " [\fIN\fR]
+Headless benchmark: run
+.I N
+frames (default
+.BR 200 )
+with warmup discarded, print a structured timing/fps/throughput report to
+standard error, then exit. No terminal I/O.
+.TP
+.BI \-\-bench\-size " WxH"
+Bench framebuffer size in pixels (default
+.BR 200x120 ).
+Requires
+.BR \-\-bench .
+.TP
+.BI \-\-bench\-warmup " N"
+Bench warmup frames discarded (default
+.BR 20 ;
+.B 0
+for none). Requires
+.BR \-\-bench .
+.TP
+.BI \-\-smooth\-angle " DEG"
+Crease angle in degrees, in
+.BR [0,\ 180] ,
+for normals computed when a file has no normals: below it adjacent faces smooth,
+above it they hard-edge. Default
+.BR 60 ;
+.B 0
+is faceted,
+.B 180
+is fully smooth. Ignored when an OBJ authors smoothing groups.
+.SS Permanent disables
+.TP
+.B \-\-no\-shadow
+Disable the shadow map (skips its build, faster startup).
+.TP
+.B \-\-no\-ao
+Disable baked ambient occlusion.
+.TP
+.B \-\-no\-hud
+Hide the HUD status line.
+.SS Meta
+.TP
+.BR \-h ", " \-\-help
+Print usage and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and license information and exit.
+.SH OPTION SYNTAX
+Long flags take a value with a space or
+.RB ' = '
+.RB ( \-\-shading
+.BR flat ", " \-\-shading=flat ).
+Short flags take a value with a space or in compact form
+.RB ( \-s
+.BR flat ", " \-sflat ).
+String values are case-insensitive; numeric aliases are 1-indexed and match the
+runtime keybindings.
+.PP
+No-argument short options may be clustered behind one
+.RB ' \- '
+with at most one value-taking option last
+.RB ( \-Sj4
+is
+.BR \-S " " \-j4 ).
+A bare
+.B \-\-
+terminates option parsing: every following token is the model operand, even one
+beginning with
+.RB ' \- '.
+.SH CONTROLS
+While rendering:
+.TP
+.B 1\-3
+Select shading mode.
+.TP
+.B Space
+Toggle spin.
+.TP
+.B WASD, arrows, mouse drag
+Orbit the camera.
+.TP
+.B +/\-, scroll
+Zoom.
+.TP
+.B B
+Cycle background.
+.TP
+.B L
+Cycle lighting.
+.TP
+.B R
+Reset the view.
+.TP
+.B C
+Cycle wireframe color.
+.TP
+.B K
+Toggle backface culling.
+.TP
+.B T
+Toggle textures.
+.TP
+.BR Q ", " Escape
+Quit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success (including
+.BR \-\-help " and " \-\-version ).
+.TP
+.B 1
+Usage error (unknown flag, missing or invalid value, unexpected argument) or
+model load failure.
+.SH EXAMPLES
+.TP
+Render a model with default settings:
+.B rasterminal model.glb
+.TP
+Start in wireframe with a white background, spinning:
+.B rasterminal \-s wireframe \-b white \-S model.obj
+.TP
+Benchmark 500 frames headlessly at a fixed size:
+.B rasterminal \-\-bench 500 \-\-bench\-size 400x240 model.stl
+.SH AUTHOR
+Written by Pavol Uli\[u010D]n\[u00FD].
+.SH REPORTING BUGS
+Report bugs at \%<https://github.com/PavolUlicny/rasterminal/issues>.
+.SH COPYRIGHT
+Copyright \(co 2026 Pavol Uli\[u010D]n\[u00FD].
+License MIT: \%<https://opensource.org/license/mit>.
+.br
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+.SH SEE ALSO
+Project home page: \%<https://github.com/PavolUlicny/rasterminal>.
