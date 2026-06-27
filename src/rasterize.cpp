@@ -148,23 +148,21 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
     }
 
     // n == 2: rotate so the single outside vertex is last.
-    if (!ic)
-    { /* a, b inside, c outside — already correct */
-    }
-    else if (!ia)
+    if (!ia)
     {
         const ClipVert t = aa;
         aa = bb;
         bb = cc;
         cc = t;
     }
-    else
+    else if (!ib)
     {
         const ClipVert t = bb;
         bb = aa;
         aa = cc;
         cc = t;
     }
+    // else: c outside, already last, nothing to do.
     // a, b inside; c outside → clipped quad → two triangles.
     const ClipVert ac = cross_edge(aa, cc);
     const ClipVert bc = cross_edge(bb, cc);
