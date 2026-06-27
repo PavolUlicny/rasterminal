@@ -342,3 +342,14 @@ if(RASTERMINAL_BUILD_TESTS)
            COMMAND rasterminal_tests
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
+
+# ─── Install ──────────────────────────────────────────────────────────────────
+# Parity with the Makefile's `install` target. GNUInstallDirs supplies the standard,
+# overridable CMAKE_INSTALL_* paths (DESTDIR-aware for fakeroot staging). The man page
+# and THIRD_PARTY_NOTICES ship per the vendored licenses; docs land in a package-specific
+# subdir (CMAKE_INSTALL_DOCDIR = share/doc/rasterminal). No uninstall target: CMake has
+# no native one (the Makefile keeps the convenience `make uninstall`).
+include(GNUInstallDirs)
+install(TARGETS rasterminal RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES man/rasterminal.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
+install(FILES THIRD_PARTY_NOTICES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})

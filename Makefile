@@ -296,6 +296,21 @@ PORTABLE_CFLAGS = $(C_OPT)
 DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32)
 TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
+# ─── Install locations (GNU Coding Standards) ─────────────────────────────────
+# Standard `?=` vars so packagers can override; DESTDIR is left unset (empty = real
+# install, packagers stage into a fakeroot by setting it on the command line).
+PREFIX      ?= /usr/local
+exec_prefix ?= $(PREFIX)
+bindir      ?= $(exec_prefix)/bin
+datarootdir ?= $(PREFIX)/share
+mandir      ?= $(datarootdir)/man
+man1dir     ?= $(mandir)/man1
+docdir      ?= $(datarootdir)/doc/$(TARGET)
+
+INSTALL         ?= install
+INSTALL_PROGRAM ?= $(INSTALL) -m 755
+INSTALL_DATA    ?= $(INSTALL) -m 644
+
 # Terse output by default (one short line per compile/link); `make V=1` echoes the
 # full g++ commands. Q silences the recipe-line echo; E prints the short progress line
 # (and becomes a shell no-op under V=1 so the full command isn't doubled).
@@ -394,7 +409,26 @@ $(TEST_TARGET): $(TEST_OBJS) $(TEST_COBJS)
 test: $(TEST_TARGET)
 	$(Q)./$(TEST_TARGET)
 
+# Install the just-built binary, man page, and docs. The build variants are all phony
+# and each links $(TARGET), so there's no file rule to depend on and no single variant
+# install should force (a packager may have just run `make dist`). Require the binary to
+# exist and fail loud otherwise rather than rebuilding. `install -d` creates the dirs
+# (separate step: BSD/macOS install lacks GNU's -D). THIRD_PARTY_NOTICES ships beside the
+# executable per the vendored licenses; the man page is left uncompressed for packaging.
+install:
+	@test -x ./$(TARGET) || { printf '%s\n' "$(TARGET) not built; run 'make' (or 'make dist') first" >&2; exit 1; }
+	$(E) INST $(DESTDIR)$(bindir)/$(TARGET)
+	$(Q)$(INSTALL) -d $(DESTDIR)$(bindir) $(DESTDIR)$(man1dir) $(DESTDIR)$(docdir)
+	$(Q)$(INSTALL_PROGRAM) $(TARGET) $(DESTDIR)$(bindir)/$(TARGET)
+	$(Q)$(INSTALL_DATA) man/rasterminal.1 $(DESTDIR)$(man1dir)/rasterminal.1
+	$(Q)$(INSTALL_DATA) THIRD_PARTY_NOTICES LICENSE README.md $(DESTDIR)$(docdir)/
+
+uninstall:
+	$(Q)rm -f $(DESTDIR)$(bindir)/$(TARGET)
+	$(Q)rm -f $(DESTDIR)$(man1dir)/rasterminal.1
+	$(Q)rm -rf $(DESTDIR)$(docdir)
+
 clean:
 	rm -rf $(TARGET) $(TEST_TARGET) $(OBJDIR)
 
-.PHONY: release portable dist debug test clean
+.PHONY: release portable dist debug test clean install uninstall
