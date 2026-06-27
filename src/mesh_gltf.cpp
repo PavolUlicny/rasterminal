@@ -462,7 +462,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         if (m->has_emissive_strength)
         {
             // KHR_materials_emissive_strength: bake strength into the factor at load.
-            // Rasterminal has no HDR/tonemap, so a load-time multiply is equivalent to the
+            // rasterminal has no HDR/tonemap, so a load-time multiply is equivalent to the
             // per-frame intensity multiply real-time engines do in their shader. Clamp the
             // strength to [0, 1e6] for the same reason as the factor above (kill +Inf at the
             // source). Each input is bounded; the baked product can exceed 1e6 (up to ~1e12),
