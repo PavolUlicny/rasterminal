@@ -153,6 +153,27 @@ cmake --build build-msvc --config Release -j
 ctest --test-dir build-msvc -C Release --output-on-failure
 ```
 
+### Install
+
+Both build systems install the binary, the man page, and the license/notices following the GNU directory layout (defaulting to `/usr/local`). Build first, then install:
+
+```sh
+make                     # build whichever variant you want to ship (or: make dist)
+sudo make install        # binary -> /usr/local/bin, man page -> .../share/man/man1, docs -> .../share/doc/rasterminal
+sudo make uninstall      # remove everything install added
+
+# CMake equivalent (after configuring/building a build dir):
+sudo cmake --install build
+```
+
+Override the prefix to install without root, or stage into a fakeroot for packaging:
+
+```sh
+make install PREFIX=~/.local              # no sudo; ensure ~/.local/bin is on PATH
+make install DESTDIR=/tmp/pkg PREFIX=/usr # staged install for packagers
+cmake --install build --prefix ~/.local   # CMake prefix override
+```
+
 ## Usage
 
 ```sh
