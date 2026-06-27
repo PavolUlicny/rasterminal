@@ -1,7 +1,10 @@
 name: CI
 
 on:
+  # Branch pushes and PRs only; tag pushes are handled by release.yml (a `branches`
+  # filter excludes tags), so a release tag does not also trigger the full CI matrix.
   push:
+    branches: ['**']
   pull_request:
 
 concurrency:
