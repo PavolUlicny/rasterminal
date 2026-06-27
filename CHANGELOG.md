@@ -1,0 +1,30 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [v0.1.0-alpha.1] - 2026-06-27
+
+First public prerelease.
+
+### Added
+
+- CPU rasterization pipeline: model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and order-independent alpha-blended transparency (exact per-pixel A-buffer)
+- Shading modes: wireframe, flat, and Phong
+- Shadow mapping (alpha-cutout aware) and baked ambient occlusion
+- Texturing: bilinear sampling with per-texture wrap modes (Repeat/Clamp/Mirror), alpha cutout, and normal/metallic/emissive/occlusion maps
+- Compressed texture and geometry support: KTX2/Basis (ETC1S/UASTC), WebP, Draco mesh compression, and meshopt-compressed buffer views
+- Model formats: OBJ/MTL, PLY (ASCII and binary LE/BE), STL (ASCII and binary), and glTF 2.0 / GLB
+- Multithreaded worker pool driving the opaque, transparent-accumulate, and resolve phases
+- Unicode half-block (`▀`) output with 24-bit ANSI color; two vertical pixels per terminal cell
+- Interactive controls: keyboard plus mouse drag-orbit and scroll-zoom, auto-rotation, and a HUD status line
+- CLI flags for initial shading/background/lighting/wireframe color, culling, texturing, threads, frame cap, headless benchmarking, crease angle, and the `--no-shadow`/`--no-ao`/`--no-hud` toggles
+- Cross-platform support: Linux, macOS, and Windows, including 32-bit (ILP32) builds
+- Two build systems (Make and CMake) each with release, portable, and dist (self-contained) variants
+
+[Unreleased]: https://github.com/PavolUlicny/rasterminal/compare/v0.1.0-alpha.1...HEAD
+[v0.1.0-alpha.1]: https://github.com/PavolUlicny/rasterminal/releases/tag/v0.1.0-alpha.1
