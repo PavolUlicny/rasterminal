@@ -1,6 +1,12 @@
 # rasterminal
 
 [![CI](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml/badge.svg)](https://github.com/PavolUlicny/rasterminal/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/PavolUlicny/rasterminal?include_prereleases&sort=semver)](https://github.com/PavolUlicny/rasterminal/releases)
+[![License: MIT](https://img.shields.io/github/license/PavolUlicny/rasterminal?color=blue)](LICENSE)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)](https://en.cppreference.com/w/cpp/17)
+![Platforms](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
+![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
+[![Last commit](https://img.shields.io/github/last-commit/PavolUlicny/rasterminal)](https://github.com/PavolUlicny/rasterminal/commits/main)
 
 **A fast 3D model viewer in the terminal.**
 
@@ -13,6 +19,7 @@ rasterminal renders 3D models on the CPU and displays them in your terminal in r
 - [Quick start](#quick-start)
 - [Gallery](#gallery)
 - [How it works](#how-it-works)
+- [Prebuilt binaries](#prebuilt-binaries)
 - [Build](#build)
 - [Usage](#usage)
 - [Controls](#controls)
@@ -67,6 +74,24 @@ Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha)
 The finished framebuffer is then written to the terminal. Each character cell represents two vertically stacked pixels, drawn as a `▀` half-block glyph whose foreground color is the top pixel and background color is the bottom, both in 24-bit ANSI color. The whole frame is assembled in a single buffer and flushed in one write.
 
 Rendering is multi-threaded with a work-stealing scheduler. Each worker claims a chunk of triangles and rasterizes it end to end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and color into one slot, with no separate depth pre-pass. Transparency adds two further work-stealing phases, accumulate then resolve, but only for models that actually use blended materials.
+
+## Prebuilt binaries
+
+Prebuilt binaries for Linux, macOS, and Windows are attached to each [release](https://github.com/PavolUlicny/rasterminal/releases). They use portable codegen (no `-march=native`, so they run on any CPU of the target architecture) and are self-contained: the Linux build statically links libstdc++/libgcc, and the Windows build statically links the C runtime, so neither needs extra runtime packages installed.
+
+Download the archive for your platform, then:
+
+```sh
+# Linux / macOS
+tar xzf rasterminal-<version>-<platform>.tar.gz
+cd rasterminal-<version>-<platform>
+chmod +x rasterminal
+./rasterminal <model>
+```
+
+On Windows, extract the `.zip` and run `rasterminal.exe` from a terminal that supports ANSI escapes and UTF-8 (Windows Terminal is recommended; legacy `cmd.exe` is not supported).
+
+Each release includes a `checksums.txt`; verify your download with `sha256sum -c checksums.txt` (Linux), `shasum -a 256 -c checksums.txt` (macOS), or `Get-FileHash` (Windows). `checksums.txt` lists all platforms, so check the line for the archive you downloaded; `-c` reports the other archives as missing, which is expected. To build from source instead, see [Build](#build).
 
 ## Build
 
@@ -217,4 +242,4 @@ Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 
 ## License
 
-Rasterminal is released under the MIT License; see [`LICENSE`](LICENSE). Vendored third-party libraries retain their own licenses, reproduced in full in [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
+rasterminal is released under the MIT License; see [`LICENSE`](LICENSE). Vendored third-party libraries retain their own licenses, reproduced in full in [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES).
