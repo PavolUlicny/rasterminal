@@ -1,5 +1,5 @@
 <!-- markdownlint-disable -->
-Rasterminal uses the following third-party libraries. Their license notices are
+rasterminal uses the following third-party libraries. Their license notices are
 reproduced below as required by the terms of each license.
 
 ================================================================================
@@ -173,7 +173,7 @@ Draco (https://github.com/google/draco)
 
 Copyright The Draco Authors.
 
-Rasterminal vendors only the glTF-bitstream mesh decoder subset of Draco. Draco
+rasterminal vendors only the glTF-bitstream mesh decoder subset of Draco. Draco
 ships no NOTICE file; the doc-asset notices in its LICENSE (ASCIIMathML.js,
 pygments) pertain to files not redistributed here and are excluded per Apache
 License 2.0 Section 4(c).
@@ -384,7 +384,7 @@ License 2.0 Section 4(c).
 basis_universal (https://github.com/BinomialLLC/basis_universal)
 ================================================================================
 
-Rasterminal vendors only the decode-only transcoder subset of basis_universal
+rasterminal vendors only the decode-only transcoder subset of basis_universal
 (the `transcoder/` directory), unmodified, used to decode KTX2 / Basis Universal
 textures (glTF `KHR_texture_basisu`). It is licensed under the Apache License,
 Version 2.0, the full text of which is reproduced above (see the Draco notice).
@@ -414,7 +414,7 @@ If you modify the Basis Universal source code, specifications, or wiki documents
 zstd (https://github.com/facebook/zstd, vendored via basis_universal)
 ================================================================================
 
-Rasterminal vendors the zstd single-file *decode* amalgamation (`zstddeclib.c`)
+rasterminal vendors the zstd single-file *decode* amalgamation (`zstddeclib.c`)
 that ships inside the basis_universal repository, used by the basisu transcoder
 to decompress KTX2 UASTC Zstd-supercompressed payloads.
 
@@ -462,7 +462,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 libwebp (https://chromium.googlesource.com/webm/libwebp)
 ================================================================================
 
-Rasterminal vendors the decode-only source subset of libwebp (the dec/, dsp/,
+rasterminal vendors the decode-only source subset of libwebp (the dec/, dsp/,
 and utils/ files the WebP decoder pulls), used to decode EXT_texture_webp glTF
 images that stb_image cannot. The decoder is licensed under BSD-3-Clause, with an
 additional patent grant in the PATENTS file; both are reproduced below.
