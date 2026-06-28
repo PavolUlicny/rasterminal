@@ -57,7 +57,8 @@ TEST(rasterize_emissive, factor_only_adds_pure_colour)
     rast_emissive(fb, nullptr, vec3{ 1.0f, 0.0f, 0.0f }, uv, uv, uv);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    assert_pixel_near(fb, 20, 10, Color{ 255, 0, 0 }, 2);
+    // Full-intensity emissive (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
+    assert_pixel_near(fb, 20, 10, Color{ 226, 0, 0 }, 2);
 }
 
 // Emissive texture modulates the factor.
@@ -70,7 +71,8 @@ TEST(rasterize_emissive, texture_modulates_factor)
     rast_emissive(fb, &etex, vec3{ 1.0f, 1.0f, 1.0f }, uv, uv, uv);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    assert_pixel_near(fb, 20, 10, Color{ 0, 255, 0 }, 2);
+    // Full-intensity green (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
+    assert_pixel_near(fb, 20, 10, Color{ 0, 226, 0 }, 2);
 }
 
 // Zero factor + no texture: nothing added — pixel stays as the lit colour (zero here).
@@ -97,7 +99,8 @@ TEST(rasterize_phong_emissive, factor_only_bypasses_lighting)
     rast_phong_emissive(fb, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    assert_pixel_near(fb, 20, 10, Color{ 255, 0, 0 }, 2);
+    // Full-intensity emissive (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
+    assert_pixel_near(fb, 20, 10, Color{ 226, 0, 0 }, 2);
 }
 
 TEST(rasterize_phong_emissive, texture_modulates_factor)
@@ -112,5 +115,6 @@ TEST(rasterize_phong_emissive, texture_modulates_factor)
     rast_phong_emissive(fb, mat, &etex);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    assert_pixel_near(fb, 20, 10, Color{ 0, 0, 255 }, 2);
+    // Full-intensity blue (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
+    assert_pixel_near(fb, 20, 10, Color{ 0, 0, 226 }, 2);
 }

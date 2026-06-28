@@ -341,6 +341,46 @@ TEST(transparency, blends_in_front_of_opaque)
     assert_pixel_near(fb, 20, 10, { 128, 128, 0 }, 2);
 }
 
+// The transparent resolve composites over the opaque colour ALREADY stored in the framebuffer,
+// which was tonemapped once at the opaque commit. The resolve must not tonemap it again (that would
+// double-darken the background under glass). Verify by laying a near-zero-alpha overlay over a LIT
+// (tonemapped, >1) opaque base: the covered pixel must stay ~equal to the same base rendered with no
+// overlay. A double-tonemap would drop it ~25 levels.
+TEST(transparency, resolve_does_not_double_tonemap_opaque_base)
+{
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f }); // white key, N.L = 1 at centre
+    const vec3 ambient{ 0.4f, 0.4f, 0.4f };               // lit centre = 0.4 + 1.0 = 1.4 (> 1, tonemapped)
+
+    // Base only: a lit white opaque triangle (no overlay). Default flags → opaque_count = all.
+    Renderer r0(1);
+    Mesh base = make_large_triangle();
+    base.materials[0].specular = { 0.0f, 0.0f, 0.0f }; // isolate diffuse+ambient for a clean value
+    Framebuffer fb_base(40, 20, /*headless=*/true);
+    fb_base.clear({ 0, 0, 0 });
+    r0.render(base, cam, &light, 1, ambient, fb_base);
+    const Color p = fb_base.get_pixel(20, 10);
+    ASSERT_TRUE(p.r < 254); // sanity: the base really is tonemapped (rolled off below white)
+
+    // Same base + a near-zero-alpha unlit white overlay in front (z=0.5 > the base's z=0).
+    Renderer r1(1);
+    Mesh over = make_large_triangle();
+    over.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    add_unlit_tri(
+        over, { -4.0f, -4.0f, 0.5f }, { 4.0f, -4.0f, 0.5f }, { 0.0f, 4.0f, 0.5f }, vec3{ 1.0f, 1.0f, 1.0f },
+        /*alpha=*/0.02f, /*blend=*/true
+    );
+    finalize(over, /*opaque_count=*/1);
+    Framebuffer fb_over(40, 20, /*headless=*/true);
+    fb_over.clear({ 0, 0, 0 });
+    r1.render(over, cam, &light, 1, ambient, fb_over);
+    const Color q = fb_over.get_pixel(20, 10);
+
+    // The 2%-alpha overlay barely shifts the pixel; a re-tonemap of the base would not be subtle.
+    assert_pixel_near(fb_over, 20, 10, p, 3);
+    ASSERT_TRUE(q.r > p.r - 10); // explicitly rules out the ~25-level double-tonemap darkening
+}
+
 // ─── per-vertex alpha ───────────────────────────────────────────────────────────
 
 // Per-vertex opacity (COLOR_0 / PLY alpha) folds into the fragment alpha. A uniform

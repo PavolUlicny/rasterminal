@@ -285,6 +285,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/rasterize/test_rasterize_shadow.cpp
     tests/rasterize/test_rasterize_alpha.cpp
     tests/rasterize/test_rasterize_emissive.cpp
+    tests/rasterize/test_rasterize_tonemap.cpp
     tests/renderer/test_renderer.cpp
     tests/renderer/test_renderer_ao_clip.cpp
     tests/renderer/test_renderer_shadow_depth.cpp

@@ -70,7 +70,8 @@ TEST(rasterize, solid_diffuse_texture_replaces_color)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r < 250)
+    // Full red (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (c.r < 220)
     {
         ASSERT_FAIL("R too low (" + std::to_string(static_cast<int>(c.r)) + "): expected red from 1x1 red texture");
     }
@@ -287,9 +288,10 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
 
     ASSERT_TRUE(was_drawn(fb_notex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_tex, 20, 10));
-    if (fb_notex.get_pixel(20, 10).r < 250)
+    // Full ambient (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_notex.get_pixel(20, 10).r < 220)
     {
-        ASSERT_FAIL("no-texture: R too low, expected ~255 from ambient");
+        ASSERT_FAIL("no-texture: R too low, expected ~226 from ambient");
     }
     Color with_tex = fb_tex.get_pixel(20, 10);
     if (with_tex.r < 110 || with_tex.r > 145)
@@ -408,9 +410,10 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
 
     ASSERT_TRUE(was_drawn(fb_nostex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_stex, 20, 10));
-    if (fb_nostex.get_pixel(20, 10).r < 240)
+    // Peak specular (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_nostex.get_pixel(20, 10).r < 220)
     {
-        ASSERT_FAIL("without stex: R too low, expected peak specular ~255");
+        ASSERT_FAIL("without stex: R too low, expected peak specular ~226");
     }
     if (fb_stex.get_pixel(20, 10).r > 5)
     {
@@ -458,7 +461,8 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     {
         ASSERT_FAIL("without nmap: R too high -- dot((0,0,1),(1,0,0))=0, no diffuse expected");
     }
-    if (fb_nmap.get_pixel(20, 10).r < 240)
+    // Full red diffuse (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_nmap.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL("with nmap: R too low -- redirected normal ~(1,0,0) should give full red diffuse");
     }
@@ -504,7 +508,8 @@ TEST(rasterize_phong, normal_scale_zero_flattens_bump)
 
     ASSERT_TRUE(was_drawn(fb_gateoff, 20, 10));
     ASSERT_TRUE(was_drawn(fb_zero, 20, 10));
-    if (fb_gateoff.get_pixel(20, 10).r < 240)
+    // Full red (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_gateoff.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL("gate off: scale must be ignored, redirected normal should give full red");
     }
@@ -552,7 +557,8 @@ TEST(rasterize_phong, normal_scale_negative_flips_bump)
 
     ASSERT_TRUE(was_drawn(fb_pos, 20, 10));
     ASSERT_TRUE(was_drawn(fb_neg, 20, 10));
-    if (fb_pos.get_pixel(20, 10).r < 240)
+    // Full red (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_pos.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL("scale=+1: no-op baseline, redirected normal +x should give full red");
     }
@@ -761,7 +767,8 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
 
     ASSERT_TRUE(was_drawn(fb_nostex, 20, 10));
     ASSERT_TRUE(was_drawn(fb_stex, 20, 10));
-    if (fb_nostex.get_pixel(20, 10).r < 240)
+    // Peak specular (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_nostex.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL(
             "cutout+no-stex: peak specular expected, got R=" +
@@ -819,13 +826,14 @@ TEST(rasterize_phong, metallic_keeps_diffuse)
 
     ASSERT_TRUE(was_drawn(fb_diel, 20, 10));
     ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
-    if (fb_diel.get_pixel(20, 10).r < 240)
+    // Full diffuse (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (fb_diel.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL(
             "dielectric: full diffuse expected, got R=" + std::to_string(static_cast<int>(fb_diel.get_pixel(20, 10).r))
         );
     }
-    if (fb_metal.get_pixel(20, 10).r < 240)
+    if (fb_metal.get_pixel(20, 10).r < 220)
     {
         ASSERT_FAIL(
             "metal: diffuse must be kept (not zeroed), got R=" +
@@ -870,7 +878,8 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
 
     ASSERT_TRUE(was_drawn(fb_metal, 20, 10));
     Color metal = fb_metal.get_pixel(20, 10);
-    if (metal.b < 240)
+    // Blue diffuse + blue F0 specular peak both saturate B (~2.0 pre-tonemap), which rolls off to ~253.
+    if (metal.b < 220)
     {
         ASSERT_FAIL("metal: blue F0 highlight expected, got B=" + std::to_string(static_cast<int>(metal.b)));
     }
@@ -882,7 +891,8 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
     // MR texel B=0 forces m=0 → dielectric: F0 = lerp(0.04, base, 0) ≈ 0.04 (a faint
     // highlight, R≈10), with the blue base diffuse dominating — not a blue metal F0.
     Color mr = fb_mr.get_pixel(20, 10);
-    if (mr.b < 240)
+    // Full blue diffuse (~1.04 with the faint dielectric highlight) rolls off through the tonemap to ~230.
+    if (mr.b < 220)
     {
         ASSERT_FAIL("mr-dielectric: full blue diffuse expected, got B=" + std::to_string(static_cast<int>(mr.b)));
     }
@@ -929,7 +939,9 @@ TEST(rasterize_phong, occlusion_darkens_ambient)
 
     ASSERT_TRUE(was_drawn(fb_none, 20, 10));
     ASSERT_TRUE(was_drawn(fb_occ, 20, 10));
-    assert_pixel_near(fb_none, 20, 10, Color{ 255, 0, 0 }, 3);
+    // Full ambient (1.0) rolls off through the soft-knee tonemap to ~226; the occluded run (ao 0.502)
+    // stays below the knee and is unchanged.
+    assert_pixel_near(fb_none, 20, 10, Color{ 226, 0, 0 }, 3);
     assert_pixel_near(fb_occ, 20, 10, Color{ 128, 0, 0 }, 5);
 }
 
@@ -942,7 +954,8 @@ TEST(rasterize_phong, occlusion_strength_zero_is_noop)
     rast_occl(fb, &occ, 0.0f, 1.0f);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    assert_pixel_near(fb, 20, 10, Color{ 255, 0, 0 }, 3);
+    // Full ambient (1.0) rolls off through the soft-knee tonemap to ~226.
+    assert_pixel_near(fb, 20, 10, Color{ 226, 0, 0 }, 3);
 }
 
 // Override, not multiply: a low baked vertex AO (0.2) with an occlusion map of R=1.0 at
@@ -957,8 +970,9 @@ TEST(rasterize_phong, occlusion_replaces_not_multiplies_baked_ao)
 
     ASSERT_TRUE(was_drawn(fb_baked, 20, 10));
     ASSERT_TRUE(was_drawn(fb_occ, 20, 10));
+    // Baked-only ao=0.2 (R~51) stays below the knee; the override run (ao=1.0, R=1.0) rolls off to ~226.
     assert_pixel_near(fb_baked, 20, 10, Color{ 51, 0, 0 }, 6);
-    assert_pixel_near(fb_occ, 20, 10, Color{ 255, 0, 0 }, 3);
+    assert_pixel_near(fb_occ, 20, 10, Color{ 226, 0, 0 }, 3);
 }
 
 // ORM packing: when the occlusion and metallic-roughness textures are the SAME image,
@@ -1382,7 +1396,10 @@ TEST(rasterize_phong, orm_dedup_different_uv_sets_samples_mr_independently)
     ASSERT_TRUE(was_drawn(fbB, 20, 10));
     const Color cA = fbA.get_pixel(20, 10);
     const Color cB = fbB.get_pixel(20, 10);
-    if (cA.r <= cB.r + 100)
+    // The metal-1 run saturates R past 1.0; the soft-knee tonemap rolls its top down (~227) while the
+    // dim metal-0 run stays below the knee (~139), so the separating gap is narrower than the old
+    // hard-clamp gap but still decisive.
+    if (cA.r <= cB.r + 60)
     {
         ASSERT_FAIL(
             "mr on set 1 (metal 1) must sample independently of the set-0 occlusion read: got RA=" +
@@ -1439,7 +1456,9 @@ TEST(rasterize_phong, orm_dedup_different_transforms_samples_mr_independently)
     ASSERT_TRUE(was_drawn(fbB, 20, 10));
     const Color cA = fbA.get_pixel(20, 10);
     const Color cB = fbB.get_pixel(20, 10);
-    if (cA.r <= cB.r + 100)
+    // Soft-knee tonemap rolls the metal-1 top down (~227) while metal-0 stays below the knee (~139):
+    // a narrower but still decisive gap.
+    if (cA.r <= cB.r + 60)
     {
         ASSERT_FAIL(
             "MR with its own transform must not reuse the occlusion sample: got RA=" +

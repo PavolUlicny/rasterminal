@@ -370,6 +370,38 @@ TEST(renderer, phong_shading_renders_lit_pixel)
     }
 }
 
+// C4: an untextured white surface lit past 1.0 (the original "overblown" symptom) no longer
+// hard-clips to flat white: the soft-knee tonemap rolls it off so the centre stays below 255 and
+// keeps headroom for shading. ambient 0.4 + full white diffuse = 1.4 -> tonemap -> ~247.
+TEST(renderer, untextured_overbright_phong_rolls_off_below_white)
+{
+    Renderer r(1);
+    r.mode = ShadingMode::Phong;
+    Mesh mesh = make_large_triangle(); // default material: white diffuse, no texture
+    mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
+    Camera cam = make_test_camera();
+    Light light = make_key_light_z({ 1.0f, 1.0f, 1.0f }); // white key, N.L = 1 at centre
+    vec3 ambient{ 0.4f, 0.4f, 0.4f };
+    Framebuffer fb(40, 20, /*headless=*/true);
+    fb.clear();
+    r.render(mesh, cam, &light, 1, ambient, fb);
+
+    ASSERT_TRUE(was_drawn(fb, 20, 10));
+    Color c = fb.get_pixel(20, 10);
+    // Lit to 1.4, which the old hard clamp would have pinned at 255; the rolloff keeps it below.
+    if (c.r >= 254 || c.g >= 254 || c.b >= 254)
+    {
+        ASSERT_FAIL(
+            "overbright phong should roll off below white, got (" + std::to_string(static_cast<int>(c.r)) + "," +
+            std::to_string(static_cast<int>(c.g)) + "," + std::to_string(static_cast<int>(c.b)) + ")"
+        );
+    }
+    if (c.r < 235) // still clearly bright, just no longer blown
+    {
+        ASSERT_FAIL("overbright phong rolled off too far, got R=" + std::to_string(static_cast<int>(c.r)));
+    }
+}
+
 // ─── Group D — backface culling in MT path ────────────────────────────────────
 
 // D1: backface triangle is culled — no pixels drawn in Phong mode.

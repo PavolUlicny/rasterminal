@@ -537,7 +537,8 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r < 250)
+    // Full red (1.0) rolls off through the soft-knee tonemap to ~226, so the bright sentinel is < 255.
+    if (c.r < 220)
     {
         ASSERT_FAIL(
             "R too low (" + std::to_string(static_cast<int>(c.r)) +
@@ -693,18 +694,19 @@ TEST(rasterize, winding_agnostic_cw_also_draws)
     ASSERT_TRUE(was_drawn(fb2, 20, 10));
 }
 
-// ─── vec3_to_color saturation ─────────────────────────────────────────────────
+// ─── HDR highlight rolloff ─────────────────────────────────────────────────────
 
-TEST(rasterize, color_above_one_clamps_to_255)
+TEST(rasterize, color_above_one_rolls_off_below_255)
 {
-    // vec3_to_color clamps each channel to [0,1] before * 255.
-    // Colour (2,2,2) — HDR overflow — must yield (255,255,255).
+    // An HDR-overflow colour (2,2,2) no longer hard-clips to (255,255,255): the lit path runs it
+    // through the soft-knee tonemap, which asymptotes toward but never reaches 1.0. tonemap(2.0) =
+    // 0.7 + 0.3*(1 - exp(-1.3/0.3)) = 0.99606 -> 253.
     Framebuffer fb(40, 20, /*headless=*/true);
     vec3 hot{ 2.0f, 2.0f, 2.0f };
     rast_colored(
         fb, { 4.0f, 2.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, 1.0f, 1.0f, 1.0f, hot, hot, hot, 0, 19
     );
-    assert_pixel_near(fb, 20, 10, Color{ 255, 255, 255 }, 0);
+    assert_pixel_near(fb, 20, 10, Color{ 253, 253, 253 }, 1);
 }
 
 TEST(rasterize, color_below_zero_clamps_to_0)

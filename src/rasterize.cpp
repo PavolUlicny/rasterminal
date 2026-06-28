@@ -295,6 +295,10 @@ void rasterize_flat(
     // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
     // contribution regardless of texture, so the texture sample is skippable too.
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
+    // Tonemap the lit output (Flat shading), but not the unlit path: unlit reuses this
+    // rasterizer to emit baseColour*texture directly, which is bounded [0,1] and meant to be
+    // faithful, so the rolloff would only dim it. Loop-invariant, hoisted above the y-loop.
+    const bool do_tonemap = !(mat && mat->unlit);
     const auto stride = static_cast<size_t>(fb.width());
 
     // Per-slot UV set (glTF TEXCOORD_n). diffuse and emissive are the only textures this
@@ -500,12 +504,14 @@ void rasterize_flat(
                     col = col + e;
                 }
                 // Fragment opacity = material base * texture * (perspective-correct) vertex alpha.
-                // Push raw (unclamped) colour; the resolve clamps once after compositing.
+                // Tonemap to display space before the push so the resolve composites display-referred
+                // values and never tonemaps again (its final clamp then only guards the negative case,
+                // which lit colours never reach).
                 const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
                 const float a = base_alpha * tex_a * vca;
                 if (a >= ALPHA_EPS)
                 {
-                    abuf->push(idx, x, y, depth, col, a);
+                    abuf->push(idx, x, y, depth, do_tonemap ? tonemap(col) : col, a);
                 }
             }
             else
@@ -522,11 +528,10 @@ void rasterize_flat(
                     col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y));
                 }
 
-                // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
-                // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
-                // emissive contribution saturates invisibly — visible only where the lit colour
-                // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
-                // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
+                // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum feeds the
+                // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
+                // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
+                // the factor at load.
                 if (do_emissive)
                 {
                     vec3 e = emissive;
@@ -542,7 +547,7 @@ void rasterize_flat(
                     col = col + e;
                 }
 
-                fb.commit_pixel(idx, depth, vec3_to_color(col));
+                fb.commit_pixel(idx, depth, vec3_to_color(do_tonemap ? tonemap(col) : col));
             }
 
             ba += ba_dx;
@@ -963,11 +968,10 @@ void rasterize_phong(
                 color = lerp(lit, shd, sf);
             }
 
-            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum is
-            // clamped per channel in vec3_to_color, so on already-near-1 lit surfaces the
-            // emissive contribution saturates invisibly — visible only where the lit colour
-            // has headroom. KHR_materials_emissive_strength is baked into the factor at load,
-            // so high-strength materials just saturate sooner; real HDR + tonemap would fix it.
+            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum feeds the
+            // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
+            // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
+            // the factor at load.
             if (do_emissive)
             {
                 vec3 e = emissive;
@@ -983,20 +987,24 @@ void rasterize_phong(
                 color = color + e;
             }
 
+            // Phong is always a lit path (unlit is dispatched to rasterize_flat before reaching here),
+            // so the tonemap is unconditional.
             if constexpr (S == Sink::Transparent)
             {
-                // Opacity = material base * texture * (perspective-correct) vertex alpha.
-                // Push the raw lit colour; the resolve clamps once after compositing.
+                // Opacity = material base * texture * (perspective-correct) vertex alpha. Tonemap to
+                // display space before the push so the resolve composites display-referred values and
+                // never tonemaps again (its final clamp then only guards the negative case, which lit
+                // colours never reach).
                 const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
                 const float a = mat.alpha * tex_a * vca;
                 if (a >= ALPHA_EPS)
                 {
-                    abuf->push(idx, x, y, depth, color, a);
+                    abuf->push(idx, x, y, depth, tonemap(color), a);
                 }
             }
             else
             {
-                fb.commit_pixel(idx, depth, vec3_to_color(color));
+                fb.commit_pixel(idx, depth, vec3_to_color(tonemap(color)));
             }
 
             ba += ba_dx;

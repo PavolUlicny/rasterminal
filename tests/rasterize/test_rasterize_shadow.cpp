@@ -113,7 +113,8 @@ TEST(rasterize, shadow_occluded_position_uses_shad_color)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.b < 250)
+    // Shadowed colour is full blue (1.0), which rolls off through the soft-knee tonemap to ~226.
+    if (c.b < 220)
     {
         ASSERT_FAIL(
             "B too low (" + std::to_string(static_cast<int>(c.b)) +
@@ -520,6 +521,7 @@ TEST(rasterize, flat_distinct_vertex_colours_with_shadow_lerp_applies_shad_after
         ASSERT_FAIL("unshadowed centroid must be a partial blend, no channel fully saturated");
     }
 
-    // Fully shadowed: shad replaces the interpolated colour entirely → white.
-    assert_pixel_near(fb_shd, 20, 10, Color{ 255, 255, 255 }, 2);
+    // Fully shadowed: shad replaces the interpolated colour entirely → white (1.0 per channel),
+    // which rolls off through the soft-knee tonemap to ~226.
+    assert_pixel_near(fb_shd, 20, 10, Color{ 226, 226, 226 }, 2);
 }

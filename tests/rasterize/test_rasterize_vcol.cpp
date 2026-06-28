@@ -72,7 +72,8 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r < 250 || c.g < 250 || c.b < 250)
+    // White (1.0 per channel) rolls off through the soft-knee tonemap to ~226.
+    if (c.r < 220 || c.g < 220 || c.b < 220)
     {
         ASSERT_FAIL(
             "has_vcol=false: expected white, got (" + std::to_string(static_cast<int>(c.r)) + "," +
@@ -95,9 +96,10 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r < 250)
+    // Full red (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (c.r < 220)
     {
-        ASSERT_FAIL("has_vcol=true red: R too low (" + std::to_string(static_cast<int>(c.r)) + "), expected ~255");
+        ASSERT_FAIL("has_vcol=true red: R too low (" + std::to_string(static_cast<int>(c.r)) + "), expected ~226");
     }
     if (c.g > 5 || c.b > 5)
     {

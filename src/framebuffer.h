@@ -3,6 +3,7 @@
 #include "linalg.h" // vec3 (for vec3_to_color)
 
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -23,6 +24,35 @@ constexpr bool operator==(Color a, Color b) noexcept
 constexpr bool operator!=(Color a, Color b) noexcept
 {
     return !(a == b);
+}
+
+// Soft-knee highlight rolloff: the display transform that maps the renderer's HDR
+// shading output into the displayable range. Identity below `knee`; above it values
+// bend smoothly toward (but never reach) 1.0, slope-continuous at the knee so there is
+// no visible crease. Lighting accumulates past 1.0, and a hard clamp would collapse
+// every over-range value to flat white, erasing the shading gradient on bright/untextured
+// surfaces; the rolloff keeps the gradient instead.
+//
+// Applied exactly once per shaded contribution: at the opaque commit and at the transparent
+// A-buffer push (both in rasterize.cpp). The transparent resolve therefore composites values
+// that are already display-referred and must NOT tonemap again (doing so would double-darken
+// the opaque base under glass). The unlit path is excluded (its output is bounded [0,1] and is
+// meant to be faithful), as is UI chrome (wireframe/HUD/background), which is authored in
+// display space and bypasses vec3_to_color entirely.
+inline float tonemap_channel(float x) noexcept
+{
+    constexpr float knee = 0.7f;
+    constexpr float range = 1.0f - knee; // headroom above the knee
+    if (x <= knee)
+    {
+        return x; // common, well-exposed case: no transcendental
+    }
+    return knee + (range * (1.0f - std::exp(-(x - knee) / range)));
+}
+
+inline vec3 tonemap(vec3 c) noexcept
+{
+    return { tonemap_channel(c.x), tonemap_channel(c.y), tonemap_channel(c.z) };
 }
 
 // Clamp a float RGB colour to [0,1] and pack to 8-bit per channel. Shared by the

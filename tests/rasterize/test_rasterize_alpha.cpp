@@ -362,7 +362,9 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
         ASSERT_FAIL("without nmap+cutout: R too high, normal perpendicular to light");
     }
     Color c_nmap = fb_nmap.get_pixel(20, 10);
-    if (c_nmap.r < 230)
+    // Full-intensity red (1.0) rolls off through the soft-knee tonemap to ~226, so the bright
+    // sentinel sits below 255.
+    if (c_nmap.r < 220)
     {
         ASSERT_FAIL(
             "with nmap+cutout: R too low, expected bright red from redirected normal, got R=" +
@@ -399,7 +401,8 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r < 230)
+    // Full-intensity red (1.0) rolls off through the soft-knee tonemap to ~226.
+    if (c.r < 220)
     {
         ASSERT_FAIL("has_vcol+cutout: R too low, expected red tint, got R=" + std::to_string(static_cast<int>(c.r)));
     }

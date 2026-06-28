@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `install`/`uninstall` targets for both Make and CMake (GNU directory layout, `PREFIX`/`DESTDIR` overrides) installing the binary, man page, and license/notices
 - Man page (`man/rasterminal.1`)
 
+### Changed
+
+- Lit surfaces now pass through a soft-knee highlight rolloff (tonemap) before display, so bright, untextured, flat-lit, or strongly-emissive areas no longer clip to flat white but keep their shading gradient. The curve is identity below the knee (0.7) and rolls off above it, so any channel lit past the knee (including a full-white lit surface) is pulled down somewhat while darker midtones and shadows are unchanged; unlit materials and UI (wireframe, HUD, background) are unaffected.
+
 ## [v0.1.0-alpha.1] - 2026-06-27
 
 First public prerelease.

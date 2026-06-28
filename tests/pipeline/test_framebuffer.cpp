@@ -487,3 +487,67 @@ TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
     ASSERT_TRUE(out.find("\033[?1049h") != std::string::npos); // enter alternate screen
     ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos); // exit alternate screen
 }
+
+// ─── tonemap (soft-knee highlight rolloff) ────────────────────────────────────
+// The display transform applied once per shaded contribution before quantization. Knee 0.7.
+
+TEST(tonemap, identity_below_and_at_knee)
+{
+    // Everything up to the knee passes through untouched, so well-exposed and textured
+    // surfaces are byte-identical to the pre-tonemap pipeline.
+    ASSERT_NEAR(tonemap_channel(0.0f), 0.0f, 1e-6f);
+    ASSERT_NEAR(tonemap_channel(0.3f), 0.3f, 1e-6f);
+    ASSERT_NEAR(tonemap_channel(0.5f), 0.5f, 1e-6f);
+    ASSERT_NEAR(tonemap_channel(0.7f), 0.7f, 1e-6f); // exactly the knee
+}
+
+TEST(tonemap, locks_agreed_curve_above_knee)
+{
+    // Pin the chosen rolloff so a future curve change is caught. Values: knee 0.7, range 0.3,
+    // out = 0.7 + 0.3*(1 - exp(-(x-0.7)/0.3)).
+    ASSERT_NEAR(tonemap_channel(1.0f), 0.889636f, 1e-4f);
+    ASSERT_NEAR(tonemap_channel(1.17f), 0.937406f, 1e-4f);
+    ASSERT_NEAR(tonemap_channel(1.5f), 0.979155f, 1e-4f);
+    ASSERT_NEAR(tonemap_channel(2.0f), 0.996060f, 1e-4f);
+}
+
+TEST(tonemap, monotonic_increasing)
+{
+    float prev = -1.0f;
+    for (int i = 0; i <= 400; ++i)
+    {
+        const float x = static_cast<float>(i) * 0.01f; // 0.0 .. 4.0
+        const float y = tonemap_channel(x);
+        ASSERT_TRUE(y > prev); // strictly increasing across the whole domain
+        prev = y;
+    }
+}
+
+TEST(tonemap, bounded_by_one)
+{
+    // Output never exceeds 1.0, so the downstream vec3_to_color clamp is a no-op (no overflow in the
+    // uint8 cast). Across the realistic lit range (up to ~4x) it stays strictly below 1.0, so distinct
+    // bright values map to distinct displayed values: the HDR gradient the hard clamp destroyed.
+    ASSERT_TRUE(tonemap_channel(2.0f) < 1.0f);
+    ASSERT_TRUE(tonemap_channel(4.0f) < 1.0f);
+    // Very large inputs saturate to exactly 1.0 in float (the math asymptote rounds up); still bounded.
+    ASSERT_TRUE(tonemap_channel(1.0e6f) <= 1.0f);
+    ASSERT_TRUE(tonemap_channel(1.0e6f) > 0.7f);
+}
+
+TEST(tonemap, slope_continuous_at_knee)
+{
+    // Numeric derivative just above the knee must be ~1 (matching the identity slope below it),
+    // i.e. no crease where the rolloff begins.
+    const float h = 1.0e-3f;
+    const float slope = (tonemap_channel(0.7f + h) - tonemap_channel(0.7f)) / h;
+    ASSERT_NEAR(slope, 1.0f, 2.0e-3f);
+}
+
+TEST(tonemap, vec3_applies_per_channel)
+{
+    const vec3 out = tonemap(vec3{ 0.5f, 1.0f, 2.0f });
+    ASSERT_NEAR(out.x, 0.5f, 1e-6f);      // below knee: unchanged
+    ASSERT_NEAR(out.y, 0.889636f, 1e-4f); // 1.0 rolls off
+    ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
+}
