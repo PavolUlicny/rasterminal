@@ -214,6 +214,11 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/loaders/test_ply.cpp \
               tests/loaders/test_stl.cpp \
               tests/loaders/test_gltf.cpp \
+              tests/loaders/test_gltf_topology.cpp \
+              tests/loaders/test_gltf_vertex_colors.cpp \
+              tests/loaders/test_gltf_textures.cpp \
+              tests/loaders/test_gltf_texcoord1.cpp \
+              tests/loaders/test_gltf_texture_transform.cpp \
               tests/loaders/test_gltf_draco.cpp \
               tests/loaders/test_gltf_meshopt.cpp \
               tests/loaders/test_gltf_ktx2.cpp \
