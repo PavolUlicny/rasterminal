@@ -24,13 +24,9 @@ static Texture make_tex(int w, int h, std::initializer_list<int> rgba)
 static void rast(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_min = 0, int y_max = 19)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
-    vec3 zero{};
     vec3 white{ 1.0f, 1.0f, 1.0f };
     vec2 uv{ 0.5f, 0.5f };
-    rasterize_flat(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, tex, alpha_cutoff,
-        nullptr, y_min, y_max
-    );
+    rasterize_flat(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, tex, alpha_cutoff, y_min, y_max);
 }
 
 static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, int y_min = 0, int y_max = 19)
@@ -50,8 +46,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
     mat.alpha_cutoff = alpha_cutoff;
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, y_min,
-        y_max
+        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, y_min, y_max
     );
 }
 
@@ -163,13 +158,9 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
     // Rear triangle: white, no texture, drawn first.
     {
         vec3 sa{ 4.0f, 2.0f, 0.8f }, sb{ 36.0f, 2.0f, 0.8f }, sc{ 20.0f, 18.0f, 0.8f };
-        vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize_flat(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
-            nullptr, 0, 19
-        );
+        rasterize_flat(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, nullptr, 0.0f, 0, 19);
     }
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 
@@ -180,25 +171,19 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
     // Rear triangle first (depth=0.8, white).
     {
         vec3 sa{ 4.0f, 2.0f, 0.8f }, sb{ 36.0f, 2.0f, 0.8f }, sc{ 20.0f, 18.0f, 0.8f };
-        vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.0f, 0.0f };
-        rasterize_flat(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, nullptr, 0.0f,
-            nullptr, 0, 19
-        );
+        rasterize_flat(fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, nullptr, 0.0f, 0, 19);
     }
 
     // Front triangle (depth=0.3, fully transparent at cutoff=0.5).
     Texture tex_transparent = make_tex(1, 1, { 255, 0, 0, 0 });
     {
         vec3 sa{ 4.0f, 2.0f, 0.3f }, sb{ 36.0f, 2.0f, 0.3f }, sc{ 20.0f, 18.0f, 0.3f };
-        vec3 zero{};
         vec3 white{ 1.0f, 1.0f, 1.0f };
         vec2 uv{ 0.5f, 0.5f };
         rasterize_flat(
-            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv,
-            &tex_transparent, 0.5f, nullptr, 0, 19
+            fb2, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, &tex_transparent, 0.5f, 0, 19
         );
     }
 
@@ -241,7 +226,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
     rasterize_phong(
         fb, sa_rear, sb_rear, sc_rear, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv,
         uv, uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat_opaque, nullptr, nullptr,
-        nullptr, nullptr, 0, 19
+        nullptr, 0, 19
     );
 
     // Draw front fully-transparent triangle.
@@ -249,7 +234,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
     rasterize_phong(
         fb, sa_front, sb_front, sc_front, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv,
         uv, uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat_cutout, &tex_transparent,
-        nullptr, nullptr, nullptr, 0, 19
+        nullptr, nullptr, 0, 19
     );
 
     Color c = fb.get_pixel(20, 10);
@@ -346,8 +331,7 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &diffuse_tex, nm, nullptr, nullptr, 0,
-            19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &diffuse_tex, nm, nullptr, 0, 19
         );
     };
 
@@ -396,7 +380,7 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-        1.0f, 1.0f, red, red, red, true, eye, nullptr, 0, ambient, mat, &opaque_tex, nullptr, nullptr, nullptr, 0, 19
+        1.0f, 1.0f, red, red, red, true, eye, nullptr, 0, ambient, mat, &opaque_tex, nullptr, nullptr, 0, 19
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -445,7 +429,7 @@ TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
     Framebuffer fb(40, 20, /*headless=*/true);
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, &tex, nullptr, nullptr, nullptr, 0, 19
+        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, &tex, nullptr, nullptr, 0, 19
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));

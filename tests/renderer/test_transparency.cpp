@@ -507,8 +507,8 @@ TEST(transparency, ply_vertex_alpha)
 
 // Per-triangle partition: a PLY with one fully-opaque triangle (all vertex alpha == 255) and
 // one translucent triangle must keep the opaque one in [0, opaque_count) — only the translucent
-// triangle is routed to the transparent pass, so the opaque region still casts shadows / takes
-// the fast path. (Per-material routing would have flipped the whole single-material mesh.)
+// triangle is routed to the transparent pass, so the opaque region still takes the fast path.
+// (Per-material routing would have flipped the whole single-material mesh.)
 TEST(transparency, ply_vertex_alpha_per_triangle_partition)
 {
     TmpFile ply(

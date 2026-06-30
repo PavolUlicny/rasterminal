@@ -26,8 +26,7 @@ static void rast_emissive(Framebuffer &fb, const Texture *etex, vec3 emissive, v
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 zero{ 0.0f, 0.0f, 0.0f };
     rasterize_flat(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, zero, zero, zero, zero, uva, uvb, uvc, nullptr, 0.0f,
-        nullptr, 0, 19, etex, emissive
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, uva, uvb, uvc, nullptr, 0.0f, 0, 19, etex, emissive
     );
 }
 
@@ -42,8 +41,8 @@ static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Text
     vec3 white{ 1.0f, 1.0f, 1.0f };
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
-        19, nullptr, etex, mat.emissive
+        1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, 0, 19,
+        nullptr, etex, mat.emissive
     );
 }
 
