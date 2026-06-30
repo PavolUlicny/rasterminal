@@ -370,7 +370,6 @@ ParseResult parse_args(int argc, char *argv[])
             "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
             "                                  0=faceted, 180=smooth\n"
             "                                  ignored when an OBJ authors smoothing groups\n"
-            "          --no-shadow            Disable shadow map\n"
             "          --no-ao                Disable ambient occlusion\n"
             "          --no-hud               Hide the HUD status line\n"
             "  -h,     --help                 Show this message\n"
@@ -575,15 +574,6 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
             args.ao = false;
-        }
-        else if (arg == "--no-shadow")
-        {
-            if (eq_val != nullptr)
-            {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
-                return fail(1);
-            }
-            args.shadow = false;
         }
         else if (arg == "--no-hud")
         {
