@@ -6,7 +6,6 @@
 #include "linalg.h"
 #include "mesh.h"
 #include "rasterize.h"
-#include "shadow.h"
 #include "texture.h"
 
 #include <algorithm>
@@ -113,7 +112,6 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     const Light *lights = m_lights;
     const int n_lights = m_n_lights;
     const vec3 &ambient = m_ambient;
-    const ShadowMap *shadow_map = m_shadow_map;
     const float near_plane = m_near_plane;
     const int width = m_width;
     const int height = m_height;
@@ -129,10 +127,6 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     [[maybe_unused]] const bool show_occlusion = mesh->has_occlusion && show_tex;
     const bool mesh_has_unlit = mesh->has_unlit;
     Framebuffer *fb = m_fb;
-    // Flat-only locals: unused in the Phong instantiation (it derives the shadow
-    // light split inside rasterize_phong).
-    [[maybe_unused]] const Light *shadow_lights = (n_lights > 0) ? lights + 1 : lights;
-    [[maybe_unused]] const int n_shadow_lights = (n_lights > 0) ? n_lights - 1 : 0;
 
     // Opaque steals [0, opaque_count); transparent steals the blend tail
     // [opaque_count, total). render() seeds m_tri_cursor to the matching start.
@@ -290,31 +284,28 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                     if (mesh_has_unlit && mat.unlit)
                     {
                         // KHR_materials_unlit: output baseColor * vertexColor * diffuse
-                        // texture directly, bypassing lighting/shadow/ambient/emissive/
-                        // normal/occlusion regardless of the active shading mode. Reuses the
-                        // flat rasterizer with the raw base colour as the per-vertex
-                        // colour, a null shadow map, and zero emissive. a.color is {1,1,1}
-                        // when the mesh has no vertex colours (set at ClipVert construction),
-                        // so this reduces to mat.diffuse there. The shadow colour is unused
-                        // (null shadow map); ua is passed for it to stay initialised.
+                        // texture directly, bypassing lighting/ambient/emissive/normal/occlusion
+                        // regardless of the active shading mode. Reuses the flat rasterizer with
+                        // the raw base colour as the per-vertex colour and zero emissive. a.color
+                        // is {1,1,1} when the mesh has no vertex colours (set at ClipVert
+                        // construction), so this reduces to mat.diffuse there.
                         const vec3 ua = mat.diffuse * a.color;
                         const vec3 ub = mat.diffuse * b.color;
                         const vec3 uc = mat.diffuse * c.color;
                         if constexpr (S == Sink::Opaque)
                         {
                             rasterize_flat<Sink::Opaque>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, a.pos, b.pos, c.pos, a.uv, b.uv,
-                                c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
-                                vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, a.uv, b.uv, c.uv, tex,
+                                show_tex ? mat.alpha_cutoff : 0.0f, 0, height - 1, nullptr, vec3{ 0.0f, 0.0f, 0.0f },
+                                a.uv1, b.uv1, c.uv1, &mat
                             );
                         }
                         else
                         {
                             rasterize_flat<Sink::Transparent>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, ua, a.pos, b.pos, c.pos, a.uv, b.uv,
-                                c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, nullptr, 0, height - 1, nullptr,
-                                vec3{ 0.0f, 0.0f, 0.0f }, a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a,
-                                b.color_a, c.color_a
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, ua, ub, uc, a.uv, b.uv, c.uv, tex,
+                                show_tex ? mat.alpha_cutoff : 0.0f, 0, height - 1, nullptr, vec3{ 0.0f, 0.0f, 0.0f },
+                                a.uv1, b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
                             );
                         }
                     }
@@ -330,7 +321,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                                 a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
                                 show_tex ? mesh->tex_at(mat.normal_map.tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, shadow_map, 0, height - 1,
+                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.mr_map.tex) : nullptr,
                                 show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
                                 apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_map.tex) : nullptr,
@@ -344,7 +335,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                                 a.tangent, b.tangent, c.tangent, a.uv, b.uv, c.uv, a.ao, b.ao, c.ao, a.color, b.color,
                                 c.color, mesh->has_vertex_colors, eye, lights, n_lights, ambient, mat, tex,
                                 show_tex ? mesh->tex_at(mat.normal_map.tex) : nullptr,
-                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, shadow_map, 0, height - 1,
+                                show_tex ? mesh->tex_at(mat.specular_map.tex) : nullptr, 0, height - 1,
                                 show_metallic ? mesh->tex_at(mat.mr_map.tex) : nullptr,
                                 show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive,
                                 apply_normal_scale, show_occlusion ? mesh->tex_at(mat.occlusion_map.tex) : nullptr,
@@ -356,9 +347,6 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                     {
                         // Flat shading: one compute_lighting() at the centroid, constant across
                         // the triangle (M is always Flat here — Phong and unlit are handled above).
-                        vec3 col;
-                        vec3 shad; // only read when shadow_map != nullptr; written before that read
-
                         vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
                         if (flip_normals)
                         {
@@ -379,22 +367,15 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                                 flat_mat = &vcol_mat;
                             }
                         }
-                        col = compute_lighting(
+                        const vec3 col = compute_lighting(
                             assume_unit, fc, face_n, eye, lights, n_lights, ambient, *flat_mat, face_ao
                         );
-                        if (shadow_map)
-                        {
-                            shad = compute_lighting(
-                                assume_unit, fc, face_n, eye, shadow_lights, n_shadow_lights, ambient, *flat_mat,
-                                face_ao
-                            );
-                        }
 
                         if constexpr (S == Sink::Opaque)
                         {
                             rasterize_flat<Sink::Opaque>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, a.pos, b.pos, c.pos, a.uv,
-                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0, height - 1,
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, a.uv, b.uv, c.uv, tex,
+                                show_tex ? mat.alpha_cutoff : 0.0f, 0, height - 1,
                                 show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive, a.uv1,
                                 b.uv1, c.uv1, &mat
                             );
@@ -402,8 +383,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                         else
                         {
                             rasterize_flat<Sink::Transparent>(
-                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, shad, a.pos, b.pos, c.pos, a.uv,
-                                b.uv, c.uv, tex, show_tex ? mat.alpha_cutoff : 0.0f, shadow_map, 0, height - 1,
+                                *fb, sa, sb, sc, a.c.w, b.c.w, c.c.w, col, col, col, a.uv, b.uv, c.uv, tex,
+                                show_tex ? mat.alpha_cutoff : 0.0f, 0, height - 1,
                                 show_emissive ? mesh->tex_at(mat.emissive_map.tex) : nullptr, mat.emissive, a.uv1,
                                 b.uv1, c.uv1, &mat, &abuf, mat.alpha, a.color_a, b.color_a, c.color_a
                             );
@@ -770,13 +751,7 @@ void Renderer::ensure_abuffer(int width, int height)
 // ─── Renderer::render ─────────────────────────────────────────────────────────
 
 void Renderer::render(
-    const Mesh &mesh,
-    const Camera &camera,
-    const Light *lights,
-    int n_lights,
-    const vec3 &ambient,
-    Framebuffer &fb,
-    const ShadowMap *shadow_map
+    const Mesh &mesh, const Camera &camera, const Light *lights, int n_lights, const vec3 &ambient, Framebuffer &fb
 )
 {
     const vec3 eye = camera.eye();
@@ -785,7 +760,6 @@ void Renderer::render(
     const mat4 vp = proj * view;
     const int width = fb.width();
     const int height = fb.height();
-    const ShadowMap *active_shadow_map = (n_lights > 0) ? shadow_map : nullptr;
 
     // Frame inputs are written once under the lock and stay constant across all phases.
     {
@@ -796,7 +770,6 @@ void Renderer::render(
         m_lights = lights;
         m_n_lights = n_lights;
         m_ambient = ambient;
-        m_shadow_map = active_shadow_map;
         m_near_plane = camera.near_plane;
         m_width = width;
         m_height = height;

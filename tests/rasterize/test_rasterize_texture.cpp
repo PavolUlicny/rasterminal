@@ -21,7 +21,7 @@ static Texture make_tex_rgba(int w, int h, std::initializer_list<int> rgba)
     return t;
 }
 
-// rasterize_flat() with explicit w, UVs, optional texture; shad == col (no shadow needed).
+// rasterize_flat() with explicit w, UVs, optional texture.
 static void rast_tex(
     Framebuffer &fb,
     vec3 sa,
@@ -41,10 +41,7 @@ static void rast_tex(
     int y_max
 )
 {
-    vec3 zero{};
-    rasterize_flat(
-        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, zero, zero, zero, zero, uva, uvb, uvc, tex, 0.0f, nullptr, y_min, y_max
-    );
+    rasterize_flat(fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, uva, uvb, uvc, tex, 0.0f, y_min, y_max);
 }
 
 // ─── texture-rasterizer integration ──────────────────────────────────────────
@@ -200,8 +197,8 @@ TEST(rasterize, diffuse_transform_offset_advances_sampled_coord)
     vec3 zero{};
     vec2 zuv{};
     rasterize_flat(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, &tex, 0.0f, nullptr,
-        0, 19, nullptr, zero, zuv, zuv, zuv, &mat
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, &tex, 0.0f, 0, 19, nullptr, zero, zuv, zuv,
+        zuv, &mat
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -237,8 +234,8 @@ TEST(rasterize, diffuse_transform_scale_multiplies_sampled_coord)
     vec3 zero{};
     vec2 zuv{};
     rasterize_flat(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, zero, zero, zero, zero, uv, uv, uv, &tex, 0.0f, nullptr,
-        0, 19, nullptr, zero, zuv, zuv, zuv, &mat
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, &tex, 0.0f, 0, 19, nullptr, zero, zuv, zuv,
+        zuv, &mat
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -278,7 +275,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, 0, 19
         );
     };
 
@@ -321,8 +318,7 @@ TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
 
     rasterize_phong(
         fb, sa, sb, sc, 10.0f, 10.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uva, uvb, uvc,
-        1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, &tex, nullptr, nullptr, nullptr, 0,
-        19
+        1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, &tex, nullptr, nullptr, 0, 19
     );
 
     ASSERT_TRUE(was_drawn(fb, 12, 10));
@@ -359,7 +355,7 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, 0, 19
         );
     };
 
@@ -400,7 +396,7 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, stex, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, stex, 0, 19
         );
     };
 
@@ -447,7 +443,7 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nm, nullptr, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nm, nullptr, 0, 19
         );
     };
 
@@ -495,8 +491,8 @@ TEST(rasterize_phong, normal_scale_zero_flattens_bump)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, nullptr, 0,
-            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, apply_scale
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, 0, 19,
+            nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, apply_scale
         );
     };
 
@@ -543,8 +539,8 @@ TEST(rasterize_phong, normal_scale_negative_flips_bump)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, nullptr, 0,
-            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, /*apply_normal_scale=*/true
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, m, nullptr, &nmap_tex, nullptr, 0, 19,
+            nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, /*apply_normal_scale=*/true
         );
     };
 
@@ -594,7 +590,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan_degenerate, tan_degenerate,
         tan_degenerate, uv, uv, uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr,
-        &nmap_tex, nullptr, nullptr, 0, 19
+        &nmap_tex, nullptr, 0, 19
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
@@ -640,7 +636,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nm, nullptr, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nm, nullptr, 0, 19
         );
     };
 
@@ -689,7 +685,7 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, tex, nullptr, stex, nullptr, 0, 19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, tex, nullptr, stex, 0, 19
         );
     };
 
@@ -756,8 +752,7 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
     {
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &diff_tex, nullptr, stex, nullptr, 0,
-            19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &diff_tex, nullptr, stex, 0, 19
         );
     };
 
@@ -815,8 +810,7 @@ TEST(rasterize_phong, metallic_keeps_diffuse)
         mat.metallic = metallic;
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
-            19
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0, 19
         );
     };
 
@@ -867,8 +861,8 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
         mat.metallic = 1.0f;
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
-            19, mrtex
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0, 19,
+            mrtex
         );
     };
 
@@ -923,8 +917,7 @@ namespace
         rasterize_phong(
             fb, g_occl_sa, g_occl_sb, g_occl_sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan,
             tan, uv, uv, uv, ao_vert, ao_vert, ao_vert, white, white, white, false, eye, nullptr, 0, ambient, mat,
-            nullptr, nullptr, nullptr, nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex,
-            strength
+            nullptr, nullptr, nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex, strength
         );
     }
 } // namespace
@@ -1003,8 +996,8 @@ TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
         mat.metallic = 1.0f;
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f,
-            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0,
-            19, mrtex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex, 1.0f
+            1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0, 19,
+            mrtex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, octex, 1.0f
         );
     };
 
@@ -1028,7 +1021,6 @@ TEST(rasterize, diffuse_uv_set_selects_texcoord1)
     Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 white{ 1.0f, 1.0f, 1.0f };
-    vec3 zero{};
     vec2 uv0{ 0.25f, 0.5f }; // texel-0 (red) centre
     vec2 uv1{ 0.75f, 0.5f }; // texel-1 (blue) centre
 
@@ -1037,8 +1029,8 @@ TEST(rasterize, diffuse_uv_set_selects_texcoord1)
         Material mat;
         mat.diffuse_map.uv_set = set;
         rasterize_flat(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.0f,
-            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv1, uv1, uv1, &mat
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv0, uv0, uv0, &tex, 0.0f, 0, 19, nullptr,
+            vec3{ 0.0f, 0.0f, 0.0f }, uv1, uv1, uv1, &mat
         );
     };
 
@@ -1068,7 +1060,6 @@ TEST(rasterize, diffuse_texture_transform_shifts_sample)
     Texture tex = make_tex_rgba(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 white{ 1.0f, 1.0f, 1.0f };
-    vec3 zero{};
     vec2 uv0{ 0.25f, 0.5f }; // red texel centre; +0.5 u-offset lands on the blue texel
 
     const auto run = [&](Framebuffer &fb, bool xf)
@@ -1085,8 +1076,8 @@ TEST(rasterize, diffuse_texture_transform_shifts_sample)
             mat.diffuse_map.t[5] = 0.0f;
         }
         rasterize_flat(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.0f,
-            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv0, uv0, uv0, &tex, 0.0f, 0, 19, nullptr,
+            vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
         );
     };
 
@@ -1129,8 +1120,8 @@ TEST(rasterize_phong, diffuse_uv_set_selects_texcoord1)
         mat.diffuse_map.uv_set = set;
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &tex, nullptr, nullptr, nullptr,
-            0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, nullptr, 1.0f, uv1, uv1, uv1
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &tex, nullptr, nullptr, 0, 19,
+            nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, nullptr, 1.0f, uv1, uv1, uv1
         );
     };
 
@@ -1181,8 +1172,8 @@ TEST(rasterize_phong, diffuse_texture_transform_shifts_sample)
         }
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &tex, nullptr, nullptr, nullptr,
-            0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, nullptr, 1.0f, uv0, uv0, uv0
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, &tex, nullptr, nullptr, 0, 19,
+            nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, nullptr, 1.0f, uv0, uv0, uv0
         );
     };
 
@@ -1237,8 +1228,8 @@ TEST(rasterize_phong, occlusion_texture_transform_independent_of_diffuse)
         }
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
-            nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &occ, 1.0f, uv0, uv0, uv0
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0,
+            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &occ, 1.0f, uv0, uv0, uv0
         );
     };
 
@@ -1268,7 +1259,6 @@ TEST(rasterize, cutout_pre_pass_honours_diffuse_transform)
     Texture tex = make_tex_rgba(2, 1, { 255, 255, 255, 255, 255, 255, 255, 0 }); // texel0 opaque, texel1 transparent
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 white{ 1.0f, 1.0f, 1.0f };
-    vec3 zero{};
     vec2 uv0{ 0.25f, 0.5f }; // opaque texel; +0.5 u-offset → transparent texel
 
     const auto run = [&](Framebuffer &fb, bool xf)
@@ -1285,8 +1275,8 @@ TEST(rasterize, cutout_pre_pass_honours_diffuse_transform)
             mat.diffuse_map.t[5] = 0.0f;
         }
         rasterize_flat(
-            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, white, zero, zero, zero, uv0, uv0, uv0, &tex, 0.5f,
-            nullptr, 0, 19, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
+            fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv0, uv0, uv0, &tex, 0.5f, 0, 19, nullptr,
+            vec3{ 0.0f, 0.0f, 0.0f }, uv0, uv0, uv0, &mat
         );
     };
 
@@ -1326,8 +1316,8 @@ TEST(rasterize_phong, occlusion_uv_set_independent_of_diffuse)
         mat.occlusion_map.uv_set = occ_set;  // diffuse stays default set 0
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
-            nullptr, 0, 19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &occ, 1.0f, uv1, uv1, uv1
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0,
+            19, nullptr, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &occ, 1.0f, uv1, uv1, uv1
         );
     };
 
@@ -1383,8 +1373,8 @@ TEST(rasterize_phong, orm_dedup_different_uv_sets_samples_mr_independently)
         mat.mr_map.uv_set = mr_set;   // varies
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
-            nullptr, 0, 19, &tex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &tex, 1.0f, uv1, uv1, uv1
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0,
+            19, &tex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &tex, 1.0f, uv1, uv1, uv1
         );
     };
 
@@ -1443,8 +1433,8 @@ TEST(rasterize_phong, orm_dedup_different_transforms_samples_mr_independently)
         }
         rasterize_phong(
             fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv0, uv0, uv0,
-            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr,
-            nullptr, 0, 19, &tex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &tex, 1.0f, uv0, uv0, uv0
+            1.0f, 1.0f, 1.0f, white, white, white, false, eye, &light, 1, ambient, mat, nullptr, nullptr, nullptr, 0,
+            19, &tex, nullptr, vec3{ 0.0f, 0.0f, 0.0f }, false, &tex, 1.0f, uv0, uv0, uv0
         );
     };
 

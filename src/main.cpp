@@ -6,7 +6,6 @@
 #include "mesh.h"
 #include "platform.h"
 #include "renderer.h"
-#include "shadow.h"
 
 #include <algorithm>
 #include <chrono>
@@ -18,7 +17,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -128,16 +126,6 @@ namespace
         vec3 ambient;
         make_default_lights(lights, ambient);
 
-        std::optional<double> shadow_ms;
-        std::optional<ShadowMap> shadow_map;
-        if (args.shadow)
-        {
-            auto ts = clock::now();
-            shadow_map = build_shadow_map(mesh, lights[0], n_threads);
-            auto te = clock::now();
-            shadow_ms = std::chrono::duration<double, std::milli>(te - ts).count();
-        }
-
         Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
         Renderer renderer(args.n_threads);
         renderer.mode = static_cast<ShadingMode>(args.shading);
@@ -158,7 +146,7 @@ namespace
             camera.spin_world_y(0.8f / 60.0f);
             fb.clear({ 0, 0, 0 });
             auto t0 = clock::now();
-            renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb, shadow_map ? &*shadow_map : nullptr);
+            renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
             auto t1 = clock::now();
             if (i >= n_warmup)
             {
@@ -207,11 +195,6 @@ namespace
 
         std::fprintf(stderr, "startup:\n");
         std::fprintf(stderr, "  load    %.2f ms\n", load_ms);
-        if (shadow_ms)
-        {
-            std::fprintf(stderr, "  shadow  %.2f ms\n", *shadow_ms);
-            std::fprintf(stderr, "  total   %.2f ms\n", load_ms + *shadow_ms);
-        }
 
         std::fprintf(stderr, "runtime:\n");
         std::fprintf(stderr, "  min     %.2f ms\n", ms(mn));
@@ -294,14 +277,6 @@ int main(int argc, char *argv[])
     Light lights[2];
     vec3 ambient;
     make_default_lights(lights, ambient);
-
-    // Build shadow map once — the key light and mesh geometry are static,
-    // so the map never changes regardless of camera movement or spin.
-    std::optional<ShadowMap> shadow_map;
-    if (args.shadow)
-    {
-        shadow_map = build_shadow_map(mesh, lights[0], n_threads);
-    }
 
     Renderer renderer(args.n_threads);
     renderer.mode = static_cast<ShadingMode>(args.shading);
@@ -575,7 +550,7 @@ int main(int argc, char *argv[])
         renderer.wireframe_color = WIREFRAME_PALETTE[wf_color];
         renderer.cull_backfaces = culling;
         renderer.show_texture = texturing;
-        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb, shadow_map ? &*shadow_map : nullptr);
+        renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
         fb.present();
 
         // ── Frame cap ────────────────────────────────────────────────────

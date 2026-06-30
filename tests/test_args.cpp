@@ -116,7 +116,6 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.args.cull);
     ASSERT_TRUE(r.args.texture);
     ASSERT_FALSE(r.args.spin);
-    ASSERT_TRUE(r.args.shadow);
     ASSERT_TRUE(r.args.ao);
     ASSERT_TRUE(r.args.hud);
     ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
@@ -335,13 +334,6 @@ TEST(args, bare_threads_long_form_uses_all)
 TEST(args, spin_with_equals_value_is_error)
 {
     ParseResult r = run({ "--spin=yes", "model.obj" });
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 1);
-}
-
-TEST(args, no_shadow_with_equals_value_is_error)
-{
-    ParseResult r = run({ "--no-shadow=1", "model.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
@@ -603,11 +595,6 @@ TEST(args, spin_flag_enables_spin)
     ASSERT_TRUE(run({ "-S", "m.obj" }).args.spin);
 }
 
-TEST(args, no_shadow_disables_shadow)
-{
-    ASSERT_FALSE(run({ "--no-shadow", "m.obj" }).args.shadow);
-}
-
 TEST(args, no_ao_disables_ao)
 {
     ASSERT_FALSE(run({ "--no-ao", "m.obj" }).args.ao);
@@ -624,7 +611,7 @@ TEST(args, multiple_flags_all_applied)
 {
     ParseResult r =
         run({ "--shading=phong", "--bg=white", "--lighting=single", "--wireframe-color=magenta", "--fps=120",
-              "--cull=off", "--texture=off", "--spin", "--no-shadow", "--no-ao", "--no-hud", "-j2", "scene.ply" });
+              "--cull=off", "--texture=off", "--spin", "--no-ao", "--no-hud", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
     ASSERT_EQ(r.args.shading, 2);
@@ -635,7 +622,6 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_FALSE(r.args.cull);
     ASSERT_FALSE(r.args.texture);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_FALSE(r.args.shadow);
     ASSERT_FALSE(r.args.ao);
     ASSERT_FALSE(r.args.hud);
     ASSERT_EQ(r.args.n_threads, 2);

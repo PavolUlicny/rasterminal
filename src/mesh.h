@@ -38,10 +38,10 @@ struct Mesh
                                      // (otherwise the loader drops uv1 and forces every TexSlot::uv_set back to 0)
     bool has_transparent = false;    // true if any material blends OR any vertex is translucent; gates the
                                      // transparent render passes. When set, opaque_count MUST be valid: the
-                                     // render and shadow passes trust the range split and do NOT re-test per
-                                     // triangle. load_model always sets both together; a hand-built Mesh that
-                                     // sets has_transparent must also set opaque_count (a forgotten 0 routes
-                                     // every triangle to the transparent pass and casts no shadows).
+                                     // render passes trust the range split and do NOT re-test per triangle.
+                                     // load_model always sets both together; a hand-built Mesh that sets
+                                     // has_transparent must also set opaque_count (a forgotten 0 routes every
+                                     // triangle to the transparent pass).
     uint32_t opaque_count = 0;       // triangles [0, opaque_count) are opaque; [opaque_count, size()) are blend
     bool has_double_sided = false;   // true if any material in the mesh has double_sided = true
     bool has_metallic = false;       // true if any material has metallic > 0 (gates the Phong metallic path)

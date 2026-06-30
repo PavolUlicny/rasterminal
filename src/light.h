@@ -98,7 +98,7 @@ struct Material
     vec3 ambient = { 1.0f, 1.0f, 1.0f }; // Ka; defaults to Kd when Ka absent in MTL
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
-    // Self-illumination added post-lighting (after shadow lerp) so shaded areas still glow.
+    // Self-illumination added post-lighting so shaded areas still glow.
     // Modulated by emissive_map when present. A zero factor skips the per-pixel add and the
     // emissive_map sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0). For
     // glTF, mesh_gltf bakes KHR_materials_emissive_strength into this factor at load.
@@ -132,7 +132,7 @@ struct Material
     // alpha * diffuse-texture.a * vertex-color.a. Mesh::has_transparent gates the whole path.
     bool blend = false;
     float alpha = 1.0f;
-    // KHR_materials_unlit: bypass lighting/shadow/emissive/normal/occlusion and output
+    // KHR_materials_unlit: bypass lighting/emissive/normal/occlusion and output
     // baseColor * diffuse texture * vertex color directly (alpha cutout still applies).
     bool unlit = false;
 };

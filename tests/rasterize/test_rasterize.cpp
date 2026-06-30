@@ -5,15 +5,13 @@
 #include <atomic>
 #include <thread>
 
-// Call rasterize_flat() with white flat colour, no texture/shadow, on the given band.
+// Call rasterize_flat() with white flat colour, no texture, on the given band.
 static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_max)
 {
     vec3 white{ 1.0f, 1.0f, 1.0f };
-    vec3 black{ 0.0f, 0.0f, 0.0f };
-    vec3 zero{ 0.0f, 0.0f, 0.0f };
     rasterize_flat(
-        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, black, zero, zero, zero, vec2{ 0.0f, 0.0f },
-        vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, nullptr, 0.0f, nullptr, y_min, y_max
+        fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f },
+        vec2{ 0.0f, 0.0f }, nullptr, 0.0f, y_min, y_max
     );
 }
 
@@ -222,8 +220,8 @@ TEST(rasterize_phong, fills_interior)
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f },
         vec2{ 1.0f, 0.0f }, vec2{ 0.0f, 1.0f }, 1.0f, 1.0f, 1.0f, vec3{ 1, 1, 1 }, vec3{ 1, 1, 1 }, vec3{ 1, 1, 1 },
-        false, vec3{ 20.0f, 10.0f, -10.0f }, &light, 1, vec3{ 0.2f, 0.2f, 0.2f }, mat, nullptr, nullptr, nullptr,
-        nullptr, 0, fb.height() - 1
+        false, vec3{ 20.0f, 10.0f, -10.0f }, &light, 1, vec3{ 0.2f, 0.2f, 0.2f }, mat, nullptr, nullptr, nullptr, 0,
+        fb.height() - 1
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // interior must be covered
@@ -244,8 +242,7 @@ TEST(rasterize_phong, respects_y_band)
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f },
         vec2{ 1.0f, 0.0f }, vec2{ 0.0f, 1.0f }, 1.0f, 1.0f, 1.0f, vec3{ 1, 1, 1 }, vec3{ 1, 1, 1 }, vec3{ 1, 1, 1 },
-        false, vec3{ 20.0f, 10.0f, -10.0f }, &light, 1, vec3{ 0.2f, 0.2f, 0.2f }, mat, nullptr, nullptr, nullptr,
-        nullptr, 6, 12
+        false, vec3{ 20.0f, 10.0f, -10.0f }, &light, 1, vec3{ 0.2f, 0.2f, 0.2f }, mat, nullptr, nullptr, nullptr, 6, 12
     );
 
     ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
@@ -336,7 +333,7 @@ TEST(framebuffer, multithread_depth_color_race)
 //
 // All values derived analytically from setup_tri's formulas and verified below.
 
-// Call rasterize_flat() with per-vertex colours (no texture, no shadow).
+// Call rasterize_flat() with per-vertex colours (no texture).
 static void rast_colored(
     Framebuffer &fb,
     vec3 sa,
@@ -352,10 +349,9 @@ static void rast_colored(
     int y_max
 )
 {
-    vec3 zero{};
     rasterize_flat(
-        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, zero, zero, zero, zero, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f },
-        vec2{ 0.0f, 0.0f }, nullptr, 0.0f, nullptr, y_min, y_max
+        fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, nullptr,
+        0.0f, y_min, y_max
     );
 }
 
@@ -397,7 +393,7 @@ TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
         rasterize_phong(
             fb, sa, sb, sc, wa, wb, wc, zero, zero, zero, normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f },
             vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, 0.0f, 0.0f, 1.0f, white, white, white, false, eye, nullptr, 0,
-            ambient, mat, nullptr, nullptr, nullptr, nullptr, 0, 19
+            ambient, mat, nullptr, nullptr, nullptr, 0, 19
         );
     };
 
@@ -500,7 +496,7 @@ TEST(rasterize_phong, unequal_w_ao_biased_to_near_vertex)
         rasterize_phong(
             fb, sa, sb, sc, wa, wb, wc, zero, zero, zero, normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f },
             vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, 0.0f, 0.0f, 1.0f, white, white, white, false, eye, nullptr, 0,
-            ambient, mat, nullptr, nullptr, nullptr, nullptr, 0, 19
+            ambient, mat, nullptr, nullptr, nullptr, 0, 19
         );
     };
 
@@ -583,7 +579,7 @@ TEST(rasterize_phong, unequal_w_depth_still_linear)
     rasterize_phong(
         fb, { 4.0f, 2.0f, 0.2f }, { 36.0f, 2.0f, 0.2f }, { 20.0f, 18.0f, 0.8f }, 10.0f, 10.0f, 1.0f, zero, zero, zero,
         normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, 1.0f, 1.0f,
-        1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, nullptr, 0, 19
+        1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr, nullptr, 0, 19
     );
 
     assert_depth_near(fb, 12, 10, 0.519f, 0.015f);
@@ -759,7 +755,7 @@ TEST(draw_line, negative_slope)
 
 // ─── rasterize_phong additional edge cases ────────────────────────────────────
 
-// Minimal rasterize_phong helper: no lights, no textures, no shadows, AO=1.
+// Minimal rasterize_phong helper: no lights, no textures, AO=1.
 static void rast_phong_minimal(
     Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, const vec3 &ambient, const Material &mat, int y_min, int y_max
 )
@@ -772,7 +768,7 @@ static void rast_phong_minimal(
     rasterize_phong(
         fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, zero, zero, zero, normal, normal, normal, tan, tan, tan, vec2{ 0.0f, 0.0f },
         vec2{ 0.0f, 0.0f }, vec2{ 0.0f, 0.0f }, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient,
-        mat, nullptr, nullptr, nullptr, nullptr, y_min, y_max
+        mat, nullptr, nullptr, nullptr, y_min, y_max
     );
 }
 

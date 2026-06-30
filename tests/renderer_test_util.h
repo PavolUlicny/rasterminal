@@ -1,13 +1,12 @@
 #pragma once
 
 // This is a test-prelude header: the renderer test TUs include it and rely on
-// it to pull in the test framework, Renderer, and ShadowMap. IWYU pragma: export
-// marks those as intentionally re-exported so clangd's include-cleaner doesn't
-// flag them as unused here.
+// it to pull in the test framework and Renderer. IWYU pragma: export marks those
+// as intentionally re-exported so clangd's include-cleaner doesn't flag them as
+// unused here.
 #include "tests/test.h" // IWYU pragma: export
 #include "tests/rasterize_test_util.h"
 #include "src/renderer.h" // IWYU pragma: export
-#include "src/shadow.h"   // IWYU pragma: export
 #include "src/texture.h"
 
 // Camera at (0,0,5) looking at origin.  Identity orientation so the projection

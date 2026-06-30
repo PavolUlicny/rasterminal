@@ -46,7 +46,7 @@ static void rast_phong_vcol(
     vec2 uv{ 0.5f, 0.5f };
     rasterize_phong(
         fb, sa, sb, sc, wa, wb, wc, zero, zero, zero, normal, normal, normal, tan, tan, tan, uv, uv, uv, 1.0f, 1.0f,
-        1.0f, vcola, vcolb, vcolc, has_vcol, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, nullptr, 0, 19
+        1.0f, vcola, vcolb, vcolc, has_vcol, eye, nullptr, 0, ambient, mat, tex, nullptr, nullptr, 0, 19
     );
 }
 

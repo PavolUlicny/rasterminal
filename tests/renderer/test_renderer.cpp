@@ -512,9 +512,9 @@ TEST(renderer, large_triangle_spans_all_bands)
     }
 }
 
-// ─── Group F — lights, shadow, texture toggle ─────────────────────────────────
+// ─── Group F — lights, texture toggle ─────────────────────────────────────────
 
-// F1: n_lights=0 → ambient-only output; passing a non-null shadow_map must not crash.
+// F1: n_lights=0 → ambient-only output.
 TEST(renderer, zero_lights_renders_ambient_only)
 {
     Renderer r(1);
@@ -524,13 +524,9 @@ TEST(renderer, zero_lights_renders_ambient_only)
     // Pure red ambient so we can distinguish it from black.
     vec3 ambient{ 0.5f, 0.0f, 0.0f };
 
-    // Build a dummy shadow map (not used when n_lights=0).
-    ShadowMap sm;
-    sm.clear();
-
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
-    r.render(mesh, cam, nullptr, 0, ambient, fb, &sm);
+    r.render(mesh, cam, nullptr, 0, ambient, fb);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
@@ -1153,27 +1149,6 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
     {
         ASSERT_FAIL("wireframe double-sided back-face drew no pixels — cull bypass missing");
     }
-}
-
-TEST(renderer, wireframe_shadow_map_is_ignored)
-{
-    Renderer r(1);
-    r.mode = ShadingMode::Wireframe;
-    Mesh mesh = make_unit_triangle();
-    Camera cam = make_test_camera();
-
-    Framebuffer fb1(40, 20, /*headless=*/true);
-    fb1.clear();
-    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb1);
-    const int count1 = count_drawn_pixels(fb1);
-
-    ShadowMap sm; // empty depth vector — wireframe never calls in_shadow()
-    Framebuffer fb2(40, 20, /*headless=*/true);
-    fb2.clear();
-    r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb2, &sm);
-    const int count2 = count_drawn_pixels(fb2);
-
-    ASSERT_EQ(count1, count2);
 }
 
 TEST(renderer, wireframe_show_texture_toggle_is_noop)

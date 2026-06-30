@@ -21,7 +21,6 @@ struct ParsedArgs
     bool cull = true;
     bool texture = true;
     bool spin = false;
-    bool shadow = true;
     bool ao = true;
     bool hud = true;
 };

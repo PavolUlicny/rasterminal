@@ -13,13 +13,13 @@ namespace
     const vec3 g_zero{ 0.0f, 0.0f, 0.0f };
     const vec2 g_uv{ 0.5f, 0.5f };
 
-    // Flat path with a uniform per-vertex colour `col` and no texture/shadow/emissive. mat == null
+    // Flat path with a uniform per-vertex colour `col` and no texture/emissive. mat == null
     // selects the lit (tonemapped) Flat path.
     void rast_flat_color(Framebuffer &fb, vec3 col, const Material *mat = nullptr)
     {
         rasterize_flat(
-            fb, g_sa, g_sb, g_sc, 1.0f, 1.0f, 1.0f, col, col, col, col, g_zero, g_zero, g_zero, g_uv, g_uv, g_uv,
-            nullptr, 0.0f, nullptr, 0, 19, nullptr, g_zero, vec2{}, vec2{}, vec2{}, mat
+            fb, g_sa, g_sb, g_sc, 1.0f, 1.0f, 1.0f, col, col, col, g_uv, g_uv, g_uv, nullptr, 0.0f, 0, 19, nullptr,
+            g_zero, vec2{}, vec2{}, vec2{}, mat
         );
     }
 } // namespace
@@ -90,7 +90,7 @@ TEST(rasterize_tonemap, phong_commit_tonemaps)
     rasterize_phong(
         fb, g_sa, g_sb, g_sc, 1.0f, 1.0f, 1.0f, g_zero, g_zero, g_zero, normal, normal, normal, tan, tan, tan, g_uv,
         g_uv, g_uv, 1.0f, 1.0f, 1.0f, white, white, white, false, eye, nullptr, 0, ambient, mat, nullptr, nullptr,
-        nullptr, nullptr, 0, 19
+        nullptr, 0, 19
     );
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));

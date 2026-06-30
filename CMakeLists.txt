@@ -216,7 +216,6 @@ add_executable(rasterminal
   src/mesh_gltf.cpp
   src/draco_decode.cpp
   src/camera.cpp
-  src/shadow.cpp
   src/rasterize.cpp
   src/renderer.cpp
   src/texture.cpp
@@ -287,13 +286,11 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/rasterize/test_rasterize.cpp
     tests/rasterize/test_rasterize_texture.cpp
     tests/rasterize/test_rasterize_vcol.cpp
-    tests/rasterize/test_rasterize_shadow.cpp
     tests/rasterize/test_rasterize_alpha.cpp
     tests/rasterize/test_rasterize_emissive.cpp
     tests/rasterize/test_rasterize_tonemap.cpp
     tests/renderer/test_renderer.cpp
     tests/renderer/test_renderer_ao_clip.cpp
-    tests/renderer/test_renderer_shadow_depth.cpp
     tests/renderer/test_renderer_vcol.cpp
     tests/renderer/test_renderer_misc.cpp
     tests/renderer/test_renderer_unlit.cpp
@@ -301,7 +298,6 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/pipeline/test_camera.cpp
     tests/pipeline/test_clip.cpp
     tests/pipeline/test_clip_near.cpp
-    tests/pipeline/test_shadow.cpp
     tests/pipeline/test_framebuffer.cpp
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
@@ -319,7 +315,6 @@ if(RASTERMINAL_BUILD_TESTS)
     src/camera.cpp
     src/rasterize.cpp
     src/framebuffer.cpp
-    src/shadow.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp
