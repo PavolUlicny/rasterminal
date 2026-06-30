@@ -610,7 +610,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         {
             // PLY has no per-material opacity mode, so per-vertex alpha is the opacity signal.
             // load_model's per-triangle partition routes only the genuinely-translucent triangles
-            // to the transparent pass (so an opaque region keeps the fast path and casts shadows).
+            // to the transparent pass (so an opaque region keeps the fast opaque path).
             has_vertex_alpha = true;
         }
         use_weld = need_weld;

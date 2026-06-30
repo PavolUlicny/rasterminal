@@ -162,9 +162,8 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         // tail. The classification is PER-TRIANGLE, not per-material: a triangle is transparent if its
         // material blends, or — for formats whose opacity is per-vertex (PLY) — any of its vertices is
         // translucent. This keeps a mostly-opaque mesh with localized translucency mostly on the fast
-        // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass and
-        // remain shadow casters (shadow.cpp bounds its occluder loop by opaque_count); only the
-        // genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
+        // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass;
+        // only the genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
         // optimize_vertex_cache's within-group order (its vertex-cache/overdraw locality survives), and
         // runs after optimize so triangle vertex indices are final — it only moves whole Triangle
         // structs. Opaque meshes (has_transparent == false) skip it and are unchanged.

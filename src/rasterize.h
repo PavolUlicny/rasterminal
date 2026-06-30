@@ -3,7 +3,6 @@
 #include "framebuffer.h"
 #include "light.h"
 #include "linalg.h"
-#include "shadow.h"
 #include "texture.h"
 
 #include <algorithm>
@@ -125,8 +124,7 @@ struct ABuffer
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color);
 
 // Rasterize one triangle with pre-computed per-vertex base colours (Flat shading and
-// the unlit path). shad is the single shadowed colour: lit callers (Flat) carry one
-// uniform shadow colour; unlit passes a null shadow_map so shad is never read.
+// the unlit path).
 // y_min/y_max define this thread's exclusive pixel row band.
 // Sink::Transparent uses sample_rgba for the diffuse (alpha = base_alpha * tex.a *
 // vertex-alpha), tests depth <= against the opaque buffer (decals visible), applies a
@@ -143,16 +141,11 @@ void rasterize_flat(
     vec3 col_a,
     vec3 col_b,
     vec3 col_c,
-    vec3 shad,
-    vec3 pa,
-    vec3 pb,
-    vec3 pc,
     vec2 uva,
     vec2 uvb,
     vec2 uvc,
     const Texture *tex,
     float alpha_cutoff,
-    const ShadowMap *shadow_map,
     int y_min,
     int y_max,
     const Texture *etex = nullptr,            // emissive texture (modulates emissive factor)
@@ -208,7 +201,6 @@ void rasterize_phong(
     const Texture *tex,
     const Texture *nmap,
     const Texture *stex,
-    const ShadowMap *shadow_map,
     int y_min,
     int y_max,
     const Texture *mrtex =

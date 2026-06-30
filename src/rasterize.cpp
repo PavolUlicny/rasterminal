@@ -2,7 +2,6 @@
 #include "framebuffer.h"
 #include "light.h"
 #include "linalg.h"
-#include "shadow.h"
 #include "texture.h"
 
 #include <algorithm>
@@ -230,11 +229,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
 // sa/sb/sc hold (screen_x, screen_y, ndc_z).
 // wa/wb/wc are clip-space w values for perspective-correct interpolation.
 // col_a/b/c are per-vertex base colours (uniform for Flat lighting; per-vertex for the
-// unlit path). shad is the single uniform shadowed colour the lit pixel lerps toward.
-// pa/pb/pc are world-space positions used for the per-pixel shadow test.
+// unlit path).
 // uva/uvb/uvc are per-vertex texture coordinates.
 // tex may be nullptr if no diffuse texture is active.
-// shadow_map may be nullptr if shadows are disabled.
 
 template <Sink S>
 void rasterize_flat(
@@ -248,16 +245,11 @@ void rasterize_flat(
     vec3 col_a,
     vec3 col_b,
     vec3 col_c,
-    vec3 shad,
-    vec3 pa,
-    vec3 pb,
-    vec3 pc,
     vec2 uva,
     vec2 uvb,
     vec2 uvc,
     const Texture *tex,
     float alpha_cutoff,
-    const ShadowMap *shadow_map,
     int y_min,
     int y_max,
     const Texture *etex,
@@ -454,25 +446,9 @@ void rasterize_flat(
                 }
             }
 
-            // Per-pixel shadow test using interpolated world position.
-            float sf = 0.0f;
-            if (shadow_map)
-            {
-                const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
-                sf = shadow_map->in_shadow(pos);
-            }
             // Perspective-correct base colour. Flat passes three identical vertex colours
             // (so this is a no-op average); the unlit path passes distinct per-vertex colours.
             vec3 col = (col_a * pwa + col_b * pwb + col_c * pwc) * w_corr;
-
-            // Shadow lerp, applied once to the interpolated colour. shad is uniform across the
-            // triangle and the only lit caller (Flat) passes identical vertex colours, so this
-            // equals lerping each vertex toward shad before interpolating. The unlit path never
-            // sets a shadow map (sf stays 0 there), so this branch is Flat-only.
-            if (sf > 0.0f)
-            {
-                col = lerp(col, shad, sf);
-            }
 
             if constexpr (S == Sink::Transparent)
             {
@@ -528,7 +504,7 @@ void rasterize_flat(
                     col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y));
                 }
 
-                // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum feeds the
+                // Emissive add applies after lighting so shaded areas still glow. The sum feeds the
                 // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
                 // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
                 // the factor at load.
@@ -603,7 +579,6 @@ void rasterize_phong(
     const Texture *tex,
     const Texture *nmap,
     const Texture *stex,
-    const ShadowMap *shadow_map,
     int y_min,
     int y_max,
     const Texture *mrtex,
@@ -855,7 +830,7 @@ void rasterize_phong(
                 ao = 1.0f + (occlusion_strength * (occ_sample.x - 1.0f));
             }
 
-            // Precompute view vector once — reused by both shadow branches.
+            // View vector for the specular term.
             const vec3 v = normalize(eye - pos);
 
             // Shading-params locals: avoid the ~92 B per-pixel Material copy by feeding
@@ -940,35 +915,11 @@ void rasterize_phong(
                 use_specular = lerp(DIELECTRIC_F0, base, metalness);
             }
 
-            // Shadow test: PCF factor in [0,1]; lerp between lit and shadowed lighting.
-            const float sf = shadow_map ? shadow_map->in_shadow(pos) : 0.0f;
-            const Light *sl = (n_lights > 0) ? lights + 1 : lights;
-            const int n_shadow = (n_lights > 0) ? n_lights - 1 : 0;
-            vec3 color;
-            if (sf <= 0.0f)
-            {
-                color = compute_lighting(
-                    normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
-                );
-            }
-            else if (sf >= 1.0f)
-            {
-                color = compute_lighting(
-                    normal, v, sl, n_shadow, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
-                );
-            }
-            else
-            {
-                const vec3 lit = compute_lighting(
-                    normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
-                );
-                const vec3 shd = compute_lighting(
-                    normal, v, sl, n_shadow, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
-                );
-                color = lerp(lit, shd, sf);
-            }
+            vec3 color = compute_lighting(
+                normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
+            );
 
-            // Emissive add bypasses the shadow lerp so shaded areas still glow. The sum feeds the
+            // Emissive add applies after lighting so shaded areas still glow. The sum feeds the
             // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
             // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
             // the factor at load.
@@ -1031,16 +982,11 @@ template void rasterize_flat<Sink::Opaque>(
     vec3,
     vec3,
     vec3,
-    vec3,
-    vec3,
-    vec3,
-    vec3,
     vec2,
     vec2,
     vec2,
     const Texture *,
     float,
-    const ShadowMap *,
     int,
     int,
     const Texture *,
@@ -1066,16 +1012,11 @@ template void rasterize_flat<Sink::Transparent>(
     vec3,
     vec3,
     vec3,
-    vec3,
-    vec3,
-    vec3,
-    vec3,
     vec2,
     vec2,
     vec2,
     const Texture *,
     float,
-    const ShadowMap *,
     int,
     int,
     const Texture *,
@@ -1126,7 +1067,6 @@ template void rasterize_phong<Sink::Opaque>(
     const Texture *,
     const Texture *,
     const Texture *,
-    const ShadowMap *,
     int,
     int,
     const Texture *,
@@ -1178,7 +1118,6 @@ template void rasterize_phong<Sink::Transparent>(
     const Texture *,
     const Texture *,
     const Texture *,
-    const ShadowMap *,
     int,
     int,
     const Texture *,
