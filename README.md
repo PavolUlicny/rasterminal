@@ -227,7 +227,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | OBJ / MTL | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
 | PLY | ASCII and binary (LE/BE); vertex and face colors |
 | STL | ASCII and binary |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
+| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
 
 ## Requirements
 
@@ -249,16 +249,16 @@ Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 
 | Library | Version | License | Use |
 | --- | --- | --- | --- |
-| [cgltf](https://github.com/jkuhlmann/cgltf) | 1.15 | MIT | glTF / GLB parsing |
-| [stb_image](https://github.com/nothings/stb) | 2.30 | MIT / Unlicense | Image loading |
-| [stl_reader](https://github.com/sreiter/stl_reader) | 2.0 | BSD-2 | STL parsing |
-| [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | 2.0.0rc13 | MIT | OBJ / MTL parsing |
+| [cgltf](https://github.com/jkuhlmann/cgltf) | master (post-v1.15) | MIT | glTF / GLB parsing |
+| [stb_image](https://github.com/nothings/stb) | v2.30 | MIT / Unlicense | Image loading |
+| [stl_reader](https://github.com/sreiter/stl_reader) | v2.0 | BSD-2 | STL parsing |
+| [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader) | v2.0.0rc13 | MIT | OBJ / MTL parsing |
 | [tinyply](https://github.com/ddiakopoulos/tinyply) | 3.0 | Public domain | PLY parsing |
-| [meshoptimizer](https://github.com/zeux/meshoptimizer) | 1.1 | MIT | Vertex cache / overdraw / fetch optimization |
+| [meshoptimizer](https://github.com/zeux/meshoptimizer) | v1.1 | MIT | Vertex cache / overdraw / fetch optimization |
 | [draco](https://github.com/google/draco) | 1.5.7 | Apache-2.0 | Draco mesh decompression (`KHR_draco_mesh_compression`) |
 | [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_1_0r | Apache-2.0 | KTX2 / Basis Universal texture transcoding (`KHR_texture_basisu`) |
-| [zstd](https://github.com/facebook/zstd) | bundled w/ basis_universal | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
-| [libwebp](https://chromium.googlesource.com/webm/libwebp) | 1.6.0 | BSD-3 + PATENTS | WebP texture decoding (`EXT_texture_webp`) |
+| [zstd](https://github.com/facebook/zstd) | bundled w/ basis_universal v2_1_0r | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
+| [libwebp](https://chromium.googlesource.com/webm/libwebp) | v1.6.0 | BSD-3 + PATENTS | WebP texture decoding (`EXT_texture_webp`) |
 
 ## License
 

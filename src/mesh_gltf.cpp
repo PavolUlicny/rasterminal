@@ -175,7 +175,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         return false;
     }
 
-    // EXT_meshopt_compression: cgltf parses the extension but decodes nothing.
+    // EXT_meshopt_compression / KHR_meshopt_compression: cgltf parses both (same JSON
+    // shape, same fields) but decodes nothing.
     // Decompress each compressed buffer view in place: allocate with cgltf's own
     // allocator, decode into it, then assign view->data. cgltf_buffer_view_data()
     // then transparently returns the decoded bytes to every accessor read, the
@@ -243,7 +244,8 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         // unrecognized filter string to filter_none (zero-init default), so the
         // none/default arm also covers a hypothetical future filter parsed by an
         // older cgltf — it would skip filtering rather than fail. Harmless today:
-        // the spec defines exactly these three filters and cgltf knows all of them.
+        // the KHR_meshopt_compression spec defines exactly these four filters and
+        // cgltf knows all of them.
         switch (mc.filter)
         {
         case cgltf_meshopt_compression_filter_octahedral:
@@ -254,6 +256,9 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             break;
         case cgltf_meshopt_compression_filter_exponential:
             meshopt_decodeFilterExp(dst, mc.count, mc.stride);
+            break;
+        case cgltf_meshopt_compression_filter_color:
+            meshopt_decodeFilterColor(dst, mc.count, mc.stride);
             break;
         case cgltf_meshopt_compression_filter_none:
         default:
@@ -703,7 +708,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                         return;
                     }
 
-                    // cgltf_buffer_view_data handles EXT_meshopt_compression / sparse / offset
+                    // cgltf_buffer_view_data handles meshopt-compression overrides / sparse / offset
                     // indirection and can return null when the underlying buffer data was never
                     // populated; gate at the cgltf boundary so a null pointer can't reach Draco's
                     // DecoderBuffer::Init (which would happily read it as a valid range).
@@ -1193,7 +1198,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         }
         if (img->buffer_view)
         {
-            // cgltf_buffer_view_data honours EXT_meshopt_compression overrides; returns
+            // cgltf_buffer_view_data honours meshopt-compression overrides; returns
             // null when the backing external buffer was never loaded.
             const uint8_t *ptr = cgltf_buffer_view_data(img->buffer_view);
             if (!ptr)

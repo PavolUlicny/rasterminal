@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The shadow map and the `--no-shadow` flag. A single auto-fit model with no ground plane has nothing to receive a cast shadow, so the feature added load and per-frame cost without value to a model viewer. Lit surfaces now use all configured lights uniformly; baked ambient occlusion still provides crevice darkening. The default look is slightly flatter than before. Passing `--no-shadow` is now an unknown-flag error.
 
+### Fixed
+
+- glTF models using the ratified `KHR_meshopt_compression` extension (as opposed to the older draft `EXT_meshopt_compression` name) failed to load any real geometry, since the vendored `cgltf` only recognized the draft name. Refreshed `cgltf` to a current commit that parses both, and added decoding for the extension's `COLOR` vertex filter.
+- glTF sparse accessors (`POSITION`/`NORMAL`/`TEXCOORD`/indices using the `accessor.sparse` override) previously read as zero/empty instead of resolving the sparse data, a latent bug in the same `cgltf` refresh above.
+
 ## [v0.1.0-alpha.1] - 2026-06-27
 
 First public prerelease.

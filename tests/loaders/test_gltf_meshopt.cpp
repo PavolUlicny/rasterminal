@@ -79,7 +79,7 @@ namespace
         size_t stride = 0;
         size_t count = 0;
         const char *mode = "ATTRIBUTES"; // ATTRIBUTES / TRIANGLES / INDICES
-        const char *filter = "NONE";     // NONE / OCTAHEDRAL / QUATERNION / EXPONENTIAL
+        const char *filter = "NONE";     // NONE / OCTAHEDRAL / QUATERNION / EXPONENTIAL / COLOR
         bool meshopt = true;
         bool is_attr = true; // attribute views carry a top-level byteStride; index views don't
     };
@@ -94,7 +94,8 @@ namespace
         const std::vector<View> &vs,
         const std::string &node_json,
         const std::string &meshes_json,
-        const std::string &accessors_json
+        const std::string &accessors_json,
+        const char *ext_name = "EXT_meshopt_compression"
     )
     {
         auto pad4 = [](std::string &s)
@@ -144,9 +145,9 @@ namespace
             }
             if (v.meshopt)
             {
-                bvs += R"(,"extensions":{"EXT_meshopt_compression":{"buffer":0,"byteOffset":)" + S(comp_off[i]) +
-                       R"(,"byteLength":)" + S(v.bytes.size()) + R"(,"byteStride":)" + S(v.stride) + R"(,"count":)" +
-                       S(v.count) + R"(,"mode":")" + v.mode + R"(","filter":")" + v.filter + R"("}})";
+                bvs += R"(,"extensions":{")" + std::string(ext_name) + R"(":{"buffer":0,"byteOffset":)" +
+                       S(comp_off[i]) + R"(,"byteLength":)" + S(v.bytes.size()) + R"(,"byteStride":)" + S(v.stride) +
+                       R"(,"count":)" + S(v.count) + R"(,"mode":")" + v.mode + R"(","filter":")" + v.filter + R"("}})";
             }
             bvs += "}";
             if (i + 1 < vs.size())
@@ -157,8 +158,8 @@ namespace
 
         std::string json;
         json += R"({"asset":{"version":"2.0"},)";
-        json += R"("extensionsUsed":["EXT_meshopt_compression"],)";
-        json += R"("extensionsRequired":["EXT_meshopt_compression"],)";
+        json += R"("extensionsUsed":[")" + std::string(ext_name) + R"("],)";
+        json += R"("extensionsRequired":[")" + std::string(ext_name) + R"("],)";
         json += R"("scene":0,"scenes":[{"nodes":[0]}],"nodes":[{)" + node_json + "}],";
         json += R"("meshes":)" + meshes_json + ",";
         json += R"("accessors":[)" + accessors_json + "],";
@@ -186,6 +187,7 @@ namespace
         std::string vtx_accessors;
         size_t index_acc_slot = 0;
         std::string node_json = R"("mesh":0)";
+        const char *ext_name = "EXT_meshopt_compression";
     };
 
     std::string make_glb(const Desc &d)
@@ -199,7 +201,7 @@ namespace
         const std::string accessors = d.vtx_accessors + R"(,{"bufferView":)" + std::to_string(index_bv) +
                                       R"(,"componentType":)" + std::to_string(d.idx_component_type) + R"(,"count":)" +
                                       std::to_string(d.idx_count) + R"(,"type":"SCALAR"})";
-        return assemble_views(vs, d.node_json, meshes, accessors);
+        return assemble_views(vs, d.node_json, meshes, accessors, d.ext_name);
     }
 
     // A unit quad in the z=0 plane: 4 distinct positions, 2 triangles.
@@ -550,6 +552,77 @@ TEST(gltf_meshopt, truncated_stream_fails_load)
     const std::string glb = make_glb(d);
     TmpFile f(tmp_path("rast_meshopt_trunc.glb"), glb.data(), glb.size());
     assert_rejects(f.path);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  KHR_meshopt_compression: the ratified extension name, same JSON shape as
+//  EXT_meshopt_compression. cgltf must parse it into the same fields and the
+//  loader's existing decode path must run unmodified.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(gltf_meshopt, khr_extension_name)
+{
+    Desc d;
+    d.vtx_comp = encode_vertices(quad_pos, 4, 12);
+    d.vtx_stride = 12;
+    d.vtx_count = 4;
+    d.idx_comp = encode_index_triangles(quad_idx, 6, 4);
+    d.idx_stride = 2;
+    d.idx_count = 6;
+    d.attributes = R"({"POSITION":0})";
+    d.vtx_accessors = quad_pos_accessor;
+    d.index_acc_slot = 1;
+    d.ext_name = "KHR_meshopt_compression";
+
+    const std::string glb = make_glb(d);
+    TmpFile f(tmp_path("rast_meshopt_khr.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), 4u);
+    ASSERT_EQ(m.triangles.size(), 2u);
+    ASSERT_TRUE(has_all_quad_positions(m));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  COLOR filter (KHR_meshopt_compression only): YCoCg(+A) vertex color decode.
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(gltf_meshopt, filter_color_vertex_colors)
+{
+    // COLOR decodes RGBA into YCoCg(+A) space, K-bit per channel (here K=8, stride 4).
+    // POSITION is a plain unfiltered view (bufferView 0); COLOR_0 is a color-filtered
+    // view (bufferView 1) read as a normalized UBYTE VEC4. All vertices encode opaque
+    // red; recovered within YCoCg-quantization tolerance.
+    std::vector<unsigned char> col(static_cast<size_t>(4) * 4);
+    float colors4[4 * 4];
+    for (int i = 0; i < 4; i++)
+    {
+        colors4[(i * 4) + 0] = 1.0f;
+        colors4[(i * 4) + 1] = 0.0f;
+        colors4[(i * 4) + 2] = 0.0f;
+        colors4[(i * 4) + 3] = 1.0f;
+    }
+    meshopt_encodeFilterColor(col.data(), 4, 4, 8, colors4);
+
+    std::vector<View> vs;
+    vs.push_back({ encode_vertices(quad_pos, 4, 12), 12, 4, "ATTRIBUTES", "NONE", true, true });
+    vs.push_back({ encode_vertices(col.data(), 4, 4), 4, 4, "ATTRIBUTES", "COLOR", true, true });
+    vs.push_back({ encode_index_triangles(quad_idx, 6, 4), 2, 6, "TRIANGLES", "NONE", true, false });
+    const std::string meshes = R"([{"primitives":[{"attributes":{"POSITION":0,"COLOR_0":1},"indices":2,"mode":4}]}])";
+    const std::string accessors = std::string(quad_pos_accessor) +
+                                  R"(,{"bufferView":1,"componentType":5121,"normalized":true,"count":4,"type":"VEC4"},)"
+                                  R"({"bufferView":2,"componentType":5123,"count":6,"type":"SCALAR"})";
+    const std::string glb = assemble_views(vs, R"("mesh":0)", meshes, accessors, "KHR_meshopt_compression");
+
+    TmpFile f(tmp_path("rast_meshopt_color.glb"), glb.data(), glb.size());
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), 4u);
+    ASSERT_EQ(m.vertex_colors.size(), 4u);
+    for (const auto &c : m.vertex_colors)
+    {
+        ASSERT_NEAR(c.x, 1.0f, 0.05f);
+        ASSERT_NEAR(c.y, 0.0f, 0.05f);
+        ASSERT_NEAR(c.z, 0.0f, 0.05f);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

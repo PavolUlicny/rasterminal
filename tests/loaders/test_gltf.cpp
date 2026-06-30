@@ -1196,3 +1196,86 @@ TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
     const vec3 face_n = cross(b - a, c - a);
     ASSERT_TRUE(face_n.z > 0.0f);
 }
+
+// ─── Group Z: sparse accessor resolution ───────────────────────────────────────
+
+TEST(gltf_valid, sparse_accessor_resolves_positions)
+{
+    // POSITION has no base bufferView (an all-zero implicit base per spec) and a
+    // sparse override replacing all 4 of its indices with the actual quad positions.
+    // Exercises cgltf_accessor_read_float's sparse-resolution path: before the cgltf
+    // refresh, a sparse accessor's read silently returned 0 instead of resolving the
+    // override, so every vertex would have landed at the origin.
+    std::string bin;
+    // Sparse indices: UNSIGNED_BYTE 0,1,2,3 (bufferView 0, 4 bytes).
+    bin.push_back(static_cast<char>(0));
+    bin.push_back(static_cast<char>(1));
+    bin.push_back(static_cast<char>(2));
+    bin.push_back(static_cast<char>(3));
+    // Sparse values: the quad positions (bufferView 1, 48 bytes, tightly packed).
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    emit_f32_le(bin, -1.0f);
+    emit_f32_le(bin, 1.0f);
+    emit_f32_le(bin, 0.0f);
+    // Triangle indices: 0,1,2,0,2,3 as UNSIGNED_SHORT (bufferView 2, 12 bytes).
+    emit_u16_le(bin, 0);
+    emit_u16_le(bin, 1);
+    emit_u16_le(bin, 2);
+    emit_u16_le(bin, 0);
+    emit_u16_le(bin, 2);
+    emit_u16_le(bin, 3);
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"indices\":1,\"mode\":4}]}],"
+        "\"accessors\":["
+        "{\"componentType\":5126,\"count\":4,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0],"
+        "\"sparse\":{\"count\":4,"
+        "\"indices\":{\"bufferView\":0,\"componentType\":5121},"
+        "\"values\":{\"bufferView\":1}}},"
+        "{\"bufferView\":2,\"componentType\":5123,\"count\":6,\"type\":\"SCALAR\"}"
+        "],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":4},"
+        "{\"buffer\":0,\"byteOffset\":4,\"byteLength\":48},"
+        "{\"buffer\":0,\"byteOffset\":52,\"byteLength\":12}"
+        "],"
+        "\"buffers\":[{\"byteLength\":64}]}";
+
+    TmpFile f(tmp_path("rast_sparse.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(4));
+    ASSERT_EQ(m.triangles.size(), static_cast<size_t>(2));
+
+    const float expect[4][3] = {
+        { -1.0f, -1.0f, 0.0f },
+        { 1.0f, -1.0f, 0.0f },
+        { 1.0f, 1.0f, 0.0f },
+        { -1.0f, 1.0f, 0.0f },
+    };
+    bool found[4] = { false, false, false, false };
+    for (const auto &v : m.vertices)
+    {
+        for (int c = 0; c < 4; c++)
+        {
+            if (std::abs(v.pos.x - expect[c][0]) < 1e-5f && std::abs(v.pos.y - expect[c][1]) < 1e-5f &&
+                std::abs(v.pos.z - expect[c][2]) < 1e-5f)
+            {
+                found[c] = true;
+            }
+        }
+    }
+    for (bool c : found)
+    {
+        ASSERT_TRUE(c);
+    }
+}
