@@ -67,7 +67,7 @@ More test assets live in the [Khronos glTF Sample Assets](https://github.com/Khr
 
 rasterminal implements the same rasterization pipeline a GPU runs, entirely in CPU code. Each frame, every triangle is transformed from model space through the view and projection matrices into clip space. A world-space backface test rejects roughly half of all triangles before any projection work, with double-sided materials opting out of the test and flipping their normals instead. Triangles that cross the near plane are clipped so nothing renders behind the camera, and the remainder are conservatively rejected against the view frustum.
 
-Surviving triangles go through the perspective divide and are scan-converted into fragments, with color, texture coordinates, world position, and normals all interpolated in a perspective-correct way across the triangle. A z-buffer keeps the nearest fragment at each pixel. Shading runs per fragment: flat shading evaluates Blinn-Phong lighting once per face, Phong shading evaluates it per pixel, and both are modulated by texture sampling, baked ambient occlusion, and a hard shadow map rendered from the key light.
+Surviving triangles go through the perspective divide and are scan-converted into fragments, with color, texture coordinates, world position, and normals all interpolated in a perspective-correct way across the triangle. A z-buffer keeps the nearest fragment at each pixel. Shading runs per fragment: flat shading evaluates Blinn-Phong lighting once per face, Phong shading evaluates it per pixel, and both are modulated by texture sampling and baked ambient occlusion.
 
 Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha) take a separate path. Their fragments are gathered into a per-pixel list, sorted back to front, and composited over the finished opaque image, so the result is correct even where transparent geometry interpenetrates or is double-sided. Fully opaque models skip this path entirely.
 
@@ -195,7 +195,6 @@ rasterminal [options] <model>
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
-| `--no-shadow` | none | `on` | Disable shadow map (faster startup on large meshes) |
 | `--no-ao` | none | `on` | Disable baked ambient occlusion |
 | `--no-hud` | none | `shown` | Hide the status bar |
 | `--help` | `-h` | none | Print usage and exit |
