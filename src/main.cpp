@@ -282,7 +282,9 @@ int main(int argc, char *argv[])
     renderer.mode = static_cast<ShadingMode>(args.shading);
 
     const bool has_textures = !mesh.textures.empty();
-    float fps_smooth = -1.0f; // exponential moving average; -1 = uninitialised
+    float fps_smooth = -1.0f;    // per-frame EMA of the framerate; -1 = uninitialised
+    float fps_display = -1.0f;   // value shown in the HUD, latched from fps_smooth; -1 = none yet
+    float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
     bool spinning = args.spin;
     bool culling = args.cull;
     bool texturing = args.texture;
@@ -291,10 +293,12 @@ int main(int argc, char *argv[])
     int bg_mode = args.bg;               // 0=black, 1=gray, 2=white
     int lighting_mode = args.lighting;   // 0=dual, 1=single, 2=flat ambient
     int wf_color = args.wireframe_color; // 0=white..5=magenta
-    const float spin_speed = 0.8f;       // radians/sec
+    constexpr float spin_speed = 0.8f;   // radians/sec
+    constexpr float FPS_LATCH = 0.1f;    // seconds between HUD fps refreshes (~10 Hz)
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
+    bool first_frame = true; // frame 1's dt is only the setup gap, not a real frame
     platform::Key held_cam_key = platform::Key::None;
     clock::time_point held_cam_key_tp = clock::now();
 
@@ -308,13 +312,25 @@ int main(int argc, char *argv[])
         // Cap dt used for movement/spin so a stall doesn't cause a huge jump.
         const float dt = (raw_dt > 0.1f) ? 0.1f : raw_dt;
 
-        // Use raw_dt for fps so the 0.1s cap doesn't corrupt slow-model readings.
-        // Skip the near-zero first frame (prev was just set); seed directly on
-        // the second frame so the display is accurate from the start.
-        if (raw_dt > 0.001f)
+        // Smooth the framerate with a per-frame EMA. Skip frame 1: its raw_dt measures
+        // only the trivial setup between prev's init and the first sample, so it would
+        // seed fps_smooth from an unrepresentative interval. From frame 2 on, raw_dt
+        // spans a full render+present. Uses raw_dt (not the movement-capped dt) so
+        // slow-model readings stay accurate; the > 0 guard avoids a divide by an
+        // exact-zero dt (two clock reads in the same tick).
+        if (!first_frame && raw_dt > 0.0f)
         {
             const float fps = 1.0f / raw_dt;
             fps_smooth = (fps_smooth < 0.0f) ? fps : (fps_smooth * 0.9f) + (fps * 0.1f);
+        }
+        first_frame = false;
+        // Latch the HUD value at a fixed ~10 Hz so the digits stay readable instead of
+        // blurring at very high frame rates; seed immediately once fps_smooth is valid.
+        fps_latch_time += raw_dt;
+        if (fps_latch_time >= FPS_LATCH || (fps_display < 0.0f && fps_smooth >= 0.0f))
+        {
+            fps_display = fps_smooth;
+            fps_latch_time = 0.0f;
         }
 
         // ── Input ─────────────────────────────────────────────────────────
@@ -493,24 +509,23 @@ int main(int argc, char *argv[])
             }
 
             const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
+            const int fps_shown = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
             char hud[256];
             if (renderer.mode == ShadingMode::Wireframe)
             {
                 std::snprintf(
                     hud, sizeof(hud),
                     "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
-                    shading_mode_name(renderer.mode), (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth),
-                    model_name.c_str(), spinning ? "spin ON" : "spin OFF", lighting_str, bg_str,
-                    WIREFRAME_NAMES[wf_color], culling ? "ON" : "OFF", tex_suffix
+                    shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
+                    lighting_str, bg_str, WIREFRAME_NAMES[wf_color], culling ? "ON" : "OFF", tex_suffix
                 );
             }
             else
             {
                 std::snprintf(
                     hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
-                    shading_mode_name(renderer.mode), (fps_smooth < 0.0f) ? 0 : static_cast<int>(fps_smooth),
-                    model_name.c_str(), spinning ? "spin ON" : "spin OFF", lighting_str, bg_str, culling ? "ON" : "OFF",
-                    tex_suffix
+                    shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
+                    lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix
                 );
             }
             fb.set_hud(hud);

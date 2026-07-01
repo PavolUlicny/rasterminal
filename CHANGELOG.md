@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The interactive HUD FPS counter read `0 fps` at startup (until the model was moved) and updated erratically, reading too low, at uncapped or very high frame caps. It discarded every frame faster than 1 ms, so on light models where nearly every frame is sub-millisecond the reading was never seeded. The smoothing threshold is fixed so sub-millisecond frames now count, and the displayed value is refreshed at a fixed ~10 Hz so it stays readable at high frame rates.
 - glTF models using the ratified `KHR_meshopt_compression` extension (as opposed to the older draft `EXT_meshopt_compression` name) failed to load any real geometry, since the vendored `cgltf` only recognized the draft name. Refreshed `cgltf` to a current commit that parses both, and added decoding for the extension's `COLOR` vertex filter.
 - glTF sparse accessors (`POSITION`/`NORMAL`/`TEXCOORD`/indices using the `accessor.sparse` override) previously read as zero/empty instead of resolving the sparse data, a latent bug in the same `cgltf` refresh above.
 
