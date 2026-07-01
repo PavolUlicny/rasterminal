@@ -17,12 +17,8 @@ rasterminal \- render a 3D model in the terminal
 .I model
 .SH DESCRIPTION
 .B rasterminal
-is a cross-platform 3D model viewer that renders entirely in the terminal,
-implementing the full GPU rasterization pipeline on the CPU
-(model/view/projection transforms, perspective-correct triangle rasterization,
-z-buffer depth testing, backface culling, Blinn-Phong lighting, and
-alpha-blended transparency). The result is drawn with unicode half-block
-characters and 24-bit ANSI color, two vertical pixels per terminal cell.
+is a cross-platform 3D model viewer that renders entirely in the terminal
+using unicode block characters and true-color ANSI escapes.
 .PP
 The
 .I model
