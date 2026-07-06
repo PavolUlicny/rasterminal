@@ -6,6 +6,7 @@
 #ifdef _WIN32
 #define NOMINMAX
 #include <conio.h>
+#include <io.h>
 #include <windows.h>
 #else
 #include <poll.h>
@@ -28,8 +29,9 @@ namespace platform
         rows = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
 #else
         struct winsize ws = {};
-        // Try all three standard fds; depending on how the process was launched,
-        // any subset may be attached to a terminal.
+        // The primary ioctl can fail or report ws_col==0 (some terminals and
+        // multiplexers) even on a real tty; fall back across the other fds, then
+        // to a sane default below.
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
         {
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
@@ -40,6 +42,34 @@ namespace platform
         }
         cols = ws.ws_col > 0 ? ws.ws_col : 80; // sane fallback
         rows = ws.ws_row > 0 ? ws.ws_row : 24;
+#endif
+    }
+
+    // ─── tty detection ───────────────────────────────────────────────────────────
+
+    // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal.
+    // Windows probes the console API rather than _isatty: _isatty is true for ANY
+    // character device (NUL, COM ports), while GetConsoleMode succeeds only on a
+    // real console handle. A mintty/MSYS pty is a named pipe, not a console, so it
+    // is rejected too; that is intentional: interactive input (_kbhit/_getch)
+    // cannot work on such a pty either, so rejecting it up front is fail-loud
+    // rather than silently broken. Windows Terminal / conhost / winpty all pass.
+    // _get_osfhandle (not GetStdHandle) so is_tty works on any CRT fd, not only a
+    // std stream. Callers pass std fds (0/1) or freshly opened valid fds: for a
+    // std fd on a no-console launch _get_osfhandle yields the -2 sentinel and
+    // GetConsoleMode fails cleanly to false. (A closed/never-opened fd would trip
+    // the CRT invalid-parameter handler instead, but no caller passes one.)
+    // Accepted limitation: GetConsoleMode needs GENERIC_READ on the handle, so a
+    // console std handle a launcher opened write-only would misreport as false.
+    // Every normal shell (cmd/PowerShell/Windows Terminal/conhost) hands us
+    // read+write console handles, so this does not arise in practice.
+    inline bool is_tty(int fd)
+    {
+#ifdef _WIN32
+        DWORD mode = 0;
+        return GetConsoleMode(reinterpret_cast<HANDLE>(_get_osfhandle(fd)), &mode) != 0;
+#else
+        return isatty(fd) != 0;
 #endif
     }
 

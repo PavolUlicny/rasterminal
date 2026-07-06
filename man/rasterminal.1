@@ -25,6 +25,14 @@ The
 operand is required. A lone
 .B \-
 is treated as a positional operand, not stdin.
+.PP
+Interactive rendering requires that both standard input and standard output be
+terminals; if either is piped or redirected,
+.B rasterminal
+exits with an error rather than writing escape sequences into the stream. The
+headless
+.B \-\-bench
+mode is exempt and runs with redirected streams.
 .SH SUPPORTED FORMATS
 .TP
 .B .obj
@@ -223,8 +231,9 @@ Success (including
 .BR \-\-help " and " \-\-version ).
 .TP
 .B 1
-Usage error (unknown flag, missing or invalid value, unexpected argument) or
-model load failure.
+Usage error (unknown flag, missing or invalid value, unexpected argument),
+model load failure, or standard input/output is not a terminal (outside
+.BR \-\-bench ).
 .SH EXAMPLES
 .TP
 Render a model with default settings:

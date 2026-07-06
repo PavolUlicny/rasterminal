@@ -87,6 +87,8 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
     fill_cleared(0u);
     if (!m_headless)
     {
+        // Precondition: stdout is a terminal (main.cpp enforces the tty check
+        // before constructing us); this path and present() write ANSI to it.
         // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
         m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
         std::fputs("\033[?1049h", stdout); // enter alternate screen buffer

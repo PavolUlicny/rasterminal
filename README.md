@@ -237,6 +237,8 @@ Any terminal with:
 - 24-bit (truecolor) ANSI color
 - Mouse reporting (for drag-to-orbit and scroll-to-zoom)
 
+Interactive rendering also requires that both standard input and standard output be the terminal: if either is piped or redirected, rasterminal exits with an error instead of emitting escape sequences into the stream. The headless `--bench` mode is exempt.
+
 Works well with: iTerm2, kitty, WezTerm, Windows Terminal, and most modern Linux terminals.
 
 ## Project status

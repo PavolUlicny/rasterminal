@@ -219,8 +219,29 @@ int main(int argc, char *argv[])
     }
     const ParsedArgs &args = parsed.args;
 
-    const int n_threads = resolve_thread_count(args.n_threads);
     const bool bench_mode = args.bench > 0;
+
+    // Interactive rendering writes the ANSI frame stream to stdout and reads raw
+    // input from stdin, so both must be terminals; a piped/redirected fd is failed
+    // loud before the load rather than fed escape soup (or left in a dead input
+    // loop). --bench is headless and exempt. Rejecting the display-only stdin case
+    // (e.g. `--spin < /dev/null`) is deliberate: without working input the session
+    // can only be killed by signal, and raw-mode setup silently fails anyway.
+    if (!bench_mode)
+    {
+        if (!platform::is_tty(1))
+        {
+            std::fprintf(stderr, "%s: stdout is not a terminal\n", program_name(argv[0]));
+            return 1;
+        }
+        if (!platform::is_tty(0))
+        {
+            std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
+            return 1;
+        }
+    }
+
+    const int n_threads = resolve_thread_count(args.n_threads);
     Mesh mesh;
     const auto load_t0 = std::chrono::steady_clock::now();
     if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
