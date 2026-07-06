@@ -222,11 +222,7 @@ namespace
         {
             ASSERT_TRUE(tmp != nullptr);
             std::fflush(stdout);
-#ifdef _WIN32
-            test_dup2(_fileno(tmp), TEST_STDOUT);
-#else
-            test_dup2(fileno(tmp), TEST_STDOUT);
-#endif
+            test_dup2(test_fileno(tmp), TEST_STDOUT);
         }
 
         ~CaptureStdout()

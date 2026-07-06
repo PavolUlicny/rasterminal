@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-// ─── Portable fd helpers (used by test_args.cpp, test_rasterize.cpp) ─────────
+// ─── Portable fd helpers (used across several test files for stdio capture) ──
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>
@@ -36,6 +36,10 @@ static inline void test_close(int fd)
 static inline int test_devnull()
 {
     return _open("nul", _O_WRONLY);
+}
+static inline int test_fileno(std::FILE *f)
+{
+    return _fileno(f);
 }
 static const int TEST_STDOUT = 1;
 static const int TEST_STDERR = 2;
@@ -57,6 +61,10 @@ static inline void test_close(int fd)
 static inline int test_devnull()
 {
     return open("/dev/null", O_WRONLY);
+}
+static inline int test_fileno(std::FILE *f)
+{
+    return fileno(f);
 }
 static const int TEST_STDOUT = STDOUT_FILENO;
 static const int TEST_STDERR = STDERR_FILENO;

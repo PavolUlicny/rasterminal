@@ -265,6 +265,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp
+    tests/test_platform.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
