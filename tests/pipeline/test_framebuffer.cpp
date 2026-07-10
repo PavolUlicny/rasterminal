@@ -2,6 +2,10 @@
 #include "tests/rasterize_test_util.h"
 #include "src/framebuffer.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <vector>
+
 // ─── get_pixel / depth_at bounds ──────────────────────────────────────────────
 
 TEST(framebuffer, get_pixel_oob_returns_default)
@@ -546,4 +550,261 @@ TEST(tonemap, vec3_applies_per_channel)
     ASSERT_NEAR(out.x, 0.5f, 1e-6f);      // below knee: unchanged
     ASSERT_NEAR(out.y, 0.889636f, 1e-4f); // 1.0 rolls off
     ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
+}
+
+// ─── quantize_256 (closed-form xterm-256 nearest) ─────────────────────────────
+// The RGB->palette-index map used by present() in ColorMode::Palette256. Cube 16..231,
+// grey ramp 232..255; never returns a 0..15 system colour.
+
+TEST(framebuffer, quantize_256_corners)
+{
+    // Pure black/white live in the cube (16 / 231), not on the grey ramp (which is 8..238).
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 0, 0 })), 16);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 255, 255, 255 })), 231);
+}
+
+TEST(framebuffer, quantize_256_cube_exact)
+{
+    // Colours that land exactly on cube levels {0,95,135,175,215,255} pick their cube cell.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 95, 135, 175 })), 67); // 16 + 36*1 + 6*2 + 3
+    ASSERT_EQ(static_cast<int>(quantize_256({ 255, 0, 0 })), 196);   // 16 + 36*5
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 255, 0 })), 46);    // 16 + 6*5
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 0, 255 })), 21);    // 16 + 5
+}
+
+TEST(framebuffer, quantize_256_grey_ramp_exact)
+{
+    // Exact ramp values (8 + 10*k) pick index 232 + k; 247 also pins the HUD fg constant.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 8, 8, 8 })), 232);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 18, 18, 18 })), 233);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 238, 238, 238 })), 255);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 160, 160, 160 })), 247);
+}
+
+TEST(framebuffer, quantize_256_grey_beats_cube)
+{
+    // A near-grey colour is closer to the ramp than to any cube cell.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 130, 128, 126 })), 244);
+}
+
+TEST(framebuffer, quantize_256_cube_beats_grey)
+{
+    // A saturated colour is closer to a cube cell than to the ramp.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 200, 50, 50 })), 167);
+}
+
+TEST(framebuffer, quantize_256_never_system_color)
+{
+    // The result must always be an addressable, theme-independent palette entry (16..255),
+    // never a 0..15 system colour. Sweep the RGB cube plus the exact cube-level boundaries.
+    for (int r = 0; r <= 255; r += 15)
+    {
+        for (int g = 0; g <= 255; g += 15)
+        {
+            for (int b = 0; b <= 255; b += 15)
+            {
+                const int idx = static_cast<int>(quantize_256({ static_cast<uint8_t>(r), static_cast<uint8_t>(g),
+                                                                static_cast<uint8_t>(b) }));
+                ASSERT_TRUE(idx >= 16 && idx <= 255);
+            }
+        }
+    }
+    for (int v : { 47, 48, 114, 115, 154, 155, 194, 195, 234, 235 })
+    {
+        const auto c = static_cast<uint8_t>(v);
+        const int idx = static_cast<int>(quantize_256({ c, c, c }));
+        ASSERT_TRUE(idx >= 16 && idx <= 255);
+    }
+}
+
+TEST(framebuffer, quantize_256_is_nearest_palette_entry)
+{
+    // Ground-truth check: build the real 240-entry xterm-256 palette (cube 16..231, grey 232..255)
+    // and assert quantize_256 always returns an entry achieving the true minimum squared RGB
+    // distance. Tie-agnostic (only that the chosen entry is A nearest), so it holds at the exact
+    // midpoints where two entries tie, validating the closed form against brute force.
+    Color pal[256] = {};
+    for (int i = 16; i <= 231; ++i)
+    {
+        const int j = i - 16;
+        auto val = [](int l) { return l == 0 ? 0 : 55 + (40 * l); };
+        pal[i] = Color{ static_cast<uint8_t>(val(j / 36)), static_cast<uint8_t>(val((j / 6) % 6)),
+                        static_cast<uint8_t>(val(j % 6)) };
+    }
+    for (int k = 0; k < 24; ++k)
+    {
+        const auto v = static_cast<uint8_t>(8 + (10 * k));
+        pal[232 + k] = Color{ v, v, v };
+    }
+
+    auto sq = [](Color a, Color b)
+    {
+        const int dr = static_cast<int>(a.r) - static_cast<int>(b.r);
+        const int dg = static_cast<int>(a.g) - static_cast<int>(b.g);
+        const int db = static_cast<int>(a.b) - static_cast<int>(b.b);
+        return (dr * dr) + (dg * dg) + (db * db);
+    };
+
+    std::vector<int> samples;
+    for (int v = 0; v <= 255; v += 12)
+    {
+        samples.push_back(v);
+    }
+    // Cube-level boundary values not already hit by the step-12 loop (48 is a multiple of 12, so
+    // omitted; 255 exceeds the loop's last step of 252), plus 255. Each exercises a rounding midpoint.
+    for (int v : { 47, 114, 115, 154, 155, 194, 195, 234, 235, 255 })
+    {
+        samples.push_back(v);
+    }
+
+    for (int r : samples)
+    {
+        for (int g : samples)
+        {
+            for (int b : samples)
+            {
+                const Color c{ static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b) };
+                const int idx = static_cast<int>(quantize_256(c));
+                ASSERT_TRUE(idx >= 16 && idx <= 255);
+                int best = 1 << 30;
+                for (int i = 16; i <= 255; ++i)
+                {
+                    best = std::min(best, sq(pal[i], c));
+                }
+                ASSERT_EQ(sq(pal[idx], c), best);
+            }
+        }
+    }
+}
+
+// ─── 256-colour present() emission ────────────────────────────────────────────
+
+TEST(framebuffer, present_256_emits_palette_fg_and_bg)
+{
+    // top != bot in 256 mode emits a combined 38;5;fg;48;5;bg sequence and never any 24-bit SGR.
+    Framebuffer fb(1, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 40, 40 }); // top; bottom stays black
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("38;5;") != std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") != std::string::npos);
+    ASSERT_TRUE(out.find("38;2") == std::string::npos);
+    ASSERT_TRUE(out.find("48;2") == std::string::npos);
+}
+
+TEST(framebuffer, present_256_top_eq_bot_suppresses_fg)
+{
+    // top == bot collapses to a bg-only SGR + space; no fg SGR and no half-block are emitted.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;5;") != std::string::npos);        // bg emitted
+    ASSERT_TRUE(out.find("38;5;") == std::string::npos);        // fg suppressed
+    ASSERT_TRUE(out.find("\xe2\x96\x80") == std::string::npos); // no ▀ half-block: cells are spaces
+}
+
+TEST(framebuffer, present_256_second_identical_cell_suppresses_bg)
+{
+    // Two adjacent top==bot cells with the same index: the bg SGR for that index is emitted once.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    char sgr[16];
+    std::snprintf(sgr, sizeof(sgr), "\033[48;5;%dm", static_cast<int>(quantize_256({ 100, 150, 200 })));
+    const size_t first = out.find(sgr);
+    ASSERT_TRUE(first != std::string::npos);                    // emitted once
+    ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for the second cell
+}
+
+TEST(framebuffer, present_truecolor_default_still_24bit)
+{
+    // The default ctor mode is TrueColor: 24-bit SGR, never a palette index. Locks the default.
+    Framebuffer fb(2, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;2;") != std::string::npos);
+    ASSERT_TRUE(out.find("38;5;") == std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") == std::string::npos);
+}
+
+// ─── 256-colour index coalescing / skip path ──────────────────────────────────
+
+TEST(framebuffer, present_256_distinct_rgb_same_index_is_clean)
+{
+    // {16,16,16} and {20,20,20} both quantize to 233, so m_prev_color (which stores indices in
+    // 256 mode) reads the second frame as entirely clean: no new cursor positioning is emitted.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 16, 16, 16 })), 233);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 20, 20, 20 })), 233);
+    Framebuffer fb(4, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 16, 16, 16 });
+    fb.present(); // full redraw emits \033[1;1H once
+    fb.clear({ 20, 20, 20 });
+    fb.present(); // entirely clean: no cursor pos
+    const std::string out = cap.read();
+    const size_t first = out.find("\033[1;1H");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(out.find("\033[1;1H", first + 1) == std::string::npos);
+}
+
+TEST(framebuffer, present_256_single_skip_emits_cursor_advance)
+{
+    // The incremental skip scan must re-quantize/compare correctly in 256 mode: a clean cell
+    // between two dirty ones yields a single-step \033[C advance.
+    Framebuffer fb(4, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.present(); // full redraw establishes prev (all black -> 16)
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty
+    (void)fb.commit_pixel(2, 0, 0.5f, { 0, 200, 0 }); // col 2 dirty; col 1 clean -> skip=1
+    fb.present();
+    ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
+}
+
+// ─── 256-colour HUD, plumbing, degenerate sizes ───────────────────────────────
+
+TEST(framebuffer, present_256_hud_uses_palette_colors)
+{
+    Framebuffer fb(10, 4, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.set_hud("HUD256");
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[48;5;233m\033[38;5;247m") != std::string::npos);
+    ASSERT_TRUE(out.find("\033[48;2;18;18;18m") == std::string::npos);
+    ASSERT_TRUE(out.find("HUD256") != std::string::npos);
+}
+
+TEST(framebuffer, present_256_degenerate_sizes_no_crash)
+{
+    FdRedirect rd;
+    {
+        Framebuffer fb(0, 0, /*headless=*/true, ColorMode::Palette256);
+        fb.clear();
+        fb.present();
+    }
+    {
+        Framebuffer fb(2, 3, /*headless=*/true, ColorMode::Palette256); // odd height
+        (void)fb.commit_pixel(0, 2, 0.5f, { 100, 150, 200 });
+        fb.present();
+    }
+}
+
+TEST(framebuffer, construct_explicit_truecolor_matches_default)
+{
+    // Passing ColorMode::TrueColor explicitly behaves like the default: 24-bit SGR only.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::TrueColor);
+    CaptureStdout cap;
+    fb.clear({ 10, 20, 30 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;2;") != std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") == std::string::npos);
 }

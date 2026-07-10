@@ -5,6 +5,13 @@
 #include <cstdio>
 #include <vector>
 
+// The HUD grey is authored as RGB {18,18,18} bg / {160,160,160} fg. present_impl emits it as a literal
+// 24-bit SGR in TrueColor and as the hard-coded palette indices 233/247 in Palette256. These asserts pin
+// the palette indices to the quantizer of those RGBs, so the 256 constants can't drift from the quantizer;
+// the TrueColor literal must be kept matching the same RGBs by hand (a comment marks it at the emit site).
+static_assert(quantize_256(Color{ 18, 18, 18 }) == 233, "HUD 256 bg constant out of sync with quantize_256");
+static_assert(quantize_256(Color{ 160, 160, 160 }) == 247, "HUD 256 fg constant out of sync with quantize_256");
+
 namespace
 {
 
@@ -79,18 +86,19 @@ namespace
 
 } // namespace
 
-Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless)
+Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless, ColorMode mode)
     : m_width(pixel_width), m_height(pixel_height),
       m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u), m_headless(headless)
+      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u), m_headless(headless),
+      m_mode(mode)
 {
     fill_cleared(0u);
     if (!m_headless)
     {
         // Precondition: stdout is a terminal (main.cpp enforces the tty check
         // before constructing us); this path and present() write ANSI to it.
-        // Preallocate: ~50 bytes per terminal cell is a safe upper bound.
-        m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
+        // Preallocate a mode-dependent per-cell upper bound (see buf_reserve_bytes).
+        m_buf.reserve(buf_reserve_bytes());
         std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
         std::fputs("\033[?25l", stdout);   // hide cursor
         std::fflush(stdout);
@@ -117,7 +125,7 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_prev_color = std::vector<uint32_t>(npx, 0u);
     fill_cleared(0u);
     m_buf.clear();
-    m_buf.reserve(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height / 2) * 50u);
+    m_buf.reserve(buf_reserve_bytes());
     m_force_redraw = true;
 
     // Wipe any leftover content from the previous (possibly larger) terminal.
@@ -132,6 +140,18 @@ void Framebuffer::clear(Color bg)
 
 void Framebuffer::present()
 {
+    if (m_mode == ColorMode::TrueColor)
+    {
+        present_impl<true>();
+    }
+    else
+    {
+        present_impl<false>();
+    }
+}
+
+template <bool TC> void Framebuffer::present_impl()
+{
     m_buf.clear();
 
     const int term_rows = m_height / 2;
@@ -142,8 +162,10 @@ void Framebuffer::present()
     // fg_known / bg_known track whether the terminal's current fg/bg are
     // reflected by prev_fg / prev_bg.  Both start false because \033[0m at
     // the end of the previous frame reset SGR to an unknown terminal default.
-    Color prev_fg{};
-    Color prev_bg{};
+    // prev_fg / prev_bg hold the raw cell value (packed RGB in truecolor, palette
+    // index in 256; see load_color), compared directly against the incoming raw.
+    uint32_t prev_fg = 0;
+    uint32_t prev_bg = 0;
     bool fg_known = false;
     bool bg_known = false;
 
@@ -160,9 +182,40 @@ void Framebuffer::present()
         m_buf.append(tmp, static_cast<size_t>(n));
     };
 
-    // When top == bot, a space with bg-only SGR is visually identical to ▀
-    // with fg==bg, saving 2+ bytes and skipping the fg SGR entirely.
-    auto emit_cell = [&](const Color &top, const Color &bot)
+    // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. The two colour modes
+    // differ only here: 38;2;r;g;b vs 38;5;idx for fg, 48;2;r;g;b vs 48;5;idx for bg. `if constexpr`
+    // gives each present_impl instantiation only its own body, so the truecolor bytes are exactly the
+    // historical output. `raw` is a raw cell value from load_color (packed RGB in truecolor, palette
+    // index in the low byte in 256). `lead` is '3' (fg) or '4' (bg).
+    auto write_color = [&](char lead, uint32_t raw)
+    {
+        tmp[n++] = lead;
+        tmp[n++] = '8';
+        tmp[n++] = ';';
+        if constexpr (TC)
+        {
+            const Color c = unpack_color(raw);
+            tmp[n++] = '2';
+            tmp[n++] = ';';
+            n += write_byte(tmp + n, c.r);
+            tmp[n++] = ';';
+            n += write_byte(tmp + n, c.g);
+            tmp[n++] = ';';
+            n += write_byte(tmp + n, c.b);
+        }
+        else
+        {
+            tmp[n++] = '5';
+            tmp[n++] = ';';
+            n += write_byte(tmp + n, static_cast<uint8_t>(raw));
+        }
+    };
+
+    // Cell emission, shared across modes. When top == bot a space with bg-only SGR is visually
+    // identical to ▀ with fg==bg, saving the fg SGR and 2+ bytes; otherwise emit ▀ with one combined
+    // SGR covering whichever of fg/bg changed (combining avoids a redundant ESC[ header and closing m).
+    // top/bot are raw cell values compared directly (raw-equal == colour/index-equal in both modes).
+    auto emit_cell = [&](uint32_t top, uint32_t bot)
     {
         if (top == bot)
         {
@@ -172,16 +225,7 @@ void Framebuffer::present()
                 tmp[0] = '\033';
                 tmp[1] = '[';
                 n = 2;
-                tmp[n++] = '4';
-                tmp[n++] = '8';
-                tmp[n++] = ';';
-                tmp[n++] = '2';
-                tmp[n++] = ';';
-                n += write_byte(tmp + n, bot.r);
-                tmp[n++] = ';';
-                n += write_byte(tmp + n, bot.g);
-                tmp[n++] = ';';
-                n += write_byte(tmp + n, bot.b);
+                write_color('4', bot);
                 tmp[n++] = 'm';
                 m_buf.append(tmp, static_cast<size_t>(n));
                 prev_bg = bot;
@@ -194,9 +238,6 @@ void Framebuffer::present()
         {
             const bool fg_change = !fg_known || top != prev_fg;
             const bool bg_change = !bg_known || bot != prev_bg;
-
-            // One SGR sequence covering whichever of fg/bg changed; combining
-            // when both change avoids a redundant ESC[ header and closing m.
             if (fg_change || bg_change)
             {
                 tmp[0] = '\033';
@@ -204,16 +245,7 @@ void Framebuffer::present()
                 n = 2;
                 if (fg_change)
                 {
-                    tmp[n++] = '3';
-                    tmp[n++] = '8';
-                    tmp[n++] = ';';
-                    tmp[n++] = '2';
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, top.r);
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, top.g);
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, top.b);
+                    write_color('3', top);
                     prev_fg = top;
                     fg_known = true;
                     if (bg_change)
@@ -223,16 +255,7 @@ void Framebuffer::present()
                 }
                 if (bg_change)
                 {
-                    tmp[n++] = '4';
-                    tmp[n++] = '8';
-                    tmp[n++] = ';';
-                    tmp[n++] = '2';
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, bot.r);
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, bot.g);
-                    tmp[n++] = ';';
-                    n += write_byte(tmp + n, bot.b);
+                    write_color('4', bot);
                     prev_bg = bot;
                     bg_known = true;
                 }
@@ -243,8 +266,21 @@ void Framebuffer::present()
         }
     };
 
+    // The value stored per cell and compared against m_prev_color: packed RGB in truecolor (byte-for-byte
+    // as before), or the xterm-256 index in 256 mode. Quantizing here means two distinct RGB values that
+    // collapse to the same index read as unchanged, so the incremental skip path coalesces them.
     auto load_color = [&](size_t i) -> uint32_t
-    { return unpack_color_bits(m_pixel[i].load(std::memory_order_relaxed)); };
+    {
+        const uint32_t rgb = unpack_color_bits(m_pixel[i].load(std::memory_order_relaxed));
+        if constexpr (TC)
+        {
+            return rgb;
+        }
+        else
+        {
+            return quantize_256(unpack_color(rgb));
+        }
+    };
 
     if (m_force_redraw)
     {
@@ -263,7 +299,7 @@ void Framebuffer::present()
                 const size_t bi = bot_base + static_cast<size_t>(col);
                 const uint32_t tc = load_color(ti);
                 const uint32_t bc = load_color(bi);
-                emit_cell(unpack_color(tc), unpack_color(bc));
+                emit_cell(tc, bc);
                 m_prev_color[ti] = tc;
                 m_prev_color[bi] = bc;
             }
@@ -293,7 +329,7 @@ void Framebuffer::present()
                         append_cursor_pos(row + 1, col + 1);
                         row_started = true;
                     }
-                    emit_cell(unpack_color(top_cur), unpack_color(bot_cur));
+                    emit_cell(top_cur, bot_cur);
                     m_prev_color[ti] = top_cur;
                     m_prev_color[bi] = bot_cur;
                     col++;
@@ -344,7 +380,16 @@ void Framebuffer::present()
         // Disable auto-wrap so a long HUD string clips at the terminal edge
         // instead of wrapping onto the next line and corrupting the display.
         m_buf += "\033[?7l";
-        m_buf += "\033[48;2;18;18;18m\033[38;2;160;160;160m";
+        if constexpr (TC)
+        {
+            // bg {18,18,18} / fg {160,160,160}; keep in sync with the Palette256 branch + the file-scope
+            // static_asserts (which pin the 233/247 below to the quantizer of these same RGBs).
+            m_buf += "\033[48;2;18;18;18m\033[38;2;160;160;160m";
+        }
+        else
+        {
+            m_buf += "\033[48;5;233m\033[38;5;247m";
+        }
         m_buf += m_hud;
         m_buf += "\033[K"; // erase to end of line (clears leftover from wider text)
         m_buf += "\033[0m";
