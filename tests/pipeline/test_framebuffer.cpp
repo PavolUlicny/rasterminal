@@ -4,7 +4,35 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 #include <vector>
+
+namespace
+{
+    // Counts cursor advances of both forms, bare \033[C and counted \033[NC. Searching for the
+    // literal "\033[C" would miss "\033[3C", so an "emitted no advance" assertion must count.
+    size_t count_cursor_advances(const std::string &s)
+    {
+        size_t n = 0;
+        for (size_t i = 0; i + 2 < s.size(); i++)
+        {
+            if (s[i] != '\033' || s[i + 1] != '[')
+            {
+                continue;
+            }
+            size_t j = i + 2;
+            while (j < s.size() && s[j] >= '0' && s[j] <= '9')
+            {
+                j++;
+            }
+            if (j < s.size() && s[j] == 'C')
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+} // namespace
 
 // ─── get_pixel / depth_at bounds ──────────────────────────────────────────────
 
@@ -316,36 +344,112 @@ TEST(framebuffer, hud_cleared_after_set_is_omitted)
 
 // ─── incremental skip path ────────────────────────────────────────────────────
 
+namespace
+{
+    // Runs the full-redraw frame that seeds m_prev_color, discarding its bytes in a capture
+    // scope of its own. The incremental frame under test is then the ONLY thing in the caller's
+    // capture: asserting across both frames is a trap, since the full redraw positions every row
+    // and emits no advances, so it can satisfy an assertion the incremental frame never earns.
+    void seed_prev_color(Framebuffer &fb)
+    {
+        CaptureStdout warm;
+        fb.present();
+        (void)warm.read();
+    }
+} // namespace
+
 TEST(framebuffer, incremental_single_skip_emits_cursor_advance)
 {
     // After the first present() establishes m_prev_color, a second present() where
     // a dirty cell starts a row and exactly one unchanged cell follows must emit
     // \033[C (single-step cursor advance, not \033[1C) for the skip.
     Framebuffer fb(4, 2, /*headless=*/true);
-    CaptureStdout cap;
-    fb.present(); // full-redraw — establishes m_prev_color = all black
+    seed_prev_color(fb);
 
+    CaptureStdout cap;
     fb.clear();
     (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty
     (void)fb.commit_pixel(2, 0, 0.5f, { 0, 100, 0 }); // col 2 dirty; col 1 unchanged → skip=1
     fb.present();                                     // incremental path fires skip=1 branch
 
-    ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1)); // col 1 only; col 3's tail is dropped
+    ASSERT_TRUE(inc.find("\033[C") != std::string::npos);          // bare form, not \033[1C
 }
 
 TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
 {
-    // When a dirty cell starts a row and multiple unchanged columns follow, the
-    // skip path must emit \033[NC with an explicit count, not the bare \033[C form.
-    Framebuffer fb(5, 2, /*headless=*/true);
-    CaptureStdout cap;
-    fb.present(); // full-redraw
+    // Multiple unchanged columns between two dirty ones must emit \033[NC with an explicit
+    // count, not the bare \033[C. The clean run has to end at a dirty cell rather than the
+    // row edge: a run reaching the edge emits nothing, so a 5-wide framebuffer tests nothing.
+    Framebuffer fb(6, 2, /*headless=*/true);
+    seed_prev_color(fb);
 
+    CaptureStdout cap;
     fb.clear();
-    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty; cols 1-4 unchanged → skip=4
+    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty
+    (void)fb.commit_pixel(5, 0, 0.5f, { 0, 100, 0 }); // col 5 dirty; cols 1-4 unchanged → skip=4
     fb.present();                                     // incremental path fires skip>1 branch
 
-    ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1));
+    ASSERT_TRUE(inc.find("\033[4C") != std::string::npos);
+}
+
+// A clean run reaching the row end must emit no cursor advance of either form: the cursor is
+// hidden and never read back, and whatever writes next (a later dirty row, the HUD, or the next
+// frame) positions absolutely. Without this the escape is dead bytes on every row ending in
+// background. Mode-independent, so truecolor covers both.
+TEST(framebuffer, present_no_cursor_advance_for_clean_run_to_row_end)
+{
+    Framebuffer fb(4, 2, /*headless=*/true);
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty; cols 1..3 clean to the row end
+    fb.present();
+
+    ASSERT_EQ(count_cursor_advances(cap.read()), static_cast<size_t>(0));
+}
+
+// Dropping the end-of-row advance is only safe because a later dirty row still positions
+// absolutely. Every other incremental test is a single terminal row, so nothing else pins that:
+// here row 0 ends in a dropped clean run and row 1 must still emit its own \033[2;1H.
+TEST(framebuffer, present_next_dirty_row_repositions_after_dropped_advance)
+{
+    Framebuffer fb(4, 4, /*headless=*/true); // 4 px tall = 2 terminal rows
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // row 0, col 0; cols 1..3 clean to the row end
+    (void)fb.commit_pixel(0, 2, 0.5f, { 0, 200, 0 }); // row 1, col 0 (pixel y=2 → terminal row 1)
+    fb.present();
+
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(0)); // both rows' tails dropped
+    ASSERT_TRUE(inc.find("\033[1;1H") != std::string::npos);
+    ASSERT_TRUE(inc.find("\033[2;1H") != std::string::npos); // row 1 still positioned absolutely
+}
+
+// The HUD is the most common thing that follows a dropped advance in real use: it must still
+// position itself absolutely on its own row rather than continuing from the pixel cursor.
+TEST(framebuffer, present_hud_positions_absolutely_after_dropped_advance)
+{
+    Framebuffer fb(4, 2, /*headless=*/true); // 2 px tall = 1 pixel row; HUD lands on row 2
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty; cols 1..3 clean to the row end
+    fb.set_hud("HUD");
+    fb.present();
+
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(0));
+    ASSERT_TRUE(inc.find("\033[2;1H") != std::string::npos); // HUD row, absolute
+    ASSERT_TRUE(inc.find("HUD") != std::string::npos);
 }
 
 // ─── additional incremental / emit_cell paths ────────────────────────────────
@@ -759,13 +863,16 @@ TEST(framebuffer, present_256_single_skip_emits_cursor_advance)
     // The incremental skip scan must re-quantize/compare correctly in 256 mode: a clean cell
     // between two dirty ones yields a single-step \033[C advance.
     Framebuffer fb(4, 2, /*headless=*/true, ColorMode::Palette256);
+    seed_prev_color(fb); // full redraw establishes prev (all black -> 16)
+
     CaptureStdout cap;
-    fb.present(); // full redraw establishes prev (all black -> 16)
     fb.clear();
     (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty
     (void)fb.commit_pixel(2, 0, 0.5f, { 0, 200, 0 }); // col 2 dirty; col 1 clean -> skip=1
     fb.present();
-    ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1)); // col 1 only; col 3's tail is dropped
+    ASSERT_TRUE(inc.find("\033[C") != std::string::npos);
 }
 
 // ─── 256-colour HUD, plumbing, degenerate sizes ───────────────────────────────

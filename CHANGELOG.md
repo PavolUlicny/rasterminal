@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Interactive rendering now fails with a clear error when stdin or stdout is not a terminal (piped or redirected), instead of writing ANSI escapes into the pipe and setting raw mode on a non-terminal stdin. `--bench`, `--help`, and `--version` are unaffected and keep working with redirected stdio.
 - Lit surfaces now pass through a soft-knee highlight rolloff (tonemap) before display, so bright, untextured, flat-lit, or strongly-emissive areas no longer clip to flat white but keep their shading gradient. The curve is identity below the knee (0.7) and rolls off above it, so any channel lit past the knee (including a full-white lit surface) is pulled down somewhat while darker midtones and shadows are unchanged; unlit materials and UI (wireframe, HUD, background) are unaffected.
+- Slightly smaller per-frame terminal output: the incremental redraw no longer writes a cursor-advance escape when a row's changed pixels are followed by an unchanged run reaching the right edge. The rendered result is identical; only the redundant escape (which the next absolute cursor move made a no-op) is dropped.
 
 ### Removed
 

@@ -182,6 +182,22 @@ template <bool TC> void Framebuffer::present_impl()
         m_buf.append(tmp, static_cast<size_t>(n));
     };
 
+    // \033[NC — advance the cursor N columns; the bare form is 1 byte shorter for N == 1.
+    auto append_cursor_advance = [&](int cols)
+    {
+        if (cols == 1)
+        {
+            m_buf.append("\033[C", 3);
+            return;
+        }
+        tmp[0] = '\033';
+        tmp[1] = '[';
+        n = 2;
+        n += write_int(tmp + n, cols);
+        tmp[n++] = 'C';
+        m_buf.append(tmp, static_cast<size_t>(n));
+    };
+
     // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. The two colour modes
     // differ only here: 38;2;r;g;b vs 38;5;idx for fg, 48;2;r;g;b vs 48;5;idx for bg. `if constexpr`
     // gives each present_impl instantiation only its own body, so the truecolor bytes are exactly the
@@ -350,20 +366,16 @@ template <bool TC> void Framebuffer::present_impl()
                     {
                         skip++;
                     }
-                    if (skip == 1)
-                    {
-                        m_buf.append("\033[C", 3);
-                    }
-                    else
-                    {
-                        tmp[0] = '\033';
-                        tmp[1] = '[';
-                        n = 2;
-                        n += write_int(tmp + n, skip);
-                        tmp[n++] = 'C';
-                        m_buf.append(tmp, static_cast<size_t>(n));
-                    }
                     col += skip;
+                    // A clean run reaching the row end needs no advance: the cursor is hidden
+                    // and never read back, and anything written after it (a later dirty row,
+                    // the HUD, or the next frame) positions absolutely. With --no-hud on the
+                    // last row nothing follows at all. Emitting one would be dead bytes on
+                    // every row that ends in background.
+                    if (col < m_width)
+                    {
+                        append_cursor_advance(skip);
+                    }
                 }
             }
         }
