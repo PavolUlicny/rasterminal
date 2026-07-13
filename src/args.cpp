@@ -315,6 +315,14 @@ ParseResult parse_args(int argc, char *argv[])
         // UTF-8 author bytes need the console CP set before printing — this path exits
         // before the main loop's enable_raw_mode would do it. Other early-exit paths
         // (--help, --bench, errors) print pure ASCII, so they leave console state alone.
+        // The return (VT support) is ignored: --version wants only the code page. But
+        // init_console_output sets the CP solely when stdout is a VT-capable console, so for
+        // redirected/piped stdout or a VT-incapable console the CP is left as-is. That is
+        // harmless for a file or a UTF-8-aware consumer (the raw bytes are UTF-8 regardless);
+        // only display through a non-UTF-8 console (a legacy console directly, or a downstream
+        // console pager like `... | more`) shows the accented author name as mojibake.
+        // Acceptable: the code page is a persistent console-wide side effect not worth forcing
+        // for --version.
         platform::init_console_output();
         // GNU-standard --version block (cf. gnulib version-etc): canonical name +
         // version, copyright, license, generic free-software/no-warranty blurb,

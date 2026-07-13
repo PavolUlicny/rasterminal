@@ -9,12 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- 256-color fallback: terminals without 24-bit color support now automatically receive xterm-256 palette output, quantized per pixel from the same truecolor rendering pipeline. Capability is detected at startup from the `COLORTERM` and `TERM` environment variables (`COLORTERM=truecolor`/`24bit`, or a `TERM` truecolor hint such as the `-direct` terminfo family, selects 24-bit output; any other non-empty `TERM` except `dumb` gets 256 colors; when `TERM` is unset or empty and `COLORTERM` carries no truecolor signal, the default is 256 colors, except on native Windows consoles which default to 24-bit). Terminals detected as truecolor keep byte-identical output. Note that a truecolor terminal that does not export `COLORTERM` (ssh sessions, where it is not forwarded) is detected as 256-color.
 - `install`/`uninstall` targets for both Make and CMake (GNU directory layout, `PREFIX`/`DESTDIR` overrides) installing the binary, man page, and license/notices
 - Man page (`man/rasterminal.1`)
 
 ### Changed
 
-- Interactive rendering now fails with a clear error when stdin or stdout is not a terminal (piped or redirected), instead of writing ANSI escapes into the pipe and setting raw mode on a non-terminal stdin. `--bench`, `--help`, and `--version` are unaffected and keep working with redirected stdio.
+- Interactive rendering now fails with a clear error, instead of emitting escape garbage, on any terminal it cannot draw to: stdin or stdout not being a terminal (piped or redirected, which previously also set raw mode on a non-terminal stdin), `TERM=dumb`, and Windows consoles that cannot enable VT escape-sequence processing. `--bench`, `--help`, and `--version` are unaffected and keep working with redirected stdio (with one Windows-only nuance: `--version` now switches the console to UTF-8 only when stdout is a VT-capable console, so when it is redirected, piped, or a legacy console, the code page is left untouched. The emitted bytes are UTF-8 either way; only display through a non-UTF-8 console shows the accented author name as mojibake).
 - Lit surfaces now pass through a soft-knee highlight rolloff (tonemap) before display, so bright, untextured, flat-lit, or strongly-emissive areas no longer clip to flat white but keep their shading gradient. The curve is identity below the knee (0.7) and rolls off above it, so any channel lit past the knee (including a full-white lit surface) is pulled down somewhat while darker midtones and shadows are unchanged; unlit materials and UI (wireframe, HUD, background) are unaffected.
 - Slightly smaller per-frame terminal output: the incremental redraw no longer writes a cursor-advance escape when a row's changed pixels are followed by an unchanged run reaching the right edge. The rendered result is identical; only the redundant escape (which the next absolute cursor move made a no-op) is dropped.
 

@@ -8,6 +8,14 @@ toomanyconfigs
 unusedFunction:src/framebuffer.h
 unusedFunction:src/linalg.h
 
+// main.cpp carries one inline `cppcheck-suppress knownConditionTrueFalse` (the VT-gate
+// condition, constant only because <windows.h> is absent on the Linux runner so the _WIN32
+// body can't be analysed). Under --inline-suppr that inline directive is a two-sided
+// constraint: if a future cppcheck version stops emitting the finding, the now-unmatched
+// inline suppression would itself fail CI. Let it age out harmlessly instead. Scoped to the
+// file, which holds no other suppression, so this masks nothing else.
+unmatchedSuppression:src/main.cpp
+
 // Raw loops kept where STL algorithm equivalent would require a lambda and be less readable.
 useStlAlgorithm:src/mesh.cpp
 useStlAlgorithm:src/mesh_obj.cpp
