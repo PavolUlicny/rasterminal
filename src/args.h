@@ -12,6 +12,7 @@ struct ParsedArgs
     int bg = 0;                 // 0=black  1=gray  2=white
     int lighting = 0;           // 0=dual  1=single  2=flat
     int wireframe_color = 0;    // 0=white, 1=red, 2=green, 3=yellow, 4=cyan, 5=magenta
+    int color = 0;              // 0=auto (detect)  1=force truecolor  2=force 256
     int fps = 60;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
     int bench_width = 200;      // headless framebuffer width in pixels

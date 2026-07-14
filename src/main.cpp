@@ -227,9 +227,10 @@ int main(int argc, char *argv[])
     // loop). --bench is headless and exempt. Rejecting the display-only stdin case
     // (e.g. `--spin < /dev/null`) is deliberate: without working input the session
     // can only be killed by signal, and raw-mode setup silently fails anyway.
-    // color_mode is picked in the block below from detect_term_color. The default only
-    // matters on the interactive path; --bench builds its own headless framebuffer in
-    // run_bench and never reads it.
+    // color_mode is assigned in the block below (from detect_term_color, or forced by
+    // --color when not auto). This initializer is never actually read: the interactive
+    // path always overwrites it before the Framebuffer ctor, and --bench returns from
+    // run_bench earlier with its own headless framebuffer; it only satisfies the declaration.
     ColorMode color_mode = ColorMode::TrueColor;
     if (!bench_mode)
     {
@@ -254,7 +255,21 @@ int main(int argc, char *argv[])
             std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
             return 1;
         }
-        color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
+        // --color overrides only the truecolor-vs-256 choice. TERM=dumb stays fatal even
+        // under --color truecolor (dumb means no escape sequences at all, which no color
+        // depth fixes), and the Windows VT gate below is likewise not bypassed.
+        if (args.color == 1)
+        {
+            color_mode = ColorMode::TrueColor;
+        }
+        else if (args.color == 2)
+        {
+            color_mode = ColorMode::Palette256;
+        }
+        else
+        {
+            color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
+        }
     }
 
     const int n_threads = resolve_thread_count(args.n_threads);

@@ -1020,6 +1020,60 @@ TEST(args, wireframe_color_missing_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── --color ──────────────────────────────────────────────────────────────────
+
+TEST(args, color_default_is_auto)
+{
+    ASSERT_EQ(run({ "m.obj" }).args.color, 0);
+}
+
+TEST(args, color_values)
+{
+    ASSERT_EQ(run({ "--color", "auto", "m.obj" }).args.color, 0);
+    ASSERT_EQ(run({ "--color", "truecolor", "m.obj" }).args.color, 1);
+    ASSERT_EQ(run({ "--color", "24bit", "m.obj" }).args.color, 1);
+    ASSERT_EQ(run({ "--color", "256", "m.obj" }).args.color, 2);
+}
+
+TEST(args, color_case_insensitive)
+{
+    ASSERT_EQ(run({ "--color", "TRUECOLOR", "m.obj" }).args.color, 1);
+    ASSERT_EQ(run({ "--color", "24Bit", "m.obj" }).args.color, 1);
+    ASSERT_EQ(run({ "--color", "Auto", "m.obj" }).args.color, 0);
+}
+
+TEST(args, color_equals_form)
+{
+    ASSERT_EQ(run({ "--color=256", "m.obj" }).args.color, 2);
+    ASSERT_EQ(run({ "--color=truecolor", "m.obj" }).args.color, 1);
+}
+
+TEST(args, color_invalid_value_is_error)
+{
+    // 16-color output is unsupported, so "16" is invalid like any other junk value.
+    ParseResult r = run({ "--color", "16", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+    ASSERT_FALSE(run({ "--color", "always", "m.obj" }).ok);
+}
+
+TEST(args, color_has_no_numeric_aliases)
+{
+    // --color deliberately has no 1-indexed aliases (unlike --shading/--bg/etc.):
+    // "256" is itself a value, so a numeric "1"/"2" must be rejected, not mapped to
+    // the internal 1=truecolor/2=256 encoding.
+    ASSERT_FALSE(run({ "--color", "1", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "--color", "2", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "--color", "0", "m.obj" }).ok);
+}
+
+TEST(args, color_missing_value_is_error)
+{
+    ParseResult r = run({ "--color" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // ─── --fps ────────────────────────────────────────────────────────────────────
 
 TEST(args, fps_default)
@@ -1451,6 +1505,7 @@ TEST(args, empty_value_after_equals_is_error)
     ASSERT_FALSE(run({ "--lighting=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--fps=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--bench=", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "--color=", "m.obj" }).ok);
 }
 
 // ─── --bench-size / --bench-warmup ───────────────────────────────────────────

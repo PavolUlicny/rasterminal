@@ -292,6 +292,36 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    // No 1-indexed numeric aliases here: there is no runtime keybinding to mirror,
+    // and "256" is itself numeric.
+    auto parse_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    {
+        const std::string v = to_lower(val);
+        if (v == "auto")
+        {
+            out = 0;
+        }
+        else if (v == "truecolor" || v == "24bit")
+        {
+            out = 1;
+        }
+        else if (v == "256")
+        {
+            out = 2;
+        }
+        else
+        {
+            std::fprintf(
+                stderr,
+                "%s: %s: invalid value '%s'"
+                " (expected truecolor|24bit|256|auto)\n",
+                prog, flag, val
+            );
+            return false;
+        }
+        return true;
+    };
+
     auto parse_angle = [prog](const char *flag, const char *val, float &out) -> bool
     {
         char *end = nullptr;
@@ -341,7 +371,7 @@ ParseResult parse_args(int argc, char *argv[])
             "Usage: %s [options] <model>\n"
             "\n"
             "Render a 3D model in the terminal using unicode half-block characters\n"
-            "and 24-bit ANSI color.\n"
+            "and 24-bit ANSI color (256-color fallback).\n"
             "\n"
             "Supported formats:\n"
             "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
@@ -374,6 +404,9 @@ ParseResult parse_args(int argc, char *argv[])
             "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
             "                                  0=faceted, 180=smooth\n"
             "                                  ignored when an OBJ authors smoothing groups\n"
+            "          --color <mode>         Color output (default: auto)\n"
+            "                                  truecolor|24bit|256|auto\n"
+            "                                  auto detects from COLORTERM/TERM\n"
             "          --no-ao                Disable ambient occlusion\n"
             "          --no-hud               Hide the HUD status line\n"
             "  -h,     --help                 Show this message\n"
@@ -513,6 +546,14 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_angle(flag, val, args.smooth_angle))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--color")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_color(flag, val, args.color))
             {
                 return fail(1);
             }
