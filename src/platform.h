@@ -128,6 +128,18 @@ namespace platform
                 }
             }
         }
+
+        // The most common terminals whose TERM name is set exclusively by a truecolor
+        // terminal, matched as substrings so variants hit too (xterm-kitty, xterm-ghostty).
+        // Exists for the ssh case: COLORTERM is not forwarded but TERM is, so without this
+        // these terminals would be downgraded to 256 colors. Deliberately a curated common
+        // set, not exhaustive (a less common truecolor terminal such as rio is intentionally
+        // omitted): an unlisted terminal falls to the safe 256 floor, and its user forces
+        // 24-bit with --color truecolor. Keeping the list short keeps a false positive from a
+        // short substring unlikely.
+        inline constexpr const char *TRUECOLOR_TERMS[] = {
+            "kitty", "wezterm", "alacritty", "ghostty", "foot", "contour",
+        };
     } // namespace detail
 
     // Pure classifier over the COLORTERM/TERM env values (either may be null). All
@@ -139,10 +151,11 @@ namespace platform
     //      fatal, since in practice such a TERM is usually a misconfig inside a real
     //      terminal that renders fine, and the policy is "never fatal except dumb".
     //   2. COLORTERM in {truecolor, 24bit} is the canonical truecolor signal.
-    //   3. TERM hints (the -direct terminfo family, truecolor, 24bit) cover
-    //      terminals whose users did not export COLORTERM.
-    //   4. TERM unset/empty: platform default (unset_default), parameterized so
+    //   3. TERM unset/empty: platform default (unset_default), parameterized so
     //      both platform branches are unit-testable everywhere.
+    //   4. TERM hints (the -direct terminfo family, truecolor, 24bit) and the
+    //      TRUECOLOR_TERMS known-terminal names cover terminals whose sessions carry
+    //      no COLORTERM (not exported, or stripped by ssh).
     //   5. Everything else gets the conservative 256-color floor; never fatal even
     //      for sub-256-color terminfo entries (16-color output is not supported).
     constexpr TermColor classify_term_color(const char *colorterm, const char *term, TermColor unset_default) noexcept
@@ -156,14 +169,23 @@ namespace platform
         {
             return TermColor::TrueColor;
         }
-        if (has_term && (detail::icontains(term, "-direct") || detail::icontains(term, "truecolor") ||
-                         detail::icontains(term, "24bit")))
-        {
-            return TermColor::TrueColor;
-        }
         if (!has_term)
         {
             return unset_default;
+        }
+        // term is non-null and non-empty from here: the remaining checks all read it.
+        if (detail::icontains(term, "-direct") || detail::icontains(term, "truecolor") ||
+            detail::icontains(term, "24bit"))
+        {
+            return TermColor::TrueColor;
+        }
+        // Raw loop, not std::any_of: any_of is not constexpr until C++20.
+        for (const char *name : detail::TRUECOLOR_TERMS)
+        {
+            if (detail::icontains(term, name))
+            {
+                return TermColor::TrueColor;
+            }
         }
         return TermColor::Palette256;
     }

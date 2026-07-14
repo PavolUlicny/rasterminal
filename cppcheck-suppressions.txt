@@ -16,8 +16,10 @@ unusedFunction:src/linalg.h
 // file, which holds no other suppression, so this masks nothing else.
 unmatchedSuppression:src/main.cpp
 
-// Raw loops kept where STL algorithm equivalent would require a lambda and be less readable.
+// Raw loops kept where an STL-algorithm rewrite would need a lambda and read worse. The
+// platform.h entry is a separate case (a constexpr context); its reason lives at the code site.
 useStlAlgorithm:src/mesh.cpp
 useStlAlgorithm:src/mesh_obj.cpp
 useStlAlgorithm:src/mesh_ply.cpp
+useStlAlgorithm:src/platform.h
 useStlAlgorithm:src/renderer.cpp

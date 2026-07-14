@@ -30,7 +30,9 @@ namespace
     // static_asserts pin that at compile time. The -direct case is the one that covers both
     // string helpers on its own (it runs ieq for the dumb check, then icontains for the hint);
     // the COLORTERM case is kept because it is the only one that constant-evaluates the
-    // COLORTERM branch, which the -direct case short-circuits past.
+    // COLORTERM branch, which the -direct case short-circuits past; the allowlist case is the
+    // only one that constant-evaluates the TRUECOLOR_TERMS loop, which the -direct case never
+    // reaches (xterm-kitty carries no -direct/truecolor/24bit hint, so the loop is its only path).
     static_assert(
         platform::classify_term_color(nullptr, "xterm-direct", platform::TermColor::Palette256) ==
             platform::TermColor::TrueColor,
@@ -40,6 +42,11 @@ namespace
         platform::classify_term_color("truecolor", "xterm-256color", platform::TermColor::Palette256) ==
             platform::TermColor::TrueColor,
         "classify_term_color COLORTERM branch must remain constexpr-evaluable"
+    );
+    static_assert(
+        platform::classify_term_color(nullptr, "xterm-kitty", platform::TermColor::Palette256) ==
+            platform::TermColor::TrueColor,
+        "classify_term_color TRUECOLOR_TERMS loop must remain constexpr-evaluable"
     );
 
     // Closes a fd on scope exit (via the portable test_close) so a thrown ASSERT
@@ -162,6 +169,20 @@ TEST(platform, classify_term_direct_hints)
     // colorterm=nullptr, so a regression that returned Palette256 on a non-truecolor
     // COLORTERM would pass them all while breaking e.g. COLORTERM=gnome-terminal here.
     ASSERT_EQ(classify("gnome-terminal", "xterm-direct", platform::TermColor::Palette256), TC);
+}
+
+TEST(platform, classify_known_truecolor_terms)
+{
+    // The TRUECOLOR_TERMS allowlist: TERM names set exclusively by truecolor
+    // terminals, covering ssh sessions where COLORTERM is not forwarded. Matched
+    // as substrings (xterm-kitty, xterm-ghostty carry the bare name as a suffix) and
+    // case-insensitively.
+    const char *terms[] = { "xterm-kitty", "wezterm", "alacritty", "xterm-ghostty", "foot", "contour" };
+    for (const char *t : terms)
+    {
+        ASSERT_EQ(classify(nullptr, t, platform::TermColor::Palette256), TC);
+    }
+    ASSERT_EQ(classify(nullptr, "XTERM-KITTY", platform::TermColor::Palette256), TC);
 }
 
 TEST(platform, classify_plain_terms_are_256)
