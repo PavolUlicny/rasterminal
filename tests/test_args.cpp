@@ -444,6 +444,12 @@ TEST(args, bg_numeric_aliases)
     ASSERT_EQ(run({ "-b", "3", "m.obj" }).args.bg, 2);
 }
 
+TEST(args, bg_case_insensitive)
+{
+    ASSERT_EQ(run({ "--bg", "WHITE", "m.obj" }).args.bg, 2);
+    ASSERT_EQ(run({ "--bg", "GrAy", "m.obj" }).args.bg, 1);
+}
+
 TEST(args, bg_compact_short_form)
 {
     ASSERT_EQ(run({ "-bwhite", "m.obj" }).args.bg, 2);
@@ -494,6 +500,12 @@ TEST(args, lighting_numeric_aliases)
     ASSERT_EQ(run({ "-l", "1", "m.obj" }).args.lighting, 0);
     ASSERT_EQ(run({ "-l", "2", "m.obj" }).args.lighting, 1);
     ASSERT_EQ(run({ "-l", "3", "m.obj" }).args.lighting, 2);
+}
+
+TEST(args, lighting_case_insensitive)
+{
+    ASSERT_EQ(run({ "--lighting", "SINGLE", "m.obj" }).args.lighting, 1);
+    ASSERT_EQ(run({ "--lighting", "FlAt", "m.obj" }).args.lighting, 2);
 }
 
 TEST(args, lighting_compact_short_form)

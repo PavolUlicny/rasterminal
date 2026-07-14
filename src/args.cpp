@@ -133,12 +133,20 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_shading = [prog](const char *flag, const char *val, int &out) -> bool
+    // Lowercase-copy for case-insensitive value matching. unsigned char avoids the
+    // std::tolower UB on a negative char; the flag values it sees are plain ASCII.
+    auto to_lower = [](const char *val) -> std::string
     {
         std::string v = val;
         std::transform(
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
+        return v;
+    };
+
+    auto parse_shading = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    {
+        const std::string v = to_lower(val);
         if (v == "wireframe" || v == "1")
         {
             out = 0;
@@ -164,12 +172,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_bg = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_bg = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "black" || v == "1")
         {
             out = 0;
@@ -195,12 +200,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_lighting = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_lighting = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "dual" || v == "1")
         {
             out = 0;
@@ -226,12 +228,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_bool = [prog](const char *flag, const char *val, bool &out) -> bool
+    auto parse_bool = [prog, to_lower](const char *flag, const char *val, bool &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
         {
             out = true;
@@ -253,12 +252,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_wireframe_color = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_wireframe_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "white" || v == "1")
         {
             out = 0;
