@@ -23,6 +23,8 @@ struct Camera
     // dt: seconds elapsed since last frame, for speed-independent movement.
     void process_key(platform::Key key, float dt);
 
-    void orbit(float dx, float dy); // dx: around local up, dy: around local right
+    // Turntable orbit: dx yaws around world Y (inverted while upside down so the
+    // drag direction is preserved), dy pitches around local right.
+    void orbit(float dx, float dy);
     void spin_world_y(float radians);
 };

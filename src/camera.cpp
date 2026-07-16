@@ -29,6 +29,17 @@ mat4 Camera::projection(int pixel_width, int pixel_height) const
 
 void Camera::orbit(float dx, float dy)
 {
+    // Turntable yaw is about world Y; when the camera is upside down (up vector's
+    // world-Y component negative) that rotation sweeps the screen opposite to the
+    // drag, so invert dx to keep the model following the mouse (Blender behaviour).
+    // For a unit quat, up_y = R[1][1] = 1 - 2(x^2 + z^2); orientation is always
+    // unit (normalized after every orbit/spin).
+    const float up_y = 1.0f - (2.0f * ((orientation.x * orientation.x) + (orientation.z * orientation.z)));
+    if (up_y < 0.0f)
+    {
+        dx = -dx;
+    }
+
     const vec3 local_right = orientation.rotate({ 1.0f, 0.0f, 0.0f });
     const quat yaw = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, -dx);
     const quat pitch = quat::from_axis_angle(local_right, dy);

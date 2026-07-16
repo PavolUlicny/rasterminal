@@ -3,9 +3,10 @@
 
 #include <cmath>
 
-// Camera is a trackball orbit camera: eye sits on a sphere around `target`,
-// at `distance` along the +Z axis of its `orientation` frame.  Orbit rotates
-// around the camera's current local axes, not fixed world axes.
+// Camera is a turntable orbit camera: eye sits on a sphere around `target`,
+// at `distance` along the +Z axis of its `orientation` frame.  Orbit yaws
+// around world Y (inverted while upside down so drag direction is preserved)
+// and pitches around the camera's local right axis.
 
 static constexpr float EPS = 1e-4f;
 
@@ -282,7 +283,7 @@ TEST(camera, process_key_unknown_does_not_change_state)
     ASSERT_NEAR(e_after.z, e_before.z, EPS);
 }
 
-// ─── orbit() — trackball-specific ────────────────────────────────────────────
+// ─── orbit() — turntable-specific ────────────────────────────────────────────
 
 TEST(camera, orbit_keeps_eye_on_sphere)
 {
@@ -347,6 +348,48 @@ TEST(camera, orbit_does_not_gimbal_lock)
         vec3 row{ v.m[0][r], v.m[1][r], v.m[2][r] };
         ASSERT_NEAR(row.length(), 1.0f, 1e-3f);
     }
+}
+
+TEST(camera, orbit_yaw_follows_drag_when_upside_down)
+{
+    // Pitched 180°: eye at -Z, up = (0,-1,0), screen-right still world +X.
+    // The same positive dx must move the eye the same screen direction as when
+    // upright (eye.x < 0, pinned by process_key_D_model_moves_right); without
+    // the upside-down yaw inversion it would land at eye.x > 0.
+    Camera c;
+    c.target = { 0.0f, 0.0f, 0.0f };
+    c.distance = 5.0f;
+    c.orientation = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(180.0f));
+    c.orbit(0.25f, 0.0f);
+    ASSERT_TRUE(c.eye().x < 0.0f);
+}
+
+TEST(camera, orbit_pitch_not_flipped_when_upside_down)
+{
+    // Pitch is around local right, which follows the screen in every
+    // orientation — the upside-down inversion must not touch dy. Upside down,
+    // a positive dy rotates the -Z eye toward +Y.
+    Camera c;
+    c.target = { 0.0f, 0.0f, 0.0f };
+    c.distance = 5.0f;
+    c.orientation = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, to_radians(180.0f));
+    c.orbit(0.0f, 0.25f);
+    ASSERT_TRUE(c.eye().y > 0.0f);
+}
+
+TEST(camera, orbit_upside_down_keeps_eye_on_sphere)
+{
+    // Mixed orbit sequence crossing the pole (through the flip branch): eye
+    // must stay at `distance` from target.
+    Camera c;
+    c.target = { 1.0f, 2.0f, 3.0f };
+    c.distance = 6.0f;
+    c.orientation = quat::identity();
+    c.orbit(0.3f, 1.2f);
+    c.orbit(-0.7f, 1.1f); // past the pole, now upside down
+    c.orbit(0.5f, -0.2f);
+    float r = (c.eye() - c.target).length();
+    ASSERT_NEAR(r, 6.0f, 1e-4f);
 }
 
 // ─── spin_world_y() ──────────────────────────────────────────────────────────
