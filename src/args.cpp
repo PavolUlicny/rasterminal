@@ -133,12 +133,20 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_shading = [prog](const char *flag, const char *val, int &out) -> bool
+    // Lowercase-copy for case-insensitive value matching. unsigned char avoids the
+    // std::tolower UB on a negative char; the flag values it sees are plain ASCII.
+    auto to_lower = [](const char *val) -> std::string
     {
         std::string v = val;
         std::transform(
             v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
         );
+        return v;
+    };
+
+    auto parse_shading = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    {
+        const std::string v = to_lower(val);
         if (v == "wireframe" || v == "1")
         {
             out = 0;
@@ -164,12 +172,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_bg = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_bg = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "black" || v == "1")
         {
             out = 0;
@@ -195,12 +200,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_lighting = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_lighting = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "dual" || v == "1")
         {
             out = 0;
@@ -226,12 +228,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_bool = [prog](const char *flag, const char *val, bool &out) -> bool
+    auto parse_bool = [prog, to_lower](const char *flag, const char *val, bool &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
         {
             out = true;
@@ -253,12 +252,9 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    auto parse_wireframe_color = [prog](const char *flag, const char *val, int &out) -> bool
+    auto parse_wireframe_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
-        );
+        const std::string v = to_lower(val);
         if (v == "white" || v == "1")
         {
             out = 0;
@@ -296,6 +292,36 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
+    // No 1-indexed numeric aliases here: there is no runtime keybinding to mirror,
+    // and "256" is itself numeric.
+    auto parse_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    {
+        const std::string v = to_lower(val);
+        if (v == "auto")
+        {
+            out = 0;
+        }
+        else if (v == "truecolor" || v == "24bit")
+        {
+            out = 1;
+        }
+        else if (v == "256")
+        {
+            out = 2;
+        }
+        else
+        {
+            std::fprintf(
+                stderr,
+                "%s: %s: invalid value '%s'"
+                " (expected truecolor|24bit|256|auto)\n",
+                prog, flag, val
+            );
+            return false;
+        }
+        return true;
+    };
+
     auto parse_angle = [prog](const char *flag, const char *val, float &out) -> bool
     {
         char *end = nullptr;
@@ -315,6 +341,14 @@ ParseResult parse_args(int argc, char *argv[])
         // UTF-8 author bytes need the console CP set before printing — this path exits
         // before the main loop's enable_raw_mode would do it. Other early-exit paths
         // (--help, --bench, errors) print pure ASCII, so they leave console state alone.
+        // The return (VT support) is ignored: --version wants only the code page. But
+        // init_console_output sets the CP solely when stdout is a VT-capable console, so for
+        // redirected/piped stdout or a VT-incapable console the CP is left as-is. That is
+        // harmless for a file or a UTF-8-aware consumer (the raw bytes are UTF-8 regardless);
+        // only display through a non-UTF-8 console (a legacy console directly, or a downstream
+        // console pager like `... | more`) shows the accented author name as mojibake.
+        // Acceptable: the code page is a persistent console-wide side effect not worth forcing
+        // for --version.
         platform::init_console_output();
         // GNU-standard --version block (cf. gnulib version-etc): canonical name +
         // version, copyright, license, generic free-software/no-warranty blurb,
@@ -337,7 +371,7 @@ ParseResult parse_args(int argc, char *argv[])
             "Usage: %s [options] <model>\n"
             "\n"
             "Render a 3D model in the terminal using unicode half-block characters\n"
-            "and 24-bit ANSI color.\n"
+            "and 24-bit ANSI color (256-color fallback).\n"
             "\n"
             "Supported formats:\n"
             "  .obj        Wavefront OBJ with optional .mtl (diffuse/specular/normal maps)\n"
@@ -370,6 +404,9 @@ ParseResult parse_args(int argc, char *argv[])
             "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
             "                                  0=faceted, 180=smooth\n"
             "                                  ignored when an OBJ authors smoothing groups\n"
+            "          --color <mode>         Color output (default: auto)\n"
+            "                                  truecolor|24bit|256|auto\n"
+            "                                  auto detects from COLORTERM/TERM\n"
             "          --no-ao                Disable ambient occlusion\n"
             "          --no-hud               Hide the HUD status line\n"
             "  -h,     --help                 Show this message\n"
@@ -509,6 +546,14 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_angle(flag, val, args.smooth_angle))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--color")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_color(flag, val, args.color))
             {
                 return fail(1);
             }

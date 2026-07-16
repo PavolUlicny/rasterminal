@@ -18,7 +18,12 @@ rasterminal \- render a 3D model in the terminal
 .SH DESCRIPTION
 .B rasterminal
 is a cross-platform 3D model viewer that renders entirely in the terminal
-using unicode block characters and true-color ANSI escapes.
+using unicode block characters and ANSI color escapes: 24-bit (truecolor)
+where the terminal supports it, with an automatic 256-color fallback
+elsewhere (see
+.B ENVIRONMENT
+and
+.BR \-\-color ).
 .PP
 The
 .I model
@@ -153,6 +158,21 @@ above it they hard-edge. Default
 is faceted,
 .B 180
 is fully smooth. Ignored when an OBJ authors smoothing groups.
+.TP
+.BI \-\-color " mode"
+Color output:
+.B truecolor
+(alias
+.BR 24bit )
+forces 24-bit output,
+.B 256
+forces 256-color output, and
+.B auto
+(the default) detects the terminal's capability from the environment (see
+.BR ENVIRONMENT ).
+Forcing a color mode does not bypass the
+.B TERM=dumb
+rejection or the Windows VT-capability gate.
 .SS Permanent disables
 .TP
 .B \-\-no\-ao
@@ -232,8 +252,70 @@ Success (including
 .TP
 .B 1
 Usage error (unknown flag, missing or invalid value, unexpected argument),
-model load failure, or standard input/output is not a terminal (outside
-.BR \-\-bench ).
+model load failure, or a terminal
+.B rasterminal
+cannot draw to (outside
+.BR \-\-bench ):
+standard input or output is not a terminal,
+.B TERM
+is
+.BR dumb ,
+or a Windows console cannot enable virtual-terminal escape processing.
+.SH ENVIRONMENT
+.B rasterminal
+reads these variables to pick the color mode when rendering interactively; the
+headless
+.B \-\-bench
+mode reads none of them.
+.B TERM=dumb
+is rejected regardless of
+.BR \-\-color ;
+the truecolor-versus-256 detection below applies only under
+.B \-\-color auto
+(the default), because any other
+.B \-\-color
+value forces that choice. Detection runs in a fixed order and the first match
+wins:
+.B TERM=dumb
+is fatal even when
+.B COLORTERM
+claims truecolor, and a
+.B COLORTERM
+truecolor signal in turn wins over a
+.B TERM
+that would otherwise map to 256-color.
+.TP
+.B COLORTERM
+.B truecolor
+or
+.B 24bit
+selects 24-bit output.
+.TP
+.B TERM
+.B dumb
+makes
+.B rasterminal
+exit with an error (a dumb terminal cannot render escape sequences at all); this
+is checked before
+.BR COLORTERM .
+A truecolor hint (the
+.B \-direct
+terminfo family, or a name containing
+.B truecolor
+or
+.BR 24bit )
+or a known truecolor terminal name (kitty, WezTerm, Alacritty, Ghostty, foot,
+Contour; this keeps ssh sessions, which do not forward
+.BR COLORTERM ,
+on 24-bit) selects 24-bit output. Any other non-empty value gets 256-color
+output. When
+.B TERM
+is unset or empty and
+.B COLORTERM
+carries no truecolor signal, the default is 256-color (24-bit on native
+Windows consoles).
+.B \-\-color
+overrides the detected mode.
 .SH EXAMPLES
 .TP
 Render a model with default settings:

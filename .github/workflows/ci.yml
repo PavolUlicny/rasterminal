@@ -313,6 +313,7 @@ jobs:
       - name: Run cppcheck
         run: >
           cppcheck --enable=all --std=c++17 --error-exitcode=1
+          --inline-suppr
           --suppress=missingIncludeSystem
           --suppressions-list=cppcheck-suppressions.txt
           -I src/

@@ -227,6 +227,11 @@ int main(int argc, char *argv[])
     // loop). --bench is headless and exempt. Rejecting the display-only stdin case
     // (e.g. `--spin < /dev/null`) is deliberate: without working input the session
     // can only be killed by signal, and raw-mode setup silently fails anyway.
+    // color_mode is assigned in the block below (from detect_term_color, or forced by
+    // --color when not auto). This initializer is never actually read: the interactive
+    // path always overwrites it before the Framebuffer ctor, and --bench returns from
+    // run_bench earlier with its own headless framebuffer; it only satisfies the declaration.
+    ColorMode color_mode = ColorMode::TrueColor;
     if (!bench_mode)
     {
         if (!platform::is_tty(1))
@@ -238,6 +243,32 @@ int main(int argc, char *argv[])
         {
             std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
             return 1;
+        }
+        // Detection is a pure env read, so both it and the TERM=dumb bail leave the
+        // console untouched. The VT-capability gate that DOES mutate the Windows console
+        // (init_console_output) is deferred until after the model load succeeds, so a
+        // load failure (a typo'd path, the common case) also bails with the console
+        // pristine; see below.
+        const platform::TermColor tc = platform::detect_term_color();
+        if (tc == platform::TermColor::Dumb)
+        {
+            std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
+            return 1;
+        }
+        // --color overrides only the truecolor-vs-256 choice. TERM=dumb stays fatal even
+        // under --color truecolor (dumb means no escape sequences at all, which no color
+        // depth fixes), and the Windows VT gate below is likewise not bypassed.
+        if (args.color == 1)
+        {
+            color_mode = ColorMode::TrueColor;
+        }
+        else if (args.color == 2)
+        {
+            color_mode = ColorMode::Palette256;
+        }
+        else
+        {
+            color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
         }
     }
 
@@ -280,6 +311,20 @@ int main(int argc, char *argv[])
     std::signal(SIGINT, signal_handler);  // Ctrl+C
     std::signal(SIGTERM, signal_handler); // kill
 
+    // VT-capability gate, deferred to here (past the model load and the --bench return) so
+    // that a load failure leaves the Windows console untouched: on Windows this is the first
+    // call that mutates persistent console state (VT flag + UTF-8 code page). A legacy
+    // console that cannot enable VT processing cannot render ANSI at all, so fail loud rather
+    // than emit escape garbage. POSIX always succeeds. cppcheck reads this condition as
+    // constant (why, and the paired unmatchedSuppression guard, are in
+    // cppcheck-suppressions.txt); the directive must sit alone on the line above the `if`.
+    // cppcheck-suppress knownConditionTrueFalse
+    if (!platform::init_console_output())
+    {
+        std::fprintf(stderr, "%s: console does not support ANSI escape sequences\n", program_name(argv[0]));
+        return 1;
+    }
+
     platform::enable_raw_mode();
     platform::enable_mouse();
 
@@ -291,7 +336,7 @@ int main(int argc, char *argv[])
     // With the HUD enabled, the last terminal row is reserved for it;
     // --no-hud reclaims that row for rendering.
     const int hud_rows = args.hud ? 1 : 0;
-    Framebuffer fb(cols, (rows - hud_rows) * 2);
+    Framebuffer fb(cols, (rows - hud_rows) * 2, /*headless=*/false, color_mode);
 
     // Key light: warm white from upper-right-front.
     // Fill light: dim cool blue from lower-left-back, providing contrast.

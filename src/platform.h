@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -73,6 +74,142 @@ namespace platform
 #endif
     }
 
+    // ─── color capability ────────────────────────────────────────────────────────
+
+    // Terminal color capability, classified from the environment at startup.
+    enum class TermColor : std::uint8_t
+    {
+        Dumb,       // TERM=dumb: cannot render escape sequences at all (caller fails loud)
+        Palette256, // xterm-256 palette output
+        TrueColor,  // 24-bit SGR output
+    };
+
+    namespace detail
+    {
+        // ASCII-only case folding: env values are plain ASCII, and std::tolower has
+        // locale cost plus UB on negative char.
+        constexpr char ascii_lower(char c) noexcept
+        {
+            return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
+        }
+
+        constexpr bool ieq(const char *a, const char *b) noexcept
+        {
+            for (; *a != '\0' && *b != '\0'; ++a, ++b)
+            {
+                if (ascii_lower(*a) != ascii_lower(*b))
+                {
+                    return false;
+                }
+            }
+            return *a == '\0' && *b == '\0';
+        }
+
+        // Case-insensitive substring scan. Naive O(n*m) is fine: inputs are short
+        // env values checked once at startup.
+        constexpr bool icontains(const char *hay, const char *needle) noexcept
+        {
+            for (;; ++hay)
+            {
+                const char *h = hay;
+                const char *n = needle;
+                while (*n != '\0' && *h != '\0' && ascii_lower(*h) == ascii_lower(*n))
+                {
+                    ++h;
+                    ++n;
+                }
+                if (*n == '\0')
+                {
+                    return true;
+                }
+                if (*hay == '\0')
+                {
+                    return false;
+                }
+            }
+        }
+
+        // The most common terminals whose TERM name is set exclusively by a truecolor
+        // terminal, matched as substrings so variants hit too (xterm-kitty, xterm-ghostty).
+        // Exists for the ssh case: COLORTERM is not forwarded but TERM is, so without this
+        // these terminals would be downgraded to 256 colors. Deliberately a curated common
+        // set, not exhaustive (a less common truecolor terminal such as rio is intentionally
+        // omitted): an unlisted terminal falls to the safe 256 floor, and its user forces
+        // 24-bit with --color truecolor. Keeping the list short keeps a false positive from a
+        // short substring unlikely.
+        inline constexpr const char *TRUECOLOR_TERMS[] = {
+            "kitty", "wezterm", "alacritty", "ghostty", "foot", "contour",
+        };
+    } // namespace detail
+
+    // Pure classifier over the COLORTERM/TERM env values (either may be null). All
+    // comparisons are ASCII case-insensitive. Decision order:
+    //   1. TERM=dumb wins over everything, even a contradictory COLORTERM: a dumb
+    //      terminal cannot render escape sequences regardless of what claims color.
+    //      Only the literal "dumb" is fatal, by choice: terminfo's wider non-addressable
+    //      family (unknown = use=dumb+gn, etc.) is left on the 256 floor rather than
+    //      fatal, since in practice such a TERM is usually a misconfig inside a real
+    //      terminal that renders fine, and the policy is "never fatal except dumb".
+    //   2. COLORTERM in {truecolor, 24bit} is the canonical truecolor signal.
+    //   3. TERM unset/empty: platform default (unset_default), parameterized so
+    //      both platform branches are unit-testable everywhere.
+    //   4. TERM hints (the -direct terminfo family, truecolor, 24bit) and the
+    //      TRUECOLOR_TERMS known-terminal names cover terminals whose sessions carry
+    //      no COLORTERM (not exported, or stripped by ssh).
+    //   5. Everything else gets the conservative 256-color floor; never fatal even
+    //      for sub-256-color terminfo entries (16-color output is not supported).
+    constexpr TermColor classify_term_color(const char *colorterm, const char *term, TermColor unset_default) noexcept
+    {
+        const bool has_term = term != nullptr && *term != '\0';
+        if (has_term && detail::ieq(term, "dumb"))
+        {
+            return TermColor::Dumb;
+        }
+        if (colorterm != nullptr && (detail::ieq(colorterm, "truecolor") || detail::ieq(colorterm, "24bit")))
+        {
+            return TermColor::TrueColor;
+        }
+        if (!has_term)
+        {
+            return unset_default;
+        }
+        // term is non-null and non-empty from here: the remaining checks all read it.
+        if (detail::icontains(term, "-direct") || detail::icontains(term, "truecolor") ||
+            detail::icontains(term, "24bit"))
+        {
+            return TermColor::TrueColor;
+        }
+        // Raw loop, not std::any_of: any_of is not constexpr until C++20.
+        for (const char *name : detail::TRUECOLOR_TERMS)
+        {
+            if (detail::icontains(term, name))
+            {
+                return TermColor::TrueColor;
+            }
+        }
+        return TermColor::Palette256;
+    }
+
+    // Env-reading wrapper around classify_term_color. The platform default applies when
+    // TERM is unset/empty and COLORTERM carries no truecolor signal (see the classifier's
+    // step order). Windows defaults it to truecolor (the native Windows Terminal / conhost
+    // norm; both render 24-bit once VT processing is on). A Windows ssh session runs over a
+    // real ConPTY console, so is_tty accepts it and it sets TERM, reaching the classifier
+    // proper; a mintty/MSYS pty is a named pipe that is_tty rejects before detection runs, so
+    // it never gets here. POSIX defaults to the conservative 256-color floor.
+    inline TermColor detect_term_color() noexcept
+    {
+        // Single-threaded startup; nothing in the program calls setenv.
+        const char *colorterm = std::getenv("COLORTERM"); // NOLINT(concurrency-mt-unsafe)
+        const char *term = std::getenv("TERM");           // NOLINT(concurrency-mt-unsafe)
+#ifdef _WIN32
+        constexpr TermColor unset_default = TermColor::TrueColor;
+#else
+        constexpr TermColor unset_default = TermColor::Palette256;
+#endif
+        return classify_term_color(colorterm, term, unset_default);
+    }
+
     // ─── raw mode ────────────────────────────────────────────────────────────────
 
 #ifndef _WIN32
@@ -89,14 +226,44 @@ namespace platform
     // Output-side console setup (UTF-8 + ANSI). Idempotent. Split out of enable_raw_mode
     // so it can run before any output — incl. the UTF-8 in --version — which on Windows
     // happens before the main loop and thus before raw mode would otherwise set the CP.
-    inline void init_console_output()
+    // Returns whether the console accepts VT escape sequences: a legacy Windows console
+    // can lack ENABLE_VIRTUAL_TERMINAL_PROCESSING, making ANSI output impossible, and
+    // the render path must fail loud rather than print escape garbage. POSIX always
+    // returns true (escape handling is the terminal emulator's job, not the kernel's).
+    // Deliberately not [[nodiscard]]: the enable_raw_mode and --version call sites
+    // legitimately ignore it; only the render path needs the verdict.
+    inline bool init_console_output()
     {
 #ifdef _WIN32
-        SetConsoleOutputCP(65001);
+        // Probes GetStdHandle(STD_OUTPUT_HANDLE), like get_terminal_size/enable_mouse, whereas
+        // is_tty(1) probes _get_osfhandle(1). Both reference the same console object under any
+        // normal launch (divergence needs a deliberate SetStdHandle), and VT is a property of
+        // that shared object, so enabling it here reaches the output fd 1 writes through.
         HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
-        GetConsoleMode(hout, &mode);
-        SetConsoleMode(hout, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+        // Probe before mutating: a failed GetConsoleMode leaves mode at 0, and ORing into that
+        // would clear the console's other bits. ENABLE_PROCESSED_OUTPUT rides along because
+        // Microsoft documents it as a prerequisite for the VT flag. SetConsoleMode changes
+        // nothing when it fails, so either bail leaves the console exactly as found.
+        if (GetConsoleMode(hout, &mode) == 0)
+        {
+            return false;
+        }
+        if (SetConsoleMode(hout, mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0)
+        {
+            return false;
+        }
+        // Code page last, so a VT failure never leaves the console switched. Its return is
+        // deliberately unchecked: CP 65001 ships with every supported Windows and the handle is
+        // already a proven live console (the two calls above), so a failure has no realistic
+        // trigger, and a false "VT ok" here would only mean the ▀ half-blocks garble rather
+        // than not render. Accepted too: neither mode bit is restored on exit (Windows has no
+        // disable_raw_mode counterpart), harmless since both are default-on, though a host that
+        // had cleared PROCESSED_OUTPUT for raw byte output would find it left on.
+        SetConsoleOutputCP(65001);
+        return true;
+#else
+        return true;
 #endif
     }
 

@@ -71,7 +71,7 @@ Surviving triangles go through the perspective divide and are scan-converted int
 
 Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha) take a separate path. Their fragments are gathered into a per-pixel list, sorted back to front, and composited over the finished opaque image, so the result is correct even where transparent geometry interpenetrates or is double-sided. Fully opaque models skip this path entirely.
 
-The finished framebuffer is then written to the terminal. Each character cell represents two vertically stacked pixels, drawn as a `▀` half-block glyph whose foreground color is the top pixel and background color is the bottom, both in 24-bit ANSI color. The whole frame is assembled in a single buffer and flushed in one write.
+The finished framebuffer is then written to the terminal. Each character cell represents two vertically stacked pixels, drawn as a `▀` half-block glyph whose foreground color is the top pixel and background color is the bottom, both in 24-bit ANSI color (perceptually quantized to the xterm-256 palette on terminals without truecolor support). The whole frame is assembled in a single buffer and flushed in one write.
 
 Rendering is multi-threaded with a work-stealing scheduler. Each worker claims a chunk of triangles and rasterizes it end to end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and color into one slot, with no separate depth pre-pass. Transparency adds two further work-stealing phases, accumulate then resolve, but only for models that actually use blended materials.
 
@@ -192,6 +192,7 @@ rasterminal [options] <model>
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
+| `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
@@ -234,7 +235,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 Any terminal with:
 
 - UTF-8 support
-- 24-bit (truecolor) ANSI color
+- ANSI color: 24-bit (truecolor) where supported, with an automatic 256-color fallback elsewhere, detected from `COLORTERM`/`TERM` and overridable with `--color` (a `dumb` terminal, or a Windows console that cannot enable ANSI escape processing, is rejected outright)
 - Mouse reporting (for drag-to-orbit and scroll-to-zoom)
 
 Interactive rendering also requires that both standard input and standard output be the terminal: if either is piped or redirected, rasterminal exits with an error instead of emitting escape sequences into the stream. The headless `--bench` mode is exempt.

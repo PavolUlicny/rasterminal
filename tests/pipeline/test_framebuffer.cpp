@@ -2,6 +2,40 @@
 #include "tests/rasterize_test_util.h"
 #include "src/framebuffer.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+#include <string>
+#include <vector>
+
+namespace
+{
+    // Counts cursor advances of both forms, bare \033[C and counted \033[NC. Searching for the
+    // literal "\033[C" would miss "\033[3C", so an "emitted no advance" assertion must count.
+    size_t count_cursor_advances(const std::string &s)
+    {
+        size_t n = 0;
+        for (size_t i = 0; i + 2 < s.size(); i++)
+        {
+            if (s[i] != '\033' || s[i + 1] != '[')
+            {
+                continue;
+            }
+            size_t j = i + 2;
+            while (j < s.size() && s[j] >= '0' && s[j] <= '9')
+            {
+                j++;
+            }
+            if (j < s.size() && s[j] == 'C')
+            {
+                n++;
+            }
+        }
+        return n;
+    }
+} // namespace
+
 // ─── get_pixel / depth_at bounds ──────────────────────────────────────────────
 
 TEST(framebuffer, get_pixel_oob_returns_default)
@@ -312,36 +346,112 @@ TEST(framebuffer, hud_cleared_after_set_is_omitted)
 
 // ─── incremental skip path ────────────────────────────────────────────────────
 
+namespace
+{
+    // Runs the full-redraw frame that seeds m_prev_color, discarding its bytes in a capture
+    // scope of its own. The incremental frame under test is then the ONLY thing in the caller's
+    // capture: asserting across both frames is a trap, since the full redraw positions every row
+    // and emits no advances, so it can satisfy an assertion the incremental frame never earns.
+    void seed_prev_color(Framebuffer &fb)
+    {
+        CaptureStdout warm;
+        fb.present();
+        (void)warm.read();
+    }
+} // namespace
+
 TEST(framebuffer, incremental_single_skip_emits_cursor_advance)
 {
     // After the first present() establishes m_prev_color, a second present() where
     // a dirty cell starts a row and exactly one unchanged cell follows must emit
     // \033[C (single-step cursor advance, not \033[1C) for the skip.
     Framebuffer fb(4, 2, /*headless=*/true);
-    CaptureStdout cap;
-    fb.present(); // full-redraw — establishes m_prev_color = all black
+    seed_prev_color(fb);
 
+    CaptureStdout cap;
     fb.clear();
     (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty
     (void)fb.commit_pixel(2, 0, 0.5f, { 0, 100, 0 }); // col 2 dirty; col 1 unchanged → skip=1
     fb.present();                                     // incremental path fires skip=1 branch
 
-    ASSERT_TRUE(cap.read().find("\033[C") != std::string::npos);
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1)); // col 1 only; col 3's tail is dropped
+    ASSERT_TRUE(inc.find("\033[C") != std::string::npos);          // bare form, not \033[1C
 }
 
 TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
 {
-    // When a dirty cell starts a row and multiple unchanged columns follow, the
-    // skip path must emit \033[NC with an explicit count, not the bare \033[C form.
-    Framebuffer fb(5, 2, /*headless=*/true);
-    CaptureStdout cap;
-    fb.present(); // full-redraw
+    // Multiple unchanged columns between two dirty ones must emit \033[NC with an explicit
+    // count, not the bare \033[C. The clean run has to end at a dirty cell rather than the
+    // row edge: a run reaching the edge emits nothing, so a 5-wide framebuffer tests nothing.
+    Framebuffer fb(6, 2, /*headless=*/true);
+    seed_prev_color(fb);
 
+    CaptureStdout cap;
     fb.clear();
-    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty; cols 1-4 unchanged → skip=4
+    (void)fb.commit_pixel(0, 0, 0.5f, { 100, 0, 0 }); // col 0 dirty
+    (void)fb.commit_pixel(5, 0, 0.5f, { 0, 100, 0 }); // col 5 dirty; cols 1-4 unchanged → skip=4
     fb.present();                                     // incremental path fires skip>1 branch
 
-    ASSERT_TRUE(cap.read().find("\033[4C") != std::string::npos);
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1));
+    ASSERT_TRUE(inc.find("\033[4C") != std::string::npos);
+}
+
+// A clean run reaching the row end must emit no cursor advance of either form: the cursor is
+// hidden and never read back, and whatever writes next (a later dirty row, the HUD, or the next
+// frame) positions absolutely. Without this the escape is dead bytes on every row ending in
+// background. Mode-independent, so truecolor covers both.
+TEST(framebuffer, present_no_cursor_advance_for_clean_run_to_row_end)
+{
+    Framebuffer fb(4, 2, /*headless=*/true);
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty; cols 1..3 clean to the row end
+    fb.present();
+
+    ASSERT_EQ(count_cursor_advances(cap.read()), static_cast<size_t>(0));
+}
+
+// Dropping the end-of-row advance is only safe because a later dirty row still positions
+// absolutely. Every other incremental test is a single terminal row, so nothing else pins that:
+// here row 0 ends in a dropped clean run and row 1 must still emit its own \033[2;1H.
+TEST(framebuffer, present_next_dirty_row_repositions_after_dropped_advance)
+{
+    Framebuffer fb(4, 4, /*headless=*/true); // 4 px tall = 2 terminal rows
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // row 0, col 0; cols 1..3 clean to the row end
+    (void)fb.commit_pixel(0, 2, 0.5f, { 0, 200, 0 }); // row 1, col 0 (pixel y=2 → terminal row 1)
+    fb.present();
+
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(0)); // both rows' tails dropped
+    ASSERT_TRUE(inc.find("\033[1;1H") != std::string::npos);
+    ASSERT_TRUE(inc.find("\033[2;1H") != std::string::npos); // row 1 still positioned absolutely
+}
+
+// The HUD is the most common thing that follows a dropped advance in real use: it must still
+// position itself absolutely on its own row rather than continuing from the pixel cursor.
+TEST(framebuffer, present_hud_positions_absolutely_after_dropped_advance)
+{
+    Framebuffer fb(4, 2, /*headless=*/true); // 2 px tall = 1 pixel row; HUD lands on row 2
+    seed_prev_color(fb);
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty; cols 1..3 clean to the row end
+    fb.set_hud("HUD");
+    fb.present();
+
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(0));
+    ASSERT_TRUE(inc.find("\033[2;1H") != std::string::npos); // HUD row, absolute
+    ASSERT_TRUE(inc.find("HUD") != std::string::npos);
 }
 
 // ─── additional incremental / emit_cell paths ────────────────────────────────
@@ -546,4 +656,313 @@ TEST(tonemap, vec3_applies_per_channel)
     ASSERT_NEAR(out.x, 0.5f, 1e-6f);      // below knee: unchanged
     ASSERT_NEAR(out.y, 0.889636f, 1e-4f); // 1.0 rolls off
     ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
+}
+
+// ─── quantize_256 (perceptual CIELAB nearest via the 64^3 LUT) ────────────────
+// The RGB->palette-index map used by present() in ColorMode::Palette256. Cube 16..231,
+// grey ramp 232..255; never returns a 0..15 system colour. Each colour takes the
+// deltaE76-nearest entry for its 64^3 cell's centre, except that a cell containing an
+// exact palette colour maps to that colour.
+
+namespace
+{
+    // The 240 addressable xterm-256 palette RGB values, indexed 0..239 (palette index 16 + j).
+    Color palette_entry(int j)
+    {
+        if (j < 216)
+        {
+            auto val = [](int l) { return static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l)); };
+            return { val(j / 36), val((j / 6) % 6), val(j % 6) };
+        }
+        const auto v = static_cast<uint8_t>(8 + (10 * (j - 216)));
+        return { v, v, v };
+    }
+
+    // Independent double-precision CIELAB (D65) reference for validating the float LUT builder.
+    void cielab_ref(double r8, double g8, double b8, double out[3])
+    {
+        auto lin = [](double v)
+        {
+            v /= 255.0;
+            return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+        };
+        const double r = lin(r8);
+        const double g = lin(g8);
+        const double b = lin(b8);
+        const double x = ((0.4124564 * r) + (0.3575761 * g) + (0.1804375 * b)) / 0.95047;
+        const double y = (0.2126729 * r) + (0.7151522 * g) + (0.0721750 * b);
+        const double z = ((0.0193339 * r) + (0.1191920 * g) + (0.9503041 * b)) / 1.08883;
+        auto f = [](double t) { return t > 216.0 / 24389.0 ? std::cbrt(t) : (((24389.0 / 27.0) * t) + 16.0) / 116.0; };
+        const double fx = f(x);
+        const double fy = f(y);
+        const double fz = f(z);
+        out[0] = (116.0 * fy) - 16.0;
+        out[1] = 500.0 * (fx - fy);
+        out[2] = 200.0 * (fy - fz);
+    }
+} // namespace
+
+TEST(framebuffer, quantize_256_corners)
+{
+    // Pure black/white live in the cube (16 / 231), not on the grey ramp (which is 8..238).
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 0, 0 })), 16);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 255, 255, 255 })), 231);
+}
+
+TEST(framebuffer, quantize_256_cube_exact)
+{
+    // Colours that land exactly on cube levels {0,95,135,175,215,255} pick their cube cell.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 95, 135, 175 })), 67); // 16 + 36*1 + 6*2 + 3
+    ASSERT_EQ(static_cast<int>(quantize_256({ 255, 0, 0 })), 196);   // 16 + 36*5
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 255, 0 })), 46);    // 16 + 6*5
+    ASSERT_EQ(static_cast<int>(quantize_256({ 0, 0, 255 })), 21);    // 16 + 5
+}
+
+TEST(framebuffer, quantize_256_grey_ramp_exact)
+{
+    // Exact ramp values (8 + 10*k) pick index 232 + k; {160,160,160} is not one (its cell centre
+    // resolves to ramp 158 = 247 via the scan). 233 and 247 also pin the hard-coded HUD bg/fg
+    // palette constants (RGB {18,18,18} / {160,160,160}) at the emit site in framebuffer.cpp,
+    // which a static_assert can no longer reach now that the table is runtime-built.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 8, 8, 8 })), 232);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 18, 18, 18 })), 233);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 238, 238, 238 })), 255);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 160, 160, 160 })), 247);
+}
+
+TEST(framebuffer, quantize_256_grey_beats_cube)
+{
+    // A near-grey colour is perceptually nearest the ramp (grey 128 here, via the centre-nearest
+    // scan: this colour's cell (32,32,31) holds no palette entry, so the exact overwrite is not
+    // what decides it).
+    ASSERT_EQ(static_cast<int>(quantize_256({ 130, 128, 126 })), 244);
+}
+
+TEST(framebuffer, quantize_256_cube_beats_grey)
+{
+    // A saturated colour is perceptually nearest a cube cell, (175,0,0) here.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 200, 50, 50 })), 124);
+}
+
+TEST(framebuffer, quantize_256_dark_colors_keep_hue)
+{
+    // The regression the CIELAB metric exists to fix: dark foliage green and terracotta brown
+    // used to collapse to the grey ramp under squared-RGB distance (the palette cube has no
+    // chromatic entry below 95 per channel, so nearly all dark colours were nearer a grey).
+    // deltaE76 keeps their hue. Margins to the runner-up entry are >= 0.47 deltaE (~4 orders
+    // above float noise), so the pins are stable across libm implementations.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 60, 90, 60 })), 65); // cube (95,135,95), green
+    ASSERT_EQ(static_cast<int>(quantize_256({ 90, 55, 40 })), 95); // cube (135,95,95), rust
+}
+
+TEST(framebuffer, quantize_256_palette_exact_idempotent)
+{
+    // Every addressable palette colour must map to itself (the builder's exact-cell override):
+    // palette-exact pixels, backgrounds above all, must never wash to a neighbouring entry.
+    for (int j = 0; j < 240; ++j)
+    {
+        ASSERT_EQ(static_cast<int>(quantize_256(palette_entry(j))), 16 + j);
+    }
+}
+
+TEST(framebuffer, quantize_256_never_system_color)
+{
+    // The result must always be an addressable, theme-independent palette entry (16..255), never
+    // a 0..15 system colour. The table is finite, so sweep every one of its 64^3 cells.
+    const auto &lut = quant256_lut();
+    for (const uint8_t entry : lut)
+    {
+        ASSERT_TRUE(entry >= 16);
+    }
+}
+
+TEST(framebuffer, quantize_256_matches_cielab_reference)
+{
+    // Ground truth for the whole table against an independent double-precision CIELAB
+    // implementation. For every 64^3 cell: a cell containing an exact palette colour must map to
+    // it; any other cell's entry must achieve the true minimum squared deltaE76 to the cell
+    // centre within a small epsilon (distances are compared, not indices, so a float-vs-double
+    // near-tie between two entries cannot flake the test). Deliberately exhaustive, not sampled:
+    // ~64 ms plain and ~1-2 s under the sanitizer CI jobs, accepted for a whole-table guarantee.
+    double pal_lab[240][3];
+    for (int j = 0; j < 240; ++j)
+    {
+        const Color p = palette_entry(j);
+        cielab_ref(p.r, p.g, p.b, pal_lab[j]);
+    }
+    std::vector<int> owner(QUANT256_LUT_SIZE, -1); // cell -> contained palette entry (0..239)
+    for (int j = 0; j < 240; ++j)
+    {
+        owner[quant256_idx(palette_entry(j))] = j;
+    }
+
+    const auto &lut = quant256_lut();
+    for (int r = 0; r < 64; ++r)
+    {
+        for (int g = 0; g < 64; ++g)
+        {
+            for (int b = 0; b < 64; ++b)
+            {
+                const size_t idx =
+                    (static_cast<size_t>(r) << 12u) | (static_cast<size_t>(g) << 6u) | static_cast<size_t>(b);
+                const int chosen = static_cast<int>(lut[idx]) - 16;
+                ASSERT_TRUE(chosen >= 0 && chosen < 240);
+                if (owner[idx] >= 0)
+                {
+                    ASSERT_EQ(chosen, owner[idx]);
+                    continue;
+                }
+                double c[3];
+                cielab_ref((4.0 * r) + 1.5, (4.0 * g) + 1.5, (4.0 * b) + 1.5, c);
+                auto sq = [&c](const double p[3])
+                {
+                    const double dl = p[0] - c[0];
+                    const double da = p[1] - c[1];
+                    const double db = p[2] - c[2];
+                    return (dl * dl) + (da * da) + (db * db);
+                };
+                double best = std::numeric_limits<double>::max();
+                for (const auto &p : pal_lab)
+                {
+                    best = std::min(best, sq(p));
+                }
+                ASSERT_TRUE(sq(pal_lab[chosen]) <= best + 1e-2);
+            }
+        }
+    }
+}
+
+// ─── 256-colour present() emission ────────────────────────────────────────────
+
+TEST(framebuffer, present_256_emits_palette_fg_and_bg)
+{
+    // top != bot in 256 mode emits a combined 38;5;fg;48;5;bg sequence and never any 24-bit SGR.
+    Framebuffer fb(1, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 40, 40 }); // top; bottom stays black
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("38;5;") != std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") != std::string::npos);
+    ASSERT_TRUE(out.find("38;2") == std::string::npos);
+    ASSERT_TRUE(out.find("48;2") == std::string::npos);
+}
+
+TEST(framebuffer, present_256_top_eq_bot_suppresses_fg)
+{
+    // top == bot collapses to a bg-only SGR + space; no fg SGR and no half-block are emitted.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;5;") != std::string::npos);        // bg emitted
+    ASSERT_TRUE(out.find("38;5;") == std::string::npos);        // fg suppressed
+    ASSERT_TRUE(out.find("\xe2\x96\x80") == std::string::npos); // no ▀ half-block: cells are spaces
+}
+
+TEST(framebuffer, present_256_second_identical_cell_suppresses_bg)
+{
+    // Two adjacent top==bot cells with the same index: the bg SGR for that index is emitted once.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    char sgr[16];
+    std::snprintf(sgr, sizeof(sgr), "\033[48;5;%dm", static_cast<int>(quantize_256({ 100, 150, 200 })));
+    const size_t first = out.find(sgr);
+    ASSERT_TRUE(first != std::string::npos);                    // emitted once
+    ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for the second cell
+}
+
+TEST(framebuffer, present_truecolor_default_still_24bit)
+{
+    // The default ctor mode is TrueColor: 24-bit SGR, never a palette index. Locks the default.
+    Framebuffer fb(2, 2, /*headless=*/true);
+    CaptureStdout cap;
+    fb.clear({ 100, 150, 200 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;2;") != std::string::npos);
+    ASSERT_TRUE(out.find("38;5;") == std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") == std::string::npos);
+}
+
+// ─── 256-colour index coalescing / skip path ──────────────────────────────────
+
+TEST(framebuffer, present_256_distinct_rgb_same_index_is_clean)
+{
+    // {16,16,16} and {20,20,20} both quantize to 233, so m_prev_color (which stores indices in
+    // 256 mode) reads the second frame as entirely clean: no new cursor positioning is emitted.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 16, 16, 16 })), 233);
+    ASSERT_EQ(static_cast<int>(quantize_256({ 20, 20, 20 })), 233);
+    Framebuffer fb(4, 2, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.clear({ 16, 16, 16 });
+    fb.present(); // full redraw emits \033[1;1H once
+    fb.clear({ 20, 20, 20 });
+    fb.present(); // entirely clean: no cursor pos
+    const std::string out = cap.read();
+    const size_t first = out.find("\033[1;1H");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(out.find("\033[1;1H", first + 1) == std::string::npos);
+}
+
+TEST(framebuffer, present_256_single_skip_emits_cursor_advance)
+{
+    // The incremental skip scan must re-quantize/compare correctly in 256 mode: a clean cell
+    // between two dirty ones yields a single-step \033[C advance.
+    Framebuffer fb(4, 2, /*headless=*/true, ColorMode::Palette256);
+    seed_prev_color(fb); // full redraw establishes prev (all black -> 16)
+
+    CaptureStdout cap;
+    fb.clear();
+    (void)fb.commit_pixel(0, 0, 0.5f, { 200, 0, 0 }); // col 0 dirty
+    (void)fb.commit_pixel(2, 0, 0.5f, { 0, 200, 0 }); // col 2 dirty; col 1 clean -> skip=1
+    fb.present();
+    const std::string inc = cap.read();
+    ASSERT_EQ(count_cursor_advances(inc), static_cast<size_t>(1)); // col 1 only; col 3's tail is dropped
+    ASSERT_TRUE(inc.find("\033[C") != std::string::npos);
+}
+
+// ─── 256-colour HUD, plumbing, degenerate sizes ───────────────────────────────
+
+TEST(framebuffer, present_256_hud_uses_palette_colors)
+{
+    Framebuffer fb(10, 4, /*headless=*/true, ColorMode::Palette256);
+    CaptureStdout cap;
+    fb.set_hud("HUD256");
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[48;5;233m\033[38;5;247m") != std::string::npos);
+    ASSERT_TRUE(out.find("\033[48;2;18;18;18m") == std::string::npos);
+    ASSERT_TRUE(out.find("HUD256") != std::string::npos);
+}
+
+TEST(framebuffer, present_256_degenerate_sizes_no_crash)
+{
+    FdRedirect rd;
+    {
+        Framebuffer fb(0, 0, /*headless=*/true, ColorMode::Palette256);
+        fb.clear();
+        fb.present();
+    }
+    {
+        Framebuffer fb(2, 3, /*headless=*/true, ColorMode::Palette256); // odd height
+        (void)fb.commit_pixel(0, 2, 0.5f, { 100, 150, 200 });
+        fb.present();
+    }
+}
+
+TEST(framebuffer, construct_explicit_truecolor_matches_default)
+{
+    // Passing ColorMode::TrueColor explicitly behaves like the default: 24-bit SGR only.
+    Framebuffer fb(2, 2, /*headless=*/true, ColorMode::TrueColor);
+    CaptureStdout cap;
+    fb.clear({ 10, 20, 30 });
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("48;2;") != std::string::npos);
+    ASSERT_TRUE(out.find("48;5;") == std::string::npos);
 }
