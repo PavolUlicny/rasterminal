@@ -74,80 +74,37 @@ enum class ColorMode : uint8_t
     Palette256
 };
 
-// Precomputed tables for quantize_256, indexed so the per-pixel quantize needs no division:
-//   cube_level[byte] -> 6x6x6 cube level 0..5 for one channel
-//   cube_val[byte]   -> that level's channel value {0,95,135,175,215,255}
-//   gray_k[r+g+b]    -> 24-step grey ramp index k (0..23); indexing by the channel *sum* folds the
-//                       /3 (mean) and /10 (step) into the table, leaving no runtime divide at all
-// ~1.3 KB of read-only data, L1-resident. At the (non-vectorizable) present() call site this LUT
-// measured ~2-4x faster than the equivalent per-pixel arithmetic across GCC/Clang, native and portable.
-struct Palette256Luts
-{
-    std::array<uint8_t, 256> cube_level{};
-    std::array<uint8_t, 256> cube_val{};
-    std::array<uint8_t, 766> gray_k{};
-};
+// The RGB -> xterm-256 quantization table used by present()'s Palette256 mode: 64x64x64 cells
+// (6 high bits per channel, 256 KB), each holding the palette index (16..231 colour cube,
+// 232..255 grey ramp; never a theme-dependent 0..15 system colour) nearest to the cell's centre
+// by squared CIELAB (deltaE76) distance, ties broken toward the lower index (so the cube beats
+// the ramp). The metric is perceptual (CIELAB, not squared RGB) because the palette's cube has no
+// chromatic entry below 95 per channel: an RGB metric sends dark and muted colours to the grey
+// ramp even when a perceptually closer chromatic cell exists, visibly desaturating dark models
+// (the metric choice over OKLab is argued at cielab_from_linear in framebuffer.cpp). A cell that
+// contains a palette colour exactly maps to that colour (at 64^3 no cell holds two palette
+// colours), so palette-exact pixels (the black and grey backgrounds and the HUD bg {18,18,18}
+// among them) round-trip unchanged, while the white background {240,240,240} and the HUD fg
+// {160,160,160} are not palette colours and take ramp 238 / 158; every other colour takes its cell centre's nearest
+// entry, an error far below the palette's own spacing (>= 10 grey, >= 40 cube). Built once at runtime because CIELAB
+// needs cbrt, which is not constexpr in C++17; only the first quantize pays it (256-colour
+// presents and tests, never a truecolor session or --bench).
+inline constexpr size_t QUANT256_LUT_SIZE = size_t{ 64 } * 64u * 64u;
 
-constexpr Palette256Luts make_palette256_luts() noexcept
+// Defined in framebuffer.cpp; the first call builds the table (thread-safe magic static).
+const std::array<uint8_t, QUANT256_LUT_SIZE> &quant256_lut() noexcept;
+
+constexpr size_t quant256_idx(Color c) noexcept
 {
-    Palette256Luts t{};
-    for (int v = 0; v < 256; ++v)
-    {
-        // Round to nearest cube level at midpoints {47.5,115,155,195,235}; 55+40*l gives the value.
-        const int l = v < 48 ? 0 : (v < 115 ? 1 : (v - 35) / 40);
-        t.cube_level[static_cast<size_t>(v)] = static_cast<uint8_t>(l);
-        t.cube_val[static_cast<size_t>(v)] = static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l));
-    }
-    for (int s = 0; s < 766; ++s)
-    {
-        const int avg = s / 3;
-        int k = (avg - 3) / 10;
-        // Clamp into the ramp: avg=255 gives k=25 (live upper bound). The lower guard is unreachable
-        // (avg>=0 so (avg-3)/10 truncates toward zero, never below 0) but kept defensively so a future
-        // formula change can't push 232+k out of the grey range. Compile-time only.
-        k = k < 0 ? 0 : (k > 23 ? 23 : k);
-        t.gray_k[static_cast<size_t>(s)] = static_cast<uint8_t>(k);
-    }
-    return t;
+    return (static_cast<size_t>(c.r >> 2u) << 12u) | (static_cast<size_t>(c.g >> 2u) << 6u) |
+           static_cast<size_t>(c.b >> 2u);
 }
 
-// Single shared definition across TUs (C++17 inline variable); must be namespace-scope because a
-// constexpr function may not hold a static local in C++17.
-inline constexpr Palette256Luts PALETTE256_LUTS = make_palette256_luts();
-
-// Map a full RGB colour to the nearest xterm-256 palette index (16..255), no search. Picks the nearer
-// of the best 6x6x6 colour-cube cell and the best point on the 24-step grey ramp by squared RGB distance
-// (cube wins ties). Never returns 0..15, so the terminal-theme-dependent system colours are never emitted
-// and the output is stable across terminal themes.
-constexpr uint8_t quantize_256(Color c) noexcept
+// Convenience form paying the magic-static init guard per call; present()'s pixel loops instead
+// hoist quant256_lut().data() once per frame and index it with quant256_idx directly.
+inline uint8_t quantize_256(Color c) noexcept
 {
-    const int rv = c.r;
-    const int gv = c.g;
-    const int bv = c.b;
-    const Palette256Luts &L = PALETTE256_LUTS;
-
-    const int cr = L.cube_val[static_cast<size_t>(rv)];
-    const int cg = L.cube_val[static_cast<size_t>(gv)];
-    const int cb = L.cube_val[static_cast<size_t>(bv)];
-
-    const size_t sum = static_cast<size_t>(rv) + static_cast<size_t>(gv) + static_cast<size_t>(bv);
-    const int k = L.gray_k[sum];
-    const int gray = 8 + (10 * k);
-
-    auto sqdist = [](int dr, int dg, int db) noexcept { return (dr * dr) + (dg * dg) + (db * db); };
-    const int cube_d = sqdist(cr - rv, cg - gv, cb - bv);
-    const int gray_d = sqdist(gray - rv, gray - gv, gray - bv);
-
-    if (gray_d < cube_d)
-    {
-        return static_cast<uint8_t>(232 + k);
-    }
-    // Cube wins: the per-channel levels are only needed for the cube index, so load them here rather
-    // than above the branch (they are dead on the grey-winning path; GCC does not sink them otherwise).
-    const int rl = L.cube_level[static_cast<size_t>(rv)];
-    const int gl = L.cube_level[static_cast<size_t>(gv)];
-    const int bl = L.cube_level[static_cast<size_t>(bv)];
-    return static_cast<uint8_t>(16 + (36 * rl) + (6 * gl) + bl);
+    return quant256_lut()[quant256_idx(c)];
 }
 
 class Framebuffer

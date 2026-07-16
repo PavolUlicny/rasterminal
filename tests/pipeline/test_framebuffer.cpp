@@ -3,7 +3,9 @@
 #include "src/framebuffer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -656,9 +658,49 @@ TEST(tonemap, vec3_applies_per_channel)
     ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
 }
 
-// ─── quantize_256 (closed-form xterm-256 nearest) ─────────────────────────────
+// ─── quantize_256 (perceptual CIELAB nearest via the 64^3 LUT) ────────────────
 // The RGB->palette-index map used by present() in ColorMode::Palette256. Cube 16..231,
-// grey ramp 232..255; never returns a 0..15 system colour.
+// grey ramp 232..255; never returns a 0..15 system colour. Each colour takes the
+// deltaE76-nearest entry for its 64^3 cell's centre, except that a cell containing an
+// exact palette colour maps to that colour.
+
+namespace
+{
+    // The 240 addressable xterm-256 palette RGB values, indexed 0..239 (palette index 16 + j).
+    Color palette_entry(int j)
+    {
+        if (j < 216)
+        {
+            auto val = [](int l) { return static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l)); };
+            return { val(j / 36), val((j / 6) % 6), val(j % 6) };
+        }
+        const auto v = static_cast<uint8_t>(8 + (10 * (j - 216)));
+        return { v, v, v };
+    }
+
+    // Independent double-precision CIELAB (D65) reference for validating the float LUT builder.
+    void cielab_ref(double r8, double g8, double b8, double out[3])
+    {
+        auto lin = [](double v)
+        {
+            v /= 255.0;
+            return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4);
+        };
+        const double r = lin(r8);
+        const double g = lin(g8);
+        const double b = lin(b8);
+        const double x = ((0.4124564 * r) + (0.3575761 * g) + (0.1804375 * b)) / 0.95047;
+        const double y = (0.2126729 * r) + (0.7151522 * g) + (0.0721750 * b);
+        const double z = ((0.0193339 * r) + (0.1191920 * g) + (0.9503041 * b)) / 1.08883;
+        auto f = [](double t) { return t > 216.0 / 24389.0 ? std::cbrt(t) : (((24389.0 / 27.0) * t) + 16.0) / 116.0; };
+        const double fx = f(x);
+        const double fy = f(y);
+        const double fz = f(z);
+        out[0] = (116.0 * fy) - 16.0;
+        out[1] = 500.0 * (fx - fy);
+        out[2] = 200.0 * (fy - fz);
+    }
+} // namespace
 
 TEST(framebuffer, quantize_256_corners)
 {
@@ -678,7 +720,10 @@ TEST(framebuffer, quantize_256_cube_exact)
 
 TEST(framebuffer, quantize_256_grey_ramp_exact)
 {
-    // Exact ramp values (8 + 10*k) pick index 232 + k; 247 also pins the HUD fg constant.
+    // Exact ramp values (8 + 10*k) pick index 232 + k; {160,160,160} is not one (its cell centre
+    // resolves to ramp 158 = 247 via the scan). 233 and 247 also pin the hard-coded HUD bg/fg
+    // palette constants (RGB {18,18,18} / {160,160,160}) at the emit site in framebuffer.cpp,
+    // which a static_assert can no longer reach now that the table is runtime-built.
     ASSERT_EQ(static_cast<int>(quantize_256({ 8, 8, 8 })), 232);
     ASSERT_EQ(static_cast<int>(quantize_256({ 18, 18, 18 })), 233);
     ASSERT_EQ(static_cast<int>(quantize_256({ 238, 238, 238 })), 255);
@@ -687,95 +732,101 @@ TEST(framebuffer, quantize_256_grey_ramp_exact)
 
 TEST(framebuffer, quantize_256_grey_beats_cube)
 {
-    // A near-grey colour is closer to the ramp than to any cube cell.
+    // A near-grey colour is perceptually nearest the ramp (grey 128 here, via the centre-nearest
+    // scan: this colour's cell (32,32,31) holds no palette entry, so the exact overwrite is not
+    // what decides it).
     ASSERT_EQ(static_cast<int>(quantize_256({ 130, 128, 126 })), 244);
 }
 
 TEST(framebuffer, quantize_256_cube_beats_grey)
 {
-    // A saturated colour is closer to a cube cell than to the ramp.
-    ASSERT_EQ(static_cast<int>(quantize_256({ 200, 50, 50 })), 167);
+    // A saturated colour is perceptually nearest a cube cell, (175,0,0) here.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 200, 50, 50 })), 124);
+}
+
+TEST(framebuffer, quantize_256_dark_colors_keep_hue)
+{
+    // The regression the CIELAB metric exists to fix: dark foliage green and terracotta brown
+    // used to collapse to the grey ramp under squared-RGB distance (the palette cube has no
+    // chromatic entry below 95 per channel, so nearly all dark colours were nearer a grey).
+    // deltaE76 keeps their hue. Margins to the runner-up entry are >= 0.47 deltaE (~4 orders
+    // above float noise), so the pins are stable across libm implementations.
+    ASSERT_EQ(static_cast<int>(quantize_256({ 60, 90, 60 })), 65); // cube (95,135,95), green
+    ASSERT_EQ(static_cast<int>(quantize_256({ 90, 55, 40 })), 95); // cube (135,95,95), rust
+}
+
+TEST(framebuffer, quantize_256_palette_exact_idempotent)
+{
+    // Every addressable palette colour must map to itself (the builder's exact-cell override):
+    // palette-exact pixels, backgrounds above all, must never wash to a neighbouring entry.
+    for (int j = 0; j < 240; ++j)
+    {
+        ASSERT_EQ(static_cast<int>(quantize_256(palette_entry(j))), 16 + j);
+    }
 }
 
 TEST(framebuffer, quantize_256_never_system_color)
 {
-    // The result must always be an addressable, theme-independent palette entry (16..255),
-    // never a 0..15 system colour. Sweep the RGB cube plus the exact cube-level boundaries.
-    for (int r = 0; r <= 255; r += 15)
+    // The result must always be an addressable, theme-independent palette entry (16..255), never
+    // a 0..15 system colour. The table is finite, so sweep every one of its 64^3 cells.
+    const auto &lut = quant256_lut();
+    for (const uint8_t entry : lut)
     {
-        for (int g = 0; g <= 255; g += 15)
-        {
-            for (int b = 0; b <= 255; b += 15)
-            {
-                const int idx = static_cast<int>(quantize_256({ static_cast<uint8_t>(r), static_cast<uint8_t>(g),
-                                                                static_cast<uint8_t>(b) }));
-                ASSERT_TRUE(idx >= 16 && idx <= 255);
-            }
-        }
-    }
-    for (int v : { 47, 48, 114, 115, 154, 155, 194, 195, 234, 235 })
-    {
-        const auto c = static_cast<uint8_t>(v);
-        const int idx = static_cast<int>(quantize_256({ c, c, c }));
-        ASSERT_TRUE(idx >= 16 && idx <= 255);
+        ASSERT_TRUE(entry >= 16);
     }
 }
 
-TEST(framebuffer, quantize_256_is_nearest_palette_entry)
+TEST(framebuffer, quantize_256_matches_cielab_reference)
 {
-    // Ground-truth check: build the real 240-entry xterm-256 palette (cube 16..231, grey 232..255)
-    // and assert quantize_256 always returns an entry achieving the true minimum squared RGB
-    // distance. Tie-agnostic (only that the chosen entry is A nearest), so it holds at the exact
-    // midpoints where two entries tie, validating the closed form against brute force.
-    Color pal[256] = {};
-    for (int i = 16; i <= 231; ++i)
+    // Ground truth for the whole table against an independent double-precision CIELAB
+    // implementation. For every 64^3 cell: a cell containing an exact palette colour must map to
+    // it; any other cell's entry must achieve the true minimum squared deltaE76 to the cell
+    // centre within a small epsilon (distances are compared, not indices, so a float-vs-double
+    // near-tie between two entries cannot flake the test). Deliberately exhaustive, not sampled:
+    // ~64 ms plain and ~1-2 s under the sanitizer CI jobs, accepted for a whole-table guarantee.
+    double pal_lab[240][3];
+    for (int j = 0; j < 240; ++j)
     {
-        const int j = i - 16;
-        auto val = [](int l) { return l == 0 ? 0 : 55 + (40 * l); };
-        pal[i] = Color{ static_cast<uint8_t>(val(j / 36)), static_cast<uint8_t>(val((j / 6) % 6)),
-                        static_cast<uint8_t>(val(j % 6)) };
+        const Color p = palette_entry(j);
+        cielab_ref(p.r, p.g, p.b, pal_lab[j]);
     }
-    for (int k = 0; k < 24; ++k)
+    std::vector<int> owner(QUANT256_LUT_SIZE, -1); // cell -> contained palette entry (0..239)
+    for (int j = 0; j < 240; ++j)
     {
-        const auto v = static_cast<uint8_t>(8 + (10 * k));
-        pal[232 + k] = Color{ v, v, v };
-    }
-
-    auto sq = [](Color a, Color b)
-    {
-        const int dr = static_cast<int>(a.r) - static_cast<int>(b.r);
-        const int dg = static_cast<int>(a.g) - static_cast<int>(b.g);
-        const int db = static_cast<int>(a.b) - static_cast<int>(b.b);
-        return (dr * dr) + (dg * dg) + (db * db);
-    };
-
-    std::vector<int> samples;
-    for (int v = 0; v <= 255; v += 12)
-    {
-        samples.push_back(v);
-    }
-    // Cube-level boundary values not already hit by the step-12 loop (48 is a multiple of 12, so
-    // omitted; 255 exceeds the loop's last step of 252), plus 255. Each exercises a rounding midpoint.
-    for (int v : { 47, 114, 115, 154, 155, 194, 195, 234, 235, 255 })
-    {
-        samples.push_back(v);
+        owner[quant256_idx(palette_entry(j))] = j;
     }
 
-    for (int r : samples)
+    const auto &lut = quant256_lut();
+    for (int r = 0; r < 64; ++r)
     {
-        for (int g : samples)
+        for (int g = 0; g < 64; ++g)
         {
-            for (int b : samples)
+            for (int b = 0; b < 64; ++b)
             {
-                const Color c{ static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b) };
-                const int idx = static_cast<int>(quantize_256(c));
-                ASSERT_TRUE(idx >= 16 && idx <= 255);
-                int best = 1 << 30;
-                for (int i = 16; i <= 255; ++i)
+                const size_t idx =
+                    (static_cast<size_t>(r) << 12u) | (static_cast<size_t>(g) << 6u) | static_cast<size_t>(b);
+                const int chosen = static_cast<int>(lut[idx]) - 16;
+                ASSERT_TRUE(chosen >= 0 && chosen < 240);
+                if (owner[idx] >= 0)
                 {
-                    best = std::min(best, sq(pal[i], c));
+                    ASSERT_EQ(chosen, owner[idx]);
+                    continue;
                 }
-                ASSERT_EQ(sq(pal[idx], c), best);
+                double c[3];
+                cielab_ref((4.0 * r) + 1.5, (4.0 * g) + 1.5, (4.0 * b) + 1.5, c);
+                auto sq = [&c](const double p[3])
+                {
+                    const double dl = p[0] - c[0];
+                    const double da = p[1] - c[1];
+                    const double db = p[2] - c[2];
+                    return (dl * dl) + (da * da) + (db * db);
+                };
+                double best = std::numeric_limits<double>::max();
+                for (const auto &p : pal_lab)
+                {
+                    best = std::min(best, sq(p));
+                }
+                ASSERT_TRUE(sq(pal_lab[chosen]) <= best + 1e-2);
             }
         }
     }
