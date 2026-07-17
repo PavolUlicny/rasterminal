@@ -1,6 +1,7 @@
 #include "mesh.h"
 #include "light.h"
 #include "mesh_loader.h"
+#include "platform.h"
 
 #define STL_READER_NO_EXCEPTIONS
 #include "stl_reader.h"
@@ -50,11 +51,9 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
                                       (static_cast<uint32_t>(tcb[2]) << 16U) | (static_cast<uint32_t>(tcb[3]) << 24U))
                                    : 0u;
 
-    long file_size = -1;
-    if (std::fseek(f.get(), 0, SEEK_END) == 0)
-    {
-        file_size = std::ftell(f.get());
-    }
+    // 64-bit size: plain ftell's long is 32-bit on Windows/ILP32, which rejected
+    // every binary STL of >= 2 GB (~43M triangles, real for scanned meshes).
+    const int64_t file_size = platform::file_size(f.get());
 
     const uint64_t expected_binary = 84ULL + (50ULL * static_cast<uint64_t>(tri_count));
 

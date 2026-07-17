@@ -3,6 +3,7 @@
 #include "light.h"
 #include "linalg.h"
 #include "mesh_loader.h"
+#include "platform.h"
 #include "texture.h"
 
 #include <algorithm>
@@ -77,23 +78,31 @@ namespace
     // slurp external image files so they can be content-sniffed and routed uniformly,
     // the same way embedded (buffer_view) images already are. Uses the FILE idiom from
     // mesh_stl.cpp (fread takes void*, so no byte-pointer cast; unique_ptr owns the
-    // handle; fseek/ftell instead of rewind).
+    // handle; platform::file_size sizes it 64-bit so >= 2 GB sidecars work on Windows).
     bool read_file(const std::string &path, std::vector<uint8_t> &out)
     {
         const auto fp = std::unique_ptr<std::FILE, int (*)(std::FILE *)>(std::fopen(path.c_str(), "rb"), std::fclose);
-        if (!fp || std::fseek(fp.get(), 0, SEEK_END) != 0)
+        if (!fp)
         {
             return false;
         }
-        const long len = std::ftell(fp.get());
+        const int64_t len = platform::file_size(fp.get());
         if (len < 0 || std::fseek(fp.get(), 0, SEEK_SET) != 0)
+        {
+            return false;
+        }
+        std::vector<uint8_t> buf;
+        // A size the vector can never hold (possible on ILP32 now that sizing is 64-bit;
+        // max_size() there is PTRDIFF_MAX = 2 GiB-1, NOT the 4 GiB-1 of size_t) must be
+        // rejected up front: resize would throw length_error, which the bad_alloc-only
+        // catch below misses, escaping onto a worker thread (= std::terminate).
+        if (static_cast<uint64_t>(len) > buf.max_size())
         {
             return false;
         }
         // The file size is unbounded (arbitrary external sidecar). Decode runs on worker
         // threads with no exception boundary at the load site, so a bad_alloc here would
         // terminate the process; fail loud instead, matching decode_ktx2_rgba's guard.
-        std::vector<uint8_t> buf;
         try
         {
             buf.resize(static_cast<size_t>(len));
