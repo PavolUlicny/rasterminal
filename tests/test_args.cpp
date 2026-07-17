@@ -1569,6 +1569,16 @@ TEST(args, bench_size_trailing_garbage_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+TEST(args, bench_size_overflowing_product_is_error)
+{
+    // Each axis is <= INT_MAX and parses fine, but the pixel count would overflow
+    // size_t on a 32-bit build (wrapping to a tiny framebuffer, then out-of-bounds
+    // rasterization). The product guard rejects it before that.
+    ParseResult r = run({ "--bench", "50", "--bench-size", "65536x65537", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 TEST(args, bench_size_missing_value_is_error)
 {
     ParseResult r = run({ "--bench", "50", "--bench-size", "m.obj" });

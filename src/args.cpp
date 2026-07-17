@@ -8,6 +8,7 @@
 #include <cerrno>
 #include <climits>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -107,6 +108,15 @@ ParseResult parse_args(int argc, char *argv[])
         errno = 0;
         const long hh = std::strtol(sep + 1, &end, 10);
         if (end == sep + 1 || *end != '\0' || hh <= 0 || hh > INT_MAX || errno == ERANGE)
+        {
+            return err();
+        }
+        // Cap the pixel count so w*h can't overflow size_t in the framebuffer (on ILP32
+        // size_t is 32-bit and the product would silently wrap to a tiny buffer, then
+        // rasterization writes out of bounds). Multiply in int64 because long is itself
+        // 32-bit on ILP32. INT_MAX pixels is already absurd for a bench framebuffer; a
+        // valid but large value just fails loud in the allocation instead.
+        if (static_cast<int64_t>(ww) * hh > INT_MAX)
         {
             return err();
         }
