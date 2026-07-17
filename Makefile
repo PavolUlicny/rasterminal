@@ -36,6 +36,13 @@ GC_LINK   = -Wl,--gc-sections
 DIST_LINK = -static-libstdc++ -static-libgcc
 endif
 
+# ─── Large-file support ───────────────────────────────────────────────────────
+# On 32-bit glibc, fopen refuses files >= 2 GB (EOVERFLOW) and off_t/ftello are
+# 32-bit without this. No-op where off_t is already 64-bit (LP64 Linux, macOS).
+# Applied to every C++ AND C flag set (all variants incl. debug) so off_t has one
+# size across all TUs (mixed LFS defines are a classic off_t ABI footgun).
+LFS = -D_FILE_OFFSET_BITS=64
+
 WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
               -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
               -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
@@ -77,7 +84,7 @@ OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBU
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
              -fmerge-all-constants -fvisibility=hidden -fvisibility-inlines-hidden \
              -fno-stack-protector -fno-asynchronous-unwind-tables \
-             -pipe -pthread $(GCC_OPTS) $(ARCH32)
+             -pipe -pthread $(GCC_OPTS) $(ARCH32) $(LFS)
 
 # Tier 2: machine-specific (release only).
 ARCH_NATIVE = -march=native
@@ -87,7 +94,7 @@ TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funrol
                 -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32)
+                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32) $(LFS)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -273,7 +280,7 @@ TEST_SRCS   = tests/test_main.cpp \
 # unnecessary recompiles, so source edits stay incremental.
 OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
-DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32)
+DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32) $(LFS)
 
 # ─── C flags (vendored zstd amalgam + libwebp decode subset) ──────────────────
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
@@ -291,10 +298,10 @@ DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC
 CC ?= cc
 C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
 C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
-                  -ffunction-sections -fdata-sections -w -pipe $(C_INC) $(ARCH32)
+                  -ffunction-sections -fdata-sections -w -pipe $(C_INC) $(ARCH32) $(LFS)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
-DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32)
+DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32) $(LFS)
 TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
 # ─── Install locations (GNU Coding Standards) ─────────────────────────────────

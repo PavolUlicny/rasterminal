@@ -50,6 +50,13 @@ if(CMAKE_SIZEOF_VOID_P EQUAL 4)
   endif()
 endif()
 
+# ─── Large-file support ───────────────────────────────────────────────────────
+# On 32-bit glibc, fopen refuses files >= 2 GB (EOVERFLOW) and off_t/ftello are 32-bit
+# without this. Directory scope so both targets, all configs, and C *and* C++ TUs share
+# one off_t size (mixed LFS defines are a classic ABI footgun). No-op where off_t is
+# already 64-bit (LP64 Linux, macOS); MSVC ignores the macro (it uses _ftelli64 instead).
+add_compile_definitions(_FILE_OFFSET_BITS=64)
+
 # ─── Vendored libraries ───────────────────────────────────────────────────────
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
