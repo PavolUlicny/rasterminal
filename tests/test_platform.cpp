@@ -312,14 +312,24 @@ namespace
         ScopedTmpFile(const char *name, const void *data, size_t n)
             : path((std::filesystem::temp_directory_path() / name).string())
         {
-            std::FILE *f = std::fopen(path.c_str(), "wb");
-            ASSERT_TRUE(f != nullptr);
-            const size_t written = std::fwrite(data, 1, n, f);
-            // fclose flushes: a deferred write failure (e.g. ENOSPC) surfaces only here, not
-            // in the fwrite count, so check both. Close before asserting so the fd never leaks.
-            const int closed = std::fclose(f);
-            ASSERT_EQ(written, n);
-            ASSERT_EQ(closed, 0);
+            // The destructor never runs on a ctor throw, so any assertion below would leak
+            // the partial file; remove it and rethrow to keep the test failure intact.
+            try
+            {
+                std::FILE *f = std::fopen(path.c_str(), "wb");
+                ASSERT_TRUE(f != nullptr);
+                const size_t written = std::fwrite(data, 1, n, f);
+                // fclose flushes: a deferred write failure (e.g. ENOSPC) surfaces only here, not
+                // in the fwrite count, so check both. Close before asserting so the fd never leaks.
+                const int closed = std::fclose(f);
+                ASSERT_EQ(written, n);
+                ASSERT_EQ(closed, 0);
+            }
+            catch (...)
+            {
+                std::remove(path.c_str());
+                throw;
+            }
         }
         ~ScopedTmpFile() { std::remove(path.c_str()); }
         ScopedTmpFile(const ScopedTmpFile &) = delete;

@@ -32,18 +32,26 @@ static void write_bytes(const std::string &path, const void *data, size_t n)
     ASSERT_EQ(closed, 0);
 }
 
-static void write_str(const std::string &path, const std::string &s)
-{
-    write_bytes(path, s.data(), s.size());
-}
-
 // Scoped temp file: writes on construction, removes on destruction. Ensures
-// the file is cleaned up even if an assertion throws mid-test.
+// the file is cleaned up even if an assertion throws mid-test, including one
+// thrown by the write itself (the destructor never runs on a ctor throw, so the
+// guard below removes any partial file before rethrowing).
 struct TmpFile
 {
     std::string path;
-    TmpFile(std::string p, const std::string &contents) : path(std::move(p)) { write_str(path, contents); }
-    TmpFile(std::string p, const void *data, size_t n) : path(std::move(p)) { write_bytes(path, data, n); }
+    TmpFile(std::string p, const std::string &contents) : TmpFile(std::move(p), contents.data(), contents.size()) {}
+    TmpFile(std::string p, const void *data, size_t n) : path(std::move(p))
+    {
+        try
+        {
+            write_bytes(path, data, n);
+        }
+        catch (...)
+        {
+            std::remove(path.c_str());
+            throw;
+        }
+    }
     ~TmpFile() { std::remove(path.c_str()); }
     TmpFile(const TmpFile &) = delete;
     TmpFile &operator=(const TmpFile &) = delete;
