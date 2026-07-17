@@ -7,6 +7,10 @@
 // C++ header. Unconditional because the env helpers below are cross-platform.
 #include <stdlib.h> // NOLINT(modernize-deprecated-headers,hicpp-deprecated-headers)
 
+#include <cstdio>
+#include <filesystem>
+#include <string>
+
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -290,4 +294,68 @@ TEST(platform, detect_term_color_reads_env)
 #else
     ASSERT_EQ(static_cast<int>(platform::detect_term_color()), P256);
 #endif
+}
+
+// ─── file size ───────────────────────────────────────────────────────────────
+// platform::file_size sizes streams via the platform's 64-bit seek/tell so >= 2 GB
+// model files work on Windows/ILP32. The large case itself is not creatable in CI
+// (multi-GB files on every runner); these pin the exact byte count, the empty-file
+// zero, and the documented leaves-position-at-EOF contract on the shared code path.
+
+namespace
+{
+    // Minimal scoped temp file. tests/loader_util.h's TmpFile is the same idiom but
+    // pulls in src/mesh.h, overkill for this standalone platform test.
+    struct ScopedTmpFile
+    {
+        std::string path;
+        ScopedTmpFile(const char *name, const void *data, size_t n)
+            : path((std::filesystem::temp_directory_path() / name).string())
+        {
+            std::FILE *f = std::fopen(path.c_str(), "wb");
+            ASSERT_TRUE(f != nullptr);
+            const size_t written = std::fwrite(data, 1, n, f);
+            std::fclose(f);
+            ASSERT_EQ(written, n);
+        }
+        ~ScopedTmpFile() { std::remove(path.c_str()); }
+        ScopedTmpFile(const ScopedTmpFile &) = delete;
+        ScopedTmpFile &operator=(const ScopedTmpFile &) = delete;
+        ScopedTmpFile(ScopedTmpFile &&) = delete;
+        ScopedTmpFile &operator=(ScopedTmpFile &&) = delete;
+    };
+} // namespace
+
+TEST(platform, file_size_reports_exact_byte_count)
+{
+    // 259 bytes, deliberately not a round number so an off-by-one or block-granular
+    // size can't pass. Content is arbitrary binary (file_size only seeks and tells,
+    // never reads, so content can't affect the result).
+    unsigned char data[259];
+    for (size_t i = 0; i < sizeof(data); i++)
+    {
+        data[i] = static_cast<unsigned char>(i % 256);
+    }
+    ScopedTmpFile t("rasterminal_test_file_size.bin", data, sizeof(data));
+
+    std::FILE *f = std::fopen(t.path.c_str(), "rb");
+    ASSERT_TRUE(f != nullptr);
+    const int64_t size = platform::file_size(f);
+    // Position is documented to be left at end-of-file on success, so a caller that
+    // forgets to seek back reads nothing rather than garbage.
+    const int next = std::fgetc(f);
+    std::fclose(f);
+    ASSERT_EQ(size, int64_t{ 259 });
+    ASSERT_EQ(next, EOF);
+}
+
+TEST(platform, file_size_empty_file_is_zero)
+{
+    ScopedTmpFile t("rasterminal_test_file_size_empty.bin", "", 0);
+
+    std::FILE *f = std::fopen(t.path.c_str(), "rb");
+    ASSERT_TRUE(f != nullptr);
+    const int64_t size = platform::file_size(f);
+    std::fclose(f);
+    ASSERT_EQ(size, int64_t{ 0 });
 }

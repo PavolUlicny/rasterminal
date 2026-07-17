@@ -19,6 +19,37 @@
 namespace platform
 {
 
+    // ─── file size ───────────────────────────────────────────────────────────────
+
+    // 64-bit size of an open binary stream, or -1 on failure. std::ftell returns long,
+    // which is 32-bit on Windows (LLP64) and ILP32, so files >= 2 GB need the platform's
+    // 64-bit seek/tell. On success the stream position is left at end-of-file; callers
+    // that go on to read seek back themselves.
+    inline int64_t file_size(std::FILE *f)
+    {
+#ifdef _WIN32
+        if (_fseeki64(f, 0, SEEK_END) != 0)
+        {
+            return -1;
+        }
+        return _ftelli64(f);
+#else
+        // ftello returns off_t, 64-bit on every POSIX target via -D_FILE_OFFSET_BITS=64
+        // (both build systems define it); returned without a cast because on LP64 the
+        // types coincide and static_cast<int64_t>(off_t) would trip -Wuseless-cast.
+        // The assert makes that build-system contract self-enforcing: a flag-set edit
+        // that drops the define would otherwise silently regress 32-bit builds to the
+        // 2 GB EOVERFLOW behavior, and no CI test can catch it (multi-GB fixtures are
+        // uncreatable on runners); this turns it into a cross32-job compile error.
+        static_assert(sizeof(off_t) == 8, "64-bit off_t required; build with -D_FILE_OFFSET_BITS=64");
+        if (fseeko(f, 0, SEEK_END) != 0)
+        {
+            return -1;
+        }
+        return ftello(f);
+#endif
+    }
+
     // ─── terminal size ────────────────────────────────────────────────────────────
 
     inline void get_terminal_size(int &cols, int &rows)
