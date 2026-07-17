@@ -157,15 +157,15 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_shading = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
         const std::string v = to_lower(val);
-        if (v == "wireframe" || v == "1")
+        if (v == "wireframe")
         {
             out = 0;
         }
-        else if (v == "flat" || v == "2")
+        else if (v == "flat")
         {
             out = 1;
         }
-        else if (v == "phong" || v == "3")
+        else if (v == "phong")
         {
             out = 2;
         }
@@ -174,7 +174,7 @@ ParseResult parse_args(int argc, char *argv[])
             std::fprintf(
                 stderr,
                 "%s: %s: invalid value '%s'"
-                " (expected wireframe|flat|phong or 1-3)\n",
+                " (expected wireframe|flat|phong)\n",
                 prog, flag, val
             );
             return false;
@@ -185,15 +185,15 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_bg = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
         const std::string v = to_lower(val);
-        if (v == "black" || v == "1")
+        if (v == "black")
         {
             out = 0;
         }
-        else if (v == "gray" || v == "grey" || v == "2")
+        else if (v == "gray" || v == "grey")
         {
             out = 1;
         }
-        else if (v == "white" || v == "3")
+        else if (v == "white")
         {
             out = 2;
         }
@@ -202,7 +202,7 @@ ParseResult parse_args(int argc, char *argv[])
             std::fprintf(
                 stderr,
                 "%s: %s: invalid value '%s'"
-                " (expected black|gray|white or 1-3)\n",
+                " (expected black|gray|white)\n",
                 prog, flag, val
             );
             return false;
@@ -213,15 +213,15 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_lighting = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
         const std::string v = to_lower(val);
-        if (v == "dual" || v == "1")
+        if (v == "dual")
         {
             out = 0;
         }
-        else if (v == "single" || v == "2")
+        else if (v == "single")
         {
             out = 1;
         }
-        else if (v == "flat" || v == "3")
+        else if (v == "flat")
         {
             out = 2;
         }
@@ -230,7 +230,7 @@ ParseResult parse_args(int argc, char *argv[])
             std::fprintf(
                 stderr,
                 "%s: %s: invalid value '%s'"
-                " (expected dual|single|flat or 1-3)\n",
+                " (expected dual|single|flat)\n",
                 prog, flag, val
             );
             return false;
@@ -265,27 +265,27 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_wireframe_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
         const std::string v = to_lower(val);
-        if (v == "white" || v == "1")
+        if (v == "white")
         {
             out = 0;
         }
-        else if (v == "red" || v == "2")
+        else if (v == "red")
         {
             out = 1;
         }
-        else if (v == "green" || v == "3")
+        else if (v == "green")
         {
             out = 2;
         }
-        else if (v == "yellow" || v == "4")
+        else if (v == "yellow")
         {
             out = 3;
         }
-        else if (v == "cyan" || v == "5")
+        else if (v == "cyan")
         {
             out = 4;
         }
-        else if (v == "magenta" || v == "6")
+        else if (v == "magenta")
         {
             out = 5;
         }
@@ -294,7 +294,7 @@ ParseResult parse_args(int argc, char *argv[])
             std::fprintf(
                 stderr,
                 "%s: %s: invalid value '%s'"
-                " (expected white|red|green|yellow|cyan|magenta or 1-6)\n",
+                " (expected white|red|green|yellow|cyan|magenta)\n",
                 prog, flag, val
             );
             return false;
@@ -302,8 +302,6 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    // No 1-indexed numeric aliases here: there is no runtime keybinding to mirror,
-    // and "256" is itself numeric.
     auto parse_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
     {
         const std::string v = to_lower(val);
@@ -391,13 +389,13 @@ ParseResult parse_args(int argc, char *argv[])
             "\n"
             "Options:\n"
             "  -s,     --shading <mode>       Initial shading mode (default: phong)\n"
-            "                                  wireframe|flat|phong  or  1-3\n"
+            "                                  wireframe|flat|phong\n"
             "  -b,     --bg <color>           Initial background color (default: black)\n"
-            "                                  black|gray|white  or  1-3\n"
+            "                                  black|gray|white\n"
             "  -l,     --lighting <mode>      Initial lighting mode (default: dual)\n"
-            "                                  dual|single|flat  or  1-3\n"
+            "                                  dual|single|flat\n"
             "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
-            "                                  white|red|green|yellow|cyan|magenta  or  1-6\n"
+            "                                  white|red|green|yellow|cyan|magenta\n"
             "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
             "                                  on|off, 1|0, true|false, yes|no, y|n\n"
             "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"

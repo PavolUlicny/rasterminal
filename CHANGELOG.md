@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The 1-indexed numeric value aliases for `--shading`/`--bg`/`--lighting`/`--wireframe-color` (for example `-s 3` for `-s phong`, or `--bg 2` for `--bg gray`). Use the named values instead; a numeric value is now an invalid-value error. The `1`/`0` accepted by `--cull`/`--texture` is unaffected, it is a standard boolean spelling (alongside `on`/`off`, `true`/`false`, `yes`/`no`), not an enum alias.
 - The shadow map and the `--no-shadow` flag. A single auto-fit model with no ground plane has nothing to receive a cast shadow, so the feature added load and per-frame cost without value to a model viewer. Lit surfaces now use all configured lights uniformly; baked ambient occlusion still provides crevice darkening. The default look is slightly flatter than before. Passing `--no-shadow` is now an unknown-flag error.
 
 ### Fixed

@@ -182,9 +182,9 @@ rasterminal [options] <model>
 
 | Flag | Short | Default | Description |
 | --- | --- | --- | --- |
-| `--shading` | `-s` | `phong` | `wireframe`/`1`, `flat`/`2`, `phong`/`3` |
-| `--bg` | `-b` | `black` | `black`/`1`, `gray`/`2`, `white`/`3` |
-| `--lighting` | `-l` | `dual` | `dual`/`1`, `single`/`2`, `flat`/`3` |
+| `--shading` | `-s` | `phong` | `wireframe`, `flat`, `phong` |
+| `--bg` | `-b` | `black` | `black`, `gray`, `white` |
+| `--lighting` | `-l` | `dual` | `dual`, `single`, `flat` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
 | `--cull` | `-c` | `on` | `on`/`off` |
 | `--texture` | `-t` | `on` | `on`/`off` |

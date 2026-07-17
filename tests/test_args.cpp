@@ -355,18 +355,11 @@ TEST(args, shading_phong_by_name)
     ASSERT_EQ(run({ "--shading", "phong", "m.obj" }).args.shading, 2);
 }
 
-TEST(args, shading_numeric_alias_1)
+TEST(args, shading_numeric_is_invalid)
 {
-    ASSERT_EQ(run({ "-s", "1", "m.obj" }).args.shading, 0);
-}
-
-TEST(args, shading_numeric_alias_3)
-{
-    ASSERT_EQ(run({ "-s", "3", "m.obj" }).args.shading, 2);
-}
-
-TEST(args, shading_numeric_alias_4_is_invalid)
-{
+    // The 1-indexed numeric aliases were removed; only the named values are accepted.
+    ASSERT_FALSE(run({ "-s", "1", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "-s", "3", "m.obj" }).ok);
     ASSERT_FALSE(run({ "-s", "4", "m.obj" }).ok);
 }
 
@@ -437,11 +430,11 @@ TEST(args, bg_white)
     ASSERT_EQ(run({ "--bg", "white", "m.obj" }).args.bg, 2);
 }
 
-TEST(args, bg_numeric_aliases)
+TEST(args, bg_numeric_is_invalid)
 {
-    ASSERT_EQ(run({ "-b", "1", "m.obj" }).args.bg, 0);
-    ASSERT_EQ(run({ "-b", "2", "m.obj" }).args.bg, 1);
-    ASSERT_EQ(run({ "-b", "3", "m.obj" }).args.bg, 2);
+    ASSERT_FALSE(run({ "-b", "1", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "-b", "2", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "-b", "3", "m.obj" }).ok);
 }
 
 TEST(args, bg_case_insensitive)
@@ -495,11 +488,11 @@ TEST(args, lighting_flat)
     ASSERT_EQ(run({ "--lighting", "flat", "m.obj" }).args.lighting, 2);
 }
 
-TEST(args, lighting_numeric_aliases)
+TEST(args, lighting_numeric_is_invalid)
 {
-    ASSERT_EQ(run({ "-l", "1", "m.obj" }).args.lighting, 0);
-    ASSERT_EQ(run({ "-l", "2", "m.obj" }).args.lighting, 1);
-    ASSERT_EQ(run({ "-l", "3", "m.obj" }).args.lighting, 2);
+    ASSERT_FALSE(run({ "-l", "1", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "-l", "2", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "-l", "3", "m.obj" }).ok);
 }
 
 TEST(args, lighting_case_insensitive)
@@ -968,10 +961,10 @@ TEST(args, wireframe_color_name)
     ASSERT_EQ(run({ "--wireframe-color", "white", "m.obj" }).args.wireframe_color, 0);
 }
 
-TEST(args, wireframe_color_numeric)
+TEST(args, wireframe_color_numeric_is_invalid)
 {
-    ASSERT_EQ(run({ "--wireframe-color", "1", "m.obj" }).args.wireframe_color, 0);
-    ASSERT_EQ(run({ "--wireframe-color", "6", "m.obj" }).args.wireframe_color, 5);
+    ASSERT_FALSE(run({ "--wireframe-color", "1", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "--wireframe-color", "6", "m.obj" }).ok);
 }
 
 TEST(args, wireframe_color_case_insensitive)
@@ -1059,9 +1052,8 @@ TEST(args, color_invalid_value_is_error)
 
 TEST(args, color_has_no_numeric_aliases)
 {
-    // --color deliberately has no 1-indexed aliases (unlike --shading/--bg/etc.):
-    // "256" is itself a value, so a numeric "1"/"2" must be rejected, not mapped to
-    // the internal 1=truecolor/2=256 encoding.
+    // --color has no numeric aliases: "256" is itself a value, so a numeric "1"/"2"
+    // must be rejected, not mapped to the internal 1=truecolor/2=256 encoding.
     ASSERT_FALSE(run({ "--color", "1", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--color", "2", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--color", "0", "m.obj" }).ok);

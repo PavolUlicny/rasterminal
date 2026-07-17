@@ -56,34 +56,26 @@ glTF 2.0 (PBR materials, textures, node transforms).
 .TP
 .BR \-s ", " \-\-shading " " \fImode\fR
 Initial shading mode:
-.BR wireframe | flat | phong
-or
-.BR 1 \- 3 .
+.BR wireframe | flat | phong .
 Default:
 .BR phong .
 .TP
 .BR \-b ", " \-\-bg " " \fIcolor\fR
 Initial background color:
 .BR black | gray | white
-or
-.BR 1 \- 3
 .RB ( grey
 also accepted). Default:
 .BR black .
 .TP
 .BR \-l ", " \-\-lighting " " \fImode\fR
 Initial lighting mode:
-.BR dual | single | flat
-or
-.BR 1 \- 3 .
+.BR dual | single | flat .
 Default:
 .BR dual .
 .TP
 .BR \-w ", " \-\-wireframe\-color " " \fIcolor\fR
 Initial wireframe edge color:
-.BR white | red | green | yellow | cyan | magenta
-or
-.BR 1 \- 6 .
+.BR white | red | green | yellow | cyan | magenta .
 Default:
 .BR white .
 .TP
@@ -195,8 +187,7 @@ Long flags take a value with a space or
 Short flags take a value with a space or in compact form
 .RB ( \-s
 .BR flat ", " \-sflat ).
-String values are case-insensitive; numeric aliases are 1-indexed and match the
-runtime keybindings.
+String values are case-insensitive.
 .PP
 No-argument short options may be clustered behind one
 .RB ' \- '
