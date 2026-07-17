@@ -315,8 +315,11 @@ namespace
             std::FILE *f = std::fopen(path.c_str(), "wb");
             ASSERT_TRUE(f != nullptr);
             const size_t written = std::fwrite(data, 1, n, f);
-            std::fclose(f);
+            // fclose flushes: a deferred write failure (e.g. ENOSPC) surfaces only here, not
+            // in the fwrite count, so check both. Close before asserting so the fd never leaks.
+            const int closed = std::fclose(f);
             ASSERT_EQ(written, n);
+            ASSERT_EQ(closed, 0);
         }
         ~ScopedTmpFile() { std::remove(path.c_str()); }
         ScopedTmpFile(const ScopedTmpFile &) = delete;

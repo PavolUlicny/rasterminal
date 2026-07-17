@@ -25,8 +25,11 @@ static void write_bytes(const std::string &path, const void *data, size_t n)
     FILE *f = std::fopen(path.c_str(), "wb");
     ASSERT_TRUE(f != nullptr);
     size_t w = std::fwrite(data, 1, n, f);
-    std::fclose(f);
+    // fclose flushes: a deferred write failure (e.g. ENOSPC) surfaces only here, not in
+    // the fwrite count, so check both. Close before asserting so the fd never leaks.
+    const int closed = std::fclose(f);
     ASSERT_EQ(w, n);
+    ASSERT_EQ(closed, 0);
 }
 
 static void write_str(const std::string &path, const std::string &s)
