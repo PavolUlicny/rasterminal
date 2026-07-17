@@ -49,7 +49,17 @@ WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
               -Wformat=2 -Wimplicit-fallthrough -Wmisleading-indentation
 
 ifeq ($(IS_CLANG),clang)
-WARNINGS = $(WARN_COMMON)
+# -Wno-invalid-feature-combination: clang's -march=native on AVX10-capable CPUs
+# (e.g. 2026 GitHub runners) emits "+avx10.1-256; will be promoted to avx10.1-512"
+# per TU (a frontend warning from X86 target-feature init, not the driver), fatal
+# under -Werror. The promotion is benign on such CPUs (they carry full 512-bit
+# AVX-512, which is what makes the combination "invalid"); suppress it rather than
+# drop -march=native. The group only exists since clang 18, and clang makes an
+# unknown -Wno- group itself fatal under -Werror (-Wunknown-warning-option), so
+# probe support first. Clang-only: GCC has no such warning and silently ignores
+# unknown -Wno- groups, so its branch needs neither the flag nor the probe.
+HAS_WNO_IFC := $(shell $(CXX) -Werror -Wno-invalid-feature-combination -fsyntax-only -x c++ /dev/null >/dev/null 2>&1 && echo 1)
+WARNINGS = $(WARN_COMMON) $(if $(HAS_WNO_IFC),-Wno-invalid-feature-combination)
 LTO      = -flto=thin
 GCC_OPTS =
 else

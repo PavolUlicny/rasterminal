@@ -151,6 +151,15 @@ set_source_files_properties(
     COMPILE_DEFINITIONS WEBP_USE_THREAD)
 
 # ─── Warning flags ────────────────────────────────────────────────────────────
+# Probe -Wno-invalid-feature-combination (used in the warnings target below): the group
+# only exists since clang 18. check_cxx_compiler_flag's fail-regex catches the unknown
+# -Wno- group diagnostic on older clangs, leaving the variable false there. Clang-family
+# only: GCC never needs the flag.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-Wno-invalid-feature-combination RASTERMINAL_HAS_WNO_IFC)
+endif()
+
 add_library(rasterminal_warnings INTERFACE)
 # Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the only C sources are the
 # vendored zstd amalgam and the libwebp decode subset, which must not receive the C++-only
@@ -164,6 +173,14 @@ target_compile_options(rasterminal_warnings INTERFACE
     -Wformat=2;-Wimplicit-fallthrough;-Wmisleading-indentation;-Werror>
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:
     -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches>
+  # Clang's -march=native on AVX10-capable CPUs (e.g. 2026 GitHub runners) emits
+  # "+avx10.1-256; will be promoted to avx10.1-512" per TU (a frontend warning from X86
+  # target-feature init, not the driver), fatal under -Werror. The promotion is benign
+  # on such CPUs (they carry full 512-bit AVX-512, which is what makes the combination
+  # "invalid"); suppress it rather than drop -march=native. Gated on the probed
+  # RASTERMINAL_HAS_WNO_IFC (see above): the group only exists since clang 18, and clang
+  # makes an unknown -Wno- group itself fatal under -Werror (-Wunknown-warning-option).
+  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<BOOL:${RASTERMINAL_HAS_WNO_IFC}>>:-Wno-invalid-feature-combination>
   # -Wuseless-cast is word-size-dependent (a cast that narrows/widens at LP64 is a no-op at
   # ILP32); keep it on 64-bit, drop it on 32-bit. See the ILP32 block near the top.
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>,$<NOT:$<BOOL:${RASTERMINAL_ILP32}>>>:
