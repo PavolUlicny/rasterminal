@@ -6,6 +6,7 @@
 #include "linalg.h"
 #include "mesh.h"
 #include "rasterize.h" // Fragment / ABuffer
+#include "shading.h"   // IWYU pragma: export
 
 #include <atomic>
 #include <condition_variable>
@@ -13,15 +14,6 @@
 #include <mutex>
 #include <thread>
 #include <vector>
-
-// ─── ShadingMode ──────────────────────────────────────────────────────────────
-
-enum class ShadingMode : std::uint8_t
-{
-    Wireframe,
-    Flat,
-    Phong
-};
 
 // ─── Renderer ─────────────────────────────────────────────────────────────────
 

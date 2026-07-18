@@ -200,6 +200,7 @@ HDRS = src/args.h \
        src/light.h \
        src/rasterize.h \
        src/renderer.h \
+       src/shading.h \
        src/platform.h \
        src/texture.h \
        src/ktx2_decode.h \
