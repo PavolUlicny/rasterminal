@@ -1,6 +1,7 @@
 #include "args.h"
 
 #include "platform.h"
+#include "shading.h"
 #include "version.h"
 
 #include <algorithm>
@@ -12,7 +13,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <string>
+#include <utility>
 
 const char *program_name(const char *argv0)
 {
@@ -30,6 +33,53 @@ const char *program_name(const char *argv0)
     }
     return (*base != '\0') ? base : "rasterminal"; // trailing-separator guard
 }
+
+namespace
+{
+
+    // Frames a bare --bench/-B runs (both the long-form and cluster paths read this).
+    constexpr int BENCH_DEFAULT_FRAMES = 200;
+
+    // Lowercase-copy for case-insensitive value matching. unsigned char avoids the
+    // std::tolower UB on a negative char; the flag values it sees are plain ASCII.
+    // Deliberately NOT platform.h's ascii_lower/ieq: those live in platform::detail
+    // (private to the terminal classifier), and a cold parse path doesn't justify
+    // the first cross-file use of that namespace.
+    std::string to_lower(const char *val)
+    {
+        std::string v = val;
+        std::transform(
+            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        );
+        return v;
+    }
+
+    // Shared matcher for the named-value flags (enum values and boolean spellings):
+    // case-insensitive lookup of val in names (aliases are just extra entries); on
+    // miss prints the standard invalid-value diagnostic with the flag's
+    // expected-values string.
+    template <typename E>
+    bool parse_enum(
+        const char *prog,
+        const char *flag,
+        const char *val,
+        std::initializer_list<std::pair<const char *, E>> names,
+        const char *expected,
+        E &out
+    )
+    {
+        const std::string v = to_lower(val);
+        const auto *hit = std::find_if(names.begin(), names.end(), [&v](const auto &name) { return v == name.first; });
+        if (hit == names.end())
+        {
+            std::fprintf(stderr, "%s: %s: invalid value '%s' (expected %s)\n", prog, flag, val, expected);
+            return false;
+        }
+        out = hit->second;
+        return true;
+    }
+
+} // namespace
 
 ParseResult parse_args(int argc, char *argv[])
 {
@@ -58,7 +108,8 @@ ParseResult parse_args(int argc, char *argv[])
         return argv[++i];
     };
 
-    auto parse_threads = [prog](const char *flag, const char *val, int &out) -> bool
+    // Positive-integer value shared by --threads/--fps/--bench (and their short forms).
+    auto parse_pos_int = [prog](const char *flag, const char *val, int &out) -> bool
     {
         char *end = nullptr;
         errno = 0;
@@ -143,191 +194,97 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    // Lowercase-copy for case-insensitive value matching. unsigned char avoids the
-    // std::tolower UB on a negative char; the flag values it sees are plain ASCII.
-    auto to_lower = [](const char *val) -> std::string
+    // Optional-integer flags (--threads/--fps/--bench and -j/-f/-B), one decision for
+    // both spellings: attached is the =value (long form; present-but-empty still
+    // parses, so "--fps=" errors) or the rest of the cluster token (nullptr when
+    // none). With no attached value, the next argv token is consumed only if it is a
+    // positive integer; otherwise the flag is bare and means bare_value.
+    auto parse_opt_int = [&](int &arg_i, const char *flag, const char *attached, int &out, int bare_value) -> bool
     {
-        std::string v = val;
-        std::transform(
-            v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); }
+        if (attached != nullptr)
+        {
+            return parse_pos_int(flag, attached, out);
+        }
+        if (arg_i + 1 < argc && is_all_digits(argv[arg_i + 1]))
+        {
+            return parse_pos_int(flag, argv[++arg_i], out);
+        }
+        out = bare_value;
+        return true;
+    };
+
+    auto parse_shading = [prog](const char *flag, const char *val, ShadingMode &out) -> bool
+    {
+        return parse_enum(
+            prog, flag, val,
+            { { "wireframe", ShadingMode::Wireframe }, { "flat", ShadingMode::Flat }, { "phong", ShadingMode::Phong } },
+            "wireframe|flat|phong", out
         );
-        return v;
     };
 
-    auto parse_shading = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    auto parse_bg = [prog](const char *flag, const char *val, Background &out) -> bool
     {
-        const std::string v = to_lower(val);
-        if (v == "wireframe")
-        {
-            out = 0;
-        }
-        else if (v == "flat")
-        {
-            out = 1;
-        }
-        else if (v == "phong")
-        {
-            out = 2;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected wireframe|flat|phong)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
+        return parse_enum(
+            prog, flag, val,
+            { { "black", Background::Black },
+              { "gray", Background::Gray },
+              { "grey", Background::Gray },
+              { "white", Background::White } },
+            "black|gray|white", out
+        );
     };
 
-    auto parse_bg = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    auto parse_lighting = [prog](const char *flag, const char *val, LightingMode &out) -> bool
     {
-        const std::string v = to_lower(val);
-        if (v == "black")
-        {
-            out = 0;
-        }
-        else if (v == "gray" || v == "grey")
-        {
-            out = 1;
-        }
-        else if (v == "white")
-        {
-            out = 2;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected black|gray|white)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
+        return parse_enum(
+            prog, flag, val,
+            { { "dual", LightingMode::Dual }, { "single", LightingMode::Single }, { "flat", LightingMode::Flat } },
+            "dual|single|flat", out
+        );
     };
 
-    auto parse_lighting = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    auto parse_bool = [prog](const char *flag, const char *val, bool &out) -> bool
     {
-        const std::string v = to_lower(val);
-        if (v == "dual")
-        {
-            out = 0;
-        }
-        else if (v == "single")
-        {
-            out = 1;
-        }
-        else if (v == "flat")
-        {
-            out = 2;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected dual|single|flat)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
+        return parse_enum(
+            prog, flag, val,
+            { { "on", true },
+              { "1", true },
+              { "true", true },
+              { "yes", true },
+              { "y", true },
+              { "off", false },
+              { "0", false },
+              { "false", false },
+              { "no", false },
+              { "n", false } },
+            "on|off, 1|0, true|false, yes|no, y|n", out
+        );
     };
 
-    auto parse_bool = [prog, to_lower](const char *flag, const char *val, bool &out) -> bool
+    auto parse_wireframe_color = [prog](const char *flag, const char *val, WireframeColor &out) -> bool
     {
-        const std::string v = to_lower(val);
-        if (v == "on" || v == "1" || v == "true" || v == "yes" || v == "y")
-        {
-            out = true;
-        }
-        else if (v == "off" || v == "0" || v == "false" || v == "no" || v == "n")
-        {
-            out = false;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected on|off, 1|0, true|false, yes|no, y|n)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
+        return parse_enum(
+            prog, flag, val,
+            { { "white", WireframeColor::White },
+              { "red", WireframeColor::Red },
+              { "green", WireframeColor::Green },
+              { "yellow", WireframeColor::Yellow },
+              { "cyan", WireframeColor::Cyan },
+              { "magenta", WireframeColor::Magenta } },
+            "white|red|green|yellow|cyan|magenta", out
+        );
     };
 
-    auto parse_wireframe_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
+    auto parse_color = [prog](const char *flag, const char *val, ColorChoice &out) -> bool
     {
-        const std::string v = to_lower(val);
-        if (v == "white")
-        {
-            out = 0;
-        }
-        else if (v == "red")
-        {
-            out = 1;
-        }
-        else if (v == "green")
-        {
-            out = 2;
-        }
-        else if (v == "yellow")
-        {
-            out = 3;
-        }
-        else if (v == "cyan")
-        {
-            out = 4;
-        }
-        else if (v == "magenta")
-        {
-            out = 5;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected white|red|green|yellow|cyan|magenta)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
-    };
-
-    auto parse_color = [prog, to_lower](const char *flag, const char *val, int &out) -> bool
-    {
-        const std::string v = to_lower(val);
-        if (v == "auto")
-        {
-            out = 0;
-        }
-        else if (v == "truecolor" || v == "24bit")
-        {
-            out = 1;
-        }
-        else if (v == "256")
-        {
-            out = 2;
-        }
-        else
-        {
-            std::fprintf(
-                stderr,
-                "%s: %s: invalid value '%s'"
-                " (expected truecolor|24bit|256|auto)\n",
-                prog, flag, val
-            );
-            return false;
-        }
-        return true;
+        return parse_enum(
+            prog, flag, val,
+            { { "auto", ColorChoice::Auto },
+              { "truecolor", ColorChoice::TrueColor },
+              { "24bit", ColorChoice::TrueColor },
+              { "256", ColorChoice::Palette256 } },
+            "truecolor|24bit|256|auto", out
+        );
     };
 
     auto parse_angle = [prog](const char *flag, const char *val, float &out) -> bool
@@ -484,52 +441,38 @@ ParseResult parse_args(int argc, char *argv[])
             return require_val(arg_i, flag);
         };
 
+        // Boolean long flags take no value: "--flag=anything" is an error.
+        auto no_value = [&]() -> bool
+        {
+            if (eq_val != nullptr)
+            {
+                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
+                return false;
+            }
+            return true;
+        };
+
         if (arg == "--threads")
         {
-            // Bare form (no value, or next token is not a positive integer) = all threads.
-            if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            // Bare = all threads (0).
+            if (!parse_opt_int(i, flag, eq_val, args.n_threads, 0))
             {
-                args.n_threads = 0;
-            }
-            else
-            {
-                const char *val = get_val(i);
-                if (!val || !parse_threads(flag, val, args.n_threads))
-                {
-                    return fail(1);
-                }
+                return fail(1);
             }
         }
         else if (arg == "--fps")
         {
-            // Bare form (no value, or next token is not a positive integer) = uncapped.
-            if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            // Bare = uncapped (0).
+            if (!parse_opt_int(i, flag, eq_val, args.fps, 0))
             {
-                args.fps = 0;
-            }
-            else
-            {
-                const char *val = get_val(i);
-                if (!val || !parse_threads(flag, val, args.fps))
-                {
-                    return fail(1);
-                }
+                return fail(1);
             }
         }
         else if (arg == "--bench")
         {
-            // Bare form (no value, or next token is not a positive integer) = 200 frames.
-            if (eq_val == nullptr && (i + 1 >= argc || !is_all_digits(argv[i + 1])))
+            if (!parse_opt_int(i, flag, eq_val, args.bench, BENCH_DEFAULT_FRAMES))
             {
-                args.bench = 200;
-            }
-            else
-            {
-                const char *val = get_val(i);
-                if (!val || !parse_threads(flag, val, args.bench))
-                {
-                    return fail(1);
-                }
+                return fail(1);
             }
         }
         else if (arg == "--bench-size")
@@ -592,9 +535,8 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else if (arg == "--help")
         {
-            if (eq_val != nullptr)
+            if (!no_value())
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             print_help();
@@ -602,9 +544,8 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else if (arg == "--version")
         {
-            if (eq_val != nullptr)
+            if (!no_value())
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             print_version();
@@ -612,27 +553,24 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else if (arg == "--spin")
         {
-            if (eq_val != nullptr)
+            if (!no_value())
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.spin = true;
         }
         else if (arg == "--no-ao")
         {
-            if (eq_val != nullptr)
+            if (!no_value())
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.ao = false;
         }
         else if (arg == "--no-hud")
         {
-            if (eq_val != nullptr)
+            if (!no_value())
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
                 return fail(1);
             }
             args.hud = false;
@@ -735,24 +673,10 @@ ParseResult parse_args(int argc, char *argv[])
                 case 'B':
                 {
                     int &out = (c == 'j') ? args.n_threads : (c == 'f') ? args.fps : args.bench;
-                    const int bare = (c == 'B') ? 200 : 0;
-                    if (*rest != '\0')
+                    const int bare = (c == 'B') ? BENCH_DEFAULT_FRAMES : 0;
+                    if (!parse_opt_int(i, short_flag, (*rest != '\0') ? rest : nullptr, out, bare))
                     {
-                        if (!parse_threads(short_flag, rest, out))
-                        {
-                            return fail(1);
-                        }
-                    }
-                    else if (i + 1 < argc && is_all_digits(argv[i + 1]))
-                    {
-                        if (!parse_threads(short_flag, argv[++i], out))
-                        {
-                            return fail(1);
-                        }
-                    }
-                    else
-                    {
-                        out = bare;
+                        return fail(1);
                     }
                     value_consumed = true;
                     break;

@@ -1,18 +1,62 @@
 #pragma once
 
+#include "shading.h"
+
+#include <cstdint>
 #include <string>
+
+// CLI-level enumerations for the value flags. Defined here (not in the renderer
+// headers) so ParsedArgs stays free of renderer dependencies; main.cpp maps them
+// to colours/lights/framebuffer modes. The *_COUNT constants back the runtime
+// cycling keybindings (B/L/C wrap through the enumerators in declaration order).
+
+enum class Background : std::uint8_t
+{
+    Black,
+    Gray,
+    White
+};
+constexpr int BACKGROUND_COUNT = static_cast<int>(Background::White) + 1;
+
+enum class LightingMode : std::uint8_t
+{
+    Dual,
+    Single,
+    Flat
+};
+constexpr int LIGHTING_MODE_COUNT = static_cast<int>(LightingMode::Flat) + 1;
+
+enum class WireframeColor : std::uint8_t
+{
+    White,
+    Red,
+    Green,
+    Yellow,
+    Cyan,
+    Magenta
+};
+constexpr int WIREFRAME_COLOR_COUNT = static_cast<int>(WireframeColor::Magenta) + 1;
+
+// --color choice: Auto defers to platform::detect_term_color(); the other two
+// force the framebuffer mode (the TERM=dumb fatal and Windows VT gate still apply).
+enum class ColorChoice : std::uint8_t
+{
+    Auto,
+    TrueColor,
+    Palette256
+};
 
 // Parsed command-line arguments.  All values are plain types — no renderer
 // dependencies — so this header can be included by the test binary cheaply.
 struct ParsedArgs
 {
-    std::string model_path;     // required positional
-    int n_threads = -1;         // -1 = auto (min(hw_concurrency, 4))
-    int shading = 2;            // 0=wireframe  1=flat  2=phong
-    int bg = 0;                 // 0=black  1=gray  2=white
-    int lighting = 0;           // 0=dual  1=single  2=flat
-    int wireframe_color = 0;    // 0=white, 1=red, 2=green, 3=yellow, 4=cyan, 5=magenta
-    int color = 0;              // 0=auto (detect)  1=force truecolor  2=force 256
+    std::string model_path; // required positional
+    int n_threads = -1;     // -1 = auto (min(hw_concurrency, 4)), 0 = all cores (bare -j), >0 = exactly N
+    ShadingMode shading = ShadingMode::Phong;
+    Background bg = Background::Black;
+    LightingMode lighting = LightingMode::Dual;
+    WireframeColor wireframe_color = WireframeColor::White;
+    ColorChoice color = ColorChoice::Auto;
     int fps = 60;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
     int bench_width = 200;      // headless framebuffer width in pixels

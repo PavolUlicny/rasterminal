@@ -6,6 +6,7 @@
 #include "mesh.h"
 #include "platform.h"
 #include "renderer.h"
+#include "shading.h"
 
 #include <algorithm>
 #include <chrono>
@@ -52,15 +53,116 @@ namespace
     constexpr Color BG_WHITE = { 240, 240, 240 };
     constexpr vec3 FLAT_AMBIENT = { 0.85f, 0.85f, 0.85f };
 
-    constexpr Color WIREFRAME_PALETTE[6] = {
-        { 200, 200, 200 }, // white
-        { 220, 80, 80 },   // red
-        { 80, 200, 120 },  // green
-        { 230, 200, 80 },  // yellow
-        { 100, 200, 220 }, // cyan
-        { 220, 120, 200 }, // magenta
-    };
-    const char *const WIREFRAME_NAMES[6] = { "white", "red", "green", "yellow", "cyan", "magenta" };
+    // "_of" rather than "_color" to avoid reading like the Renderer::wireframe_color member.
+    constexpr Color wireframe_color_of(WireframeColor c) noexcept
+    {
+        switch (c)
+        {
+        case WireframeColor::White:
+            return { 200, 200, 200 };
+        case WireframeColor::Red:
+            return { 220, 80, 80 };
+        case WireframeColor::Green:
+            return { 80, 200, 120 };
+        case WireframeColor::Yellow:
+            return { 230, 200, 80 };
+        case WireframeColor::Cyan:
+            return { 100, 200, 220 };
+        case WireframeColor::Magenta:
+            return { 220, 120, 200 };
+        }
+        return { 200, 200, 200 };
+    }
+
+    constexpr const char *wireframe_name(WireframeColor c) noexcept
+    {
+        switch (c)
+        {
+        case WireframeColor::White:
+            return "white";
+        case WireframeColor::Red:
+            return "red";
+        case WireframeColor::Green:
+            return "green";
+        case WireframeColor::Yellow:
+            return "yellow";
+        case WireframeColor::Cyan:
+            return "cyan";
+        case WireframeColor::Magenta:
+            return "magenta";
+        }
+        return "white";
+    }
+
+    constexpr Color background_color(Background b) noexcept
+    {
+        switch (b)
+        {
+        case Background::Gray:
+            return BG_GRAY;
+        case Background::White:
+            return BG_WHITE;
+        case Background::Black:
+            return BG_BLACK;
+        }
+        return BG_BLACK;
+    }
+
+    constexpr const char *background_name(Background b) noexcept
+    {
+        switch (b)
+        {
+        case Background::Gray:
+            return "gray";
+        case Background::White:
+            return "white";
+        case Background::Black:
+            return "black";
+        }
+        return "black";
+    }
+
+    // Directional lights active for a lighting mode; Flat is ambient-only.
+    constexpr int light_count(LightingMode m) noexcept
+    {
+        switch (m)
+        {
+        case LightingMode::Single:
+            return 1;
+        case LightingMode::Flat:
+            return 0;
+        case LightingMode::Dual:
+            return 2;
+        }
+        return 2;
+    }
+
+    // Flat mode swaps the scene ambient for the bright uniform FLAT_AMBIENT so the
+    // full model stays visible with no directional lights.
+    constexpr vec3 lighting_ambient(LightingMode m, const vec3 &ambient) noexcept
+    {
+        return m == LightingMode::Flat ? FLAT_AMBIENT : ambient;
+    }
+
+    constexpr const char *lighting_name(LightingMode m) noexcept
+    {
+        switch (m)
+        {
+        case LightingMode::Single:
+            return "single";
+        case LightingMode::Flat:
+            return "flat";
+        case LightingMode::Dual:
+            return "dual";
+        }
+        return "dual";
+    }
+
+    // Advance to the next enumerator, wrapping after count (the B/L/C keybindings).
+    template <typename E> constexpr E cycle(E v, int count) noexcept
+    {
+        return static_cast<E>((static_cast<int>(v) + 1) % count);
+    }
 
     Camera auto_fit_camera(const Mesh &mesh)
     {
@@ -128,12 +230,12 @@ namespace
 
         Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
         Renderer renderer(args.n_threads);
-        renderer.mode = static_cast<ShadingMode>(args.shading);
+        renderer.mode = args.shading;
         renderer.cull_backfaces = args.cull;
         renderer.show_texture = args.texture;
 
-        const int n_lights = args.lighting == 1 ? 1 : (args.lighting == 2 ? 0 : 2);
-        const vec3 &cur_ambient = args.lighting == 2 ? FLAT_AMBIENT : ambient;
+        const int n_lights = light_count(args.lighting);
+        const vec3 cur_ambient = lighting_ambient(args.lighting, ambient);
 
         const int n_warmup = args.bench_warmup;
         const int n_measure = args.bench;
@@ -258,17 +360,17 @@ int main(int argc, char *argv[])
         // --color overrides only the truecolor-vs-256 choice. TERM=dumb stays fatal even
         // under --color truecolor (dumb means no escape sequences at all, which no color
         // depth fixes), and the Windows VT gate below is likewise not bypassed.
-        if (args.color == 1)
+        switch (args.color)
         {
+        case ColorChoice::TrueColor:
             color_mode = ColorMode::TrueColor;
-        }
-        else if (args.color == 2)
-        {
+            break;
+        case ColorChoice::Palette256:
             color_mode = ColorMode::Palette256;
-        }
-        else
-        {
+            break;
+        case ColorChoice::Auto:
             color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
+            break;
         }
     }
 
@@ -345,7 +447,7 @@ int main(int argc, char *argv[])
     make_default_lights(lights, ambient);
 
     Renderer renderer(args.n_threads);
-    renderer.mode = static_cast<ShadingMode>(args.shading);
+    renderer.mode = args.shading;
 
     const bool has_textures = !mesh.textures.empty();
     float fps_smooth = -1.0f;    // per-frame EMA of the framerate; -1 = uninitialised
@@ -356,11 +458,11 @@ int main(int argc, char *argv[])
     bool texturing = args.texture;
     int mouse_last_x = 0; // last seen drag position (terminal cells)
     int mouse_last_y = 0;
-    int bg_mode = args.bg;               // 0=black, 1=gray, 2=white
-    int lighting_mode = args.lighting;   // 0=dual, 1=single, 2=flat ambient
-    int wf_color = args.wireframe_color; // 0=white..5=magenta
-    constexpr float spin_speed = 0.8f;   // radians/sec
-    constexpr float FPS_LATCH = 0.1f;    // seconds between HUD fps refreshes (~10 Hz)
+    Background bg_mode = args.bg;
+    LightingMode lighting_mode = args.lighting;
+    WireframeColor wf_color = args.wireframe_color;
+    constexpr float spin_speed = 0.8f; // radians/sec
+    constexpr float FPS_LATCH = 0.1f;  // seconds between HUD fps refreshes (~10 Hz)
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
@@ -440,15 +542,15 @@ int main(int argc, char *argv[])
                 }
                 else if (k == platform::Key::B)
                 {
-                    bg_mode = (bg_mode + 1) % 3;
+                    bg_mode = cycle(bg_mode, BACKGROUND_COUNT);
                 }
                 else if (k == platform::Key::L)
                 {
-                    lighting_mode = (lighting_mode + 1) % 3;
+                    lighting_mode = cycle(lighting_mode, LIGHTING_MODE_COUNT);
                 }
                 else if (k == platform::Key::C)
                 {
-                    wf_color = (wf_color + 1) % 6;
+                    wf_color = cycle(wf_color, WIREFRAME_COLOR_COUNT);
                 }
                 else if (k == platform::Key::K)
                 {
@@ -465,9 +567,9 @@ int main(int argc, char *argv[])
                 {
                     camera = initial_camera;
                     renderer.mode = ShadingMode::Phong;
-                    lighting_mode = 0;
-                    bg_mode = 0;
-                    wf_color = 0;
+                    lighting_mode = LightingMode::Dual;
+                    bg_mode = Background::Black;
+                    wf_color = WireframeColor::White;
                     spinning = false;
                     culling = true;
                     texturing = true;
@@ -546,34 +648,8 @@ int main(int argc, char *argv[])
         // ── HUD ───────────────────────────────────────────────────────────
         if (args.hud)
         {
-            const char *lighting_str = nullptr;
-            switch (lighting_mode)
-            {
-            case 1:
-                lighting_str = "single";
-                break;
-            case 2:
-                lighting_str = "flat";
-                break;
-            default:
-                lighting_str = "dual";
-                break;
-            }
-
-            const char *bg_str = nullptr;
-            switch (bg_mode)
-            {
-            case 1:
-                bg_str = "gray";
-                break;
-            case 2:
-                bg_str = "white";
-                break;
-            default:
-                bg_str = "black";
-                break;
-            }
-
+            const char *lighting_str = lighting_name(lighting_mode);
+            const char *bg_str = background_name(bg_mode);
             const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
             const int fps_shown = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
             char hud[256];
@@ -583,7 +659,7 @@ int main(int argc, char *argv[])
                     hud, sizeof(hud),
                     "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
                     shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
-                    lighting_str, bg_str, WIREFRAME_NAMES[wf_color], culling ? "ON" : "OFF", tex_suffix
+                    lighting_str, bg_str, wireframe_name(wf_color), culling ? "ON" : "OFF", tex_suffix
                 );
             }
             else
@@ -598,37 +674,10 @@ int main(int argc, char *argv[])
         }
 
         // ── Render ────────────────────────────────────────────────────────
-        Color bg_color;
-        switch (bg_mode)
-        {
-        case 1:
-            bg_color = BG_GRAY;
-            break;
-        case 2:
-            bg_color = BG_WHITE;
-            break;
-        default:
-            bg_color = BG_BLACK;
-            break;
-        }
-        fb.clear(bg_color);
-        // Select light set based on lighting mode.
-        // Flat ambient: no directional lights, bright ambient so the full model is visible.
-        int n_lights = 0;
-        switch (lighting_mode)
-        {
-        case 1:
-            n_lights = 1;
-            break;
-        case 2:
-            n_lights = 0;
-            break;
-        default:
-            n_lights = 2;
-            break;
-        }
-        const vec3 &cur_ambient = lighting_mode == 2 ? FLAT_AMBIENT : ambient;
-        renderer.wireframe_color = WIREFRAME_PALETTE[wf_color];
+        fb.clear(background_color(bg_mode));
+        const int n_lights = light_count(lighting_mode);
+        const vec3 cur_ambient = lighting_ambient(lighting_mode, ambient);
+        renderer.wireframe_color = wireframe_color_of(wf_color);
         renderer.cull_backfaces = culling;
         renderer.show_texture = texturing;
         renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);

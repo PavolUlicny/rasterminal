@@ -108,10 +108,10 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "model.obj");
     ASSERT_EQ(r.args.n_threads, -1);
-    ASSERT_EQ(r.args.shading, 2);         // phong
-    ASSERT_EQ(r.args.bg, 0);              // black
-    ASSERT_EQ(r.args.lighting, 0);        // dual
-    ASSERT_EQ(r.args.wireframe_color, 0); // white
+    ASSERT_EQ(r.args.shading, ShadingMode::Phong);
+    ASSERT_EQ(r.args.bg, Background::Black);
+    ASSERT_EQ(r.args.lighting, LightingMode::Dual);
+    ASSERT_EQ(r.args.wireframe_color, WireframeColor::White);
     ASSERT_EQ(r.args.fps, 60);
     ASSERT_TRUE(r.args.cull);
     ASSERT_TRUE(r.args.texture);
@@ -205,7 +205,7 @@ TEST(args, lone_dash_after_flag)
 {
     ParseResult r = run({ "-s", "flat", "-" });
     ASSERT_TRUE(r.ok);
-    ASSERT_EQ(r.args.shading, 1);
+    ASSERT_EQ(r.args.shading, ShadingMode::Flat);
     ASSERT_TRUE(r.args.model_path == "-");
 }
 
@@ -253,7 +253,7 @@ TEST(args, double_dash_after_flags)
 {
     ParseResult r = run({ "-s", "flat", "--", "-m.obj" });
     ASSERT_TRUE(r.ok);
-    ASSERT_EQ(r.args.shading, 1);
+    ASSERT_EQ(r.args.shading, ShadingMode::Flat);
     ASSERT_TRUE(r.args.model_path == "-m.obj");
 }
 
@@ -342,17 +342,17 @@ TEST(args, spin_with_equals_value_is_error)
 
 TEST(args, shading_wireframe_by_name)
 {
-    ASSERT_EQ(run({ "--shading", "wireframe", "m.obj" }).args.shading, 0);
+    ASSERT_EQ(run({ "--shading", "wireframe", "m.obj" }).args.shading, ShadingMode::Wireframe);
 }
 
 TEST(args, shading_flat_by_name)
 {
-    ASSERT_EQ(run({ "--shading", "flat", "m.obj" }).args.shading, 1);
+    ASSERT_EQ(run({ "--shading", "flat", "m.obj" }).args.shading, ShadingMode::Flat);
 }
 
 TEST(args, shading_phong_by_name)
 {
-    ASSERT_EQ(run({ "--shading", "phong", "m.obj" }).args.shading, 2);
+    ASSERT_EQ(run({ "--shading", "phong", "m.obj" }).args.shading, ShadingMode::Phong);
 }
 
 TEST(args, shading_numeric_is_invalid)
@@ -373,8 +373,8 @@ TEST(args, shading_unknown_value_is_invalid)
 
 TEST(args, shading_case_insensitive)
 {
-    ASSERT_EQ(run({ "--shading", "PHONG", "m.obj" }).args.shading, 2);
-    ASSERT_EQ(run({ "--shading", "Flat", "m.obj" }).args.shading, 1);
+    ASSERT_EQ(run({ "--shading", "PHONG", "m.obj" }).args.shading, ShadingMode::Phong);
+    ASSERT_EQ(run({ "--shading", "Flat", "m.obj" }).args.shading, ShadingMode::Flat);
 }
 
 TEST(args, shading_invalid_value_is_error)
@@ -388,19 +388,19 @@ TEST(args, shading_invalid_value_is_error)
 
 TEST(args, shading_compact_short_form)
 {
-    ASSERT_EQ(run({ "-sphong", "m.obj" }).args.shading, 2);
-    ASSERT_EQ(run({ "-swireframe", "m.obj" }).args.shading, 0);
+    ASSERT_EQ(run({ "-sphong", "m.obj" }).args.shading, ShadingMode::Phong);
+    ASSERT_EQ(run({ "-swireframe", "m.obj" }).args.shading, ShadingMode::Wireframe);
 }
 
 TEST(args, shading_equals_long_form)
 {
-    ASSERT_EQ(run({ "--shading=flat", "m.obj" }).args.shading, 1);
+    ASSERT_EQ(run({ "--shading=flat", "m.obj" }).args.shading, ShadingMode::Flat);
 }
 
 TEST(args, shading_compact_case_insensitive)
 {
-    ASSERT_EQ(run({ "-sPHONG", "m.obj" }).args.shading, 2);
-    ASSERT_EQ(run({ "-sFLAT", "m.obj" }).args.shading, 1);
+    ASSERT_EQ(run({ "-sPHONG", "m.obj" }).args.shading, ShadingMode::Phong);
+    ASSERT_EQ(run({ "-sFLAT", "m.obj" }).args.shading, ShadingMode::Flat);
 }
 
 TEST(args, shading_compact_invalid_value_is_error)
@@ -412,22 +412,22 @@ TEST(args, shading_compact_invalid_value_is_error)
 
 TEST(args, bg_black)
 {
-    ASSERT_EQ(run({ "--bg", "black", "m.obj" }).args.bg, 0);
+    ASSERT_EQ(run({ "--bg", "black", "m.obj" }).args.bg, Background::Black);
 }
 
 TEST(args, bg_gray)
 {
-    ASSERT_EQ(run({ "--bg", "gray", "m.obj" }).args.bg, 1);
+    ASSERT_EQ(run({ "--bg", "gray", "m.obj" }).args.bg, Background::Gray);
 }
 
 TEST(args, bg_grey_alias)
 {
-    ASSERT_EQ(run({ "--bg", "grey", "m.obj" }).args.bg, 1);
+    ASSERT_EQ(run({ "--bg", "grey", "m.obj" }).args.bg, Background::Gray);
 }
 
 TEST(args, bg_white)
 {
-    ASSERT_EQ(run({ "--bg", "white", "m.obj" }).args.bg, 2);
+    ASSERT_EQ(run({ "--bg", "white", "m.obj" }).args.bg, Background::White);
 }
 
 TEST(args, bg_numeric_is_invalid)
@@ -439,24 +439,24 @@ TEST(args, bg_numeric_is_invalid)
 
 TEST(args, bg_case_insensitive)
 {
-    ASSERT_EQ(run({ "--bg", "WHITE", "m.obj" }).args.bg, 2);
-    ASSERT_EQ(run({ "--bg", "GrAy", "m.obj" }).args.bg, 1);
+    ASSERT_EQ(run({ "--bg", "WHITE", "m.obj" }).args.bg, Background::White);
+    ASSERT_EQ(run({ "--bg", "GrAy", "m.obj" }).args.bg, Background::Gray);
 }
 
 TEST(args, bg_compact_short_form)
 {
-    ASSERT_EQ(run({ "-bwhite", "m.obj" }).args.bg, 2);
+    ASSERT_EQ(run({ "-bwhite", "m.obj" }).args.bg, Background::White);
 }
 
 TEST(args, bg_equals_long_form)
 {
-    ASSERT_EQ(run({ "--bg=gray", "m.obj" }).args.bg, 1);
+    ASSERT_EQ(run({ "--bg=gray", "m.obj" }).args.bg, Background::Gray);
 }
 
 TEST(args, bg_compact_case_insensitive)
 {
-    ASSERT_EQ(run({ "-bWHITE", "m.obj" }).args.bg, 2);
-    ASSERT_EQ(run({ "-bGrAy", "m.obj" }).args.bg, 1);
+    ASSERT_EQ(run({ "-bWHITE", "m.obj" }).args.bg, Background::White);
+    ASSERT_EQ(run({ "-bGrAy", "m.obj" }).args.bg, Background::Gray);
 }
 
 TEST(args, bg_compact_invalid_value_is_error)
@@ -475,17 +475,17 @@ TEST(args, bg_invalid_value_is_error)
 
 TEST(args, lighting_dual)
 {
-    ASSERT_EQ(run({ "--lighting", "dual", "m.obj" }).args.lighting, 0);
+    ASSERT_EQ(run({ "--lighting", "dual", "m.obj" }).args.lighting, LightingMode::Dual);
 }
 
 TEST(args, lighting_single)
 {
-    ASSERT_EQ(run({ "--lighting", "single", "m.obj" }).args.lighting, 1);
+    ASSERT_EQ(run({ "--lighting", "single", "m.obj" }).args.lighting, LightingMode::Single);
 }
 
 TEST(args, lighting_flat)
 {
-    ASSERT_EQ(run({ "--lighting", "flat", "m.obj" }).args.lighting, 2);
+    ASSERT_EQ(run({ "--lighting", "flat", "m.obj" }).args.lighting, LightingMode::Flat);
 }
 
 TEST(args, lighting_numeric_is_invalid)
@@ -497,24 +497,24 @@ TEST(args, lighting_numeric_is_invalid)
 
 TEST(args, lighting_case_insensitive)
 {
-    ASSERT_EQ(run({ "--lighting", "SINGLE", "m.obj" }).args.lighting, 1);
-    ASSERT_EQ(run({ "--lighting", "FlAt", "m.obj" }).args.lighting, 2);
+    ASSERT_EQ(run({ "--lighting", "SINGLE", "m.obj" }).args.lighting, LightingMode::Single);
+    ASSERT_EQ(run({ "--lighting", "FlAt", "m.obj" }).args.lighting, LightingMode::Flat);
 }
 
 TEST(args, lighting_compact_short_form)
 {
-    ASSERT_EQ(run({ "-lsingle", "m.obj" }).args.lighting, 1);
+    ASSERT_EQ(run({ "-lsingle", "m.obj" }).args.lighting, LightingMode::Single);
 }
 
 TEST(args, lighting_equals_long_form)
 {
-    ASSERT_EQ(run({ "--lighting=flat", "m.obj" }).args.lighting, 2);
+    ASSERT_EQ(run({ "--lighting=flat", "m.obj" }).args.lighting, LightingMode::Flat);
 }
 
 TEST(args, lighting_compact_case_insensitive)
 {
-    ASSERT_EQ(run({ "-lSINGLE", "m.obj" }).args.lighting, 1);
-    ASSERT_EQ(run({ "-lFlAt", "m.obj" }).args.lighting, 2);
+    ASSERT_EQ(run({ "-lSINGLE", "m.obj" }).args.lighting, LightingMode::Single);
+    ASSERT_EQ(run({ "-lFlAt", "m.obj" }).args.lighting, LightingMode::Flat);
 }
 
 TEST(args, lighting_compact_invalid_value_is_error)
@@ -619,10 +619,10 @@ TEST(args, multiple_flags_all_applied)
               "--cull=off", "--texture=off", "--spin", "--no-ao", "--no-hud", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
-    ASSERT_EQ(r.args.shading, 2);
-    ASSERT_EQ(r.args.bg, 2);
-    ASSERT_EQ(r.args.lighting, 1);
-    ASSERT_EQ(r.args.wireframe_color, 5);
+    ASSERT_EQ(r.args.shading, ShadingMode::Phong);
+    ASSERT_EQ(r.args.bg, Background::White);
+    ASSERT_EQ(r.args.lighting, LightingMode::Single);
+    ASSERT_EQ(r.args.wireframe_color, WireframeColor::Magenta);
     ASSERT_EQ(r.args.fps, 120);
     ASSERT_FALSE(r.args.cull);
     ASSERT_FALSE(r.args.texture);
@@ -638,8 +638,8 @@ TEST(args, flags_before_and_after_model_path)
     ParseResult r = run({ "--shading=flat", "my.stl", "--bg=gray" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "my.stl");
-    ASSERT_EQ(r.args.shading, 1);
-    ASSERT_EQ(r.args.bg, 1);
+    ASSERT_EQ(r.args.shading, ShadingMode::Flat);
+    ASSERT_EQ(r.args.bg, Background::Gray);
 }
 
 // ─── short-option clustering (POSIX Guideline 5) ──────────────────────────────
@@ -681,7 +681,7 @@ TEST(args, cluster_spin_shading_value)
     ParseResult r = run({ "-Ssphong", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.shading, 2);
+    ASSERT_EQ(r.args.shading, ShadingMode::Phong);
 }
 
 TEST(args, cluster_spin_cull_off)
@@ -846,7 +846,7 @@ TEST(args, cluster_spin_bg_compact)
     ParseResult r = run({ "-Sbwhite", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.bg, 2);
+    ASSERT_EQ(r.args.bg, Background::White);
 }
 
 TEST(args, cluster_spin_lighting_compact)
@@ -854,7 +854,7 @@ TEST(args, cluster_spin_lighting_compact)
     ParseResult r = run({ "-Slsingle", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.lighting, 1);
+    ASSERT_EQ(r.args.lighting, LightingMode::Single);
 }
 
 TEST(args, cluster_spin_wireframe_compact)
@@ -862,7 +862,7 @@ TEST(args, cluster_spin_wireframe_compact)
     ParseResult r = run({ "-Swred", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.wireframe_color, 1);
+    ASSERT_EQ(r.args.wireframe_color, WireframeColor::Red);
 }
 
 TEST(args, cluster_spin_cull_on_compact)
@@ -880,7 +880,7 @@ TEST(args, cluster_spin_shading_next_token)
     ParseResult r = run({ "-Ss", "phong", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.shading, 2);
+    ASSERT_EQ(r.args.shading, ShadingMode::Phong);
 }
 
 TEST(args, cluster_spin_texture_next_token)
@@ -948,17 +948,17 @@ TEST(args, cluster_then_double_dash_dash_model)
 
 TEST(args, wireframe_color_default)
 {
-    ASSERT_EQ(run({ "m.obj" }).args.wireframe_color, 0);
+    ASSERT_EQ(run({ "m.obj" }).args.wireframe_color, WireframeColor::White);
 }
 
 TEST(args, wireframe_color_name)
 {
-    ASSERT_EQ(run({ "--wireframe-color", "red", "m.obj" }).args.wireframe_color, 1);
-    ASSERT_EQ(run({ "--wireframe-color", "green", "m.obj" }).args.wireframe_color, 2);
-    ASSERT_EQ(run({ "--wireframe-color", "yellow", "m.obj" }).args.wireframe_color, 3);
-    ASSERT_EQ(run({ "--wireframe-color", "cyan", "m.obj" }).args.wireframe_color, 4);
-    ASSERT_EQ(run({ "--wireframe-color", "magenta", "m.obj" }).args.wireframe_color, 5);
-    ASSERT_EQ(run({ "--wireframe-color", "white", "m.obj" }).args.wireframe_color, 0);
+    ASSERT_EQ(run({ "--wireframe-color", "red", "m.obj" }).args.wireframe_color, WireframeColor::Red);
+    ASSERT_EQ(run({ "--wireframe-color", "green", "m.obj" }).args.wireframe_color, WireframeColor::Green);
+    ASSERT_EQ(run({ "--wireframe-color", "yellow", "m.obj" }).args.wireframe_color, WireframeColor::Yellow);
+    ASSERT_EQ(run({ "--wireframe-color", "cyan", "m.obj" }).args.wireframe_color, WireframeColor::Cyan);
+    ASSERT_EQ(run({ "--wireframe-color", "magenta", "m.obj" }).args.wireframe_color, WireframeColor::Magenta);
+    ASSERT_EQ(run({ "--wireframe-color", "white", "m.obj" }).args.wireframe_color, WireframeColor::White);
 }
 
 TEST(args, wireframe_color_numeric_is_invalid)
@@ -969,24 +969,24 @@ TEST(args, wireframe_color_numeric_is_invalid)
 
 TEST(args, wireframe_color_case_insensitive)
 {
-    ASSERT_EQ(run({ "--wireframe-color", "YELLOW", "m.obj" }).args.wireframe_color, 3);
-    ASSERT_EQ(run({ "--wireframe-color", "Cyan", "m.obj" }).args.wireframe_color, 4);
+    ASSERT_EQ(run({ "--wireframe-color", "YELLOW", "m.obj" }).args.wireframe_color, WireframeColor::Yellow);
+    ASSERT_EQ(run({ "--wireframe-color", "Cyan", "m.obj" }).args.wireframe_color, WireframeColor::Cyan);
 }
 
 TEST(args, wireframe_color_short_form)
 {
-    ASSERT_EQ(run({ "-w", "red", "m.obj" }).args.wireframe_color, 1);
+    ASSERT_EQ(run({ "-w", "red", "m.obj" }).args.wireframe_color, WireframeColor::Red);
 }
 
 TEST(args, wireframe_color_compact_short_form)
 {
-    ASSERT_EQ(run({ "-wmagenta", "m.obj" }).args.wireframe_color, 5);
+    ASSERT_EQ(run({ "-wmagenta", "m.obj" }).args.wireframe_color, WireframeColor::Magenta);
 }
 
 TEST(args, wireframe_color_compact_case_insensitive)
 {
-    ASSERT_EQ(run({ "-wYELLOW", "m.obj" }).args.wireframe_color, 3);
-    ASSERT_EQ(run({ "-wCyAn", "m.obj" }).args.wireframe_color, 4);
+    ASSERT_EQ(run({ "-wYELLOW", "m.obj" }).args.wireframe_color, WireframeColor::Yellow);
+    ASSERT_EQ(run({ "-wCyAn", "m.obj" }).args.wireframe_color, WireframeColor::Cyan);
 }
 
 TEST(args, wireframe_color_compact_invalid_value_is_error)
@@ -996,7 +996,7 @@ TEST(args, wireframe_color_compact_invalid_value_is_error)
 
 TEST(args, wireframe_color_equals_form)
 {
-    ASSERT_EQ(run({ "--wireframe-color=cyan", "m.obj" }).args.wireframe_color, 4);
+    ASSERT_EQ(run({ "--wireframe-color=cyan", "m.obj" }).args.wireframe_color, WireframeColor::Cyan);
 }
 
 TEST(args, wireframe_color_invalid_is_error)
@@ -1017,28 +1017,28 @@ TEST(args, wireframe_color_missing_value_is_error)
 
 TEST(args, color_default_is_auto)
 {
-    ASSERT_EQ(run({ "m.obj" }).args.color, 0);
+    ASSERT_EQ(run({ "m.obj" }).args.color, ColorChoice::Auto);
 }
 
 TEST(args, color_values)
 {
-    ASSERT_EQ(run({ "--color", "auto", "m.obj" }).args.color, 0);
-    ASSERT_EQ(run({ "--color", "truecolor", "m.obj" }).args.color, 1);
-    ASSERT_EQ(run({ "--color", "24bit", "m.obj" }).args.color, 1);
-    ASSERT_EQ(run({ "--color", "256", "m.obj" }).args.color, 2);
+    ASSERT_EQ(run({ "--color", "auto", "m.obj" }).args.color, ColorChoice::Auto);
+    ASSERT_EQ(run({ "--color", "truecolor", "m.obj" }).args.color, ColorChoice::TrueColor);
+    ASSERT_EQ(run({ "--color", "24bit", "m.obj" }).args.color, ColorChoice::TrueColor);
+    ASSERT_EQ(run({ "--color", "256", "m.obj" }).args.color, ColorChoice::Palette256);
 }
 
 TEST(args, color_case_insensitive)
 {
-    ASSERT_EQ(run({ "--color", "TRUECOLOR", "m.obj" }).args.color, 1);
-    ASSERT_EQ(run({ "--color", "24Bit", "m.obj" }).args.color, 1);
-    ASSERT_EQ(run({ "--color", "Auto", "m.obj" }).args.color, 0);
+    ASSERT_EQ(run({ "--color", "TRUECOLOR", "m.obj" }).args.color, ColorChoice::TrueColor);
+    ASSERT_EQ(run({ "--color", "24Bit", "m.obj" }).args.color, ColorChoice::TrueColor);
+    ASSERT_EQ(run({ "--color", "Auto", "m.obj" }).args.color, ColorChoice::Auto);
 }
 
 TEST(args, color_equals_form)
 {
-    ASSERT_EQ(run({ "--color=256", "m.obj" }).args.color, 2);
-    ASSERT_EQ(run({ "--color=truecolor", "m.obj" }).args.color, 1);
+    ASSERT_EQ(run({ "--color=256", "m.obj" }).args.color, ColorChoice::Palette256);
+    ASSERT_EQ(run({ "--color=truecolor", "m.obj" }).args.color, ColorChoice::TrueColor);
 }
 
 TEST(args, color_invalid_value_is_error)

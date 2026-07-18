@@ -15,6 +15,7 @@
 #include <exception>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 // ─── Portable fd helpers (used across several test files for stdio capture) ──
@@ -96,6 +97,20 @@ namespace testing
         explicit AssertionError(const std::string &msg) : std::runtime_error(msg) {}
     };
 
+    // Stringify a value for assertion messages; enum classes print as their
+    // underlying integer (std::to_string cannot take them directly).
+    template <typename T> inline std::string assert_str(const T &v)
+    {
+        if constexpr (std::is_enum_v<T>)
+        {
+            return std::to_string(static_cast<long long>(v));
+        }
+        else
+        {
+            return std::to_string(v);
+        }
+    }
+
     inline int run_all_tests()
     {
         int passed = 0, failed = 0;
@@ -156,7 +171,9 @@ namespace testing
         auto _va = (a);                                                                                                \
         auto _vb = (b);                                                                                                \
         if (!(_va == _vb))                                                                                             \
-            ASSERT_FAIL("ASSERT_EQ(" #a ", " #b ") failed: " + std::to_string(_va) + " != " + std::to_string(_vb));    \
+            ASSERT_FAIL(                                                                                               \
+                "ASSERT_EQ(" #a ", " #b ") failed: " + testing::assert_str(_va) + " != " + testing::assert_str(_vb)    \
+            );                                                                                                         \
     } while (0)
 
 #define ASSERT_NEAR(a, b, eps)                                                                                         \
