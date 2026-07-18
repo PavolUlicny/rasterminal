@@ -189,7 +189,7 @@ rasterminal [options] <model>
 | `--cull` | `-c` | `on` | `on`/`off` |
 | `--texture` | `-t` | `on` | `on`/`off` |
 | `--spin` | `-S` | `off` | Start with auto-rotation enabled |
-| `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores |
+| `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores; `N` above the CPU thread count is clamped |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |

@@ -51,7 +51,8 @@ enum class ColorChoice : std::uint8_t
 struct ParsedArgs
 {
     std::string model_path; // required positional
-    int n_threads = -1;     // -1 = auto (min(hw_concurrency, 4)), 0 = all cores (bare -j), >0 = exactly N
+    int n_threads = -1;     // raw tri-state (-1 = auto, 0 = all cores, >0 = N); never use directly,
+                            // resolve via Renderer::resolve_thread_count (clamps N to the hw count)
     ShadingMode shading = ShadingMode::Phong;
     Background bg = Background::Black;
     LightingMode lighting = LightingMode::Dual;

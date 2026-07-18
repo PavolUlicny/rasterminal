@@ -55,14 +55,19 @@ namespace
 
 // ─── Renderer: constructor / destructor ───────────────────────────────────────
 
-Renderer::Renderer(int n_threads)
+int Renderer::resolve_thread_count(int n_threads) noexcept
 {
+    // hardware_concurrency() may return 0 ("not computable"); the max floors that to
+    // hw = 1, so on such platforms even an explicit -j N runs single-threaded.
+    // Accepted limitation: with no hw information, honoring an arbitrary N risks
+    // oversubscription, and 1 was already the pre-existing worker-pool behavior.
     const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-    // -1 = auto (default): min(hw, 4)
-    //  0 = all hardware threads
-    //  N = exactly N, clamped to [1, hw]
     const int req = (n_threads < 0) ? std::min(hw, 4) : (n_threads == 0) ? hw : n_threads;
-    m_n_workers = std::clamp(req, 1, hw);
+    return std::clamp(req, 1, hw);
+}
+
+Renderer::Renderer(int n_threads) : m_n_workers(resolve_thread_count(n_threads))
+{
     m_arenas.resize(static_cast<size_t>(m_n_workers));    // one transparent-fragment arena per worker
     m_touch_box.resize(static_cast<size_t>(m_n_workers)); // one touched-pixel box per worker
     m_threads.reserve(static_cast<size_t>(m_n_workers));

@@ -24,9 +24,15 @@ struct Renderer
     bool cull_backfaces = true;
     bool show_texture = true;
 
+    // Resolves the ctor's n_threads contract to the worker count that would be
+    // spawned: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads (bare -j),
+    // N = exactly N; result clamped to [1, hw_concurrency]. Static and public so
+    // main.cpp resolves once through the same code path the ctor uses, keeping the
+    // bench report and load-time threading in lockstep with the actual pool.
+    [[nodiscard]] static int resolve_thread_count(int n_threads) noexcept;
+
     // Spawns worker threads that persist for the lifetime of the Renderer.
-    // n_threads: -1 = auto (min(hw_concurrency, 4)), 0 = all hw threads (bare -j), N = exactly N.
-    // Clamped to [1, hardware_concurrency].
+    // n_threads is interpreted by resolve_thread_count above.
     explicit Renderer(int n_threads = -1);
     ~Renderer();
 

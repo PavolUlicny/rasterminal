@@ -33,21 +33,6 @@ namespace
         g_interrupted = 1;
     }
 
-    // Resolve -1 (auto), 0 (all cores), or N (explicit) to a positive thread count.
-    int resolve_thread_count(int requested) noexcept
-    {
-        const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-        if (requested == 0)
-        {
-            return hw;
-        }
-        if (requested < 0)
-        {
-            return std::min(hw, 4);
-        }
-        return requested;
-    }
-
     constexpr Color BG_BLACK = { 0, 0, 0 };
     constexpr Color BG_GRAY = { 128, 128, 128 };
     constexpr Color BG_WHITE = { 240, 240, 240 };
@@ -221,7 +206,7 @@ namespace
     {
         using clock = std::chrono::steady_clock;
 
-        const int n_threads = resolve_thread_count(args.n_threads);
+        const int n_threads = Renderer::resolve_thread_count(args.n_threads);
 
         Camera camera = auto_fit_camera(mesh);
         Light lights[2];
@@ -229,7 +214,7 @@ namespace
         make_default_lights(lights, ambient);
 
         Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
-        Renderer renderer(args.n_threads);
+        Renderer renderer(n_threads);
         renderer.mode = args.shading;
         renderer.cull_backfaces = args.cull;
         renderer.show_texture = args.texture;
@@ -374,7 +359,7 @@ int main(int argc, char *argv[])
         }
     }
 
-    const int n_threads = resolve_thread_count(args.n_threads);
+    const int n_threads = Renderer::resolve_thread_count(args.n_threads);
     Mesh mesh;
     const auto load_t0 = std::chrono::steady_clock::now();
     if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
@@ -446,7 +431,7 @@ int main(int argc, char *argv[])
     vec3 ambient;
     make_default_lights(lights, ambient);
 
-    Renderer renderer(args.n_threads);
+    Renderer renderer(n_threads);
     renderer.mode = args.shading;
 
     const bool has_textures = !mesh.textures.empty();

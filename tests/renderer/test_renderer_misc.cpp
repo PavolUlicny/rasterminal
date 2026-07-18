@@ -1,5 +1,8 @@
 #include "tests/renderer_test_util.h"
 
+#include <algorithm>
+#include <climits>
+
 // ─── Group N — renderer edge cases not covered elsewhere ─────────────────────
 
 // ─── N1: small framebuffer still completes with many workers ─────────────────
@@ -273,4 +276,23 @@ TEST(renderer, choose_phase1_chunk_zero_tris_no_crash)
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
     ASSERT_EQ(count_drawn_pixels(fb), 0);
+}
+
+// Pins the shared thread-count resolver contract (-1 = auto, 0 = all cores,
+// N clamped to hw) with machine-independent relations, so an unclamped path can't
+// regress silently (the pre-fix bug: -j above hw reached the bench header and
+// load-time threading unclamped). main.cpp resolves through this same function.
+TEST(renderer, resolve_thread_count_contract)
+{
+    const int all = Renderer::resolve_thread_count(0);
+    ASSERT_TRUE(all >= 1);
+    // Explicit N above hw clamps to hw (== the all-cores resolution).
+    ASSERT_EQ(Renderer::resolve_thread_count(INT_MAX), all);
+    ASSERT_EQ(Renderer::resolve_thread_count(all), all);
+    // Auto = min(hw, 4).
+    ASSERT_EQ(Renderer::resolve_thread_count(-1), std::min(all, 4));
+    // hw >= 1 always (hardware_concurrency()==0 floors to 1), so 1 passes through.
+    ASSERT_EQ(Renderer::resolve_thread_count(1), 1);
+    // Idempotent: a resolved value is a fixed point (why the ctor may re-resolve).
+    ASSERT_EQ(Renderer::resolve_thread_count(Renderer::resolve_thread_count(INT_MAX)), all);
 }
