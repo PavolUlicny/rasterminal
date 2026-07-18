@@ -676,21 +676,23 @@ ParseResult parse_args(int argc, char *argv[])
                 const char short_flag[3] = { '-', c, '\0' };
                 const char *rest = tok + k + 1;
 
-                if (c == 'S')
+                switch (c)
                 {
+                case 'S':
                     args.spin = true;
-                }
-                else if (c == 'h')
-                {
+                    break;
+                case 'h':
                     print_help();
                     return fail(0);
-                }
-                else if (c == 'V')
-                {
+                case 'V':
                     print_version();
                     return fail(0);
-                }
-                else if (c == 's' || c == 'b' || c == 'l' || c == 'w' || c == 'c' || c == 't')
+                case 's':
+                case 'b':
+                case 'l':
+                case 'w':
+                case 'c':
+                case 't':
                 {
                     const char *val = (*rest != '\0') ? rest : require_val(i, short_flag);
                     if (!val)
@@ -698,37 +700,39 @@ ParseResult parse_args(int argc, char *argv[])
                         return fail(1);
                     }
                     bool valid = false;
-                    if (c == 's')
+                    switch (c)
                     {
+                    case 's':
                         valid = parse_shading(short_flag, val, args.shading);
-                    }
-                    else if (c == 'b')
-                    {
+                        break;
+                    case 'b':
                         valid = parse_bg(short_flag, val, args.bg);
-                    }
-                    else if (c == 'l')
-                    {
+                        break;
+                    case 'l':
                         valid = parse_lighting(short_flag, val, args.lighting);
-                    }
-                    else if (c == 'w')
-                    {
+                        break;
+                    case 'w':
                         valid = parse_wireframe_color(short_flag, val, args.wireframe_color);
-                    }
-                    else if (c == 'c')
-                    {
+                        break;
+                    case 'c':
                         valid = parse_bool(short_flag, val, args.cull);
-                    }
-                    else
-                    {
+                        break;
+                    case 't':
                         valid = parse_bool(short_flag, val, args.texture);
+                        break;
+                    default:
+                        break; // unreachable (outer case labels); valid stays false -> fail
                     }
                     if (!valid)
                     {
                         return fail(1);
                     }
                     value_consumed = true;
+                    break;
                 }
-                else if (c == 'j' || c == 'f' || c == 'B')
+                case 'j':
+                case 'f':
+                case 'B':
                 {
                     int &out = (c == 'j') ? args.n_threads : (c == 'f') ? args.fps : args.bench;
                     const int bare = (c == 'B') ? 200 : 0;
@@ -751,9 +755,9 @@ ParseResult parse_args(int argc, char *argv[])
                         out = bare;
                     }
                     value_consumed = true;
+                    break;
                 }
-                else
-                {
+                default:
                     std::fprintf(stderr, "%s: unknown flag '-%c'\n", prog, c);
                     return fail(1);
                 }
