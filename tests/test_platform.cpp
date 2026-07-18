@@ -18,16 +18,11 @@
 
 namespace
 {
-    // ASSERT_EQ stringifies via std::to_string, which can't take an enum class, so
-    // the classifier tests compare through ints for readable failure output.
-    constexpr int DUMB = static_cast<int>(platform::TermColor::Dumb);
-    constexpr int P256 = static_cast<int>(platform::TermColor::Palette256);
-    constexpr int TC = static_cast<int>(platform::TermColor::TrueColor);
-
-    constexpr int classify(const char *colorterm, const char *term, platform::TermColor unset_default)
-    {
-        return static_cast<int>(platform::classify_term_color(colorterm, term, unset_default));
-    }
+    // Short TermColor aliases keep each classifier assertion on one line
+    // (ASSERT_EQ handles enum classes directly via testing::assert_str).
+    constexpr platform::TermColor DUMB = platform::TermColor::Dumb;
+    constexpr platform::TermColor P256 = platform::TermColor::Palette256;
+    constexpr platform::TermColor TC = platform::TermColor::TrueColor;
 
     // The TEST cases below all evaluate classify_term_color at runtime, so none would catch a
     // future edit that silently demotes it (or a helper it calls) from constexpr. These
@@ -113,19 +108,19 @@ TEST(platform, is_tty_true_for_pty_slave)
 
 TEST(platform, classify_unset_env_uses_default)
 {
-    ASSERT_EQ(classify(nullptr, nullptr, platform::TermColor::Palette256), P256);
-    ASSERT_EQ(classify(nullptr, nullptr, platform::TermColor::TrueColor), TC);
-    ASSERT_EQ(classify("", "", platform::TermColor::Palette256), P256);
-    ASSERT_EQ(classify("", "", platform::TermColor::TrueColor), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, P256), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, TC), TC);
+    ASSERT_EQ(platform::classify_term_color("", "", P256), P256);
+    ASSERT_EQ(platform::classify_term_color("", "", TC), TC);
 }
 
 TEST(platform, classify_dumb_always_fatal)
 {
-    ASSERT_EQ(classify(nullptr, "dumb", platform::TermColor::Palette256), DUMB);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "dumb", P256), DUMB);
     // Dumb beats a contradictory COLORTERM: a dumb terminal can't render escapes
     // regardless of what claims color support.
-    ASSERT_EQ(classify("truecolor", "dumb", platform::TermColor::Palette256), DUMB);
-    ASSERT_EQ(classify("24bit", "DUMB", platform::TermColor::TrueColor), DUMB);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "dumb", P256), DUMB);
+    ASSERT_EQ(platform::classify_term_color("24bit", "DUMB", TC), DUMB);
 }
 
 TEST(platform, classify_dumb_is_exact_match_not_substring)
@@ -135,44 +130,44 @@ TEST(platform, classify_dumb_is_exact_match_not_substring)
     // rejected. Without this, a refactor unifying the four TERM checks onto icontains would
     // fatally reject real terminals (e.g. a "dumb"-embedding terminfo alias) with the suite
     // still green.
-    ASSERT_EQ(classify(nullptr, "dumbo", platform::TermColor::Palette256), P256);
-    ASSERT_EQ(classify(nullptr, "xterm-dumbnot", platform::TermColor::TrueColor), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "dumbo", P256), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-dumbnot", TC), P256);
 }
 
 TEST(platform, classify_colorterm_truecolor)
 {
     // COLORTERM beats a 256-only TERM.
-    ASSERT_EQ(classify("truecolor", "xterm-256color", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify("24bit", "xterm", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify("TRUECOLOR", nullptr, platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify("Truecolor", "screen", platform::TermColor::Palette256), TC);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "xterm-256color", P256), TC);
+    ASSERT_EQ(platform::classify_term_color("24bit", "xterm", P256), TC);
+    ASSERT_EQ(platform::classify_term_color("TRUECOLOR", nullptr, P256), TC);
+    ASSERT_EQ(platform::classify_term_color("Truecolor", "screen", P256), TC);
 }
 
 TEST(platform, classify_colorterm_unrecognized_falls_through)
 {
     // The historical COLORTERM=1/yes (rxvt-era "has color at all") is not a
     // truecolor signal; classification falls through to the TERM rules.
-    ASSERT_EQ(classify("yes", "xterm-256color", platform::TermColor::TrueColor), P256);
-    ASSERT_EQ(classify("1", "xterm", platform::TermColor::TrueColor), P256);
-    ASSERT_EQ(classify("yes", nullptr, platform::TermColor::TrueColor), TC);
-    ASSERT_EQ(classify("yes", nullptr, platform::TermColor::Palette256), P256);
+    ASSERT_EQ(platform::classify_term_color("yes", "xterm-256color", TC), P256);
+    ASSERT_EQ(platform::classify_term_color("1", "xterm", TC), P256);
+    ASSERT_EQ(platform::classify_term_color("yes", nullptr, TC), TC);
+    ASSERT_EQ(platform::classify_term_color("yes", nullptr, P256), P256);
 }
 
 TEST(platform, classify_term_direct_hints)
 {
-    ASSERT_EQ(classify(nullptr, "xterm-direct", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify(nullptr, "tmux-direct", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify(nullptr, "xterm-direct256", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify(nullptr, "xterm-truecolor", platform::TermColor::Palette256), TC);
-    ASSERT_EQ(classify(nullptr, "XTERM-DIRECT", platform::TermColor::Palette256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "tmux-direct", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct256", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-truecolor", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-DIRECT", P256), TC);
     // The third hint: without this, deleting icontains(term, "24bit") from the classifier
     // leaves the whole suite green.
-    ASSERT_EQ(classify(nullptr, "xterm-24bit", platform::TermColor::Palette256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-24bit", P256), TC);
     // A set-but-unrecognized COLORTERM must fall through (step 2 -> step 3) to the TERM
     // hint, not short-circuit to the floor. Without this every -direct case above passes
     // colorterm=nullptr, so a regression that returned Palette256 on a non-truecolor
     // COLORTERM would pass them all while breaking e.g. COLORTERM=gnome-terminal here.
-    ASSERT_EQ(classify("gnome-terminal", "xterm-direct", platform::TermColor::Palette256), TC);
+    ASSERT_EQ(platform::classify_term_color("gnome-terminal", "xterm-direct", P256), TC);
 }
 
 TEST(platform, classify_known_truecolor_terms)
@@ -184,9 +179,9 @@ TEST(platform, classify_known_truecolor_terms)
     const char *terms[] = { "xterm-kitty", "wezterm", "alacritty", "xterm-ghostty", "foot", "contour" };
     for (const char *t : terms)
     {
-        ASSERT_EQ(classify(nullptr, t, platform::TermColor::Palette256), TC);
+        ASSERT_EQ(platform::classify_term_color(nullptr, t, P256), TC);
     }
-    ASSERT_EQ(classify(nullptr, "XTERM-KITTY", platform::TermColor::Palette256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-KITTY", P256), TC);
 }
 
 TEST(platform, classify_plain_terms_are_256)
@@ -197,7 +192,7 @@ TEST(platform, classify_plain_terms_are_256)
     {
         // Never Dumb, never TrueColor: sub-256-color entries still get the
         // 256-color floor rather than a fatal error (16-color is unsupported).
-        ASSERT_EQ(classify(nullptr, t, platform::TermColor::TrueColor), P256);
+        ASSERT_EQ(platform::classify_term_color(nullptr, t, TC), P256);
     }
 }
 
@@ -280,19 +275,19 @@ TEST(platform, detect_term_color_reads_env)
 
     set_env("COLORTERM", "truecolor");
     set_env("TERM", "xterm");
-    ASSERT_EQ(static_cast<int>(platform::detect_term_color()), TC);
+    ASSERT_EQ(platform::detect_term_color(), TC);
 
     unset_env("COLORTERM");
     set_env("TERM", "dumb");
-    ASSERT_EQ(static_cast<int>(platform::detect_term_color()), DUMB);
+    ASSERT_EQ(platform::detect_term_color(), DUMB);
 
     unset_env("TERM");
     // Both unset: the platform default. POSIX floors to 256; native Windows defaults to
     // truecolor (VT-on conhost / Windows Terminal render 24-bit).
 #ifdef _WIN32
-    ASSERT_EQ(static_cast<int>(platform::detect_term_color()), TC);
+    ASSERT_EQ(platform::detect_term_color(), TC);
 #else
-    ASSERT_EQ(static_cast<int>(platform::detect_term_color()), P256);
+    ASSERT_EQ(platform::detect_term_color(), P256);
 #endif
 }
 
