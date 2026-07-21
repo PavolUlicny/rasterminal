@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- STL models now load upright instead of pitched 90 degrees sideways. STL carries no orientation metadata and its ecosystem convention (CAD, 3D printing) is Z-up, while the renderer is Y-up; the loader now remaps STL coordinates to Y-up at load, matching the fixed per-format up-axis mainstream viewers use. OBJ and glTF are Y-up by specification and PLY is treated as Y-up, so those formats are unchanged.
 - A `--threads`/`-j` value above the hardware thread count is now clamped to it everywhere. Previously only the render worker pool clamped: the `--bench` report header printed the unclamped request (for example `threads=999` while 16 workers actually ran), and model loading (ambient-occlusion baking, texture decode) could spawn the full requested number of threads.
 - `--bench-size WxH` now rejects dimensions whose pixel count (`W * H`) would exceed the addressable range, instead of accepting them. Such a value previously crashed a 32-bit build (the pixel count wrapped a 32-bit `size_t`, producing a tiny framebuffer that rasterization then wrote past); 64-bit builds already failed on the oversized allocation. Each axis was, and still is, capped individually.
 - Release builds (`-march=native`) no longer fail with newer Clang on AVX10-capable CPUs: Clang's benign "avx10.1-256 will be promoted to avx10.1-512" compiler warning was fatal under `-Werror`; it is now suppressed in both build systems (Clang only).

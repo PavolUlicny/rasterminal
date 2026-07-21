@@ -103,7 +103,11 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     for (size_t v = 0; v < n_verts; v++)
     {
         Vertex vert{};
-        vert.pos = { coords[3 * v], coords[(3 * v) + 1], coords[(3 * v) + 2] };
+        // STL carries no orientation metadata and its ecosystem (CAD/3D printing, mainstream
+        // viewers) is Z-up, while the renderer is Y-up: remap (x,y,z) -> (x,z,-y), a -90 deg X
+        // rotation (det +1, so winding and culling are unaffected). Done before compute_normals
+        // so all derived data (normals, tangents, AO) lands upright.
+        vert.pos = { coords[3 * v], coords[(3 * v) + 2], -coords[(3 * v) + 1] };
         vert.ao = 1.0f;
         vertices.push_back(vert);
     }

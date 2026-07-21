@@ -240,9 +240,11 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
     // (RemoveDoubles), so the output order is sorted-by-position, NOT declaration order.
     // These coords are intentionally already ascending — (1,2,3)<(4,5,6)<(7,8,9) — so
     // index order matches; do not change them to non-sorted values without reordering the asserts.
+    // The loader remaps STL's Z-up to the renderer's Y-up, (x,y,z) -> (x,z,-y), so file
+    // vertex (1,2,3) loads as (1,3,-2).
     ASSERT_NEAR(m.vertices[0].pos.x, 1.0f, 1e-5f);
-    ASSERT_NEAR(m.vertices[0].pos.y, 2.0f, 1e-5f);
-    ASSERT_NEAR(m.vertices[0].pos.z, 3.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].pos.y, 3.0f, 1e-5f);
+    ASSERT_NEAR(m.vertices[0].pos.z, -2.0f, 1e-5f);
     ASSERT_NEAR(m.vertices[1].pos.x, 4.0f, 1e-5f);
     ASSERT_NEAR(m.vertices[2].pos.x, 7.0f, 1e-5f);
 
@@ -253,14 +255,41 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
     }
 }
 
+TEST(stl_valid, zup_remapped_to_yup)
+{
+    // STL is Z-up by ecosystem convention; the loader must remap to the renderer's Y-up,
+    // (x,y,z) -> (x,z,-y), so a file vertex on +Z loads on +Y. Pins the orientation fix:
+    // a verbatim position copy would leave models sideways.
+    TmpFile t(
+        tmp_path("rasterminal_test_zup.stl"), "solid test\n"
+                                              "facet normal 0 0 0\n"
+                                              "  outer loop\n"
+                                              "    vertex 0 0 0\n"
+                                              "    vertex 1 0 0\n"
+                                              "    vertex 0 0 1\n"
+                                              "  endloop\n"
+                                              "endfacet\n"
+                                              "endsolid test\n"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.vertices.size(), size_t{ 3 });
+
+    // stl_reader sorts positions lexicographically on the raw file coords:
+    // (0,0,0) < (0,0,1) < (1,0,0), so the file's +Z vertex is index 1.
+    ASSERT_NEAR(m.vertices[1].pos.x, 0.0f, 1e-6f);
+    ASSERT_NEAR(m.vertices[1].pos.y, 1.0f, 1e-6f);
+    ASSERT_NEAR(m.vertices[1].pos.z, 0.0f, 1e-6f);
+}
+
 TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
 {
     // STL face normals are read by stl_reader but discarded by our loader;
     // compute_normals() always runs.  Use a deliberate wrong file normal so
     // the test fails if file normals are ever accidentally applied.
     //
-    // Geometry: (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal = (0,0,+1).
-    // File says normal 0 0 -1.  Loaded vertex normals must have z > 0.
+    // Geometry: (0,0,0)→(1,0,0)→(0,1,0) CCW from +Z → computed normal = (0,0,+1)
+    // in file space, which the Z-up -> Y-up remap turns into (0,+1,0).
+    // File says normal 0 0 -1.  Loaded vertex normals must have y > 0.
     TmpFile t(
         tmp_path("rasterminal_test_wrongnorm.stl"), "solid test\n"
                                                     "facet normal 0 0 -1\n"
@@ -275,7 +304,7 @@ TEST(stl_valid, ascii_file_normal_ignored_compute_normals_runs)
     Mesh m = load_ok(t.path);
     for (const Vertex &v : m.vertices)
     {
-        ASSERT_NEAR(v.normal.z, 1.0f, 1e-4f);
+        ASSERT_NEAR(v.normal.y, 1.0f, 1e-4f);
     }
 }
 
@@ -330,8 +359,10 @@ TEST(stl_valid, binary_two_triangles_dedup_shared_edge)
 }
 
 // Emits a binary STL with the two triangles of a 90 deg fold sharing edge (0,0,0)-(1,0,0):
-// triangle A in XY (normal +Z), triangle B folded into XZ (normal +Y). Shared corners
-// deduplicate to a single vertex index, so the crease angle has adjacency to act on.
+// in file space triangle A lies in XY (normal +Z), triangle B folds into XZ (normal +Y).
+// The loader's Z-up -> Y-up remap turns those into +Y and -Z normals respectively (the shared
+// edge lies on the X axis, invariant under the X rotation). Shared corners deduplicate to a
+// single vertex index, so the crease angle has adjacency to act on.
 static std::string stl_90deg_fold()
 {
     std::string s(80, 'X');
@@ -354,8 +385,8 @@ static std::string stl_90deg_fold()
         s.push_back(0);
         s.push_back(0); // attr
     };
-    emit_tri(0, 0, 0, 1, 0, 0, 0, 1, 0); // +Z face
-    emit_tri(1, 0, 0, 0, 0, 0, 0, 0, 1); // +Y face
+    emit_tri(0, 0, 0, 1, 0, 0, 0, 1, 0); // file +Z face -> loads with normal +Y
+    emit_tri(1, 0, 0, 0, 0, 0, 0, 0, 1); // file +Y face -> loads with normal -Z
     return s;
 }
 
@@ -372,29 +403,30 @@ TEST(stl_valid, smooth_angle_controls_crease)
     ASSERT_TRUE(smoothed.load_model(t.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
 
     // crease 0: the shared verts split back into per-face wedges -> 6 verts, and every normal is
-    // its own face's axis-aligned normal (never a 45 deg blend) — visually identical to the old
-    // always-faceted output, which is exactly what --smooth-angle 0 must preserve.
+    // its own face's axis-aligned normal, +Y or -Z post-remap (never a 45 deg blend), visually
+    // identical to the old always-faceted output, which is exactly what --smooth-angle 0 must
+    // preserve.
     ASSERT_EQ(faceted.vertices.size(), size_t{ 6 });
     for (const Vertex &v : faceted.vertices)
     {
-        ASSERT_TRUE(v.normal.z > 0.99f || v.normal.y > 0.99f);
+        ASSERT_TRUE(v.normal.y > 0.99f || v.normal.z < -0.99f);
     }
 
     // crease 180: shared verts stay merged -> 4 verts; the two on the shared edge carry the
-    // blended normal normalize(+Z + +Y) ~ (0, 0.707, 0.707), the two others stay axis-aligned.
+    // blended normal normalize(+Y + -Z) ~ (0, 0.707, -0.707), the two others stay axis-aligned.
     ASSERT_EQ(smoothed.vertices.size(), size_t{ 4 });
     int blended = 0;
     for (const Vertex &v : smoothed.vertices)
     {
-        if (v.normal.y > 0.6f && v.normal.z > 0.6f)
+        if (v.normal.y > 0.6f && v.normal.z < -0.6f)
         {
             ASSERT_NEAR(v.normal.y, 0.70710678f, 1e-3f);
-            ASSERT_NEAR(v.normal.z, 0.70710678f, 1e-3f);
+            ASSERT_NEAR(v.normal.z, -0.70710678f, 1e-3f);
             blended++;
         }
         else
         {
-            ASSERT_TRUE(v.normal.z > 0.99f || v.normal.y > 0.99f);
+            ASSERT_TRUE(v.normal.y > 0.99f || v.normal.z < -0.99f);
         }
     }
     ASSERT_EQ(blended, 2); // the two shared-edge vertices
