@@ -119,6 +119,8 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.args.ao);
     ASSERT_TRUE(r.args.hud);
     ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
+    ASSERT_NEAR(r.args.spin_speed, 45.0f, 1e-6f);
+    ASSERT_EQ(r.args.spin_direction, SpinDirection::Left);
 }
 
 // ─── --help ───────────────────────────────────────────────────────────────────
@@ -1763,4 +1765,134 @@ TEST(args, smooth_angle_inf_is_error)
     ParseResult r = run({ "--smooth-angle", "inf", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --spin-speed ─────────────────────────────────────────────────────────────
+
+TEST(args, spin_speed_valid)
+{
+    ParseResult r = run({ "--spin-speed", "90", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.spin_speed, 90.0f, 1e-6f);
+}
+
+TEST(args, spin_speed_equals_form)
+{
+    ParseResult r = run({ "--spin-speed=12.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.spin_speed, 12.5f, 1e-6f);
+}
+
+TEST(args, spin_speed_empty_value_is_error)
+{
+    ParseResult r = run({ "--spin-speed=", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_zero_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "0", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_negative_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "-45", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_non_numeric_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "fast", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_trailing_garbage_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "45deg", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_missing_value_is_error)
+{
+    ParseResult r = run({ "--spin-speed" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_nan_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "nan", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_speed_inf_is_error)
+{
+    ParseResult r = run({ "--spin-speed", "inf", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --spin-direction ─────────────────────────────────────────────────────────
+
+TEST(args, spin_direction_left)
+{
+    ParseResult r = run({ "--spin-direction", "left", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.spin_direction, SpinDirection::Left);
+}
+
+TEST(args, spin_direction_right)
+{
+    ParseResult r = run({ "--spin-direction", "right", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.spin_direction, SpinDirection::Right);
+}
+
+TEST(args, spin_direction_case_insensitive)
+{
+    ParseResult r = run({ "--spin-direction", "RIGHT", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.spin_direction, SpinDirection::Right);
+}
+
+TEST(args, spin_direction_equals_form)
+{
+    ParseResult r = run({ "--spin-direction=right", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.spin_direction, SpinDirection::Right);
+}
+
+TEST(args, spin_direction_invalid_value_is_error)
+{
+    ParseResult r = run({ "--spin-direction", "up", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_direction_empty_value_is_error)
+{
+    ParseResult r = run({ "--spin-direction=", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_direction_missing_value_is_error)
+{
+    ParseResult r = run({ "--spin-direction" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, spin_flags_do_not_imply_spin)
+{
+    ParseResult r = run({ "--spin-speed", "90", "--spin-direction", "right", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.spin);
 }
