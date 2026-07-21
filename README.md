@@ -193,6 +193,8 @@ rasterminal [options] <model>
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |
+| `--spin-speed` | none | `45` | Auto-rotation speed in degrees per second (positive number); applies whenever spinning is active |
+| `--spin-direction` | none | `left` | `left`, `right`: the way the model's front face moves on screen |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |

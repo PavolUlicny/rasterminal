@@ -446,8 +446,14 @@ int main(int argc, char *argv[])
     Background bg_mode = args.bg;
     LightingMode lighting_mode = args.lighting;
     WireframeColor wf_color = args.wireframe_color;
-    constexpr float spin_speed = 0.8f; // radians/sec
-    constexpr float FPS_LATCH = 0.1f;  // seconds between HUD fps refreshes (~10 Hz)
+    // Signed radians/sec for spin_world_y: a positive angle moves the model's
+    // front face left on screen (verified visually), so left keeps the sign.
+    // The sign is fixed for the session: while the view is upside down (pitched
+    // past a pole) the raw world-Y spin sweeps the opposite way on screen.
+    // Accepted: unlike orbit()'s yaw inversion there is no drag to keep faithful
+    // to, and a mid-session direction flip would be the more surprising behavior.
+    const float spin_speed = to_radians(args.spin_speed) * (args.spin_direction == SpinDirection::Left ? 1.0f : -1.0f);
+    constexpr float FPS_LATCH = 0.1f; // seconds between HUD fps refreshes (~10 Hz)
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();

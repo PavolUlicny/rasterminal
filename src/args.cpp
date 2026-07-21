@@ -287,18 +287,37 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
-    auto parse_angle = [prog](const char *flag, const char *val, float &out) -> bool
+    // Shared strtof skeleton for float value flags; each flag supplies only its
+    // range predicate and expected-values string (the parse_bool/parse_enum split).
+    // errno == ERANGE also fires on subnormal underflow (e.g. 1e-40), rejecting a
+    // technically in-range value: accepted, magnitudes that small are meaningless
+    // for every float flag.
+    auto parse_float =
+        [prog](const char *flag, const char *val, bool (*valid)(float), const char *expected, float &out) -> bool
     {
         char *end = nullptr;
         errno = 0;
         const float v = std::strtof(val, &end);
-        if (end == val || *end != '\0' || errno == ERANGE || !std::isfinite(v) || v < 0.0f || v > 180.0f)
+        if (end == val || *end != '\0' || errno == ERANGE || !std::isfinite(v) || !valid(v))
         {
-            std::fprintf(stderr, "%s: %s: invalid value '%s' (expected a number in [0, 180])\n", prog, flag, val);
+            std::fprintf(stderr, "%s: %s: invalid value '%s' (expected %s)\n", prog, flag, val, expected);
             return false;
         }
         out = v;
         return true;
+    };
+
+    auto parse_angle = [&parse_float](const char *flag, const char *val, float &out) -> bool
+    { return parse_float(flag, val, [](float v) { return v >= 0.0f && v <= 180.0f; }, "a number in [0, 180]", out); };
+
+    auto parse_spin_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
+    { return parse_float(flag, val, [](float v) { return v > 0.0f; }, "a positive number", out); };
+
+    auto parse_spin_direction = [prog](const char *flag, const char *val, SpinDirection &out) -> bool
+    {
+        return parse_enum(
+            prog, flag, val, { { "left", SpinDirection::Left }, { "right", SpinDirection::Right } }, "left|right", out
+        );
     };
 
     auto print_version = []()
@@ -373,6 +392,9 @@ ParseResult parse_args(int argc, char *argv[])
             "          --color <mode>         Color output (default: auto)\n"
             "                                  truecolor|24bit|256|auto\n"
             "                                  auto detects from COLORTERM/TERM\n"
+            "          --spin-speed DEG/S     Auto-rotation speed in degrees/sec (default: 45)\n"
+            "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
+            "                                  left|right: the way the model's front face moves\n"
             "          --no-ao                Disable ambient occlusion\n"
             "          --no-hud               Hide the HUD status line\n"
             "  -h,     --help                 Show this message\n"
@@ -506,6 +528,22 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_color(flag, val, args.color))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--spin-speed")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_spin_speed(flag, val, args.spin_speed))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--spin-direction")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_spin_direction(flag, val, args.spin_direction))
             {
                 return fail(1);
             }

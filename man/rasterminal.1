@@ -166,6 +166,24 @@ forces 256-color output, and
 Forcing a color mode does not bypass the
 .B TERM=dumb
 rejection or the Windows VT-capability gate.
+.TP
+.BI \-\-spin\-speed " DEG/S"
+Auto-rotation speed in degrees per second, used whenever spinning is active
+(via
+.B \-\-spin
+or the Space toggle). Any positive number; zero and negative values are
+rejected (direction is set by
+.BR \-\-spin\-direction ).
+Default
+.BR 45 .
+.TP
+.BI \-\-spin\-direction " dir"
+Auto-rotation direction:
+.B left
+or
+.BR right ,
+the way the model's front face moves on screen. Default
+.BR left .
 .SS Permanent disables
 .TP
 .B \-\-no\-ao

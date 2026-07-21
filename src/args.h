@@ -46,6 +46,15 @@ enum class ColorChoice : std::uint8_t
     Palette256
 };
 
+// --spin-direction: the way the model's front face moves on screen while
+// spinning. Left is the historical direction (no COUNT constant: like
+// ColorChoice, there is no cycling keybinding for it).
+enum class SpinDirection : std::uint8_t
+{
+    Left,
+    Right
+};
+
 // Parsed command-line arguments.  All values are plain types — no renderer
 // dependencies — so this header can be included by the test binary cheaply.
 struct ParsedArgs
@@ -64,6 +73,8 @@ struct ParsedArgs
     int bench_height = 120;     // headless framebuffer height in pixels
     int bench_warmup = 20;      // warmup frames discarded before measurement (0 = none)
     float smooth_angle = 60.0f; // crease angle (deg) for computed normals; 0=faceted, 180=fully smooth
+    float spin_speed = 45.0f;   // auto-rotation speed in degrees/sec; magnitude only, always > 0
+    SpinDirection spin_direction = SpinDirection::Left;
     bool cull = true;
     bool texture = true;
     bool spin = false;
