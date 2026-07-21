@@ -227,7 +227,7 @@ String values are case-insensitive. Long flags accept `--flag value` or `--flag=
 | --- | --- |
 | OBJ / MTL | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
 | PLY | ASCII and binary (LE/BE); vertex and face colors |
-| STL | ASCII and binary |
+| STL | ASCII and binary; the format's conventional Z-up orientation is remapped so models load upright |
 | glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
 
 ## Requirements
