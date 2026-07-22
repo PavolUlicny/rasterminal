@@ -330,15 +330,6 @@ TEST(args, bare_threads_long_form_uses_all)
     ASSERT_TRUE(r.args.model_path == "m.obj");
 }
 
-// ─── error: boolean flags reject =value ──────────────────────────────────────
-
-TEST(args, spin_with_equals_value_is_error)
-{
-    ParseResult r = run({ "--spin=yes", "model.obj" });
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 1);
-}
-
 // ─── --shading ────────────────────────────────────────────────────────────────
 
 TEST(args, shading_wireframe_by_name)
@@ -593,7 +584,12 @@ TEST(args, threads_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── boolean flags ────────────────────────────────────────────────────────────
+// ─── --spin / --no-spin ───────────────────────────────────────────────────────
+
+TEST(args, spin_default_is_off)
+{
+    ASSERT_FALSE(run({ "m.obj" }).args.spin);
+}
 
 TEST(args, spin_flag_enables_spin)
 {
@@ -601,14 +597,127 @@ TEST(args, spin_flag_enables_spin)
     ASSERT_TRUE(run({ "-S", "m.obj" }).args.spin);
 }
 
-TEST(args, no_ao_disables_ao)
+TEST(args, no_spin_disables)
 {
-    ASSERT_FALSE(run({ "--no-ao", "m.obj" }).args.ao);
+    ParseResult r = run({ "--no-spin", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.spin);
 }
 
-TEST(args, no_hud_disables_hud)
+TEST(args, spin_last_flag_wins)
 {
-    ASSERT_FALSE(run({ "--no-hud", "m.obj" }).args.hud);
+    // Asserting ok/model_path too: neither form takes a value, so a regression
+    // that consumed the following token would otherwise pass here vacuously.
+    // The off order uses -S so the cluster-path assignment is covered too.
+    ParseResult off = run({ "-S", "--no-spin", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.spin);
+
+    ParseResult on = run({ "--no-spin", "--spin", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.spin);
+}
+
+TEST(args, spin_rejects_value)
+{
+    ParseResult r = run({ "--spin=yes", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_spin_rejects_value)
+{
+    ParseResult r = run({ "--no-spin=off", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --ao / --no-ao ───────────────────────────────────────────────────────────
+
+TEST(args, ao_default_is_on)
+{
+    ASSERT_TRUE(run({ "m.obj" }).args.ao);
+}
+
+TEST(args, no_ao_disables)
+{
+    ParseResult r = run({ "--no-ao", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.ao);
+}
+
+TEST(args, ao_last_flag_wins)
+{
+    // Asserting ok/model_path too: neither form takes a value, so a regression
+    // that consumed the following token would otherwise pass here vacuously.
+    ParseResult on = run({ "--no-ao", "--ao", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.ao);
+
+    ParseResult off = run({ "--ao", "--no-ao", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.ao);
+}
+
+TEST(args, ao_rejects_value)
+{
+    ParseResult r = run({ "--ao=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_ao_rejects_value)
+{
+    ParseResult r = run({ "--no-ao=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --hud / --no-hud ─────────────────────────────────────────────────────────
+
+TEST(args, hud_default_is_on)
+{
+    ASSERT_TRUE(run({ "m.obj" }).args.hud);
+}
+
+TEST(args, no_hud_disables)
+{
+    ParseResult r = run({ "--no-hud", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.hud);
+}
+
+TEST(args, hud_last_flag_wins)
+{
+    // Asserting ok/model_path too: neither form takes a value, so a regression
+    // that consumed the following token would otherwise pass here vacuously.
+    ParseResult on = run({ "--no-hud", "--hud", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.hud);
+
+    ParseResult off = run({ "--hud", "--no-hud", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.hud);
+}
+
+TEST(args, hud_rejects_value)
+{
+    ParseResult r = run({ "--hud=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_hud_rejects_value)
+{
+    ParseResult r = run({ "--no-hud=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
 }
 
 // ─── combined flags ───────────────────────────────────────────────────────────
@@ -1380,25 +1489,11 @@ TEST(args, fps_short_explicit_zero_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: boolean flags reject =value (all branches) ───────────────────────
+// ─── error: --help rejects =value ────────────────────────────────────────────
 
 TEST(args, help_with_equals_value_is_error)
 {
     ParseResult r = run({ "--help=foo", "m.obj" });
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 1);
-}
-
-TEST(args, no_ao_with_equals_value_is_error)
-{
-    ParseResult r = run({ "--no-ao=on", "m.obj" });
-    ASSERT_FALSE(r.ok);
-    ASSERT_EQ(r.exit_code, 1);
-}
-
-TEST(args, no_hud_with_equals_value_is_error)
-{
-    ParseResult r = run({ "--no-hud=on", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
