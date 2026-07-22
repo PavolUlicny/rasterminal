@@ -79,21 +79,13 @@ Initial wireframe edge color:
 Default:
 .BR white .
 .TP
-.BR \-c ", " \-\-cull " " \fIon|off\fR
-Backface culling initial state. Accepts
-.BR on / off ,
-.BR 1 / 0 ,
-.BR true / false ,
-.BR yes / no ,
-.BR y / n .
-Default:
-.BR on .
-.TP
-.BR \-t ", " \-\-texture " " \fIon|off\fR
-Texture rendering initial state. Same boolean values as
+.BR \-\-cull ", " \-\-no\-cull
+Enable or disable backface culling initially; the later flag wins. Default:
 .BR \-\-cull .
-Default:
-.BR on .
+.TP
+.BR \-\-texture ", " \-\-no\-texture
+Enable or disable texture rendering initially; the later flag wins. Default:
+.BR \-\-texture .
 .TP
 .BR \-S ", " \-\-spin
 Start with auto-rotation enabled.

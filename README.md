@@ -186,8 +186,8 @@ rasterminal [options] <model>
 | `--bg` | `-b` | `black` | `black`, `gray`, `white` |
 | `--lighting` | `-l` | `dual` | `dual`, `single`, `flat` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
-| `--cull` | `-c` | `on` | `on`/`off` |
-| `--texture` | `-t` | `on` | `on`/`off` |
+| `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
+| `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` | `-S` | `off` | Start with auto-rotation enabled |
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores; `N` above the CPU thread count is clamped |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
