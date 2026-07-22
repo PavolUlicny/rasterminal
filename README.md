@@ -188,7 +188,7 @@ rasterminal [options] <model>
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
-| `--spin` | `-S` | `off` | Start with auto-rotation enabled |
+| `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores; `N` above the CPU thread count is clamped |
 | `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
@@ -198,12 +198,12 @@ rasterminal [options] <model>
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
-| `--no-ao` | none | `on` | Disable baked ambient occlusion |
-| `--no-hud` | none | `shown` | Hide the status bar |
+| `--ao` / `--no-ao` | none | `on` | Baked ambient occlusion |
+| `--hud` / `--no-hud` | none | `shown` | HUD status line |
 | `--help` | `-h` | none | Print usage and exit |
 | `--version` | `-V` | none | Print version and exit |
 
-String values are case-insensitive. Long flags accept `--flag value` or `--flag=value`; short flags accept `-f value` or `-fvalue`.
+String values are case-insensitive. Long flags that take a value accept `--flag value` or `--flag=value`; short flags accept `-f value` or `-fvalue`. Boolean flags take no value: `--cull=on` is an error, not a synonym for `--cull`. The paired flags above (for example `--cull` and `--no-cull`) select the two states directly, and where both appear the later one on the command line wins.
 
 ## Controls
 

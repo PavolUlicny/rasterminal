@@ -87,8 +87,9 @@ Enable or disable backface culling initially; the later flag wins. Default:
 Enable or disable texture rendering initially; the later flag wins. Default:
 .BR \-\-texture .
 .TP
-.BR \-S ", " \-\-spin
-Start with auto-rotation enabled.
+.BR \-S ", " \-\-spin ", " \-\-no\-spin
+Enable or disable auto-rotation initially; the later flag wins. Default:
+.BR \-\-no\-spin .
 .SS Runtime and load
 .TP
 .BR \-j ", " \-\-threads " " [\fIN\fR]
@@ -176,13 +177,15 @@ or
 .BR right ,
 the way the model's front face moves on screen. Default
 .BR left .
-.SS Permanent disables
+.SS Session-fixed toggles
 .TP
-.B \-\-no\-ao
-Disable baked ambient occlusion.
+.BR \-\-ao ", " \-\-no\-ao
+Enable or disable baked ambient occlusion; the later flag wins. Default:
+.BR \-\-ao .
 .TP
-.B \-\-no\-hud
-Hide the HUD status line.
+.BR \-\-hud ", " \-\-no\-hud
+Show or hide the HUD status line; the later flag wins. Default:
+.BR \-\-hud .
 .SS Meta
 .TP
 .BR \-h ", " \-\-help
@@ -191,7 +194,7 @@ Print usage and exit.
 .BR \-V ", " \-\-version
 Print version and license information and exit.
 .SH OPTION SYNTAX
-Long flags take a value with a space or
+A long flag that takes a value accepts it with a space or
 .RB ' = '
 .RB ( \-\-shading
 .BR flat ", " \-\-shading=flat ).
@@ -199,6 +202,17 @@ Short flags take a value with a space or in compact form
 .RB ( \-s
 .BR flat ", " \-sflat ).
 String values are case-insensitive.
+.PP
+Boolean flags take no value:
+.B \-\-cull=on
+is an error, not a synonym for
+.BR \-\-cull .
+The paired flags listed above (for example
+.B \-\-cull
+and
+.BR \-\-no\-cull )
+select the two states directly, and where both appear the later one on the
+command line wins.
 .PP
 No-argument short options may be clustered behind one
 .RB ' \- '
