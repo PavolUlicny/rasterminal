@@ -331,6 +331,10 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
+    // Paired booleans use git's presentation ("-q, --[no-]quiet"): a short flag
+    // next to a --[no-] pair is the short form of the positive polarity only.
+    // The man page spells out all forms in full (the same terse-help/full-man
+    // split git makes).
     auto print_help = [prog]()
     {
         std::printf(
@@ -356,7 +360,7 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  white|red|green|yellow|cyan|magenta\n"
             "          --[no-]cull            Backface culling initial state (default: on)\n"
             "          --[no-]texture         Texture rendering initial state (default: on)\n"
-            "  -S,     --spin                 Start with auto-rotation enabled\n"
+            "  -S,     --[no-]spin            Auto-rotation initial state (default: off)\n"
             "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
             "                                  bare -j/--threads uses all cores, -j N uses N\n"
             "                                  N above the CPU thread count is clamped\n"
@@ -375,8 +379,8 @@ ParseResult parse_args(int argc, char *argv[])
             "          --spin-speed DEG/S     Auto-rotation speed in degrees/sec (default: 45)\n"
             "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
             "                                  left|right: the way the model's front face moves\n"
-            "          --no-ao                Disable ambient occlusion\n"
-            "          --no-hud               Hide the HUD status line\n"
+            "          --[no-]ao              Baked ambient occlusion (default: on)\n"
+            "          --[no-]hud             HUD status line (default: shown)\n"
             "  -h,     --help                 Show this message\n"
             "  -V,     --version              Show version and exit\n"
             "\n"
@@ -578,6 +582,22 @@ ParseResult parse_args(int argc, char *argv[])
             }
             args.spin = true;
         }
+        else if (arg == "--no-spin")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.spin = false;
+        }
+        else if (arg == "--ao")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.ao = true;
+        }
         else if (arg == "--no-ao")
         {
             if (!no_value())
@@ -585,6 +605,14 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
             args.ao = false;
+        }
+        else if (arg == "--hud")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.hud = true;
         }
         else if (arg == "--no-hud")
         {
