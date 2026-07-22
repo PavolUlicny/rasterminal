@@ -320,7 +320,6 @@ TEST(args, short_flag_equals_form_is_rejected)
     ASSERT_FALSE(run({ "-l=dual", "m.obj" }).ok);
     ASSERT_FALSE(run({ "-w=red", "m.obj" }).ok);
     ASSERT_FALSE(run({ "-f=30", "m.obj" }).ok);
-    ASSERT_FALSE(run({ "-c=on", "m.obj" }).ok);
 }
 
 TEST(args, bare_threads_long_form_uses_all)
@@ -618,7 +617,7 @@ TEST(args, multiple_flags_all_applied)
 {
     ParseResult r =
         run({ "--shading=phong", "--bg=white", "--lighting=single", "--wireframe-color=magenta", "--fps=120",
-              "--cull=off", "--texture=off", "--spin", "--no-ao", "--no-hud", "-j2", "scene.ply" });
+              "--no-cull", "--no-texture", "--spin", "--no-ao", "--no-hud", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
@@ -686,22 +685,6 @@ TEST(args, cluster_spin_shading_value)
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
 }
 
-TEST(args, cluster_spin_cull_off)
-{
-    ParseResult r = run({ "-Scoff", "m.obj" });
-    ASSERT_TRUE(r.ok);
-    ASSERT_TRUE(r.args.spin);
-    ASSERT_FALSE(r.args.cull);
-}
-
-TEST(args, cluster_spin_texture_off)
-{
-    ParseResult r = run({ "-Stoff", "m.obj" });
-    ASSERT_TRUE(r.ok);
-    ASSERT_TRUE(r.args.spin);
-    ASSERT_FALSE(r.args.texture);
-}
-
 TEST(args, cluster_spin_bare_bench)
 {
     // Bare 'B' last in the cluster, no integer follows → default 200.
@@ -714,10 +697,10 @@ TEST(args, cluster_spin_bare_bench)
 TEST(args, cluster_value_flag_next_token)
 {
     // A mandatory-value flag last in the cluster pulls the next argv token.
-    ParseResult r = run({ "-Sc", "off", "m.obj" });
+    ParseResult r = run({ "-Sb", "gray", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_FALSE(r.args.cull);
+    ASSERT_EQ(r.args.bg, Background::Gray);
 }
 
 TEST(args, cluster_unknown_char_is_error)
@@ -839,11 +822,11 @@ TEST(args, cluster_spin_bench_next_token)
     ASSERT_EQ(r.args.bench, 50);
 }
 
-// Mandatory-value flags ('s'/'b'/'l'/'w'/'c'/'t') in a cluster: compact value.
+// Mandatory-value flags ('s'/'b'/'l'/'w') in a cluster: compact value.
 
 TEST(args, cluster_spin_bg_compact)
 {
-    // "white" contains 'h' and 't' (themselves flags) — proof the value is taken
+    // "white" contains 'w' and 'h' (themselves flags) — proof the value is taken
     // verbatim and its chars are not re-parsed as further cluster flags.
     ParseResult r = run({ "-Sbwhite", "m.obj" });
     ASSERT_TRUE(r.ok);
@@ -867,14 +850,6 @@ TEST(args, cluster_spin_wireframe_compact)
     ASSERT_EQ(r.args.wireframe_color, WireframeColor::Red);
 }
 
-TEST(args, cluster_spin_cull_on_compact)
-{
-    ParseResult r = run({ "-Scon", "m.obj" });
-    ASSERT_TRUE(r.ok);
-    ASSERT_TRUE(r.args.spin);
-    ASSERT_TRUE(r.args.cull);
-}
-
 // Mandatory-value flags last in a cluster pull the next argv token.
 
 TEST(args, cluster_spin_shading_next_token)
@@ -885,21 +860,13 @@ TEST(args, cluster_spin_shading_next_token)
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
 }
 
-TEST(args, cluster_spin_texture_next_token)
-{
-    ParseResult r = run({ "-St", "off", "m.obj" });
-    ASSERT_TRUE(r.ok);
-    ASSERT_TRUE(r.args.spin);
-    ASSERT_FALSE(r.args.texture);
-}
-
 // A value flag greedily consumes the rest of the token, so a later flag char is
 // treated as that flag's value (and validated as such), never as its own flag.
 
 TEST(args, cluster_value_flag_consumes_following_flag_char)
 {
-    // 's' after the cull flag is "-c"'s value → invalid boolean → error.
-    ParseResult r = run({ "-Scs", "m.obj" });
+    // 'l' after the bg flag is "-b"'s value → invalid background → error.
+    ParseResult r = run({ "-Sbl", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
@@ -916,8 +883,8 @@ TEST(args, cluster_optint_consumes_following_flag_char)
 
 TEST(args, cluster_value_flag_missing_value_is_error)
 {
-    // 'c' ends the cluster with no following token → missing value.
-    ParseResult r = run({ "-Sc" });
+    // 'b' ends the cluster with no following token → missing value.
+    ParseResult r = run({ "-Sb" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
@@ -1202,156 +1169,106 @@ TEST(args, bench_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --cull ───────────────────────────────────────────────────────────────────
+// ─── --cull / --no-cull ───────────────────────────────────────────────────────
 
 TEST(args, cull_default_is_on)
 {
     ASSERT_TRUE(run({ "m.obj" }).args.cull);
 }
 
-TEST(args, cull_on_values)
+TEST(args, no_cull_disables)
 {
-    ASSERT_TRUE(run({ "--cull", "on", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull", "1", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull", "true", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull", "yes", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull", "y", "m.obj" }).args.cull);
+    ParseResult r = run({ "--no-cull", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.cull);
 }
 
-TEST(args, cull_off_values)
+TEST(args, cull_last_flag_wins)
 {
-    ASSERT_FALSE(run({ "--cull", "off", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "0", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "false", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "no", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "n", "m.obj" }).args.cull);
+    // Asserting ok/model_path too: neither form takes a value, so a regression
+    // that consumed the following token would otherwise pass here vacuously.
+    ParseResult on = run({ "--no-cull", "--cull", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.cull);
+
+    ParseResult off = run({ "--cull", "--no-cull", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.cull);
 }
 
-TEST(args, cull_case_insensitive)
+TEST(args, cull_rejects_value)
 {
-    ASSERT_TRUE(run({ "--cull", "ON", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "OFF", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull", "True", "m.obj" }).args.cull);
-    ASSERT_FALSE(run({ "--cull", "FALSE", "m.obj" }).args.cull);
-}
-
-TEST(args, cull_short_form)
-{
-    ASSERT_FALSE(run({ "-c", "off", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "-c", "on", "m.obj" }).args.cull);
-}
-
-TEST(args, cull_compact_short_form)
-{
-    ASSERT_FALSE(run({ "-coff", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "-con", "m.obj" }).args.cull);
-}
-
-TEST(args, cull_compact_case_insensitive)
-{
-    ASSERT_FALSE(run({ "-cOFF", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "-cYES", "m.obj" }).args.cull);
-}
-
-TEST(args, cull_compact_invalid_value_is_error)
-{
-    ASSERT_FALSE(run({ "-cbad", "m.obj" }).ok);
-}
-
-TEST(args, cull_equals_long_form)
-{
-    ASSERT_FALSE(run({ "--cull=off", "m.obj" }).args.cull);
-    ASSERT_TRUE(run({ "--cull=on", "m.obj" }).args.cull);
-}
-
-TEST(args, cull_missing_value_is_error)
-{
-    ParseResult r = run({ "--cull" });
+    ParseResult r = run({ "--cull=on", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
 
-TEST(args, cull_invalid_value_is_error)
+TEST(args, no_cull_rejects_value)
 {
-    ParseResult r = run({ "--cull", "maybe", "m.obj" });
+    ParseResult r = run({ "--no-cull=off", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --texture ────────────────────────────────────────────────────────────────
+TEST(args, cull_short_flag_is_unknown)
+{
+    // The -c short flag was removed along with the on|off value form.
+    ParseResult r = run({ "-coff", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+    ASSERT_FALSE(run({ "-c", "off", "m.obj" }).ok);
+}
+
+// ─── --texture / --no-texture ─────────────────────────────────────────────────
 
 TEST(args, texture_default_is_on)
 {
     ASSERT_TRUE(run({ "m.obj" }).args.texture);
 }
 
-TEST(args, texture_on_values)
+TEST(args, no_texture_disables)
 {
-    ASSERT_TRUE(run({ "--texture", "on", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture", "1", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture", "true", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture", "yes", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture", "y", "m.obj" }).args.texture);
+    ParseResult r = run({ "--no-texture", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.texture);
 }
 
-TEST(args, texture_off_values)
+TEST(args, texture_last_flag_wins)
 {
-    ASSERT_FALSE(run({ "--texture", "off", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "0", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "false", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "no", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "n", "m.obj" }).args.texture);
+    ParseResult on = run({ "--no-texture", "--texture", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.texture);
+
+    ParseResult off = run({ "--texture", "--no-texture", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.texture);
 }
 
-TEST(args, texture_case_insensitive)
+TEST(args, texture_rejects_value)
 {
-    ASSERT_TRUE(run({ "--texture", "ON", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "OFF", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture", "True", "m.obj" }).args.texture);
-    ASSERT_FALSE(run({ "--texture", "FALSE", "m.obj" }).args.texture);
-}
-
-TEST(args, texture_short_form)
-{
-    ASSERT_FALSE(run({ "-t", "off", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "-t", "on", "m.obj" }).args.texture);
-}
-
-TEST(args, texture_compact_short_form)
-{
-    ASSERT_FALSE(run({ "-toff", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "-ton", "m.obj" }).args.texture);
-}
-
-TEST(args, texture_compact_case_insensitive)
-{
-    ASSERT_FALSE(run({ "-tOFF", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "-tYES", "m.obj" }).args.texture);
-}
-
-TEST(args, texture_compact_invalid_value_is_error)
-{
-    ASSERT_FALSE(run({ "-tbad", "m.obj" }).ok);
-}
-
-TEST(args, texture_equals_long_form)
-{
-    ASSERT_FALSE(run({ "--texture=off", "m.obj" }).args.texture);
-    ASSERT_TRUE(run({ "--texture=on", "m.obj" }).args.texture);
-}
-
-TEST(args, texture_missing_value_is_error)
-{
-    ParseResult r = run({ "--texture" });
+    ParseResult r = run({ "--texture=on", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
 
-TEST(args, texture_invalid_value_is_error)
+TEST(args, no_texture_rejects_value)
 {
-    ParseResult r = run({ "--texture", "maybe", "m.obj" });
+    ParseResult r = run({ "--no-texture=off", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, texture_short_flag_is_unknown)
+{
+    // The -t short flag was removed along with the on|off value form.
+    ParseResult r = run({ "-toff", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+    ASSERT_FALSE(run({ "-t", "off", "m.obj" }).ok);
 }
 
 // ─── error: integer overflow / compact-form numeric errors ───────────────────
@@ -1494,8 +1411,6 @@ TEST(args, empty_value_after_equals_is_error)
     ASSERT_FALSE(run({ "--bg=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--threads=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--wireframe-color=", "m.obj" }).ok);
-    ASSERT_FALSE(run({ "--cull=", "m.obj" }).ok);
-    ASSERT_FALSE(run({ "--texture=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--lighting=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--fps=", "m.obj" }).ok);
     ASSERT_FALSE(run({ "--bench=", "m.obj" }).ok);
