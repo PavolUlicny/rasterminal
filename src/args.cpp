@@ -54,7 +54,7 @@ namespace
         return v;
     }
 
-    // Shared matcher for the named-value flags (enum values and boolean spellings):
+    // Shared matcher for the named-value flags:
     // case-insensitive lookup of val in names (aliases are just extra entries); on
     // miss prints the standard invalid-value diagnostic with the flag's
     // expected-values string.
@@ -243,24 +243,6 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
-    auto parse_bool = [prog](const char *flag, const char *val, bool &out) -> bool
-    {
-        return parse_enum(
-            prog, flag, val,
-            { { "on", true },
-              { "1", true },
-              { "true", true },
-              { "yes", true },
-              { "y", true },
-              { "off", false },
-              { "0", false },
-              { "false", false },
-              { "no", false },
-              { "n", false } },
-            "on|off, 1|0, true|false, yes|no, y|n", out
-        );
-    };
-
     auto parse_wireframe_color = [prog](const char *flag, const char *val, WireframeColor &out) -> bool
     {
         return parse_enum(
@@ -288,7 +270,7 @@ ParseResult parse_args(int argc, char *argv[])
     };
 
     // Shared strtof skeleton for float value flags; each flag supplies only its
-    // range predicate and expected-values string (the parse_bool/parse_enum split).
+    // range predicate and expected-values string (the parse_shading/parse_enum split).
     // errno == ERANGE also fires on subnormal underflow (e.g. 1e-40), rejecting a
     // technically in-range value: accepted, magnitudes that small are meaningless
     // for every float flag.
@@ -372,10 +354,8 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  dual|single|flat\n"
             "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
             "                                  white|red|green|yellow|cyan|magenta\n"
-            "  -c,     --cull <on|off>        Backface culling initial state (default: on)\n"
-            "                                  on|off, 1|0, true|false, yes|no, y|n\n"
-            "  -t,     --texture <on|off>     Texture rendering initial state (default: on)\n"
-            "                                  on|off, 1|0, true|false, yes|no, y|n\n"
+            "          --[no-]cull            Backface culling initial state (default: on)\n"
+            "          --[no-]texture         Texture rendering initial state (default: on)\n"
             "  -S,     --spin                 Start with auto-rotation enabled\n"
             "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
             "                                  bare -j/--threads uses all cores, -j N uses N\n"
@@ -616,19 +596,35 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else if (arg == "--cull")
         {
-            const char *val = get_val(i);
-            if (!val || !parse_bool(flag, val, args.cull))
+            if (!no_value())
             {
                 return fail(1);
             }
+            args.cull = true;
+        }
+        else if (arg == "--no-cull")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.cull = false;
         }
         else if (arg == "--texture")
         {
-            const char *val = get_val(i);
-            if (!val || !parse_bool(flag, val, args.texture))
+            if (!no_value())
             {
                 return fail(1);
             }
+            args.texture = true;
+        }
+        else if (arg == "--no-texture")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.texture = false;
         }
         else if (arg == "--wireframe-color")
         {
@@ -668,8 +664,6 @@ ParseResult parse_args(int argc, char *argv[])
                 case 'b':
                 case 'l':
                 case 'w':
-                case 'c':
-                case 't':
                 {
                     const char *val = (*rest != '\0') ? rest : require_val(i, short_flag);
                     if (!val)
@@ -690,12 +684,6 @@ ParseResult parse_args(int argc, char *argv[])
                         break;
                     case 'w':
                         valid = parse_wireframe_color(short_flag, val, args.wireframe_color);
-                        break;
-                    case 'c':
-                        valid = parse_bool(short_flag, val, args.cull);
-                        break;
-                    case 't':
-                        valid = parse_bool(short_flag, val, args.texture);
                         break;
                     default:
                         break; // unreachable (outer case labels); valid stays false -> fail
