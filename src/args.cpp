@@ -295,6 +295,20 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_spin_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
     { return parse_float(flag, val, [](float v) { return v > 0.0f; }, "a positive number", out); };
 
+    // --yaw/--pitch share one wrapper: both are turntable orbit angles with the
+    // same full-turn range (pitch past +-90 is the upside-down half of the family).
+    auto parse_orbit_angle = [&parse_float](const char *flag, const char *val, float &out) -> bool {
+        return parse_float(
+            flag, val, [](float v) { return v >= -180.0f && v <= 180.0f; }, "a number in [-180, 180]", out
+        );
+    };
+
+    // Bounds are the interactive scroll clamp [near*2, far*0.5] expressed as zoom
+    // factors of the auto-fit framing (near = 0.01r, far = 20r, default distance 2r
+    // in main.cpp's auto_fit_camera), so the flag covers exactly the reachable range.
+    auto parse_zoom = [&parse_float](const char *flag, const char *val, float &out) -> bool
+    { return parse_float(flag, val, [](float v) { return v >= 0.2f && v <= 100.0f; }, "a number in [0.2, 100]", out); };
+
     auto parse_spin_direction = [prog](const char *flag, const char *val, SpinDirection &out) -> bool
     {
         return parse_enum(
@@ -358,6 +372,12 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  dual|single|flat\n"
             "  -w,     --wireframe-color <c>  Initial wireframe color (default: white)\n"
             "                                  white|red|green|yellow|cyan|magenta\n"
+            "          --yaw DEG              Initial camera yaw in [-180, 180] (default: 0)\n"
+            "                                  positive turns the model left on screen\n"
+            "          --pitch DEG            Initial camera pitch in [-180, 180] (default: -17.2)\n"
+            "                                  negative looks down from above\n"
+            "          --zoom FACTOR          Initial zoom in [0.2, 100] (default: 1)\n"
+            "                                  2 = twice as close; covers the full scroll range\n"
             "          --[no-]cull            Backface culling initial state (default: on)\n"
             "          --[no-]texture         Texture rendering initial state (default: on)\n"
             "  -S,     --[no-]spin            Auto-rotation initial state (default: off)\n"
@@ -528,6 +548,30 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_spin_direction(flag, val, args.spin_direction))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--yaw")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_orbit_angle(flag, val, args.yaw))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--pitch")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_orbit_angle(flag, val, args.pitch))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--zoom")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_zoom(flag, val, args.zoom))
             {
                 return fail(1);
             }

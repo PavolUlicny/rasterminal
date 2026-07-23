@@ -75,6 +75,9 @@ struct ParsedArgs
     float smooth_angle = 60.0f; // crease angle (deg) for computed normals; 0=faceted, 180=fully smooth
     float spin_speed = 45.0f;   // auto-rotation speed in degrees/sec; magnitude only, always > 0
     SpinDirection spin_direction = SpinDirection::Left;
+    float yaw = 0.0f;     // initial camera yaw in degrees, [-180, 180]
+    float pitch = -17.2f; // initial camera pitch in degrees, [-180, 180] (rounding of the old fixed -0.3 rad tilt)
+    float zoom = 1.0f;    // initial zoom factor, [0.2, 100]: apparent-size multiplier of the auto-fit framing
     bool cull = true;
     bool texture = true;
     bool spin = false;
