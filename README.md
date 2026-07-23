@@ -186,6 +186,9 @@ rasterminal [options] <model>
 | `--bg` | `-b` | `black` | `black`, `gray`, `white` |
 | `--lighting` | `-l` | `dual` | `dual`, `single`, `flat` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
+| `--yaw` | none | `0` | Initial camera yaw in degrees `[-180, 180]`; positive turns the model left on screen |
+| `--pitch` | none | `-17.2` | Initial camera pitch in degrees `[-180, 180]`; negative looks down from above |
+| `--zoom` | none | `1` | Initial zoom `[0.2, 100]` as a size multiplier of the auto-fit framing; `2` = twice as close; the bounds equal the interactive scroll range |
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |

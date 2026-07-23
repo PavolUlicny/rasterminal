@@ -79,6 +79,39 @@ Initial wireframe edge color:
 Default:
 .BR white .
 .TP
+.BI \-\-yaw " DEG"
+Initial camera yaw in degrees, in
+.BR [\-180,\ 180] ;
+positive turns the model left on screen (the same direction as
+.B \-\-spin\-direction
+.BR left ).
+Also sets the
+.B \-\-bench
+camera. Default:
+.BR 0 .
+.TP
+.BI \-\-pitch " DEG"
+Initial camera pitch in degrees, in
+.BR [\-180,\ 180] ;
+negative looks down from above,
+.B \-90
+is top\-down, and values past \(+-90 view the model upside down. Also sets the
+.B \-\-bench
+camera. Default:
+.BR \-17.2 .
+.TP
+.BI \-\-zoom " FACTOR"
+Initial zoom as an apparent\-size multiplier of the auto\-fit framing, in
+.BR [0.2,\ 100] :
+.B 2
+starts twice as close,
+.B 0.2
+fully zoomed out. The bounds equal the range reachable with the scroll wheel.
+Also sets the
+.B \-\-bench
+camera. Default:
+.BR 1 .
+.TP
 .BR \-\-cull ", " \-\-no\-cull
 Enable or disable backface culling initially; the later flag wins. Default:
 .BR \-\-cull .
