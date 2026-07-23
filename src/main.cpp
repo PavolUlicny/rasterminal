@@ -149,7 +149,7 @@ namespace
         return static_cast<E>((static_cast<int>(v) + 1) % count);
     }
 
-    Camera auto_fit_camera(const Mesh &mesh)
+    Camera auto_fit_camera(const Mesh &mesh, const ParsedArgs &args)
     {
         vec3 lo = mesh.vertices[0].pos;
         vec3 hi = lo;
@@ -171,11 +171,19 @@ namespace
 
         Camera camera;
         camera.target = centre;
-        camera.distance = radius * 2.0f;
+        // --zoom's parse-time bound [0.2, 100] lands the distance inside the
+        // interactive clamp [near*2, far*0.5] by construction, so no clamp here.
+        camera.distance = radius * 2.0f / args.zoom;
         // Scale near/far to the model so arbitrarily-sized models aren't clipped.
         camera.near_plane = radius * 0.01f;
         camera.far_plane = radius * 20.0f;
-        camera.orientation = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, -0.3f);
+        // Initial pose via orbit() from the identity orientation, the owner of the
+        // turntable composition, so the flags reach exactly the drag-reachable pose
+        // family. orbit() negates dx (screen-drag convention), so pass -yaw to keep
+        // positive --yaw = positive world-Y spin: the model's front moves left on
+        // screen, like --spin-direction left. As with spin, that on-screen direction
+        // reads mirrored when --pitch past +-90 puts the view upside down (accepted).
+        camera.orbit(-to_radians(args.yaw), to_radians(args.pitch));
         return camera;
     }
 
@@ -208,7 +216,7 @@ namespace
 
         const int n_threads = Renderer::resolve_thread_count(args.n_threads);
 
-        Camera camera = auto_fit_camera(mesh);
+        Camera camera = auto_fit_camera(mesh, args);
         Light lights[2];
         vec3 ambient;
         make_default_lights(lights, ambient);
@@ -381,8 +389,8 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    // Auto-fit camera: target = bounding-box centre, distance = 2× radius.
-    Camera camera = auto_fit_camera(mesh);
+    // Snapshotted before the loop so the R reset returns to the flag-specified view.
+    Camera camera = auto_fit_camera(mesh, args);
     const Camera initial_camera = camera;
 
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
