@@ -223,7 +223,7 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | `T` | Toggle texture rendering |
 | `K` | Toggle backface culling |
 | `Space` | Toggle auto-rotation |
-| `R` | Reset all runtime state |
+| `R` | Reset to the state set by the command-line flags (their defaults when not passed) |
 | `Q` / `Esc` | Quit |
 
 ## Supported formats
