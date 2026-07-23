@@ -121,6 +121,9 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
     ASSERT_NEAR(r.args.spin_speed, 45.0f, 1e-6f);
     ASSERT_EQ(r.args.spin_direction, SpinDirection::Left);
+    ASSERT_NEAR(r.args.yaw, 0.0f, 1e-6f);
+    ASSERT_NEAR(r.args.pitch, -17.2f, 1e-6f);
+    ASSERT_NEAR(r.args.zoom, 1.0f, 1e-6f);
 }
 
 // ─── --help ───────────────────────────────────────────────────────────────────
@@ -1905,4 +1908,239 @@ TEST(args, spin_flags_do_not_imply_spin)
     ParseResult r = run({ "--spin-speed", "90", "--spin-direction", "right", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_FALSE(r.args.spin);
+}
+
+// ─── --yaw ────────────────────────────────────────────────────────────────────
+
+TEST(args, yaw_valid)
+{
+    ParseResult r = run({ "--yaw", "90", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.yaw, 90.0f, 1e-6f);
+}
+
+TEST(args, yaw_equals_form)
+{
+    ParseResult r = run({ "--yaw=45.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.yaw, 45.5f, 1e-6f);
+}
+
+TEST(args, yaw_negative_space_form)
+{
+    // A leading-dash value token is consumed verbatim, not read as a flag.
+    ParseResult r = run({ "--yaw", "-45", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.yaw, -45.0f, 1e-6f);
+}
+
+TEST(args, yaw_min_is_valid)
+{
+    ParseResult r = run({ "--yaw", "-180", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.yaw, -180.0f, 1e-6f);
+}
+
+TEST(args, yaw_max_is_valid)
+{
+    ParseResult r = run({ "--yaw", "180", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.yaw, 180.0f, 1e-6f);
+}
+
+TEST(args, yaw_below_min_is_error)
+{
+    ParseResult r = run({ "--yaw", "-180.5", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_above_max_is_error)
+{
+    ParseResult r = run({ "--yaw", "180.5", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_non_numeric_is_error)
+{
+    ParseResult r = run({ "--yaw", "left", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_trailing_garbage_is_error)
+{
+    ParseResult r = run({ "--yaw", "90deg", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_missing_value_is_error)
+{
+    ParseResult r = run({ "--yaw" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_empty_value_is_error)
+{
+    ParseResult r = run({ "--yaw=", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_nan_is_error)
+{
+    ParseResult r = run({ "--yaw", "nan", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, yaw_inf_is_error)
+{
+    ParseResult r = run({ "--yaw", "inf", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --pitch ──────────────────────────────────────────────────────────────────
+// --pitch shares parse_orbit_angle with --yaw, whose suite owns the wrapper's
+// error paths (range, malformed, nan/inf, missing/empty value); these pin only
+// the branch wiring, the target field, and one fail-loud rejection.
+
+TEST(args, pitch_valid)
+{
+    ParseResult r = run({ "--pitch", "30", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.pitch, 30.0f, 1e-6f);
+}
+
+TEST(args, pitch_equals_form)
+{
+    // Not the -17.2 default: the assignment must be observable.
+    ParseResult r = run({ "--pitch=-45.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.pitch, -45.5f, 1e-6f);
+}
+
+TEST(args, pitch_top_down_is_valid)
+{
+    ParseResult r = run({ "--pitch", "-90", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.pitch, -90.0f, 1e-6f);
+}
+
+TEST(args, pitch_upside_down_is_valid)
+{
+    ParseResult r = run({ "--pitch", "180", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.pitch, 180.0f, 1e-6f);
+}
+
+TEST(args, pitch_above_max_is_error)
+{
+    ParseResult r = run({ "--pitch", "181", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --zoom ───────────────────────────────────────────────────────────────────
+
+TEST(args, zoom_valid)
+{
+    ParseResult r = run({ "--zoom", "2.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.zoom, 2.5f, 1e-6f);
+}
+
+TEST(args, zoom_equals_form)
+{
+    ParseResult r = run({ "--zoom=0.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.zoom, 0.5f, 1e-6f);
+}
+
+TEST(args, zoom_min_is_valid)
+{
+    ParseResult r = run({ "--zoom", "0.2", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.zoom, 0.2f, 1e-6f);
+}
+
+TEST(args, zoom_max_is_valid)
+{
+    ParseResult r = run({ "--zoom", "100", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.zoom, 100.0f, 1e-6f);
+}
+
+TEST(args, zoom_below_min_is_error)
+{
+    ParseResult r = run({ "--zoom", "0.19", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_above_max_is_error)
+{
+    ParseResult r = run({ "--zoom", "100.5", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_zero_is_error)
+{
+    ParseResult r = run({ "--zoom", "0", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_negative_is_error)
+{
+    ParseResult r = run({ "--zoom", "-1", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_non_numeric_is_error)
+{
+    ParseResult r = run({ "--zoom", "close", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_trailing_garbage_is_error)
+{
+    ParseResult r = run({ "--zoom", "2x", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_missing_value_is_error)
+{
+    ParseResult r = run({ "--zoom" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_empty_value_is_error)
+{
+    ParseResult r = run({ "--zoom=", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_nan_is_error)
+{
+    ParseResult r = run({ "--zoom", "nan", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, zoom_inf_is_error)
+{
+    ParseResult r = run({ "--zoom", "inf", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
 }
