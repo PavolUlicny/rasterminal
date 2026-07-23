@@ -374,7 +374,7 @@ namespace platform
         Space, // toggle auto-rotation
         B,     // toggle background colour
         L,     // cycle lighting preset
-        R,     // reset camera
+        R,     // reset to the flag-specified launch state
         C,     // cycle wireframe colour
         K,     // toggle backface culling
         T,     // toggle texture rendering

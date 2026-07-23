@@ -407,7 +407,7 @@ ParseResult parse_args(int argc, char *argv[])
             "Controls:\n"
             "  1-3          Shading mode           B       Cycle background\n"
             "  Space        Toggle spin            L       Cycle lighting\n"
-            "  WASD/arrows  Orbit camera           R       Reset view\n"
+            "  WASD/arrows  Orbit camera           R       Reset to launch state\n"
             "  +/-          Zoom                   C       Cycle wireframe color\n"
             "  Mouse drag   Orbit                  K       Toggle backface culling\n"
             "  Scroll       Zoom                   T       Toggle textures\n"

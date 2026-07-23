@@ -389,7 +389,7 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    // Snapshotted before the loop so the R reset returns to the flag-specified view.
+    // Snapshotted before the loop so the R reset returns to the flag-specified launch state.
     Camera camera = auto_fit_camera(mesh, args);
     const Camera initial_camera = camera;
 
@@ -440,20 +440,21 @@ int main(int argc, char *argv[])
     make_default_lights(lights, ambient);
 
     Renderer renderer(n_threads);
-    renderer.mode = args.shading;
 
     const bool has_textures = !mesh.textures.empty();
     float fps_smooth = -1.0f;    // per-frame EMA of the framerate; -1 = uninitialised
     float fps_display = -1.0f;   // value shown in the HUD, latched from fps_smooth; -1 = none yet
     float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
-    bool spinning = args.spin;
-    bool culling = args.cull;
-    bool texturing = args.texture;
-    int mouse_last_x = 0; // last seen drag position (terminal cells)
+    int mouse_last_x = 0;        // last seen drag position (terminal cells)
     int mouse_last_y = 0;
-    Background bg_mode = args.bg;
-    LightingMode lighting_mode = args.lighting;
-    WireframeColor wf_color = args.wireframe_color;
+    // Flag-driven runtime state; value-initialised only pro forma, the real launch
+    // values come from reset_to_launch_state() below.
+    bool spinning{};
+    bool culling{};
+    bool texturing{};
+    Background bg_mode{};
+    LightingMode lighting_mode{};
+    WireframeColor wf_color{};
     // Signed radians/sec for spin_world_y: a positive angle moves the model's
     // front face left on screen (verified visually), so left keeps the sign.
     // The sign is fixed for the session: while the view is upside down (pitched
@@ -468,6 +469,24 @@ int main(int argc, char *argv[])
     bool first_frame = true; // frame 1's dt is only the setup gap, not a real frame
     platform::Key held_cam_key = platform::Key::None;
     clock::time_point held_cam_key_tp = clock::now();
+
+    // One definition of the flag-specified launch state, shared by the initial
+    // assignment and the R key so the two sites cannot drift. Clearing held_cam_key
+    // stops a still-latched camera key (WASD/arrows, +/-) from moving the just-reset
+    // camera on every frame of its remaining 100 ms latch window.
+    const auto reset_to_launch_state = [&]()
+    {
+        camera = initial_camera;
+        renderer.mode = args.shading;
+        spinning = args.spin;
+        culling = args.cull;
+        texturing = args.texture;
+        bg_mode = args.bg;
+        lighting_mode = args.lighting;
+        wf_color = args.wireframe_color;
+        held_cam_key = platform::Key::None;
+    };
+    reset_to_launch_state();
 
     bool running = true;
     while (running)
@@ -564,14 +583,7 @@ int main(int argc, char *argv[])
                 }
                 else if (k == platform::Key::R)
                 {
-                    camera = initial_camera;
-                    renderer.mode = ShadingMode::Phong;
-                    lighting_mode = LightingMode::Dual;
-                    bg_mode = Background::Black;
-                    wf_color = WireframeColor::White;
-                    spinning = false;
-                    culling = true;
-                    texturing = true;
+                    reset_to_launch_state();
                 }
                 else
                 {
