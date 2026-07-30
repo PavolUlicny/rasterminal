@@ -219,6 +219,21 @@ Enable or disable baked ambient occlusion; the later flag wins. Default:
 .BR \-\-hud ", " \-\-no\-hud
 Show or hide the HUD status line; the later flag wins. Default:
 .BR \-\-hud .
+.TP
+.BR \-\-input ", " \-\-no\-input
+Enable or disable the keyboard and mouse controls; the later flag wins. Default:
+.BR \-\-input .
+Under
+.B \-\-no\-input
+every binding in
+.B CONTROLS
+is ignored except
+.BR Q ,
+which still quits, as does Ctrl+C. Input is still read (so it cannot pile up in
+the terminal) and the mouse stays claimed by the viewer, so a drag neither orbits
+nor selects text. Auto-rotation, terminal resizing, and
+.B \-\-bench
+are unaffected.
 .SS Meta
 .TP
 .BR \-h ", " \-\-help
@@ -293,6 +308,11 @@ Toggle textures.
 .TP
 .BR Q ", " Ctrl+C
 Quit.
+.PP
+Under
+.B \-\-no\-input
+none of the above act except
+.BR Q " and " Ctrl+C .
 .SH EXIT STATUS
 .TP
 .B 0

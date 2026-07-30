@@ -203,6 +203,7 @@ rasterminal [options] <model>
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
 | `--ao` / `--no-ao` | none | `on` | Baked ambient occlusion |
 | `--hud` / `--no-hud` | none | `shown` | HUD status line |
+| `--input` / `--no-input` | none | `on` | Keyboard and mouse controls; `--no-input` ignores every binding except `Q` (and Ctrl+C) |
 | `--help` | `-h` | none | Print usage and exit |
 | `--version` | `-V` | none | Print version and exit |
 
@@ -225,6 +226,8 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | `Space` | Toggle auto-rotation |
 | `R` | Reset to the state set by the command-line flags (their defaults when not passed) |
 | `Q` / `Ctrl+C` | Quit |
+
+`--no-input` ignores every binding in this table except the last: `Q` and Ctrl+C still quit. The mouse stays claimed by the viewer, so a drag neither orbits nor selects text.
 
 ## Supported formats
 
