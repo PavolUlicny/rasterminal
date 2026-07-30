@@ -1,6 +1,7 @@
 #include "args.h"
 #include "camera.h"
 #include "framebuffer.h"
+#include "input.h"
 #include "light.h"
 #include "linalg.h"
 #include "mesh.h"
@@ -447,6 +448,23 @@ int main(int argc, char *argv[])
     float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
     int mouse_last_x = 0;        // last seen drag position (terminal cells)
     int mouse_last_y = 0;
+    // Whether mouse_last_* holds a position from the drag in progress. A motion
+    // report can arrive without its press (a malformed press is dropped by the
+    // parser, and a drag can begin outside the window), and orbiting by the delta
+    // from a stale position would snap the camera; the first such motion seeds
+    // instead.
+    //
+    // Deliberately not also bounded by elapsed time. Button-event tracking reports
+    // motion only on a change of character cell, so a slow or paused drag can go
+    // seconds between reports and any timeout would re-seed mid-drag, which reads
+    // as the camera refusing to move. A missed release then leaves the flag armed,
+    // but the next drag opens with a press and that press re-seeds, so the stale
+    // position is overwritten before it can be used. The one case that slips
+    // through is a lost release followed by a dropped press, where the guard has
+    // nothing to re-seed from and the first motion orbits from the old position;
+    // that needs two malformed reports in a row and costs one jump, which is
+    // cheaper than a timeout that would break every slow drag.
+    bool mouse_dragging = false;
     // Flag-driven runtime state; value-initialised only pro forma, the real launch
     // values come from reset_to_launch_state() below.
     bool spinning{};
@@ -526,7 +544,17 @@ int main(int argc, char *argv[])
         }
 
         // Drain all queued input events so held keys and mouse feel responsive.
-        while (true)
+        // poll_event returns Type::None only when nothing is left to report, so this
+        // retires a whole burst rather than one sequence per frame (see its contract
+        // for the one platform where the non-blocking read is not a hard guarantee).
+        //
+        // Bounded so a source that produces events as fast as they are consumed (a
+        // mouse flood, a stuck key) cannot hold the frame: without the cap the loop
+        // never reaches the render, and the quit check sits outside it, so even
+        // Ctrl+C would not get the viewer back. Far above a real burst, so ordinary
+        // input is always retired in one pass; a leftover is picked up next frame.
+        constexpr int MAX_EVENTS_PER_FRAME = 4096;
+        for (int handled = 0; handled < MAX_EVENTS_PER_FRAME; handled++)
         {
             const platform::InputEvent ev = platform::poll_event();
             if (ev.type == platform::InputEvent::Type::None)
@@ -537,7 +565,7 @@ int main(int argc, char *argv[])
             if (ev.type == platform::InputEvent::Type::Key)
             {
                 const platform::Key k = ev.key;
-                if (k == platform::Key::Q || k == platform::Key::Escape)
+                if (k == platform::Key::Q)
                 {
                     running = false;
                     break;
@@ -587,6 +615,9 @@ int main(int argc, char *argv[])
                 }
                 else
                 {
+                    // Every remaining key is a camera movement: the parser drops bytes
+                    // with no binding rather than reporting them, so nothing unbound
+                    // reaches here to cancel a movement in progress.
                     held_cam_key = k;
                     held_cam_key_tp = clock::now();
                 }
@@ -606,18 +637,57 @@ int main(int argc, char *argv[])
                 // Record position so the first drag delta starts from here.
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
+                mouse_dragging = true;
+            }
+            else if (ev.type == platform::InputEvent::Type::MouseRelease)
+            {
+                // Any button's release ends the drag. Without the button number
+                // (which nothing reads, so it is not decoded) a second button
+                // released mid-orbit also lands here; the cost is that the next
+                // motion re-seeds, losing one frame of movement rather than jumping.
+                mouse_dragging = false;
             }
             else if (ev.type == platform::InputEvent::Type::MouseMove)
             {
-                const int dx = ev.x - mouse_last_x;
-                const int dy = ev.y - mouse_last_y;
-                const float dx_rad = static_cast<float>(dx) / static_cast<float>(cols) * 6.2832f;
-                const float dy_rad = static_cast<float>(dy) / static_cast<float>(rows) * 3.1416f;
-                camera.orbit(dx_rad, -dy_rad);
+                // A single report cannot move the pointer further than the terminal is
+                // wide or tall, so a delta that big is not a pointer movement: either
+                // the origin is stale, or the report names a cell that does not exist.
+                // The parser bounds coordinates against a fixed ceiling because it
+                // cannot know the terminal size, and everything between that ceiling
+                // and the real size lands here (column 9000 in an 80-column terminal
+                // would otherwise orbit by a hundred turns).
+                //
+                // Checked on the delta rather than the position, which matters when
+                // cols/rows are wrong: get_terminal_size falls back to 80x24 when every
+                // ioctl fails, and rejecting positions outside that would leave a real
+                // wider terminal unable to drag past column 80. Judging the delta costs
+                // at worst one re-seeded report there, and no region stops working.
+                // (The fallback already misscales the orbit below and the framebuffer
+                // itself, so this is not a new dependency on that size being right.)
+                //
+                // Re-seeded, not clamped: clamping invents a movement, and the bogus
+                // coordinate would still be the origin the NEXT delta is measured from,
+                // which is the same snap one report later.
+                const bool implausible = std::abs(ev.x - mouse_last_x) > cols || std::abs(ev.y - mouse_last_y) > rows;
+                if (mouse_dragging && !implausible)
+                {
+                    const float dx_rad = static_cast<float>(ev.x - mouse_last_x) / static_cast<float>(cols) * 6.2832f;
+                    const float dy_rad = static_cast<float>(ev.y - mouse_last_y) / static_cast<float>(rows) * 3.1416f;
+                    camera.orbit(dx_rad, -dy_rad);
+                }
+                // Seeded either way, so a drag that began without its opening report
+                // (or was interrupted by one of the above) continues from here rather
+                // than from wherever the pointer last was.
                 mouse_last_x = ev.x;
                 mouse_last_y = ev.y;
+                mouse_dragging = true;
             }
         }
+        // The drain is over however it ended. poll_event releases its per-pass read
+        // budget on its own only when it reports Type::None, and the loop above has two
+        // other exits (the event cap, and the quit key), so say so unconditionally.
+        platform::end_input_pass();
+
         if (!running)
         {
             break;

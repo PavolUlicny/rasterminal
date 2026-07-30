@@ -1,6 +1,6 @@
 #include "camera.h"
+#include "input.h"
 #include "linalg.h"
-#include "platform.h"
 
 #include <cmath>
 

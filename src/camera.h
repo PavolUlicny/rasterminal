@@ -1,7 +1,7 @@
 #pragma once
 
+#include "input.h"
 #include "linalg.h"
-#include "platform.h"
 
 struct Camera
 {

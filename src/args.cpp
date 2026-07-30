@@ -411,7 +411,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  +/-          Zoom                   C       Cycle wireframe color\n"
             "  Mouse drag   Orbit                  K       Toggle backface culling\n"
             "  Scroll       Zoom                   T       Toggle textures\n"
-            "  Q/Escape     Quit\n"
+            "  Q, Ctrl+C    Quit\n"
             "\n"
             "Report bugs to: <%s/issues>\n"
             "Home page: <%s>\n",
