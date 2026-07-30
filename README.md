@@ -214,7 +214,7 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | --- | --- |
 | `W` `A` `S` `D` / arrow keys | Orbit camera |
 | `+` / `-` | Zoom in / out |
-| Left-button drag | Orbit camera |
+| Mouse drag | Orbit camera |
 | Scroll wheel | Zoom |
 | `1` `2` `3` | Wireframe / flat / Phong shading |
 | `L` | Cycle lighting (dual → single → flat) |
@@ -224,7 +224,7 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | `K` | Toggle backface culling |
 | `Space` | Toggle auto-rotation |
 | `R` | Reset to the state set by the command-line flags (their defaults when not passed) |
-| `Q` / `Esc` | Quit |
+| `Q` / `Ctrl+C` | Quit |
 
 ## Supported formats
 
