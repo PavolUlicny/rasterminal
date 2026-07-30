@@ -81,10 +81,25 @@ VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_read
               -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
               -isystem vendor/basisu/transcoder -isystem vendor/basisu/zstd \
               -isystem vendor/libwebp
-VENDOR_HDRS = vendor/cgltf/cgltf.h vendor/stb/stb_image.h vendor/stl_reader/stl_reader.h \
-              vendor/tinyobjloader/tiny_obj_loader.h vendor/tinyply/tinyply.h \
-              vendor/meshoptimizer/src/meshoptimizer.h vendor/draco/src/draco/draco_features.h \
-              vendor/basisu/transcoder/basisu_transcoder.h
+# Every vendored file a TU can include, found rather than listed, for the same reason
+# as HDRS/TEST_HDRS below: an incomplete prerequisite list does not fail the build, it
+# silently leaves stale objects behind. The list this replaces named 8 headers and none
+# at all from libwebp, so a vendor refresh could relink without recompiling. `find`
+# because the trees nest arbitrarily deep (draco/src/draco/...).
+#
+# Not just headers: the unity shims #include vendored SOURCES (basisu_impl.cpp pulls in
+# basisu_transcoder.cpp, which pulls in ten .inc tables; meshoptimizer_impl.cpp pulls in
+# its whole src/). Globbing only .h/.hpp left those out, so a basisu refresh that touched
+# only a transcode table relinked the stale object and silently transcoded KTX2 with the
+# previous tables. Naming the extensions rather than every file keeps a README edit from
+# rebuilding the world.
+#
+# `:=` on all three of these, not `=`: a recursively-expanded variable re-runs its
+# $(shell) at EVERY reference, and these are referenced by many pattern rules each
+# (VENDOR_HDRS by eight, since the .c rules below take it too), so `=` paid for the
+# find once per reference rather than once per invocation.
+VENDOR_HDRS := $(shell find vendor -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.inc' \
+                    -o -name '*.inl' -o -name '*.c' -o -name '*.cc' -o -name '*.cpp' \) 2>/dev/null)
 
 # Tier 1: fast flags safe for any CPU (both release and portable).
 # -DNDEBUG strips assert()/library DCHECKs (in src + every vendored C/C++ lib) from all
@@ -189,22 +204,16 @@ CSRCS = vendor/basisu/zstd/zstddeclib.c \
         vendor/libwebp/src/utils/thread_utils.c \
         vendor/libwebp/src/utils/utils.c
 
-HDRS = src/args.h \
-       src/clip.h \
-       src/linalg.h \
-       src/framebuffer.h \
-       src/mesh.h \
-       src/mesh_loader.h \
-       src/draco_decode.h \
-       src/camera.h \
-       src/light.h \
-       src/rasterize.h \
-       src/renderer.h \
-       src/shading.h \
-       src/platform.h \
-       src/texture.h \
-       src/ktx2_decode.h \
-       src/webp_decode.h
+# Header prerequisites, found rather than listed, unlike the source lists (which
+# are enumerated so the Makefile and CMake stay comparable, and where an omission
+# fails loudly at link). A header missing from a prerequisite list fails SILENTLY:
+# the build succeeds and leaves stale objects behind. All three of these lists had
+# already gone stale by hand, HDRS twice.
+HDRS := $(shell find src -name '*.h' 2>/dev/null)
+# Shared test helpers and binary fixtures. Found at any depth, not globbed at the
+# two levels that happen to exist today: a prerequisite list that depends on a
+# layout convention being followed is the same silent failure again.
+TEST_HDRS := $(shell find tests -name '*.h' 2>/dev/null)
 
 # LTO_SUPPRESS: per-compiler warning suppression needed only at the link step.
 #  - GCC: LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
@@ -367,29 +376,27 @@ $(OBJDIR)/debug/%.o: %.cpp $(HDRS) $(VENDOR_HDRS)
 	$(E) CXX $<
 	$(Q)$(CXX) -c $(DEBUG_CXXFLAGS) -o $@ $<
 
-$(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) tests/test.h tests/loader_util.h tests/rasterize_test_util.h \
-                    tests/draco_cube_bitstream.h tests/draco_cube_color.h tests/ktx2_fixtures.h \
-                    tests/webp_fixtures.h
+$(OBJDIR)/test/%.o: %.cpp $(HDRS) $(VENDOR_HDRS) $(TEST_HDRS)
 	@mkdir -p $(@D)
 	$(E) CXX $<
 	$(Q)$(CXX) -c $(TEST_CXXFLAGS) -o $@ $<
 
-$(OBJDIR)/release/%.o: %.c
+$(OBJDIR)/release/%.o: %.c $(VENDOR_HDRS)
 	@mkdir -p $(@D)
 	$(E) CC $<
 	$(Q)$(CC) -c $(RELEASE_CFLAGS) -o $@ $<
 
-$(OBJDIR)/portable/%.o: %.c
+$(OBJDIR)/portable/%.o: %.c $(VENDOR_HDRS)
 	@mkdir -p $(@D)
 	$(E) CC $<
 	$(Q)$(CC) -c $(PORTABLE_CFLAGS) -o $@ $<
 
-$(OBJDIR)/debug/%.o: %.c
+$(OBJDIR)/debug/%.o: %.c $(VENDOR_HDRS)
 	@mkdir -p $(@D)
 	$(E) CC $<
 	$(Q)$(CC) -c $(DEBUG_CFLAGS) -o $@ $<
 
-$(OBJDIR)/test/%.o: %.c
+$(OBJDIR)/test/%.o: %.c $(VENDOR_HDRS)
 	@mkdir -p $(@D)
 	$(E) CC $<
 	$(Q)$(CC) -c $(TEST_CFLAGS) -o $@ $<
