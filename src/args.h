@@ -83,6 +83,7 @@ struct ParsedArgs
     bool spin = false;
     bool ao = true;
     bool hud = true;
+    bool input = true; // false = --no-input: keyboard and mouse bindings ignored (Q and Ctrl+C still quit)
 };
 
 // Result of parse_args().

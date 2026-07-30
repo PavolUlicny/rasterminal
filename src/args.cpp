@@ -401,6 +401,8 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  left|right: the way the model's front face moves\n"
             "          --[no-]ao              Baked ambient occlusion (default: on)\n"
             "          --[no-]hud             HUD status line (default: shown)\n"
+            "          --[no-]input           Keyboard and mouse controls (default: on)\n"
+            "                                  --no-input ignores every binding but Q\n"
             "  -h,     --help                 Show this message\n"
             "  -V,     --version              Show version and exit\n"
             "\n"
@@ -665,6 +667,22 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
             args.hud = false;
+        }
+        else if (arg == "--input")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.input = true;
+        }
+        else if (arg == "--no-input")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.input = false;
         }
         else if (arg == "--cull")
         {
