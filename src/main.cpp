@@ -323,6 +323,9 @@ int main(int argc, char *argv[])
     // loop). --bench is headless and exempt. Rejecting the display-only stdin case
     // (e.g. `--spin < /dev/null`) is deliberate: without working input the session
     // can only be killed by signal, and raw-mode setup silently fails anyway.
+    // --no-input deliberately does NOT relax this: it ignores the bindings but Q
+    // still quits, so stdin must stay readable for the session to be exitable
+    // without a signal.
     // color_mode is assigned in the block below (from detect_term_color, or forced by
     // --color when not auto). This initializer is never actually read: the interactive
     // path always overwrites it before the Framebuffer ctor, and --bench returns from
@@ -443,6 +446,8 @@ int main(int argc, char *argv[])
     Renderer renderer(n_threads);
 
     const bool has_textures = !mesh.textures.empty();
+    // --no-input locks every binding but the quit key; see the drain loop below.
+    const bool input_enabled = args.input;
     float fps_smooth = -1.0f;    // per-frame EMA of the framerate; -1 = uninitialised
     float fps_display = -1.0f;   // value shown in the HUD, latched from fps_smooth; -1 = none yet
     float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
@@ -562,14 +567,26 @@ int main(int argc, char *argv[])
                 break;
             }
 
+            // Q quits in every mode, --no-input included, so it is checked here rather
+            // than inside the key chain below.
+            if (ev.type == platform::InputEvent::Type::Key && ev.key == platform::Key::Q)
+            {
+                running = false;
+                break;
+            }
+
+            // --no-input locks every other binding. Input is still read and parsed:
+            // the bytes have to be consumed either way (unread ones would fill the
+            // terminal's input queue), and the terminal stays in mouse-tracking mode,
+            // so a drag neither orbits nor paints a text selection over the render.
+            if (!input_enabled)
+            {
+                continue;
+            }
+
             if (ev.type == platform::InputEvent::Type::Key)
             {
                 const platform::Key k = ev.key;
-                if (k == platform::Key::Q)
-                {
-                    running = false;
-                    break;
-                }
                 if (k == platform::Key::Space)
                 {
                     spinning = !spinning;
