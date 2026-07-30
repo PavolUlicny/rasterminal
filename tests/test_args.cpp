@@ -118,6 +118,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_FALSE(r.args.spin);
     ASSERT_TRUE(r.args.ao);
     ASSERT_TRUE(r.args.hud);
+    ASSERT_TRUE(r.args.input);
     ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
     ASSERT_NEAR(r.args.spin_speed, 45.0f, 1e-6f);
     ASSERT_EQ(r.args.spin_direction, SpinDirection::Left);
@@ -723,13 +724,56 @@ TEST(args, no_hud_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── --input / --no-input ─────────────────────────────────────────────────────
+
+TEST(args, input_default_is_on)
+{
+    ASSERT_TRUE(run({ "m.obj" }).args.input);
+}
+
+TEST(args, no_input_disables)
+{
+    ParseResult r = run({ "--no-input", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.input);
+}
+
+TEST(args, input_last_flag_wins)
+{
+    // Asserting ok/model_path too: neither form takes a value, so a regression
+    // that consumed the following token would otherwise pass here vacuously.
+    ParseResult on = run({ "--no-input", "--input", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.model_path == "m.obj");
+    ASSERT_TRUE(on.args.input);
+
+    ParseResult off = run({ "--input", "--no-input", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_TRUE(off.args.model_path == "m.obj");
+    ASSERT_FALSE(off.args.input);
+}
+
+TEST(args, input_rejects_value)
+{
+    ParseResult r = run({ "--input=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_input_rejects_value)
+{
+    ParseResult r = run({ "--no-input=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // ─── combined flags ───────────────────────────────────────────────────────────
 
 TEST(args, multiple_flags_all_applied)
 {
     ParseResult r =
         run({ "--shading=phong", "--bg=white", "--lighting=single", "--wireframe-color=magenta", "--fps=120",
-              "--no-cull", "--no-texture", "--spin", "--no-ao", "--no-hud", "-j2", "scene.ply" });
+              "--no-cull", "--no-texture", "--spin", "--no-ao", "--no-hud", "--no-input", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
@@ -742,6 +786,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_TRUE(r.args.spin);
     ASSERT_FALSE(r.args.ao);
     ASSERT_FALSE(r.args.hud);
+    ASSERT_FALSE(r.args.input);
     ASSERT_EQ(r.args.n_threads, 2);
 }
 
