@@ -8,6 +8,7 @@
 #include "platform.h"
 #include "renderer.h"
 #include "shading.h"
+#include "text.h"
 
 #include <algorithm>
 #include <chrono>
@@ -433,6 +434,12 @@ int main(int argc, char *argv[])
     Camera camera = auto_fit_camera(mesh, args, args.first_person);
     const Camera initial_camera = camera;
 
+    // HUD layout policy: the name is the line's only unbounded field, and it sits third, so an
+    // overlong one pushes everything after it off the clipped right edge: spin, fp (first-person
+    // only), light, bg, wf (wireframe only), cull, tex. Function scope so the hud[] sizing
+    // comment further down can refer to it. How the cut is made is truncate_middle's business.
+    constexpr size_t HUD_NAME_MAX = 24;
+
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
     std::string model_name = args.model_path;
     {
@@ -441,6 +448,7 @@ int main(int argc, char *argv[])
         {
             model_name = model_name.substr(slash + 1);
         }
+        model_name = truncate_middle(model_name, HUD_NAME_MAX);
     }
 
     std::signal(SIGINT, signal_handler);  // Ctrl+C
@@ -832,9 +840,9 @@ int main(int argc, char *argv[])
             // Sized so snprintf can never truncate, which matters because the
             // separators are multi-byte and a cut can land inside one, putting an
             // invalid UTF-8 byte on the terminal. The fixed parts run to about 145
-            // bytes with every field present (the fp: field is ~16 of them), leaving
-            // over 350 for the model name, which is a path basename and so is capped
-            // at 255 bytes by every filesystem this runs on.
+            // bytes with every field present (the fp: field is ~16 of them), and the
+            // model name is bounded at HUD_NAME_MAX above, so the whole line fits
+            // several times over.
             char hud[512];
             if (renderer.mode == ShadingMode::Wireframe)
             {
