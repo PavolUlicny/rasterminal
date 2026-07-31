@@ -580,7 +580,7 @@ TEST(camera, fp_look_view_is_finite_at_the_pitch_limit)
     Camera c = fp_camera();
     c.look(0.0f, 10.0f);
     const mat4 v = c.view();
-    for (auto &row : v.m)
+    for (const auto &row : v.m)
     {
         for (float val : row)
         {
@@ -750,7 +750,7 @@ TEST(camera, fp_move_clamps_at_the_far_limit)
     c.far_plane = 100.0f;
     c.fp_base_speed = 1000.0f;
     c.move(1.0f, 0.0f, 0.0f, 10.0f);
-    ASSERT_NEAR((c.eye() - c.fp_centre).length(), c.far_plane * 0.5f, 1e-3f);
+    ASSERT_NEAR((c.eye() - c.fp_centre).length(), c.max_eye_distance(), 1e-3f);
 }
 
 TEST(camera, fp_move_clamp_does_not_change_the_look_direction)
@@ -1085,7 +1085,7 @@ TEST(camera, fp_spin_cannot_escape_the_far_bound)
     {
         c.spin_world_y(to_radians(45.0f));
     }
-    ASSERT_TRUE((c.eye() - c.fp_centre).length() <= c.far_plane * 0.5f + 1e-3f);
+    ASSERT_TRUE((c.eye() - c.fp_centre).length() <= c.max_eye_distance() + 1e-3f);
 }
 
 TEST(camera, spin_world_y_zero_is_noop)
