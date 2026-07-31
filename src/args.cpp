@@ -1,5 +1,6 @@
 #include "args.h"
 
+#include "camera.h" // FP_SPEED_{MIN,MAX}: --first-person-speed parses the interactive range
 #include "platform.h"
 #include "shading.h"
 #include "version.h"
@@ -309,6 +310,18 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_zoom = [&parse_float](const char *flag, const char *val, float &out) -> bool
     { return parse_float(flag, val, [](float v) { return v >= 0.2f && v <= 100.0f; }, "a number in [0.2, 100]", out); };
 
+    // The predicate reads Camera's bounds rather than restating them, so the flag and
+    // the +/- keys can never disagree about which speeds are reachable. The message
+    // below and the --help text do spell the numbers out, there being no way to build
+    // the string from a constexpr float here, so those two have to follow by hand.
+    auto parse_fp_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
+    {
+        return parse_float(
+            flag, val, [](float v) { return v >= Camera::FP_SPEED_MIN && v <= Camera::FP_SPEED_MAX; },
+            "a number in [0.05, 20]", out
+        );
+    };
+
     auto parse_spin_direction = [prog](const char *flag, const char *val, SpinDirection &out) -> bool
     {
         return parse_enum(
@@ -376,8 +389,14 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  positive turns the model left on screen\n"
             "          --pitch DEG            Initial camera pitch in [-180, 180] (default: -17.2)\n"
             "                                  negative looks down from above\n"
+            "                                  clamped just inside +-90 under --first-person\n"
             "          --zoom FACTOR          Initial zoom in [0.2, 100] (default: 1)\n"
-            "                                  2 = twice as close; covers the full scroll range\n"
+            "                                  2 = twice as close; covers the orbit scroll range\n"
+            "                                  under --first-person, sets the starting distance\n"
+            "          --first-person-speed F Initial movement speed in [0.05, 20] (default: 1)\n"
+            "                                  multiplier of the model-scaled default;\n"
+            "                                  +/- and the wheel move within the same range;\n"
+            "                                  requires --first-person\n"
             "          --[no-]cull            Backface culling initial state (default: on)\n"
             "          --[no-]texture         Texture rendering initial state (default: on)\n"
             "  -S,     --[no-]spin            Auto-rotation initial state (default: off)\n"
@@ -403,6 +422,8 @@ ParseResult parse_args(int argc, char *argv[])
             "          --[no-]hud             HUD status line (default: shown)\n"
             "          --[no-]input           Keyboard and mouse controls (default: on)\n"
             "                                  --no-input ignores every binding but Q\n"
+            "          --[no-]first-person    Free-flying camera instead of the turntable\n"
+            "                                  (default: off); no gravity or collision\n"
             "  -h,     --help                 Show this message\n"
             "  -V,     --version              Show version and exit\n"
             "\n"
@@ -415,6 +436,11 @@ ParseResult parse_args(int argc, char *argv[])
             "  Scroll       Zoom                   T       Toggle textures\n"
             "  Q, Ctrl+C    Quit\n"
             "\n"
+            "First-person controls (--first-person, replaces orbit and zoom above):\n"
+            "  WASD         Move                   E / V   Move up / down\n"
+            "  Arrows       Look                   +/-     Movement speed\n"
+            "  Mouse drag   Look                   Scroll  Movement speed\n"
+            "\n"
             "Report bugs to: <%s/issues>\n"
             "Home page: <%s>\n",
             prog, RASTERMINAL_HOMEPAGE, RASTERMINAL_HOMEPAGE
@@ -422,6 +448,7 @@ ParseResult parse_args(int argc, char *argv[])
     };
 
     bool saw_bench_size = false;
+    bool saw_fp_speed = false;
     bool saw_bench_warmup = false;
     bool end_of_options = false;
 
@@ -684,6 +711,31 @@ ParseResult parse_args(int argc, char *argv[])
             }
             args.input = false;
         }
+        else if (arg == "--first-person-speed")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_fp_speed(flag, val, args.first_person_speed))
+            {
+                return fail(1);
+            }
+            saw_fp_speed = true;
+        }
+        else if (arg == "--first-person")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.first_person = true;
+        }
+        else if (arg == "--no-first-person")
+        {
+            if (!no_value())
+            {
+                return fail(1);
+            }
+            args.first_person = false;
+        }
         else if (arg == "--cull")
         {
             if (!no_value())
@@ -826,6 +878,14 @@ ParseResult parse_args(int argc, char *argv[])
     if (saw_bench_size && args.bench < 1)
     {
         std::fprintf(stderr, "%s: --bench-size requires --bench\n", prog);
+        return fail(1);
+    }
+    // --first-person is session-fixed, so without it this value can never come into
+    // play: reject rather than accept a flag that would silently do nothing. (Unlike
+    // --spin-speed, which stands alone because Space can start spinning later.)
+    if (saw_fp_speed && !args.first_person)
+    {
+        std::fprintf(stderr, "%s: --first-person-speed requires --first-person\n", prog);
         return fail(1);
     }
     if (saw_bench_warmup && args.bench < 1)

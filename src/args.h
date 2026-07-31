@@ -84,6 +84,12 @@ struct ParsedArgs
     bool ao = true;
     bool hud = true;
     bool input = true; // false = --no-input: keyboard and mouse bindings ignored (Q and Ctrl+C still quit)
+    // true = --first-person: free-flying camera (no gravity, collision or ground plane)
+    // instead of the turntable; WASD moves, the arrows and the mouse look, E/V rise and fall
+    bool first_person = false;
+    // Initial --first-person movement speed, as a multiplier of the model-scaled default.
+    // Range is Camera::FP_SPEED_{MIN,MAX}, the same one +/- and the wheel move within.
+    float first_person_speed = 1.0f;
 };
 
 // Result of parse_args().

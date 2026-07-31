@@ -40,6 +40,8 @@ namespace platform
         C,     // cycle wireframe colour
         K,     // toggle backface culling
         T,     // toggle texture rendering
+        E,     // first-person: move up
+        V,     // first-person: move down
     };
 
     struct InputEvent
@@ -114,6 +116,12 @@ namespace platform
             case 't':
             case 'T':
                 return Key::T;
+            case 'e':
+            case 'E':
+                return Key::E;
+            case 'v':
+            case 'V':
+                return Key::V;
             default:
                 return Key::None;
             }

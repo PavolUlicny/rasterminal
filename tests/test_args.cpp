@@ -119,6 +119,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_TRUE(r.args.ao);
     ASSERT_TRUE(r.args.hud);
     ASSERT_TRUE(r.args.input);
+    ASSERT_FALSE(r.args.first_person);
     ASSERT_NEAR(r.args.smooth_angle, 60.0f, 1e-6f);
     ASSERT_NEAR(r.args.spin_speed, 45.0f, 1e-6f);
     ASSERT_EQ(r.args.spin_direction, SpinDirection::Left);
@@ -767,13 +768,148 @@ TEST(args, no_input_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// ─── --first-person / --no-first-person ───────────────────────────────────────
+
+TEST(args, first_person_default_is_off)
+{
+    ASSERT_FALSE(run({ "m.obj" }).args.first_person);
+}
+
+TEST(args, first_person_enables)
+{
+    ParseResult r = run({ "--first-person", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_TRUE(r.args.first_person);
+}
+
+TEST(args, no_first_person_disables)
+{
+    ParseResult r = run({ "--no-first-person", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_FALSE(r.args.first_person);
+}
+
+TEST(args, first_person_last_flag_wins)
+{
+    ParseResult on = run({ "--no-first-person", "--first-person", "m.obj" });
+    ASSERT_TRUE(on.ok);
+    ASSERT_TRUE(on.args.first_person);
+
+    ParseResult off = run({ "--first-person", "--no-first-person", "m.obj" });
+    ASSERT_TRUE(off.ok);
+    ASSERT_FALSE(off.args.first_person);
+}
+
+TEST(args, first_person_rejects_value)
+{
+    ParseResult r = run({ "--first-person=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, no_first_person_rejects_value)
+{
+    ParseResult r = run({ "--no-first-person=on", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+// ─── --first-person-speed ─────────────────────────────────────────────────────
+
+TEST(args, first_person_speed_default_is_one)
+{
+    ASSERT_NEAR(run({ "m.obj" }).args.first_person_speed, 1.0f, 1e-6f);
+}
+
+TEST(args, first_person_speed_sets_value)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed", "3.5", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.first_person_speed, 3.5f, 1e-6f);
+}
+
+TEST(args, first_person_speed_equals_form)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed=0.25", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.first_person_speed, 0.25f, 1e-6f);
+}
+
+TEST(args, first_person_speed_accepts_range_bounds)
+{
+    ParseResult lo = run({ "--first-person", "--first-person-speed=0.05", "m.obj" });
+    ASSERT_TRUE(lo.ok);
+    ParseResult hi = run({ "--first-person", "--first-person-speed=20", "m.obj" });
+    ASSERT_TRUE(hi.ok);
+}
+
+TEST(args, first_person_speed_below_min_is_error)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed=0.04", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_above_max_is_error)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed=20.1", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_rejects_non_numeric)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed=fast", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_rejects_non_finite)
+{
+    ASSERT_FALSE(run({ "--first-person", "--first-person-speed=nan", "m.obj" }).ok);
+    ASSERT_FALSE(run({ "--first-person", "--first-person-speed=inf", "m.obj" }).ok);
+}
+
+TEST(args, first_person_speed_missing_value_is_error)
+{
+    ParseResult r = run({ "--first-person", "--first-person-speed" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_requires_first_person)
+{
+    // --first-person is session-fixed, so the value could never come into play; the
+    // flag is rejected rather than silently ignored.
+    ParseResult r = run({ "--first-person-speed=2", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_rejected_when_first_person_is_turned_back_off)
+{
+    // The later flag wins for the pair, so this ends with first-person off.
+    ParseResult r = run({ "--first-person", "--first-person-speed=2", "--no-first-person", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, first_person_speed_order_does_not_matter)
+{
+    // The requires-check runs after the whole command line is parsed, so the flags
+    // may appear in either order.
+    ParseResult r = run({ "--first-person-speed=2", "--first-person", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_NEAR(r.args.first_person_speed, 2.0f, 1e-6f);
+}
+
 // ─── combined flags ───────────────────────────────────────────────────────────
 
 TEST(args, multiple_flags_all_applied)
 {
-    ParseResult r =
-        run({ "--shading=phong", "--bg=white", "--lighting=single", "--wireframe-color=magenta", "--fps=120",
-              "--no-cull", "--no-texture", "--spin", "--no-ao", "--no-hud", "--no-input", "-j2", "scene.ply" });
+    ParseResult r = run({ "--shading=phong", "--bg=white", "--lighting=single", "--wireframe-color=magenta",
+                          "--fps=120", "--no-cull", "--no-texture", "--spin", "--no-ao", "--no-hud", "--no-input",
+                          "--first-person", "-j2", "scene.ply" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "scene.ply");
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
@@ -787,6 +923,7 @@ TEST(args, multiple_flags_all_applied)
     ASSERT_FALSE(r.args.ao);
     ASSERT_FALSE(r.args.hud);
     ASSERT_FALSE(r.args.input);
+    ASSERT_TRUE(r.args.first_person);
     ASSERT_EQ(r.args.n_threads, 2);
 }
 

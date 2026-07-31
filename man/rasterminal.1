@@ -95,7 +95,11 @@ Initial camera pitch in degrees, in
 .BR [\-180,\ 180] ;
 negative looks down from above,
 .B \-90
-is top\-down, and values past \(+-90 view the model upside down. Also sets the
+is top\-down, and values past \(+-90 view the model upside down. Under
+.B \-\-first\-person
+the value is clamped to just inside straight up and straight down, the same limit
+the mode holds while looking, since a flying camera must not start upside down or
+in a pose it cannot itself hold. Also sets the
 .B \-\-bench
 camera. Default:
 .BR \-17.2 .
@@ -106,10 +110,23 @@ Initial zoom as an apparent\-size multiplier of the auto\-fit framing, in
 .B 2
 starts twice as close,
 .B 0.2
-fully zoomed out. The bounds equal the range reachable with the scroll wheel.
-Also sets the
+fully zoomed out. The bounds equal the range the scroll wheel reaches in orbit
+mode; under
+.B \-\-first\-person
+the wheel sets movement speed instead, and this sets how far back the camera
+starts. Also sets the
 .B \-\-bench
 camera. Default:
+.BR 1 .
+.TP
+.BI \-\-first\-person\-speed " FACTOR"
+Initial movement speed as a multiplier of the model\-scaled default, in
+.BR [0.05,\ 20] ,
+the same range
+.BR +/\- " and the wheel"
+move within. Requires
+.BR \-\-first\-person ,
+without which the value could never come into play. Default:
 .BR 1 .
 .TP
 .BR \-\-cull ", " \-\-no\-cull
@@ -234,6 +251,35 @@ the terminal) and the mouse stays claimed by the viewer, so a drag neither orbit
 nor selects text. Auto-rotation, terminal resizing, and
 .B \-\-bench
 are unaffected.
+.TP
+.BR \-\-first\-person ", " \-\-no\-first\-person
+Use a free\-flying first\-person camera instead of the turntable; the later flag
+wins. Default:
+.BR \-\-no\-first\-person .
+There is no gravity, collision or ground plane: the camera flies, and passes
+through geometry. WASD moves, the arrows and a mouse drag look,
+.BR E " and " V
+rise and fall along world up, and
+.BR +/\- " and the wheel"
+set the movement speed, which is scaled to the model so it feels the same at any
+size. Pitch is clamped to straight up and straight down so the horizon never
+inverts, and the camera cannot fly further from the model than the orbit zoom can
+already reach. Auto\-rotation still works and becomes a panorama from wherever the
+camera stands. The launch pose is still the one
+.BR \-\-yaw ", " \-\-pitch " and " \-\-zoom
+select, with
+.B \-\-pitch
+clamped as described above.
+.B \-\-bench
+ignores this flag entirely, so a benchmark measures the same camera either way.
+.PP
+Note that
+.B \-\-spin\-direction
+is defined by the way the model's front face moves on screen. Under
+.B \-\-first\-person
+nothing is being orbited, so the setting names the way the view itself turns;
+.B left
+still turns left.
 .SS Meta
 .TP
 .BR \-h ", " \-\-help
@@ -308,6 +354,16 @@ Toggle textures.
 .TP
 .BR Q ", " Ctrl+C
 Quit.
+.PP
+Under
+.B \-\-first\-person
+the camera bindings change: WASD moves instead of orbiting, the arrows and a
+mouse drag look,
+.BR E " and " V
+move up and down, and
+.BR +/\- " and the wheel"
+set the movement speed instead of zooming. Everything else in the list is
+unchanged.
 .PP
 Under
 .B \-\-no\-input

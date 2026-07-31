@@ -423,6 +423,11 @@ TEST(parse_input, plain_characters)
     expect_key("q", platform::Key::Q, 1);
     expect_key("w", platform::Key::W, 1);
     expect_key("1", platform::Key::Num1, 1);
+    expect_key("e", platform::Key::E, 1);
+    expect_key("v", platform::Key::V, 1);
+    // Case is folded, so shift is not a distinct binding on any key.
+    expect_key("E", platform::Key::E, 1);
+    expect_key("V", platform::Key::V, 1);
     // A byte with no binding is consumed and reported as nothing, so a Key event
     // always names a key and no caller has to filter Key::None at the dispatch.
     expect_dropped_whole("z");

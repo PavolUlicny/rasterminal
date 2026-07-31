@@ -150,7 +150,13 @@ namespace
         return static_cast<E>((static_cast<int>(v) + 1) % count);
     }
 
-    Camera auto_fit_camera(const Mesh &mesh, const ParsedArgs &args)
+    // first_person is passed rather than read off `args` because --bench must not
+    // inherit it: the bench camera spins every frame, which is a turntable operation
+    // (it sweeps the model to sample viewpoints), and in first-person the same call
+    // pans the view in place instead, sending the model out of frame and timing mostly
+    // empty ones (measured on Duck.glb: 93.4 against 39.2 MTri/s). Passing false there
+    // also drops the --pitch clamp, so the bench camera is identical either way.
+    Camera auto_fit_camera(const Mesh &mesh, const ParsedArgs &args, bool first_person)
     {
         vec3 lo = mesh.vertices[0].pos;
         vec3 hi = lo;
@@ -171,11 +177,28 @@ namespace
         }
 
         Camera camera;
+        camera.first_person = first_person;
+        camera.fp_centre = centre;
+        // Movement scaled to the model, for the same reason the zoom step scales with
+        // distance: at multiplier 1 the model's diameter takes about two seconds to
+        // cross, so the keys feel the same on a 0.01-unit model and a 10000-unit one.
+        // `radius` is half the bounding-box diagonal, so a strongly anisotropic model
+        // (a long thin one) is scaled by its long axis and even FP_SPEED_MIN crosses the
+        // narrow one quickly. Accepted: sizing from the smallest extent instead would
+        // make every ordinary model crawl, and the fix if it ever bites is to lower
+        // FP_SPEED_MIN, now that the flag's range derives from that one constant.
+        camera.fp_base_speed = radius;
+        camera.fp_speed = args.first_person_speed;
         camera.target = centre;
         // --zoom's parse-time bound [0.2, 100] lands the distance inside the
         // interactive clamp [near*2, far*0.5] by construction, so no clamp here.
         camera.distance = radius * 2.0f / args.zoom;
         // Scale near/far to the model so arbitrarily-sized models aren't clipped.
+        // Accepted in first-person: orbit can never approach closer than near_plane * 2,
+        // but flying has no inner bound by design, so a surface can be pushed inside the
+        // near plane and vanish before the camera reaches it. Shrinking near for the
+        // mode would cost depth precision across the whole scene to fix the last few
+        // centimetres of approach.
         camera.near_plane = radius * 0.01f;
         camera.far_plane = radius * 20.0f;
         // Initial pose via orbit() from the identity orientation, the owner of the
@@ -184,7 +207,20 @@ namespace
         // positive --yaw = positive world-Y spin: the model's front moves left on
         // screen, like --spin-direction left. As with spin, that on-screen direction
         // reads mirrored when --pitch past +-90 puts the view upside down (accepted).
-        camera.orbit(-to_radians(args.yaw), to_radians(args.pitch));
+        //
+        // orbit(), not look(): the launch pose is built as a turntable pose in both
+        // modes, which is also what makes it a valid first-person state, since
+        // `target` is left at the centre and the eye lands `distance` away along the
+        // camera's back axis, exactly the target = eye + forward * distance invariant
+        // first-person maintains. --first-person clamps the pitch, since a fly camera
+        // must not start upside down and --pitch accepts past +-90. Clamped to
+        // Camera::FP_MAX_PITCH, the same limit look() enforces, not to a round 90: the
+        // launch pose has to be a pose the mode can hold, or the first look input of
+        // any direction would be forced to pitch back off the pole.
+        const float pitch_rad = first_person
+                                    ? clamp(to_radians(args.pitch), -Camera::FP_MAX_PITCH, Camera::FP_MAX_PITCH)
+                                    : to_radians(args.pitch);
+        camera.orbit(-to_radians(args.yaw), pitch_rad);
         return camera;
     }
 
@@ -217,7 +253,7 @@ namespace
 
         const int n_threads = Renderer::resolve_thread_count(args.n_threads);
 
-        Camera camera = auto_fit_camera(mesh, args);
+        Camera camera = auto_fit_camera(mesh, args, /*first_person=*/false);
         Light lights[2];
         vec3 ambient;
         make_default_lights(lights, ambient);
@@ -394,7 +430,7 @@ int main(int argc, char *argv[])
     }
 
     // Snapshotted before the loop so the R reset returns to the flag-specified launch state.
-    Camera camera = auto_fit_camera(mesh, args);
+    Camera camera = auto_fit_camera(mesh, args, args.first_person);
     const Camera initial_camera = camera;
 
     // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
@@ -518,8 +554,12 @@ int main(int argc, char *argv[])
         auto now = clock::now();
         const float raw_dt = std::chrono::duration<float>(now - prev).count();
         prev = now;
-        // Cap dt used for movement/spin so a stall doesn't cause a huge jump.
-        const float dt = (raw_dt > 0.1f) ? 0.1f : raw_dt;
+        // Capped so a stall cannot jump the camera in one step. The cap is the held-key
+        // window on purpose, not coincidentally: a tapped key contributes whole frame
+        // dts until the window elapses, so a cap below it would widen the gap between
+        // a +/- tap and the wheel notch it is meant to match. It bounds that error
+        // rather than removing it; see speed_key_factor() in camera.cpp.
+        const float dt = std::min(raw_dt, Camera::HELD_KEY_WINDOW);
 
         // Smooth the framerate with a per-frame EMA. Skip frame 1: its raw_dt measures
         // only the trivial setup between prev's init and the first sample, so it would
@@ -630,6 +670,17 @@ int main(int argc, char *argv[])
                 {
                     reset_to_launch_state();
                 }
+                else if (k == platform::Key::E || k == platform::Key::V)
+                {
+                    // Vertical movement exists only in first-person. In orbit mode
+                    // these are unbound, and an unbound key must not cancel a held
+                    // camera key, so they are dropped here rather than latched.
+                    if (args.first_person)
+                    {
+                        held_cam_key = k;
+                        held_cam_key_tp = clock::now();
+                    }
+                }
                 else
                 {
                     // Every remaining key is a camera movement: the parser drops bytes
@@ -641,13 +692,34 @@ int main(int argc, char *argv[])
             }
             else if (ev.type == platform::InputEvent::Type::ScrollUp)
             {
-                camera.distance *= 0.92f;
-                camera.distance = std::max(camera.distance, camera.near_plane * 2.0f);
+                // In first-person the wheel sets how fast you fly, the way every
+                // editor's freelook does. Scaling `distance` there would move the eye,
+                // but only straight along the view axis, which W and S already do.
+                // Applied as an exact reciprocal downward so a notch up and a notch
+                // back down restores the value: the HUD shows this number, and the
+                // 1.08/0.92 pair below loses 0.64% per round trip. Orbit keeps that
+                // pair, since nothing displays `distance`.
+                if (args.first_person)
+                {
+                    camera.adjust_speed(Camera::FP_SPEED_WHEEL_STEP);
+                }
+                else
+                {
+                    camera.distance *= 0.92f;
+                    camera.distance = std::max(camera.distance, camera.near_plane * 2.0f);
+                }
             }
             else if (ev.type == platform::InputEvent::Type::ScrollDown)
             {
-                camera.distance *= 1.08f;
-                camera.distance = std::min(camera.distance, camera.far_plane * 0.5f);
+                if (args.first_person)
+                {
+                    camera.adjust_speed(1.0f / Camera::FP_SPEED_WHEEL_STEP);
+                }
+                else
+                {
+                    camera.distance *= 1.08f;
+                    camera.distance = std::min(camera.distance, camera.max_eye_distance());
+                }
             }
             else if (ev.type == platform::InputEvent::Type::MousePress)
             {
@@ -690,7 +762,7 @@ int main(int argc, char *argv[])
                 {
                     const float dx_rad = static_cast<float>(ev.x - mouse_last_x) / static_cast<float>(cols) * 6.2832f;
                     const float dy_rad = static_cast<float>(ev.y - mouse_last_y) / static_cast<float>(rows) * 3.1416f;
-                    camera.orbit(dx_rad, -dy_rad);
+                    camera.look(dx_rad, -dy_rad);
                 }
                 // Seeded either way, so a drag that began without its opening report
                 // (or was interrupted by one of the above) continues from here rather
@@ -714,7 +786,7 @@ int main(int argc, char *argv[])
         if (held_cam_key != platform::Key::None)
         {
             const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
-            if (since > 0.1f)
+            if (since > Camera::HELD_KEY_WINDOW)
             {
                 held_cam_key = platform::Key::None; // key released
             }
@@ -750,22 +822,35 @@ int main(int argc, char *argv[])
             const char *bg_str = background_name(bg_mode);
             const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
             const int fps_shown = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
-            char hud[256];
+            // One field for first-person: it names the mode and shows the movement
+            // speed, which is adjustable and otherwise has nowhere to be seen.
+            char fp_field[32] = "";
+            if (args.first_person)
+            {
+                std::snprintf(fp_field, sizeof(fp_field), "  ·  fp: %.2fx", static_cast<double>(camera.fp_speed));
+            }
+            // Sized so snprintf can never truncate, which matters because the
+            // separators are multi-byte and a cut can land inside one, putting an
+            // invalid UTF-8 byte on the terminal. The fixed parts run to about 145
+            // bytes with every field present (the fp: field is ~16 of them), leaving
+            // over 350 for the model name, which is a path basename and so is capped
+            // at 255 bytes by every filesystem this runs on.
+            char hud[512];
             if (renderer.mode == ShadingMode::Wireframe)
             {
                 std::snprintf(
                     hud, sizeof(hud),
-                    "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
+                    "  %s  ·  %d fps  ·  %s  ·  %s%s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
                     shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
-                    lighting_str, bg_str, wireframe_name(wf_color), culling ? "ON" : "OFF", tex_suffix
+                    fp_field, lighting_str, bg_str, wireframe_name(wf_color), culling ? "ON" : "OFF", tex_suffix
                 );
             }
             else
             {
                 std::snprintf(
-                    hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
+                    hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s%s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
                     shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
-                    lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix
+                    fp_field, lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix
                 );
             }
             fb.set_hud(hud);

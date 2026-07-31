@@ -187,8 +187,8 @@ rasterminal [options] <model>
 | `--lighting` | `-l` | `dual` | `dual`, `single`, `flat` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
 | `--yaw` | none | `0` | Initial camera yaw in degrees `[-180, 180]`; positive turns the model left on screen |
-| `--pitch` | none | `-17.2` | Initial camera pitch in degrees `[-180, 180]`; negative looks down from above |
-| `--zoom` | none | `1` | Initial zoom `[0.2, 100]` as a size multiplier of the auto-fit framing; `2` = twice as close; the bounds equal the interactive scroll range |
+| `--pitch` | none | `-17.2` | Initial camera pitch in degrees `[-180, 180]`; negative looks down from above; clamped to just inside straight up and straight down under `--first-person`, the same limit the mode holds while you look |
+| `--zoom` | none | `1` | Initial zoom `[0.2, 100]` as a size multiplier of the auto-fit framing; `2` = twice as close; the bounds equal the range the scroll wheel reaches in orbit mode. Under `--first-person` it sets how far back you start, and the wheel sets movement speed instead |
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
@@ -197,13 +197,15 @@ rasterminal [options] <model>
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |
 | `--spin-speed` | none | `45` | Auto-rotation speed in degrees per second (positive number); applies whenever spinning is active |
-| `--spin-direction` | none | `left` | `left`, `right`: the way the model's front face moves on screen |
+| `--spin-direction` | none | `left` | `left`, `right`: the way the model's front face moves on screen; under `--first-person`, where nothing is being orbited, it is the way the view itself turns |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
 | `--ao` / `--no-ao` | none | `on` | Baked ambient occlusion |
 | `--hud` / `--no-hud` | none | `shown` | HUD status line |
 | `--input` / `--no-input` | none | `on` | Keyboard and mouse controls; `--no-input` ignores every binding except `Q` (and Ctrl+C) |
+| `--first-person` / `--no-first-person` | none | `off` | Free-flying first-person camera instead of the turntable (no gravity, collision or ground plane) |
+| `--first-person-speed` | none | `1` | Initial movement speed `[0.05, 20]` as a multiplier of the model-scaled default; the bounds equal the range `+`/`-` and the wheel move within; requires `--first-person` |
 | `--help` | `-h` | none | Print usage and exit |
 | `--version` | `-V` | none | Print version and exit |
 
@@ -228,6 +230,24 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | `Q` / `Ctrl+C` | Quit |
 
 `--no-input` ignores every binding in this table except the last: `Q` and Ctrl+C still quit. The mouse stays claimed by the viewer, so a drag neither orbits nor selects text.
+
+### First-person controls
+
+`--first-person` swaps the turntable for a free-flying camera. There is no gravity, collision or ground plane: it flies, and passes through geometry. Only the camera bindings change: the shading, lighting, background, wireframe-color, texture and culling keys, and `R` and `Q`, all behave exactly as they do above. `Space` still starts and stops auto-rotation, but see below for what it does here.
+
+| Key | Action |
+| --- | --- |
+| `W` `A` `S` `D` | Move forward / left / back / right, following where you are looking |
+| `E` / `V` | Move up / down along world up, whatever the view is pitched to |
+| Arrow keys | Look |
+| Mouse drag | Look |
+| `+` / `-`, scroll wheel | Movement speed |
+
+The camera flies through geometry, and since the near plane is scaled to the model rather than to the mode, a surface can pass inside it and vanish just before you reach it. It cannot be flown off into empty space (the outer limit is the same distance the scroll wheel reaches in orbit mode), though it can be pointed away from the model; `R` returns to the launch view. At `--zoom 0.2` you start at that outer limit, so flying backwards does nothing until you move in.
+
+Only one key moves you at a time, so there is no diagonal flight: you cannot hold forward and strafe together, or move and turn together with the keyboard. That is a limitation of terminal input rather than a choice, since a terminal sends no key releases and the operating system repeats only the most recently pressed key. Drag the mouse to look while you move.
+
+Movement speed is scaled to the model, so the keys feel the same on a tiny model and a huge one, and `--first-person-speed` sets where it starts. Pitch stops at straight up and straight down, so the horizon never inverts, and the camera cannot fly further out than the scroll wheel can already zoom in orbit mode. `Space` still works and becomes a slow panorama from wherever the camera is standing, which is worth trying from inside a large scene. `R` returns to the launch view and speed.
 
 ## Supported formats
 
