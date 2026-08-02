@@ -323,6 +323,87 @@ TEST(framebuffer, hud_empty_emits_no_hud_escape)
     ASSERT_TRUE(cap.read().find("\033[?7l") == std::string::npos);
 }
 
+TEST(framebuffer, hud_erase_precedes_text_never_follows)
+{
+    // The row is erased BEFORE the line is drawn. A trailing EL0 after a full-width line would
+    // eat the last character (with auto-wrap off the cursor finishes ON the final column), a bug
+    // these bytes cannot show on their own: the emission ORDER is the only testable proxy, and
+    // the rendered result is pinned by the tmux recipe in CLAUDE.md.
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.set_hud("HUDMARK");
+    fb.present();
+    const std::string out = cap.read();
+    const size_t erase_pos = out.find("\033[K");
+    const size_t text_pos = out.find("HUDMARK");
+    ASSERT_TRUE(erase_pos != std::string::npos);
+    ASSERT_TRUE(text_pos != std::string::npos);
+    ASSERT_TRUE(erase_pos < text_pos);
+    ASSERT_TRUE(out.find("\033[K", text_pos) == std::string::npos);
+}
+
+TEST(framebuffer, hud_unchanged_is_skipped)
+{
+    // The HUD changes at the fps-latch rate, far below the frame rate; an unchanged line must
+    // cost zero bytes. \033[?7l is unique to the HUD block, so its count is the emission count.
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.set_hud("SAME");
+    fb.present(); // frame 1: full redraw, emits
+    fb.present(); // frame 2: unchanged, must skip
+    std::string out = cap.read();
+    size_t first = out.find("\033[?7l");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(out.find("\033[?7l", first + 1) == std::string::npos);
+
+    fb.set_hud("CHANGED");
+    fb.present(); // frame 3: new text, must emit
+    out = cap.read();
+    first = out.find("\033[?7l");
+    const size_t second = out.find("\033[?7l", first + 1);
+    ASSERT_TRUE(second != std::string::npos);
+    ASSERT_TRUE(out.find("\033[?7l", second + 1) == std::string::npos);
+    ASSERT_TRUE(out.find("CHANGED") != std::string::npos);
+}
+
+TEST(framebuffer, hud_skip_latch_survives_an_empty_frame_on_a_full_redraw)
+{
+    // An empty HUD draws nothing, so the skip latch must not go on naming a line that the full
+    // redraw's \033[2J wiped: restoring that same line afterwards would be skipped as unchanged
+    // and the row would stay blank for the rest of the session.
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+
+    fb.set_hud("LATCHED");
+    fb.present(); // emits (first frame is a full redraw)
+    fb.set_hud("");
+    fb.resize(10, 4); // full redraw with an empty HUD: nothing drawn, row wiped
+    fb.present();
+    fb.set_hud("LATCHED"); // the same text as before, and it must be drawn again
+    fb.present();
+
+    const std::string out = cap.read();
+    const size_t first = out.find("LATCHED");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(out.find("LATCHED", first + 1) != std::string::npos);
+}
+
+TEST(framebuffer, hud_reemitted_after_resize)
+{
+    // resize's \033[2J wiped the HUD row, so the following present must re-emit even though the
+    // string itself did not change.
+    Framebuffer fb(10, 4, /*headless=*/true);
+    CaptureStdout cap;
+    fb.set_hud("PERSIST");
+    fb.present();
+    fb.resize(10, 4);
+    fb.present();
+    const std::string out = cap.read();
+    const size_t first = out.find("\033[?7l");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(out.find("\033[?7l", first + 1) != std::string::npos);
+}
+
 TEST(framebuffer, hud_cleared_after_set_is_omitted)
 {
     Framebuffer fb(10, 4, /*headless=*/true);
@@ -721,11 +802,16 @@ TEST(framebuffer, quantize_256_cube_exact)
 TEST(framebuffer, quantize_256_grey_ramp_exact)
 {
     // Exact ramp values (8 + 10*k) pick index 232 + k; {160,160,160} is not one (its cell centre
-    // resolves to ramp 158 = 247 via the scan). 233 and 247 also pin the hard-coded HUD bg/fg
-    // palette constants (RGB {18,18,18} / {160,160,160}) at the emit site in framebuffer.cpp,
-    // which a static_assert can no longer reach now that the table is runtime-built.
+    // resolves to ramp 158 = 247 via the scan). 233 and 253 also pin the two hard-coded HUD bar
+    // palette constants (the {18,18,18} background and the {220,220,220} default foreground) at
+    // the emit site in framebuffer.cpp, which a static_assert can no longer reach now that the
+    // table is runtime-built. The composer's other foregrounds quantize at runtime in hud.cpp
+    // and need no pin here.
     ASSERT_EQ(static_cast<int>(quantize_256({ 8, 8, 8 })), 232);
-    ASSERT_EQ(static_cast<int>(quantize_256({ 18, 18, 18 })), 233);
+    // Through the shared constants, not their literal values, so this fails if the bar's
+    // colours move rather than only if the quantizer does.
+    ASSERT_EQ(static_cast<int>(quantize_256(HUD_BAR_BG)), 233);
+    ASSERT_EQ(static_cast<int>(quantize_256(HUD_BAR_FG)), 253);
     ASSERT_EQ(static_cast<int>(quantize_256({ 238, 238, 238 })), 255);
     ASSERT_EQ(static_cast<int>(quantize_256({ 160, 160, 160 })), 247);
 }
@@ -935,8 +1021,11 @@ TEST(framebuffer, present_256_hud_uses_palette_colors)
     fb.set_hud("HUD256");
     fb.present();
     const std::string out = cap.read();
-    ASSERT_TRUE(out.find("\033[48;5;233m\033[38;5;247m") != std::string::npos);
+    // Palette bg for the bar (the fg SGRs are the composed HUD string's own business now),
+    // erased before the text is drawn.
+    ASSERT_TRUE(out.find("\033[48;5;233m\033[38;5;253m\033[K") != std::string::npos);
     ASSERT_TRUE(out.find("\033[48;2;18;18;18m") == std::string::npos);
+    ASSERT_TRUE(out.find("38;2;") == std::string::npos);
     ASSERT_TRUE(out.find("HUD256") != std::string::npos);
 }
 

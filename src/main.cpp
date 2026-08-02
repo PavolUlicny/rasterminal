@@ -1,6 +1,8 @@
 #include "args.h"
 #include "camera.h"
+#include "color.h"
 #include "framebuffer.h"
+#include "hud.h"
 #include "input.h"
 #include "light.h"
 #include "linalg.h"
@@ -248,6 +250,22 @@ namespace
         return "Unknown";
     }
 
+    // Lowercase variant for the HUD, where the bar's fields are uniformly lowercase;
+    // shading_mode_name keeps the capitalized form for the --bench report.
+    constexpr const char *hud_shading_name(ShadingMode mode) noexcept
+    {
+        switch (mode)
+        {
+        case ShadingMode::Wireframe:
+            return "wireframe";
+        case ShadingMode::Flat:
+            return "flat";
+        case ShadingMode::Phong:
+            return "phong";
+        }
+        return "phong";
+    }
+
     void run_bench(const Mesh &mesh, const ParsedArgs &args, double load_ms)
     {
         using clock = std::chrono::steady_clock;
@@ -434,13 +452,9 @@ int main(int argc, char *argv[])
     Camera camera = auto_fit_camera(mesh, args, args.first_person);
     const Camera initial_camera = camera;
 
-    // HUD layout policy: the name is the line's only unbounded field, and it sits third, so an
-    // overlong one pushes everything after it off the clipped right edge: spin, fp (first-person
-    // only), light, bg, wf (wireframe only), cull, tex. Function scope so the hud[] sizing
-    // comment further down can refer to it. How the cut is made is truncate_middle's business.
-    constexpr size_t HUD_NAME_MAX = 24;
-
-    // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj").
+    // Extract model basename for the HUD (e.g. "models/suzanne.obj" → "suzanne.obj") and strip
+    // control bytes, which a filename may legally contain and would otherwise reach the terminal
+    // verbatim. Truncation is the composer's business (the budget depends on its drop level).
     std::string model_name = args.model_path;
     {
         const size_t slash = model_name.find_last_of("/\\");
@@ -448,7 +462,7 @@ int main(int argc, char *argv[])
         {
             model_name = model_name.substr(slash + 1);
         }
-        model_name = truncate_middle(model_name, HUD_NAME_MAX);
+        model_name = sanitize_controls(model_name);
     }
 
     std::signal(SIGINT, signal_handler);  // Ctrl+C
@@ -824,44 +838,34 @@ int main(int argc, char *argv[])
         }
 
         // ── HUD ───────────────────────────────────────────────────────────
+        // Composed every frame even though present() drops an unchanged line without emitting a
+        // byte, so most of these composes are discarded. Deliberate: the compose measures 679 ns
+        // for a name within budget and 713 ns for one long enough to be cut (200k iterations
+        // each, -O3), so at most 0.005% of a 16.6 ms frame either way. Skipping it would mean
+        // reintroducing a per-field snapshot of the whole displayed state in this loop purely to
+        // decide whether to spend a microsecond. The skip exists for the terminal bytes, which
+        // are the part that actually costs.
         if (args.hud)
         {
-            const char *lighting_str = lighting_name(lighting_mode);
-            const char *bg_str = background_name(bg_mode);
-            const char *tex_suffix = has_textures ? (texturing ? "  ·  tex: ON  " : "  ·  tex: OFF  ") : "  ";
-            const int fps_shown = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
-            // One field for first-person: it names the mode and shows the movement
-            // speed, which is adjustable and otherwise has nowhere to be seen.
-            char fp_field[32] = "";
-            if (args.first_person)
-            {
-                std::snprintf(fp_field, sizeof(fp_field), "  ·  fp: %.2fx", static_cast<double>(camera.fp_speed));
-            }
-            // Sized so snprintf can never truncate, which matters because the
-            // separators are multi-byte and a cut can land inside one, putting an
-            // invalid UTF-8 byte on the terminal. The fixed parts run to about 145
-            // bytes with every field present (the fp: field is ~16 of them), and the
-            // model name is bounded at HUD_NAME_MAX above, so the whole line fits
-            // several times over.
-            char hud[512];
+            HudInfo info;
+            info.model_name = model_name;
+            info.shading_name = hud_shading_name(renderer.mode);
+            info.light_name = lighting_name(lighting_mode);
+            info.bg_name = background_name(bg_mode);
             if (renderer.mode == ShadingMode::Wireframe)
             {
-                std::snprintf(
-                    hud, sizeof(hud),
-                    "  %s  ·  %d fps  ·  %s  ·  %s%s  ·  light: %s  ·  bg: %s  ·  wf: %s  ·  cull: %s%s",
-                    shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
-                    fp_field, lighting_str, bg_str, wireframe_name(wf_color), culling ? "ON" : "OFF", tex_suffix
-                );
+                info.wf_name = wireframe_name(wf_color);
+                info.wf_color = wireframe_color_of(wf_color);
             }
-            else
-            {
-                std::snprintf(
-                    hud, sizeof(hud), "  %s  ·  %d fps  ·  %s  ·  %s%s  ·  light: %s  ·  bg: %s  ·  cull: %s%s",
-                    shading_mode_name(renderer.mode), fps_shown, model_name.c_str(), spinning ? "spin ON" : "spin OFF",
-                    fp_field, lighting_str, bg_str, culling ? "ON" : "OFF", tex_suffix
-                );
-            }
-            fb.set_hud(hud);
+            info.spinning = spinning;
+            info.culling = culling;
+            info.texturing = texturing;
+            info.has_textures = has_textures;
+            info.first_person = args.first_person;
+            info.fp_speed = camera.fp_speed;
+            info.fps = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
+
+            fb.set_hud(compose_hud(info, cols, color_mode));
         }
 
         // ── Render ────────────────────────────────────────────────────────

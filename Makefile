@@ -124,7 +124,9 @@ TARGET   = rasterminal
 
 SRCS = src/main.cpp \
        src/args.cpp \
+       src/color.cpp \
        src/framebuffer.cpp \
+       src/hud.cpp \
        src/mesh.cpp \
        src/mesh_obj.cpp \
        src/mesh_ply.cpp \
@@ -237,6 +239,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_args.cpp \
               tests/test_platform.cpp \
               tests/test_text.cpp \
+              tests/test_hud.cpp \
               tests/loaders/test_obj.cpp \
               tests/loaders/test_ply.cpp \
               tests/loaders/test_stl.cpp \
@@ -274,6 +277,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/math/test_linalg.cpp \
               tests/math/test_light.cpp \
               src/args.cpp \
+              src/color.cpp \
               src/renderer.cpp \
               src/mesh.cpp \
               src/mesh_obj.cpp \
@@ -287,6 +291,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/camera.cpp \
               src/rasterize.cpp \
               src/framebuffer.cpp \
+              src/hud.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
               vendor/draco/draco_impl.cpp \
               vendor/basisu/basisu_impl.cpp

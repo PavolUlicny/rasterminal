@@ -232,7 +232,9 @@ endif()
 add_executable(rasterminal
   src/main.cpp
   src/args.cpp
+  src/color.cpp
   src/framebuffer.cpp
+  src/hud.cpp
   src/mesh.cpp
   src/mesh_obj.cpp
   src/mesh_ply.cpp
@@ -291,6 +293,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_args.cpp
     tests/test_platform.cpp
     tests/test_text.cpp
+    tests/test_hud.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
@@ -328,6 +331,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
     src/args.cpp
+    src/color.cpp
     src/renderer.cpp
     src/mesh.cpp
     src/mesh_obj.cpp
@@ -341,6 +345,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/camera.cpp
     src/rasterize.cpp
     src/framebuffer.cpp
+    src/hud.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp

@@ -1,13 +1,10 @@
 #include "framebuffer.h"
 
-#include <algorithm>
-#include <array>
+#include "color.h" // Color, ColorMode
+
 #include <atomic>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <limits>
-#include <thread>
 #include <vector>
 
 namespace
@@ -82,178 +79,7 @@ namespace
         return len;
     }
 
-    // sRGB EOTF (IEC 61966-2-1): non-linear [0,1] -> linear-light [0,1].
-    float srgb_to_linear(float v)
-    {
-        return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
-    }
-
-    struct Lab
-    {
-        float L, a, b;
-    };
-
-    // Linear sRGB -> CIELAB (D65 white), the deltaE76 space the quantizer measures in. CIELAB
-    // rather than OKLab deliberately: OKLab's lightness term dominates its chroma terms so hard
-    // in the darks that it still sends dark greens/browns to the grey ramp (measured on a real
-    // model: 90.9% of pixels grey vs 93.4% for squared RGB, where CIELAB gives 69.8% and keeps
-    // the model's hue), defeating the purpose of a perceptual metric here.
-    Lab cielab_from_linear(float r, float g, float b)
-    {
-        // sRGB -> XYZ (D65); X and Z rows pre-divided by the white point (Y's is 1).
-        const float x = ((0.4124564f / 0.95047f) * r) + ((0.3575761f / 0.95047f) * g) + ((0.1804375f / 0.95047f) * b);
-        const float y = (0.2126729f * r) + (0.7151522f * g) + (0.0721750f * b);
-        const float z = ((0.0193339f / 1.08883f) * r) + ((0.1191920f / 1.08883f) * g) + ((0.9503041f / 1.08883f) * b);
-        const auto f = [](float t)
-        { return t > 216.0f / 24389.0f ? std::cbrt(t) : (((24389.0f / 27.0f) * t) + 16.0f) / 116.0f; };
-        const float fx = f(x);
-        const float fy = f(y);
-        const float fz = f(z);
-        return { (116.0f * fy) - 16.0f, 500.0f * (fx - fy), 200.0f * (fy - fz) };
-    }
-
-    // The 240 addressable xterm-256 palette RGB values by entry number 0..239 (palette index is
-    // 16 + j): the 6x6x6 colour cube on levels {0,95,135,175,215,255}, then the 24-step grey ramp.
-    Color quant256_palette_entry(int j)
-    {
-        if (j < 216)
-        {
-            const auto val = [](int l) { return static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l)); };
-            return { val(j / 36), val((j / 6) % 6), val(j % 6) };
-        }
-        const auto v = static_cast<uint8_t>(8 + (10 * (j - 216)));
-        return { v, v, v };
-    }
-
-    // Builds the 64^3 quantization table documented at quant256_idx (framebuffer.h): per cell the
-    // deltaE76-nearest of the 240 addressable palette entries for the cell centre, then an exact
-    // overwrite so any cell containing a palette colour maps to it.
-    std::array<uint8_t, QUANT256_LUT_SIZE> build_quant256_lut()
-    {
-        constexpr int n_pal = 240;
-
-        // Palette CIELAB as structure-of-arrays so the argmin scan below vectorizes. (An L*-sorted
-        // two-pointer prune was tried and measured slower: it visits fewer entries but its branchy
-        // walk defeats the vectorization this straight 240-entry loop gets.)
-        std::array<float, n_pal> pl{};
-        std::array<float, n_pal> pa{};
-        std::array<float, n_pal> pb{};
-        for (int j = 0; j < n_pal; ++j)
-        {
-            const auto i = static_cast<size_t>(j);
-            const Color p = quant256_palette_entry(j);
-            const Lab o = cielab_from_linear(
-                srgb_to_linear(static_cast<float>(p.r) / 255.0f), srgb_to_linear(static_cast<float>(p.g) / 255.0f),
-                srgb_to_linear(static_cast<float>(p.b) / 255.0f)
-            );
-            pl[i] = o.L;
-            pa[i] = o.a;
-            pb[i] = o.b;
-        }
-
-        // The 64 per-channel cell-centre values, linearized once (the centre of [4i, 4i+3] is 4i+1.5).
-        std::array<float, 64> centre_lin{};
-        for (int i = 0; i < 64; ++i)
-        {
-            centre_lin[static_cast<size_t>(i)] = srgb_to_linear(((4.0f * static_cast<float>(i)) + 1.5f) / 255.0f);
-        }
-
-        std::array<uint8_t, QUANT256_LUT_SIZE> lut{};
-
-        // Scan a range of r-slices; slices write disjoint lut ranges, so they parallelize with no
-        // shared state. Each cell is an independent argmin over the 240 entries; strict < keeps
-        // the first (lowest-index) entry on a tie, so the cube beats the ramp.
-        const auto scan = [&](int r_begin, int r_end)
-        {
-            for (int r = r_begin; r < r_end; ++r)
-            {
-                size_t idx = static_cast<size_t>(r) << 12u;
-                for (int g = 0; g < 64; ++g)
-                {
-                    for (int b = 0; b < 64; ++b)
-                    {
-                        const Lab c = cielab_from_linear(
-                            centre_lin[static_cast<size_t>(r)], centre_lin[static_cast<size_t>(g)],
-                            centre_lin[static_cast<size_t>(b)]
-                        );
-                        int best = 0;
-                        float best_d = std::numeric_limits<float>::max();
-                        for (int j = 0; j < n_pal; ++j)
-                        {
-                            const auto i = static_cast<size_t>(j);
-                            const float dl = pl[i] - c.L;
-                            const float da = pa[i] - c.a;
-                            const float db = pb[i] - c.b;
-                            const float d = (dl * dl) + (da * da) + (db * db);
-                            if (d < best_d)
-                            {
-                                best_d = d;
-                                best = j;
-                            }
-                        }
-                        lut[idx++] = static_cast<uint8_t>(16 + best);
-                    }
-                }
-            }
-        };
-
-        // The serial scan measures ~50 ms; slicing it across cores gets ~7 ms. Serial is the
-        // fallback both for hardware_concurrency() == 0 and for a thread that fails to spawn;
-        // the spawned threads are joined before the fallback runs, so its full re-scan (of
-        // ranges they may already have covered) writes identical values race-free.
-        const unsigned n_threads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
-        bool serial = n_threads <= 1;
-        std::vector<std::thread> workers;
-        if (!serial)
-        {
-            try
-            {
-                // reserve stays inside the try: its bad_alloc must take the same serial fallback
-                // as a failed spawn (an escape would hit quant256_lut()'s noexcept and terminate).
-                workers.reserve(n_threads);
-                for (unsigned t = 0; t < n_threads; ++t)
-                {
-                    const int r_begin = static_cast<int>(64u * t / n_threads);
-                    const int r_end = static_cast<int>(64u * (t + 1) / n_threads);
-                    workers.emplace_back(scan, r_begin, r_end);
-                }
-            }
-            catch (...)
-            {
-                serial = true;
-            }
-        }
-        for (auto &w : workers)
-        {
-            w.join();
-        }
-        if (serial)
-        {
-            scan(0, 64);
-        }
-
-        // Exact-palette overwrite: a palette colour must round-trip to itself (distance zero) even
-        // when its cell centre, up to ~2.6 RGB units away, is nearest a different entry: a pure
-        // black background must never wash to the adjacent grey. With the current CIELAB constants
-        // every such cell already picks its contained colour, so this pins the guarantee rather
-        // than changing anything today (under OKLab it was load-bearing: black's cell centre sat
-        // nearer grey 8 than black). At 64^3 no two palette entries share a cell (the closest
-        // pairs, cube grey levels vs their ramp neighbours 3 units away such as 95/98, land in
-        // adjacent cells), so overwrites cannot collide.
-        for (int j = 0; j < n_pal; ++j)
-        {
-            lut[quant256_idx(quant256_palette_entry(j))] = static_cast<uint8_t>(16 + j);
-        }
-        return lut;
-    }
-
 } // namespace
-
-const std::array<uint8_t, QUANT256_LUT_SIZE> &quant256_lut() noexcept
-{
-    static const std::array<uint8_t, QUANT256_LUT_SIZE> lut = build_quant256_lut();
-    return lut;
-}
 
 Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless, ColorMode mode)
     : m_width(pixel_width), m_height(pixel_height),
@@ -323,6 +149,10 @@ template <bool TC> void Framebuffer::present_impl()
 {
     m_buf.clear();
 
+    // Captured before the pixel section consumes the flag: the HUD must also be re-emitted on
+    // any frame that repaints every cell (first frame, resize), since \033[2J wiped its row.
+    const bool full_redraw = m_force_redraw;
+
     const int term_rows = m_height / 2;
 
     char tmp[48]; // 36 bytes worst case for combined fg+bg SGR sequence
@@ -375,7 +205,12 @@ template <bool TC> void Framebuffer::present_impl()
         m_buf.append(tmp, static_cast<size_t>(n));
     };
 
-    // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. The two colour modes
+    // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. Deliberately not
+    // color.h's append_fg_sgr, which is the shared spelling for styling a string: this one emits a
+    // BODY so a changed fg and bg combine into a single escape, writes into a fixed buffer rather
+    // than a std::string, and goes through write_byte's LUT to avoid a division. It runs per cell
+    // per frame, where those three differences are the point; append_fg_sgr runs a dozen times a
+    // frame, where clarity is. The two colour modes
     // differ only here: 38;2;r;g;b vs 38;5;idx for fg, 48;2;r;g;b vs 48;5;idx for bg. `if constexpr`
     // gives each present_impl instantiation only its own body, so the truecolor bytes are exactly the
     // historical output. `raw` is a raw cell value from load_color (packed RGB in truecolor, palette
@@ -562,7 +397,26 @@ template <bool TC> void Framebuffer::present_impl()
     // when the HUD is empty and prevents bleed into HUD's own colour escapes.
     m_buf += "\033[0m";
 
-    if (!m_hud.empty())
+    // The HUD changes at the fps latch rate or on a keypress, far below the frame rate, so an
+    // unchanged line is skipped outright (most frames emit zero HUD bytes). A full redraw always
+    // re-emits: \033[2J wiped the row.
+    //
+    // This does give up the old block's incidental self-healing, where re-writing the row every
+    // frame repainted it after something else wrote over the terminal. Deliberate: the pixel
+    // rows above have never had that property (they are diffed against m_prev_color the same
+    // way), so unconditional HUD output could only ever restore one row of a screen that was
+    // corrupted as a whole, and the recovery for both is the same full redraw, which any resize
+    // already triggers.
+    if (m_hud.empty())
+    {
+        // Nothing is drawn, so nothing is on the row that a later frame could match against.
+        // Without this the pair (empty HUD, full redraw) would leave m_prev_hud naming a line
+        // the \033[2J just wiped, and restoring that same line afterwards would be skipped as
+        // unchanged, forever. Not reachable from main.cpp, which sets a non-empty line every
+        // frame or none at all, but the skip must not depend on that.
+        m_prev_hud.clear();
+    }
+    else if (full_redraw || m_hud != m_prev_hud)
     {
         append_cursor_pos(term_rows + 1, 1);
 
@@ -571,18 +425,36 @@ template <bool TC> void Framebuffer::present_impl()
         m_buf += "\033[?7l";
         if constexpr (TC)
         {
-            // bg {18,18,18} / fg {160,160,160}; keep in sync with the Palette256 branch + the test pin
-            // (quantize_256_grey_ramp_exact ties the 233/247 below to the quantizer of these same RGBs).
-            m_buf += "\033[48;2;18;18;18m\033[38;2;160;160;160m";
+            // bg {18,18,18} and a default fg {220,220,220}; keep both in sync with the Palette256
+            // branch and the test pins (quantize_256_grey_ramp_exact ties 233 and 253 below to
+            // the quantizer of these same RGBs). A composed line overrides the fg immediately
+            // with its own per-segment SGRs, so this exists for the other kind of caller: set_hud
+            // takes an arbitrary string, and an unstyled one would otherwise draw in whatever
+            // foreground the terminal happened to be left with. {220,220,220} is hud.cpp's
+            // FG_VALUE, so an unstyled line matches the styled line's primary text.
+            static_assert(
+                HUD_BAR_BG.r == 18 && HUD_BAR_BG.g == 18 && HUD_BAR_BG.b == 18 && HUD_BAR_FG.r == 220 &&
+                    HUD_BAR_FG.g == 220 && HUD_BAR_FG.b == 220,
+                "the escape literal below spells these out; change both together"
+            );
+            m_buf += "\033[48;2;18;18;18m\033[38;2;220;220;220m";
         }
         else
         {
-            m_buf += "\033[48;5;233m\033[38;5;247m";
+            m_buf += "\033[48;5;233m\033[38;5;253m";
         }
+        // Erase BEFORE drawing, never after: the line runs the full width, and with auto-wrap
+        // off the cursor finishes ON the last column, so a trailing EL0 would erase from that
+        // column inclusive and eat the final character (invisible to byte-level tests and to
+        // pyte; only a real terminal shows it, see the tmux recipe in CLAUDE.md). Erasing first
+        // also clears residue from a previously wider line, and on BCE terminals paints the row
+        // in the bar background, covering the few columns the composer can underfill when it
+        // rounds a doubtful glyph width up; non-BCE terminals get the bar from its own padding.
+        m_buf += "\033[K";
         m_buf += m_hud;
-        m_buf += "\033[K"; // erase to end of line (clears leftover from wider text)
         m_buf += "\033[0m";
         m_buf += "\033[?7h"; // re-enable auto-wrap
+        m_prev_hud = m_hud;
     }
 
     // Return values intentionally ignored: a write failure to a terminal means

@@ -1,31 +1,16 @@
 #pragma once
 
+#include "color.h"  // Color, ColorMode (re-exported: every includer of this header sees them)
 #include "linalg.h" // vec3 (for vec3_to_color)
 
-#include <array>
 #include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
-
-struct Color
-{
-    uint8_t r, g, b;
-    constexpr Color() noexcept : r(0), g(0), b(0) {}
-    constexpr Color(uint8_t r_, uint8_t g_, uint8_t b_) noexcept : r(r_), g(g_), b(b_) {}
-};
-
-constexpr bool operator==(Color a, Color b) noexcept
-{
-    return a.r == b.r && a.g == b.g && a.b == b.b;
-}
-constexpr bool operator!=(Color a, Color b) noexcept
-{
-    return !(a == b);
-}
 
 // Soft-knee highlight rolloff: the display transform that maps the renderer's HDR
 // shading output into the displayable range. Identity below `knee`; above it values
@@ -64,47 +49,6 @@ constexpr Color vec3_to_color(vec3 c) noexcept
     return { static_cast<uint8_t>(clamp(c.x, 0.0f, 1.0f) * 255.0f),
              static_cast<uint8_t>(clamp(c.y, 0.0f, 1.0f) * 255.0f),
              static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
-}
-
-// Terminal colour depth used by present(). TrueColor emits 24-bit 38;2/48;2 SGR (the historical,
-// byte-for-byte path); Palette256 quantizes each cell to an xterm-256 index and emits 38;5/48;5.
-enum class ColorMode : uint8_t
-{
-    TrueColor,
-    Palette256
-};
-
-// The RGB -> xterm-256 quantization table used by present()'s Palette256 mode: 64x64x64 cells
-// (6 high bits per channel, 256 KB), each holding the palette index (16..231 colour cube,
-// 232..255 grey ramp; never a theme-dependent 0..15 system colour) nearest to the cell's centre
-// by squared CIELAB (deltaE76) distance, ties broken toward the lower index (so the cube beats
-// the ramp). The metric is perceptual (CIELAB, not squared RGB) because the palette's cube has no
-// chromatic entry below 95 per channel: an RGB metric sends dark and muted colours to the grey
-// ramp even when a perceptually closer chromatic cell exists, visibly desaturating dark models
-// (the metric choice over OKLab is argued at cielab_from_linear in framebuffer.cpp). A cell that
-// contains a palette colour exactly maps to that colour (at 64^3 no cell holds two palette
-// colours), so palette-exact pixels (the black and grey backgrounds and the HUD bg {18,18,18}
-// among them) round-trip unchanged, while the white background {240,240,240} and the HUD fg
-// {160,160,160} are not palette colours and take ramp 238 / 158; every other colour takes its cell centre's nearest
-// entry, an error far below the palette's own spacing (>= 10 grey, >= 40 cube). Built once at runtime because CIELAB
-// needs cbrt, which is not constexpr in C++17; only the first quantize pays it (256-colour
-// presents and tests, never a truecolor session or --bench).
-inline constexpr size_t QUANT256_LUT_SIZE = size_t{ 64 } * 64u * 64u;
-
-// Defined in framebuffer.cpp; the first call builds the table (thread-safe magic static).
-const std::array<uint8_t, QUANT256_LUT_SIZE> &quant256_lut() noexcept;
-
-constexpr size_t quant256_idx(Color c) noexcept
-{
-    return (static_cast<size_t>(c.r >> 2u) << 12u) | (static_cast<size_t>(c.g >> 2u) << 6u) |
-           static_cast<size_t>(c.b >> 2u);
-}
-
-// Convenience form paying the magic-static init guard per call; present()'s pixel loops instead
-// hoist quant256_lut().data() once per frame and index it with quant256_idx directly.
-inline uint8_t quantize_256(Color c) noexcept
-{
-    return quant256_lut()[quant256_idx(c)];
 }
 
 class Framebuffer
@@ -213,9 +157,15 @@ class Framebuffer
         return commit_pixel(pixel_idx(x, y), depth, color);
     }
 
-    // Set a one-line status string rendered below the pixel rows each frame.
-    // Call before present(). Pass an empty string to clear.
-    void set_hud(const std::string &text) { m_hud = text; }
+    // Set a one-line status string rendered below the pixel rows each frame. Call before
+    // present(). Pass an empty string to clear. By value so a composed line (the usual caller)
+    // moves in rather than being copied every frame.
+    //
+    // The text may carry its own SGR colour escapes, as compose_hud's does; present() sets the
+    // bar background and a default foreground first, so a plain unstyled string is drawn
+    // legibly too. It must not contain a newline or cursor movement: the row is written with
+    // auto-wrap off and nothing re-positions the cursor afterwards.
+    void set_hud(std::string text) { m_hud = std::move(text); }
 
     // Flush the pixel buffer to the terminal as a single write.
     void present();
@@ -289,8 +239,9 @@ class Framebuffer
     // RGB in TrueColor, palette indices in Palette256 (safe because m_mode is fixed at construction; a
     // future runtime mode switch would need m_force_redraw to avoid stale index-vs-RGB comparisons).
     std::vector<uint32_t> m_prev_color;
-    std::string m_buf; // reused output buffer, avoids per-frame allocation
-    std::string m_hud; // status line written below pixel rows
+    std::string m_buf;      // reused output buffer, avoids per-frame allocation
+    std::string m_hud;      // status line written below pixel rows
+    std::string m_prev_hud; // last HUD actually emitted; present() skips an unchanged one
     bool m_force_redraw = true;
     bool m_headless = false;
     ColorMode m_mode = ColorMode::TrueColor;
