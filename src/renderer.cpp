@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "camera.h"
 #include "clip.h"
+#include "color.h"
 #include "framebuffer.h"
 #include "light.h"
 #include "linalg.h"

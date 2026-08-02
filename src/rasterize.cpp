@@ -1,4 +1,5 @@
 #include "rasterize.h"
+#include "color.h"
 #include "framebuffer.h"
 #include "light.h"
 #include "linalg.h"
