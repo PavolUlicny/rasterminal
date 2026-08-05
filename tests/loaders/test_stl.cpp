@@ -1,45 +1,61 @@
 #include "tests/loader_util.h"
 
+// Appends one binary-STL triangle record (50 bytes): a zero normal (the loader
+// ignores file normals), the three given corners, and the 2 attribute bytes.
+// Only the payload is shared; each test still builds its own header, since the
+// malformed fixtures deliberately vary the preamble.
+static void
+stl_append_tri(std::string &s, float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        emit_f32_le(s, 0.0f); // normal (ignored)
+    }
+    emit_f32_le(s, ax);
+    emit_f32_le(s, ay);
+    emit_f32_le(s, az);
+    emit_f32_le(s, bx);
+    emit_f32_le(s, by);
+    emit_f32_le(s, bz);
+    emit_f32_le(s, cx);
+    emit_f32_le(s, cy);
+    emit_f32_le(s, cz);
+    s.push_back(0);
+    s.push_back(0); // attribute bytes
+}
+
+// One standard single-facet ASCII body shared by the header-variation tests: each
+// passes its own opening line (the prefix or solid-name variant is exactly what
+// the test pins); the geometry below it is identical on purpose.
+static std::string stl_ascii_one_facet(const std::string &first_line)
+{
+    return first_line + "\n"
+                        "facet normal 0 0 1\n"
+                        "  outer loop\n"
+                        "    vertex 0 0 0\n"
+                        "    vertex 1 0 0\n"
+                        "    vertex 0 1 0\n"
+                        "  endloop\n"
+                        "endfacet\n"
+                        "endsolid test\n";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  HAND-CRAFTED VALID STL
 // ═══════════════════════════════════════════════════════════════════════════
 
 TEST(stl_valid, ascii_single_facet)
 {
-    TmpFile t(
-        tmp_path("rasterminal_test_min.stl"), "solid test\n"
-                                              "facet normal 0 0 1\n"
-                                              "  outer loop\n"
-                                              "    vertex 0 0 0\n"
-                                              "    vertex 1 0 0\n"
-                                              "    vertex 0 1 0\n"
-                                              "  endloop\n"
-                                              "endfacet\n"
-                                              "endsolid test\n"
-    );
+    TmpFile t(tmp_path("rasterminal_test_min.stl"), stl_ascii_one_facet("solid test"));
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
 TEST(stl_valid, binary_single_triangle)
 {
-    std::string s(80, 'X');     // 80-byte header (non-"solid")
-    emit_u32_le(s, 1);          // tri_count = 1
-    for (int i = 0; i < 3; i++) // normal (ignored)
-    {
-        emit_f32_le(s, 0);
-    }
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 1);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 1);
-    emit_f32_le(s, 0);
-    s.push_back(0);
-    s.push_back(0); // attribute bytes
+    std::string s(80, 'X'); // 80-byte header (non-"solid")
+    emit_u32_le(s, 1);      // tri_count = 1
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
 
     TmpFile t(tmp_path("rasterminal_test_bin.stl"), s);
     Mesh m = load_ok(t.path);
@@ -49,26 +65,13 @@ TEST(stl_valid, binary_single_triangle)
 TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
 {
     // 80-byte header beginning with "solid " would trigger the ASCII path,
-    // but an exact file-size match (84 + 50 × tri_count) forces the binary
-    // interpretation. Pinned by load_stl's disambiguation logic.
+    // but a file size satisfying the binary layout (>= 84 + 50 × tri_count)
+    // forces the binary interpretation. Pinned by load_stl's disambiguation
+    // logic; binary_solid_header_trailing_bytes pins the >= (surplus) case.
     std::string s = "solid binary-stl-masquerading-as-ascii";
     s.resize(80, ' '); // pad to exactly 80 bytes
     emit_u32_le(s, 1); // tri_count = 1
-    for (int i = 0; i < 3; i++)
-    {
-        emit_f32_le(s, 0);
-    }
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 1);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 0);
-    emit_f32_le(s, 1);
-    emit_f32_le(s, 0);
-    s.push_back(0);
-    s.push_back(0);
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
 
     TmpFile t(tmp_path("rasterminal_test_solidbin.stl"), s);
     Mesh m = load_ok(t.path);
@@ -96,8 +99,10 @@ TEST(reject, stl_header_only_no_tri_count)
 
 TEST(reject, stl_binary_inflated_tri_count)
 {
-    // tri_count = 0xFFFFFFFF in an 84-byte file — would otherwise cause
-    // reserve() to throw bad_alloc. Pinned by commit c203488.
+    // tri_count = 0xFFFFFFFF in an 84-byte file: the declared count implies ~200 GB
+    // by the 84 + 50 × tri_count formula, so the size guard fail-fasts it without a
+    // parse attempt (the vendored binary reader streams and would also fail, just
+    // slower).
     uint8_t buf[84];
     std::memset(buf, 'X', 80);
     buf[80] = 0xFF;
@@ -123,9 +128,12 @@ TEST(reject, stl_binary_short_file_nonzero_count)
 
 TEST(reject, stl_binary_truncated_mid_triangle)
 {
-    // tri_count = 2, but we only write one complete triangle + 20 bytes of
-    // the second. File-size check accepts (file > 84+50), but load_stl_binary
-    // sees short reads and returns false.
+    // tri_count = 2, but we only write one complete triangle + 20 bytes of the
+    // second: 154 bytes against the guard's required 84 + 50 × 2 = 184, so
+    // load_stl's own size guard rejects it and stl_reader never runs. Pins the
+    // guard against a partially-present triangle, complementing
+    // stl_binary_short_file_nonzero_count's no-data shape; stl_reader's own
+    // mid-triangle short-read path is unreachable behind the guard.
     std::string s(80, 'X');
     emit_u32_le(s, 2);
     // First triangle (complete, 50 bytes).
@@ -320,26 +328,8 @@ TEST(stl_valid, binary_two_triangles_dedup_shared_edge)
     // (0,0,0)-(1,1,0), so the four unique positions are the square's corners.
     std::string s(80, 'X');
     emit_u32_le(s, 2); // two triangles
-    auto emit_tri = [&](float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            emit_f32_le(s, 0.0f); // normal (ignored)
-        }
-        emit_f32_le(s, ax);
-        emit_f32_le(s, ay);
-        emit_f32_le(s, az);
-        emit_f32_le(s, bx);
-        emit_f32_le(s, by);
-        emit_f32_le(s, bz);
-        emit_f32_le(s, cx);
-        emit_f32_le(s, cy);
-        emit_f32_le(s, cz);
-        s.push_back(0);
-        s.push_back(0); // attr
-    };
-    emit_tri(0, 0, 0, 1, 0, 0, 1, 1, 0);
-    emit_tri(0, 0, 0, 1, 1, 0, 0, 1, 0);
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 1, 1, 0);
+    stl_append_tri(s, 0, 0, 0, 1, 1, 0, 0, 1, 0);
     TmpFile t(tmp_path("rasterminal_test_2tri.stl"), s);
     Mesh m = load_ok(t.path);
 
@@ -367,26 +357,8 @@ static std::string stl_90deg_fold()
 {
     std::string s(80, 'X');
     emit_u32_le(s, 2);
-    auto emit_tri = [&](float ax, float ay, float az, float bx, float by, float bz, float cx, float cy, float cz)
-    {
-        for (int i = 0; i < 3; i++)
-        {
-            emit_f32_le(s, 0.0f); // normal (ignored)
-        }
-        emit_f32_le(s, ax);
-        emit_f32_le(s, ay);
-        emit_f32_le(s, az);
-        emit_f32_le(s, bx);
-        emit_f32_le(s, by);
-        emit_f32_le(s, bz);
-        emit_f32_le(s, cx);
-        emit_f32_le(s, cy);
-        emit_f32_le(s, cz);
-        s.push_back(0);
-        s.push_back(0); // attr
-    };
-    emit_tri(0, 0, 0, 1, 0, 0, 0, 1, 0); // file +Z face -> loads with normal +Y
-    emit_tri(1, 0, 0, 0, 0, 0, 0, 0, 1); // file +Y face -> loads with normal -Z
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0); // file +Z face -> loads with normal +Y
+    stl_append_tri(s, 1, 0, 0, 0, 0, 0, 0, 0, 1); // file +Y face -> loads with normal -Z
     return s;
 }
 
@@ -460,20 +432,10 @@ TEST(reject, stl_header_read_under_5_bytes)
 
 TEST(stl_valid, ascii_header_leading_whitespace)
 {
-    // Header starts with a space before "solid" — the whitespace-skip loop must
-    // advance h past the space before strncmp fires, otherwise is_ascii stays
-    // false and the binary-size check rejects the (non-binary) file.
-    TmpFile t(
-        tmp_path("rasterminal_test_wsp.stl"), " solid test\n"
-                                              "facet normal 0 0 1\n"
-                                              "  outer loop\n"
-                                              "    vertex 0 0 0\n"
-                                              "    vertex 1 0 0\n"
-                                              "    vertex 0 1 0\n"
-                                              "  endloop\n"
-                                              "endfacet\n"
-                                              "endsolid test\n"
-    );
+    // Header starts with a space before "solid": the whitespace skip must
+    // advance past the space before the "solid" comparison, otherwise is_ascii
+    // stays false and the binary-size check rejects the (non-binary) file.
+    TmpFile t(tmp_path("rasterminal_test_wsp.stl"), stl_ascii_one_facet(" solid test"));
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
@@ -485,21 +447,7 @@ TEST(stl_valid, binary_surplus_trailing_bytes_accepted)
     // extra bytes and verify the load still succeeds.
     std::string s(80, 'X');
     emit_u32_le(s, 1); // tri_count = 1
-    for (int i = 0; i < 3; i++)
-    {
-        emit_f32_le(s, 0.0f); // normal (ignored)
-    }
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 1.0f);
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 0.0f);
-    emit_f32_le(s, 1.0f);
-    emit_f32_le(s, 0.0f);
-    s.push_back(0);
-    s.push_back(0);       // attribute bytes
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
     s.append(20, '\xFF'); // 20 surplus trailing bytes
     TmpFile t(tmp_path("rasterminal_test_surplus.stl"), s);
     Mesh m = load_ok(t.path);
@@ -514,21 +462,192 @@ TEST(reject, stl_file_open_failure)
 
 TEST(stl_valid, ascii_header_leading_tab_whitespace)
 {
-    // Leading tab before "solid": the `*h == '\t'` branch in the whitespace-skip
-    // loop advances h so strncmp("solid",...) matches, setting is_ascii=true.
-    // stl_reader::StlFileHasASCIIFormat uses find("solid") (finds it after the tab)
-    // and ReadStlFile_ASCII tokenizes with >> (skips tab), so parsing succeeds.
+    // Leading tab before "solid": a tab is in the whitespace-skip set, so the
+    // "solid" comparison still matches and is_ascii is set.
+    TmpFile t(tmp_path("rast_tab_hdr.stl"), stl_ascii_one_facet("\tsolid test"));
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, ascii_header_leading_newline)
+{
+    // A blank first line before "solid": '\n' is in the whitespace-skip set, so the
+    // file still classifies as ASCII. Before the fix it classified as binary and was
+    // rejected by the size guard (bytes 80-83 of text read as a huge tri_count).
+    TmpFile t(tmp_path("rast_nl_hdr.stl"), stl_ascii_one_facet("\nsolid test"));
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, ascii_header_leading_crlf)
+{
+    // A CRLF blank first line: '\r' is in the whitespace-skip set too, so a
+    // Windows-authored file with a leading blank line classifies as ASCII.
     TmpFile t(
-        tmp_path("rast_tab_hdr.stl"), "\tsolid test\n"
-                                      "facet normal 0 0 1\n"
-                                      "  outer loop\n"
-                                      "    vertex 0 0 0\n"
-                                      "    vertex 1 0 0\n"
-                                      "    vertex 0 1 0\n"
-                                      "  endloop\n"
-                                      "endfacet\n"
-                                      "endsolid test\n"
+        tmp_path("rast_crlf_hdr.stl"), "\r\nsolid test\r\n"
+                                       "facet normal 0 0 1\r\n"
+                                       "  outer loop\r\n"
+                                       "    vertex 0 0 0\r\n"
+                                       "    vertex 1 0 0\r\n"
+                                       "    vertex 0 1 0\r\n"
+                                       "  endloop\r\n"
+                                       "endfacet\r\n"
+                                       "endsolid test\r\n"
     );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, ascii_first_newline_past_256_bytes)
+{
+    // A solid name pushing the first '\n' past byte 256. load_stl must call the
+    // format-explicit ReadStlFile_ASCII: ReadStlFile's own sniffer
+    // (StlFileHasASCIIFormat) requires a '\n' within the first 256 bytes, so it
+    // classified this file as binary, read the name text as a giant tri_count, and
+    // rejected a valid ASCII file.
+    TmpFile t(tmp_path("rast_longname.stl"), stl_ascii_one_facet("solid " + std::string(300, 'n')));
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, binary_chatty_header_text)
+{
+    // A binary STL whose 80-byte header comment mentions "solid", "facet" and
+    // "normal" and contains a '\n'. load_stl classifies it binary (the header does
+    // not START with "solid") and must parse it as binary: ReadStlFile's sniffer
+    // substring-matches those words anywhere in the first 256 bytes, so it
+    // ASCII-parsed the triangle data and rejected a valid binary file.
+    std::string s = "STL export of solid part; facet normal data included\n";
+    s.resize(80, '\0');
+    emit_u32_le(s, 1); // tri_count = 1
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
+    TmpFile t(tmp_path("rast_chatty_hdr.stl"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, binary_solid_header_trailing_bytes)
+{
+    // "solid"-prefixed header AND surplus trailing bytes: the disambiguation uses
+    // >= expected_binary (not ==), matching the binary guard's trailing-bytes
+    // policy, so this still takes the binary path. With == it would classify as
+    // ASCII and fail to parse.
+    std::string s = "solid binary-with-trailing-bytes";
+    s.resize(80, ' ');
+    emit_u32_le(s, 1); // tri_count = 1
+    stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
+    s.append(20, '\xFF'); // 20 surplus trailing bytes
+    TmpFile t(tmp_path("rast_solidbin_trail.stl"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, binary_skips_ascii_line_scan)
+{
+    // A binary STL whose 70 KB of content contains not a single newline byte:
+    // read as text it would be one line far over the 64 KB ASCII bound, so this
+    // loads only if the line scan stays confined to the ASCII branch. Pins the
+    // scan's placement; hoisting it above the classification would reject every
+    // binary file that happens to lack 0x0A bytes. The unit-triangle floats
+    // (0.0f/1.0f) encode to bytes 00/80/3F, so no 0x0A can occur; the assert
+    // keeps the fixture honest about that.
+    std::string s(80, 'X');
+    emit_u32_le(s, 1400); // 1400 x 50 bytes = 70000 bytes of triangle data
+    for (int i = 0; i < 1400; i++)
+    {
+        stl_append_tri(s, 0, 0, 0, 1, 0, 0, 0, 1, 0);
+    }
+    ASSERT_TRUE(s.size() > size_t{ 64 } * 1024);
+    ASSERT_TRUE(s.find('\n') == std::string::npos);
+    TmpFile t(tmp_path("rast_bin_nolf.stl"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1400 });
+}
+
+TEST(stl_valid, ascii_larger_than_line_bound_loads)
+{
+    // An ASCII file bigger than the 64 KB line bound, with ordinary short lines:
+    // the pre-scan runs (the file exceeds the small-file skip) and must pass it
+    // through to the parser. Pins the scan's ACCEPT path; without this, a scan
+    // regressed into rejecting every file it examines still passes the suite.
+    std::string s = "solid test\n";
+    for (int i = 0; i < 700; i++)
+    {
+        s += "facet normal 0 0 1\n"
+             "  outer loop\n"
+             "    vertex 0 0 0\n"
+             "    vertex 1 0 0\n"
+             "    vertex 0 1 0\n"
+             "  endloop\n"
+             "endfacet\n";
+    }
+    s += "endsolid test\n";
+    ASSERT_TRUE(s.size() > size_t{ 64 } * 1024); // must actually exceed the bound
+    TmpFile t(tmp_path("rast_big_ascii.stl"), s);
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 700 });
+}
+
+TEST(reject, stl_ascii_line_exceeds_bound)
+{
+    // A 70000-char junk line inside an otherwise valid single-facet solid. The
+    // vendored ASCII parser would IGNORE the line (unrecognized first token) and
+    // load the facet, but only after materializing one heap string per token of
+    // the line; load_stl's pre-scan rejects any line over 64 KB first, which is
+    // what bounds a crafted multi-megabyte single-line file to one cheap read
+    // pass (measured 1.17 GB peak RSS on a 52 MB one-line file without the
+    // bound). This test would LOAD if the bound regressed, so it bites.
+    std::string s = "solid test\n"
+                    "facet normal 0 0 1\n"
+                    "  outer loop\n"
+                    "    vertex 0 0 0\n"
+                    "    vertex 1 0 0\n"
+                    "    vertex 0 1 0\n"
+                    "  endloop\n"
+                    "endfacet\n";
+    s.append(70000, 'j');
+    s += "\nendsolid test\n";
+    TmpFile t(tmp_path("rast_longline.stl"), s);
+    assert_rejects(t.path);
+}
+
+TEST(stl_valid, ascii_uppercase_solid_keyword)
+{
+    // The classification matches "solid" ASCII-case-insensitively, so a
+    // capitalized keyword still routes to the ASCII parser. Only the solid line
+    // varies: the parser never requires that line's tokens, while facet/vertex
+    // keywords stay lowercase as the format prescribes and the parser requires.
+    TmpFile t(tmp_path("rast_upper_hdr.stl"), stl_ascii_one_facet("SOLID test"));
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, ascii_under_80_bytes)
+{
+    // A valid 72-byte ASCII STL: smaller than the 80-byte binary header, so the
+    // header fread returns short and classification must work on the partial
+    // read. Fits under 80 because the parser tolerates omitting outer
+    // loop/endloop/endsolid; endfacet still emits the triangle.
+    TmpFile t(
+        tmp_path("rast_tiny_ascii.stl"), "solid\n"
+                                         "facet normal 0 0 0\n"
+                                         "vertex 0 0 0\n"
+                                         "vertex 1 0 0\n"
+                                         "vertex 0 1 0\n"
+                                         "endfacet"
+    );
+    Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t{ 1 });
+}
+
+TEST(stl_valid, ascii_utf8_bom_before_solid)
+{
+    // A UTF-8 BOM (EF BB BF) before "solid", as written by some Windows editors:
+    // load_stl skips it before the whitespace scan so the file classifies as
+    // ASCII. stl_reader's ASCII parser then ignores the BOM-glued first token
+    // ("\xEF\xBB\xBFsolid" matches no keyword, and unrecognized tokens are
+    // skipped) and parses the facets normally.
+    TmpFile t(tmp_path("rast_bom_hdr.stl"), stl_ascii_one_facet("\xEF\xBB\xBFsolid test"));
     Mesh m = load_ok(t.path);
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
