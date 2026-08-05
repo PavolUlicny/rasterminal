@@ -48,6 +48,7 @@ ASCII or binary (little- and big-endian).
 .TP
 .B .stl
 ASCII or binary. The format's conventional Z\-up orientation is remapped so models load upright.
+ASCII files are rejected if any single line exceeds 64 KB (a malformed\-input guard; the format puts one short statement per line).
 .TP
 .B .gltf, .glb
 glTF 2.0 (PBR materials, textures, node transforms).

@@ -255,7 +255,7 @@ Movement speed is scaled to the model, so the keys feel the same on a tiny model
 | --- | --- |
 | OBJ / MTL | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
 | PLY | ASCII and binary (LE/BE); vertex and face colors |
-| STL | ASCII and binary; the format's conventional Z-up orientation is remapped so models load upright |
+| STL | ASCII and binary; the format's conventional Z-up orientation is remapped so models load upright. ASCII files are rejected if any single line exceeds 64 KB (a malformed-input guard; the format puts one short statement per line) |
 | glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
 
 ## Requirements
