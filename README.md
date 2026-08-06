@@ -26,6 +26,7 @@ rasterminal renders 3D models on the CPU and displays them in your terminal in r
 - [Supported formats](#supported-formats)
 - [Requirements](#requirements)
 - [Project status](#project-status)
+- [Contributing](#contributing)
 - [Third-party libraries](#third-party-libraries)
 - [License](#license)
 
@@ -273,6 +274,10 @@ Works well with: iTerm2, kitty, WezTerm, Windows Terminal, and most modern Linux
 ## Project status
 
 Pre-1.0 and under active development. rasterminal works today, but it is still maturing: expect rough edges, and CLI flags or controls may change before 1.0.
+
+## Contributing
+
+Bug reports and feature requests are welcome through the [issue forms](https://github.com/PavolUlicny/rasterminal/issues/new/choose). Code contributions are welcome too: see [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and format your changes, and for anything larger than a small fix, please open an issue first to discuss it.
 
 ## Third-party libraries
 
