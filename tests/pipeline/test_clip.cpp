@@ -16,8 +16,6 @@ static vec4 clip_v(float x, float y, float z, float w)
     return { x, y, z, w };
 }
 
-// inside the frustum
-
 TEST(clip_reject, triangle_fully_inside_is_accepted)
 {
     vec4 a = clip_v(0, 0, 0, 1);

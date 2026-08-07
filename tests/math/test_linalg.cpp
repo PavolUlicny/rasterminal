@@ -365,8 +365,6 @@ TEST(vec4, vec3_constructor_copies_xyz)
     ASSERT_NEAR(r.w, 5.0f, 1e-6f);
 }
 
-// vec2
-
 TEST(vec2, arithmetic_operators)
 {
     vec2 a{ 3.0f, 7.0f };

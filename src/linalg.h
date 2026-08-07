@@ -2,8 +2,6 @@
 
 #include <cmath>
 
-// vec2
-
 struct vec2
 {
     float x, y;
@@ -78,8 +76,6 @@ constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t) noexcept
     return a + (b - a) * t;
 }
 
-// vec4
-
 struct vec4
 {
     float x, y, z, w;
@@ -101,7 +97,6 @@ struct vec4
     }
 };
 
-// mat4
 // column-major: m[col][row]
 
 struct mat4

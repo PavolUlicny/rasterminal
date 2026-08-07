@@ -319,7 +319,6 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     // Check for OBJ vertex colors ("v x y z r g b" extension).
     const bool src_has_vcol = (!attrib.colors.empty() && attrib.colors.size() == attrib.vertices.size());
 
-    // Walk all shapes and merge into one Mesh.
     for (const auto &shape : shapes)
     {
         size_t idx_off = 0;

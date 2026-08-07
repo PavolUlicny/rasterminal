@@ -984,8 +984,6 @@ TEST(mesh, load_model_sets_has_double_sided_false_for_obj)
     ASSERT_FALSE(m.has_double_sided);
 }
 
-// load_model failure path
-
 TEST(mesh_clear, failed_load_clears_previous_state)
 {
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
@@ -1024,8 +1022,6 @@ TEST(mesh_accessors, tex_at_negative_and_oob_return_nullptr)
     ASSERT_TRUE(m.tex_at(1) == nullptr);
     ASSERT_TRUE(m.tex_at(0) != nullptr);
 }
-
-// compute_ao: multi-threaded path
 
 TEST(ao, mt_matches_single_threaded)
 {

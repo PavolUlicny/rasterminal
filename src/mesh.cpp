@@ -16,8 +16,6 @@
 #include <utility>
 #include <vector>
 
-// Mesh::load_model
-
 void Mesh::clear()
 {
     vertices.clear();
@@ -200,8 +198,6 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         return false;
     }
 }
-
-// Mesh::compute_normals
 
 void Mesh::compute_normals(
     float crease_cos, const std::vector<uint32_t> *weld, size_t n_groups, const std::vector<uint32_t> *smooth_groups
@@ -497,8 +493,6 @@ void Mesh::compute_normals(
     }
 }
 
-// Mesh::compute_tangents
-
 void Mesh::compute_tangents()
 {
     tangents.assign(vertices.size(), vec3{});
@@ -571,7 +565,6 @@ void Mesh::compute_tangents()
     }
 }
 
-// Mesh::compute_ao
 // Bakes a per-vertex ambient occlusion factor from local surface curvature.
 // For each vertex, the centroid of its edge-connected neighbors is computed.
 // The vector from the vertex to that centroid, projected onto the vertex normal,
@@ -691,8 +684,6 @@ void Mesh::compute_ao(int n_threads)
         }
     }
 }
-
-// Mesh::optimize_vertex_cache
 
 void Mesh::optimize_vertex_cache(int n_threads)
 {

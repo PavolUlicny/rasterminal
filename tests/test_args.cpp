@@ -174,8 +174,6 @@ TEST(args, version_clusters_after_boolean)
     ASSERT_EQ(r.exit_code, 0);
 }
 
-// error: no model
-
 TEST(args, no_model_is_error)
 {
     ParseResult r = run({});
@@ -1673,8 +1671,6 @@ TEST(args, fps_short_explicit_zero_is_error)
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
 }
-
-// error: --help rejects =value
 
 TEST(args, help_with_equals_value_is_error)
 {

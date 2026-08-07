@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <vector>
 
-// ClipVert
 // A clip-space vertex bundled with the world-space attributes needed for
 // lighting and near-plane clipping.
 

@@ -190,8 +190,6 @@ TEST(light, specular_is_strictly_smaller_off_peak)
     ASSERT_TRUE(off.x >= 0.0f);
 }
 
-// accumulation
-
 TEST(light, multiple_lights_sum_their_contributions)
 {
     Material mat;
@@ -373,8 +371,6 @@ TEST(light, specular_independent_of_diffuse_branch)
     vec3 r = compute_lighting(n, v, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
     ASSERT_TRUE(r.x > 0.0f);
 }
-
-// apply_light negative ndh_raw
 
 TEST(light, negative_ndh_suppresses_specular)
 {

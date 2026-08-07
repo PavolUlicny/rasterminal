@@ -218,8 +218,6 @@ TEST(framebuffer, headless_clear_resets_depth)
     ASSERT_TRUE(fb.depth_at(2, 2) == std::numeric_limits<float>::infinity()); // reset to +inf
 }
 
-// dirty-tracking path
-
 TEST(framebuffer, present_dirty_then_present_again_no_crash)
 {
     // First present() takes the full-redraw path; second takes the dirty path
@@ -618,8 +616,6 @@ TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
     ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for second cell
 }
 
-// write_byte() LUT boundary values
-
 TEST(framebuffer, write_byte_lut_boundary_values)
 {
     // write_byte() has three ranges: [0-9] (1 digit), [10-99] (2 digits),
@@ -642,8 +638,6 @@ TEST(framebuffer, write_byte_lut_boundary_values)
     }
 }
 
-// all-cells-dirty incremental frame
-
 TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
 {
     // After the first full-redraw (m_prev_color = all-black), clearing to a
@@ -658,8 +652,6 @@ TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
 
     ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
 }
-
-// non-headless ctor/dtor
 
 TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
 {

@@ -15,8 +15,6 @@
 #include <thread>
 #include <vector>
 
-// Renderer
-
 struct Renderer
 {
     ShadingMode mode = ShadingMode::Phong;

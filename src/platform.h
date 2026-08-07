@@ -24,8 +24,6 @@
 namespace platform
 {
 
-    // file size
-
     // 64-bit size of an open binary stream, or -1 on failure. std::ftell returns long,
     // which is 32-bit on Windows (LLP64) and ILP32, so files >= 2 GB need the platform's
     // 64-bit seek/tell. On success the stream position is left at end-of-file; callers
@@ -54,8 +52,6 @@ namespace platform
         return ftello(f);
 #endif
     }
-
-    // terminal size
 
     inline void get_terminal_size(int &cols, int &rows)
     {
@@ -92,12 +88,10 @@ namespace platform
         {
             ioctl(STDERR_FILENO, TIOCGWINSZ, &ws);
         }
-        cols = ws.ws_col > 0 ? ws.ws_col : 80; // sane fallback
+        cols = ws.ws_col > 0 ? ws.ws_col : 80;
         rows = ws.ws_row > 0 ? ws.ws_row : 24;
 #endif
     }
-
-    // tty detection
 
     // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal.
     // Windows probes the console API rather than _isatty: _isatty is true for ANY
@@ -649,7 +643,6 @@ namespace platform
         }
     } // namespace detail
 
-    // poll_event
     // Returns the next keyboard or mouse event, or InputEvent{Type::None} when no
     // complete event is available. On POSIX it never blocks: the readiness probe and
     // the read are both zero-timeout, so a caller in a render loop never pays a stall

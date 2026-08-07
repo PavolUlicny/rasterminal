@@ -64,7 +64,6 @@ static Mesh make_vcol_triangle(vec3 vca, vec3 vcb, vec3 vcc, bool has_colors = t
     return m;
 }
 
-// M1
 // Phong: uniform red vcol → pixel (20,10) is red.
 // Catches: has_vertex_colors branch not firing, p_vcols not loaded,
 //          rt.ph.vcola/b/c not propagated to rasterize_phong.
@@ -89,7 +88,6 @@ TEST(renderer, phong_vcol_uniform_red_tints_pixel)
     }
 }
 
-// M2
 // Phong: has_vertex_colors=false; vertex_colors populated with red but flag is
 // false → pixel must NOT be red-only.
 // Catches: flag ignored (always-on tinting from vertex_colors array).
@@ -119,7 +117,6 @@ TEST(renderer, phong_vcol_flag_false_no_tint)
     }
 }
 
-// M3
 // Phong: per-vertex colours red/green/blue → all three channels contribute at
 // the centre pixel.
 // Catches: vcol collapsed to a single vertex (e.g. always vcola).
@@ -146,7 +143,6 @@ TEST(renderer, phong_vcol_per_vertex_interpolation)
     }
 }
 
-// M3b
 // Phong: white vcol (all 1s) with flag=true must match the no-vcol baseline.
 // Phong tints per vertex (rt.ph.vcola/b/c); a white vcol must leave the lit
 // result identical to running with no vertex colours at all.
@@ -193,7 +189,6 @@ TEST(renderer, phong_vcol_white_matches_no_vcol)
     }
 }
 
-// M3c
 // Phong: mixed white (v0) + red (v1, v2) vcol — Phong is the per-vertex
 // interpolating path, so this guards correct independent per-vertex tinting with
 // no stale state leaking between vertices. v0 stays white,
@@ -223,7 +218,6 @@ TEST(renderer, phong_vcol_mixed_white_and_color)
     }
 }
 
-// M4
 // Flat: uniform red vcol → pixel (20,10) is red.
 // Catches: face_vcol average / vcol_mat build broken; vcol_mat.diffuse/ambient
 //          not tinted.
@@ -248,7 +242,6 @@ TEST(renderer, flat_vcol_uniform_tints_pixel)
     }
 }
 
-// M5
 // Flat: white vcol (all 1s) with flag=true must match the no-vcol baseline.
 // The renderer takes an early-skip when face_vcol==(1,1,1) — this tests that
 // the skip produces the same result as flag=false.
@@ -297,7 +290,6 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
     }
 }
 
-// M9
 // Wireframe: vertex colors must not affect the wireframe path (which uses
 // m_wire_color, not vcol) and must not cause a crash.
 // Catches: wireframe path accessing vertex_colors and crashing, or erroneously

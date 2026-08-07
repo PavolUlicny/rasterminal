@@ -72,7 +72,6 @@ namespace
 
 } // namespace
 
-// clip_near
 // Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
 // division-by-near-zero in the perspective divide and the rendering artefacts
 // that occur when a triangle straddles the camera plane.
@@ -175,7 +174,6 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
     return 2;
 }
 
-// draw_line
 // DDA line rasterizer with per-pixel depth testing.
 
 void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
@@ -225,7 +223,6 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     }
 }
 
-// rasterize_flat
 // Rasterize a triangle using screen-space barycentric coordinates.
 // sa/sb/sc hold (screen_x, screen_y, ndc_z).
 // wa/wb/wc are clip-space w values for perspective-correct interpolation.
@@ -536,7 +533,6 @@ void rasterize_flat(
     }
 }
 
-// rasterize_phong
 // Rasterize a triangle with per-pixel Blinn-Phong lighting (Phong shading).
 // Perspective-correct interpolates world-space position and normal to each
 // pixel, then evaluates compute_lighting() there.

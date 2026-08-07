@@ -92,7 +92,6 @@ Renderer::~Renderer()
     }
 }
 
-// Renderer::raster_triangles
 // Single-pass geometry + rasterize over this worker's stolen triangle chunks.
 // Each worker steals triangle chunks and rasterizes directly into the framebuffer.
 // The CAS-based depth test in Framebuffer ensures the closest triangle wins per
@@ -424,7 +423,6 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     }
 }
 
-// Renderer::dispatch_raster
 // Pick the compile-time M instantiation of raster_triangles from the runtime shading
 // mode. m_smode is a frame input (written once under the lock before workers wake),
 // so this read is as safe as the other m_* reads inside raster_triangles. Wireframe runs
@@ -446,7 +444,6 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
     }
 }
 
-// Renderer::raster_wireframe
 // Work-stealing wireframe pass: each worker claims triangle chunks over [0, total) and
 // draws their three edges as DDA lines in m_wireframe_color. All pixels share one colour
 // and depth resolves via draw_line's atomic CAS min, so the output is identical to a serial
@@ -550,7 +547,6 @@ void Renderer::raster_wireframe()
     }
 }
 
-// Renderer::resolve_pixels
 // Transparent resolve pass: each worker steals disjoint row bands within the merged
 // transparent bounding box (set by render()) and composites that pixel's accumulated
 // fragment list back-to-front over the opaque colour already in the framebuffer. Pixels
@@ -685,7 +681,6 @@ void Renderer::resolve_pixels()
     }
 }
 
-// Renderer::worker_func
 // Persistent worker loop: sleep until render() dispatches a phase, run it, signal done.
 
 void Renderer::worker_func(int worker_id)
@@ -730,7 +725,6 @@ void Renderer::worker_func(int worker_id)
     }
 }
 
-// Renderer::ensure_abuffer
 // Size the per-pixel head array to the framebuffer and sentinel-fill it. Only does
 // work when the dimensions change (or on first use): in steady state the resolve pass
 // restores every touched head to SENTINEL, so the array is already clean each frame.
@@ -753,8 +747,6 @@ void Renderer::ensure_abuffer(int width, int height)
     m_ab_width = width;
     m_ab_height = height;
 }
-
-// Renderer::render
 
 void Renderer::render(
     const Mesh &mesh, const Camera &camera, const Light *lights, int n_lights, const vec3 &ambient, Framebuffer &fb

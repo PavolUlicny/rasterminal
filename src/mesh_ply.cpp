@@ -200,8 +200,6 @@ namespace
 
 } // namespace
 
-// Mesh::load_ply
-
 bool Mesh::load_ply(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);

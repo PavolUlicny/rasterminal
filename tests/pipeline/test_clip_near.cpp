@@ -216,8 +216,6 @@ TEST(clip_near, two_inside_uv_interpolated_at_both_crossings)
     ASSERT_NEAR(out[1][2].uv.y, 0.95f, 1e-4f);
 }
 
-// varying near_w
-
 TEST(clip_near, alternate_near_w_clips_correctly)
 {
     // near_w = 0.5: a inside (w=2.0), b/c outside (w=0.0).

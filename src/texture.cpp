@@ -17,8 +17,6 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-// Texture::load
-
 bool Texture::load(const std::string &path)
 {
     int w = 0;
@@ -50,8 +48,6 @@ bool Texture::load(const std::string &path)
     pixels = std::move(buf);
     return true;
 }
-
-// Texture::load_from_memory
 
 bool Texture::load_from_memory(const uint8_t *data, size_t size)
 {
@@ -86,8 +82,6 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     return true;
 }
 
-// Texture::load_ktx2_from_memory
-
 bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
 {
     std::vector<uint8_t> rgba;
@@ -102,8 +96,6 @@ bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
     pixels = std::move(rgba);
     return true;
 }
-
-// is_grayscale
 
 bool is_grayscale(const Texture &t)
 {
@@ -292,8 +284,6 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
     }
     return out;
 }
-
-// Texture::load_webp_from_memory
 
 bool Texture::load_webp_from_memory(const uint8_t *data, size_t size)
 {

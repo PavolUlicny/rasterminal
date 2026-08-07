@@ -173,8 +173,6 @@ TEST(transparency, interpenetration_per_pixel_order)
     ASSERT_TRUE(right.g > right.r);
 }
 
-// shared-edge fill rule
-
 // A quad split into two transparent triangles sharing a diagonal. Every covered pixel
 // — including those on the shared edge — must be composited exactly once: a missing
 // top-left fill rule double-blends the seam (darker/over-saturated), a wrong one drops
@@ -381,8 +379,6 @@ TEST(transparency, resolve_does_not_double_tonemap_opaque_base)
     ASSERT_TRUE(q.r > p.r - 10); // explicitly rules out the ~25-level double-tonemap darkening
 }
 
-// per-vertex alpha
-
 // Per-vertex opacity (COLOR_0 / PLY alpha) folds into the fragment alpha. A uniform
 // vertex alpha of 0.5 on an otherwise-opaque (mat.alpha=1) red triangle halves it.
 TEST(transparency, vertex_alpha_modulates)
@@ -402,8 +398,6 @@ TEST(transparency, vertex_alpha_modulates)
     // alpha = mat.alpha(1) * tex(1) * vcol_a(0.5) = 0.5 → 0.5*red over black
     assert_pixel_near(fb, 20, 10, { 128, 0, 0 }, 2);
 }
-
-// opaque path unaffected
 
 // A purely opaque mesh (no blend material) skips the transparent passes and renders
 // its solid colour unchanged.

@@ -676,8 +676,6 @@ TEST(ply_valid, binary_le_float64_coordinates)
     ASSERT_NEAR(m.vertices[2].pos.y, 2.5f, 1e-5f);
 }
 
-// FACE PROPERTY NAME ALIAS: vertex_index (singular)
-
 TEST(ply_valid, ascii_vertex_index_singular_alias)
 {
     // Some PLY files use "vertex_index" (singular) instead of "vertex_indices".
@@ -836,8 +834,6 @@ TEST(ply_valid, face_colors_with_file_normals_recomputes)
     }
 }
 
-// FACE COLOR + NO UV PROPERTIES
-
 TEST(ply_valid, face_color_path_no_uv_properties_zero_uvs)
 {
     // No UV aliases present → uvs=nullptr; face-color path sets ub=nullptr and
@@ -861,8 +857,6 @@ TEST(ply_valid, face_color_path_no_uv_properties_zero_uvs)
         ASSERT_NEAR(v.uv.y, 0.0f, 1e-6f);
     }
 }
-
-// ipf < 3 REJECTION
 
 TEST(reject, ply_face_list_count_below_3)
 {
@@ -1140,15 +1134,11 @@ TEST(ply_valid, binary_le_face_colors_float64)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-5f);
 }
 
-// FILE-OPEN FAILURE
-
 TEST(reject, ply_file_open_failure)
 {
     // Non-existent .ply path → !ss.is_open() → load_ply returns false.
     assert_rejects(tmp_path("rast_ply_no_such.ply"));
 }
-
-// FACE-COLOR MIXED VALID / INVALID INDICES
 
 TEST(ply_valid, face_color_mixed_valid_invalid_indices)
 {

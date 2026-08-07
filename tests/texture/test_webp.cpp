@@ -85,8 +85,6 @@ TEST(webp_decode, lossless_quad_decodes_with_correct_layout)
     }
 }
 
-// decode_webp_rgba: alpha channel
-
 TEST(webp_decode, alpha_decodes_transparency)
 {
     std::vector<uint8_t> rgba;
