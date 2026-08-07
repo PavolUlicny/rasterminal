@@ -61,13 +61,12 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     }
 
     // load_obj/ply/stl/gltf signal malformed input by returning false (rolling back via
-    // MeshSnapshot). A failure can also surface as an exception: a bad_alloc when an allocation
-    // overshoots available memory — in the parse, OR in the post-load compute_ao /
-    // optimize_vertex_cache work on a huge mesh — a std::system_error if a worker thread can't be
-    // spawned, or compute_normals' uint32-index length_error sentinel. The whole load-and-process
-    // body is wrapped so any of these becomes a fail-loud "could not load" rather than unwinding
-    // out of main() into std::terminate. The guard must span the post-load steps too, not just the
-    // dispatch: compute_ao() and optimize_vertex_cache() allocate large buffers and spawn threads.
+    // MeshSnapshot), but a failure can also surface as an exception: bad_alloc (in the parse or
+    // in the post-load compute_ao / optimize_vertex_cache work on a huge mesh), std::system_error
+    // when a worker thread cannot spawn, or compute_normals' uint32-index length_error sentinel.
+    // The wrap must span the post-load steps too, not just the loader dispatch (they allocate
+    // large buffers and spawn threads),
+    // so any of these becomes a fail-loud "could not load" instead of std::terminate out of main().
     try
     {
         bool ok = false;
@@ -156,15 +155,15 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
         optimize_vertex_cache(n_threads);
 
-        // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a blend
-        // tail. The classification is PER-TRIANGLE, not per-material: a triangle is transparent if its
-        // material blends, or — for formats whose opacity is per-vertex (PLY) — any of its vertices is
-        // translucent. This keeps a mostly-opaque mesh with localized translucency mostly on the fast
-        // path: its opaque triangles stay in [0, opaque_count), so they take the opaque CAS pass;
-        // only the genuinely transparent triangles pay the accumulate+resolve pass. stable_partition preserves
-        // optimize_vertex_cache's within-group order (its vertex-cache/overdraw locality survives), and
-        // runs after optimize so triangle vertex indices are final — it only moves whole Triangle
-        // structs. Opaque meshes (has_transparent == false) skip it and are unchanged.
+        // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a
+        // blend tail. Classification is PER-TRIANGLE, not per-material: a triangle is transparent
+        // if its material blends or (for PLY, whose opacity is per-vertex) any of its vertices is
+        // translucent, so a mostly-opaque mesh keeps its opaque triangles on the fast CAS pass and
+        // only the genuinely transparent ones pay accumulate+resolve. stable_partition preserves
+        // optimize_vertex_cache's within-group order (its cache locality survives) and runs after
+        // it, when vertex indices are
+        // final (it only moves whole Triangle structs). Opaque meshes (has_transparent == false)
+        // skip it unchanged.
         opaque_count = static_cast<uint32_t>(triangles.size());
         if (has_transparent)
         {
@@ -221,16 +220,14 @@ void Mesh::compute_normals(
     // id, which would otherwise read OOB silently when group_of is built below.
     assert(weld == nullptr || weld->size() == n_verts);
 
-    // Adjacency is built in welded space: group_of[v] folds vertices that share a
-    // position group (e.g. OBJ UV-seam halves) onto one id, so they smooth as one
-    // surface while staying distinct output vertices. The welded path holds the
-    // map locally so it stays valid when Pass B appends split copies; each
-    // appended vertex inherits its source's group id (a split is just another
-    // wedge of the same position, not a new group). The identity path (weld ==
-    // nullptr; PLY/STL/glTF) skips the array entirely: grp(v) returns v, and
-    // appended indices used as sort keys cluster consistently on their own.
-    // Manual copy (not vector copy-assign or range-ctor) so GCC's LTO
-    // -Wnull-dereference pass doesn't false-positive deep inside std::copy.
+    // Adjacency is built in welded space: group_of[v] folds vertices sharing a position
+    // group (OBJ UV-seam halves) onto one id so they smooth as one surface while staying
+    // distinct output vertices. The map is held locally so it stays valid while Pass B
+    // appends split copies, each inheriting its source's group id (a split is another wedge
+    // of the same position, not a new group). The identity path (weld == nullptr;
+    // PLY/STL/glTF) skips the array: grp(v) returns v, and appended indices used as sort
+    // keys cluster on their own. Manual copy (not vector copy-assign or range-ctor) so
+    // GCC's LTO -Wnull-dereference pass doesn't false-positive deep inside std::copy.
     std::vector<uint32_t> group_of;
     if (weld != nullptr)
     {
@@ -565,16 +562,12 @@ void Mesh::compute_tangents()
     }
 }
 
-// Bakes a per-vertex ambient occlusion factor from local surface curvature.
-// For each vertex, the centroid of its edge-connected neighbors is computed.
-// The vector from the vertex to that centroid, projected onto the vertex normal,
-// gives the curvature sign: positive = concave (cavity) → darken; negative =
-// convex → keep at 1.  The projection is divided by the local RMS edge length, so
-// the measure is a scale-invariant depth/width ratio rather than a pure direction:
-// a shallow dip (small offset relative to edge spacing) barely darkens while a true
-// cavity still does. Normalizing the offset instead — as an earlier version did —
-// discarded depth, so sub-edge surface noise on scanned meshes read as full-strength
-// cavities and speckled the result.  This runs at load time so it costs nothing per frame.
+// Bakes per-vertex ambient occlusion from local curvature, at load time so it costs nothing
+// per frame: the vertex-to-neighbor-centroid vector projected onto the vertex normal gives
+// the curvature sign (positive = concave, darken; negative = convex, keep 1), divided by the
+// local RMS edge length so the measure is a scale-invariant depth/width ratio. An earlier
+// version normalized the offset instead, which discarded depth: sub-edge surface noise on
+// scanned meshes read as full-strength cavities and speckled the result. Don't revert.
 
 void Mesh::compute_ao(int n_threads)
 {

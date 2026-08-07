@@ -92,21 +92,15 @@ Renderer::~Renderer()
     }
 }
 
-// Single-pass geometry + rasterize over this worker's stolen triangle chunks.
-// Each worker steals triangle chunks and rasterizes directly into the framebuffer.
-// The CAS-based depth test in Framebuffer ensures the closest triangle wins per
-// pixel across all threads. A narrow race between a winning depth CAS and the
-// following color write is accepted: at most one wrong-coloured pixel per collision
-// per frame, invisible at interactive frame rates.
-//
-// S == Opaque processes [0, opaque_count) and commits to the framebuffer — codegen
-// is identical to the pre-transparency single pass. S == Transparent processes the
-// blend tail [opaque_count, total) and pushes shaded fragments into this worker's
-// A-buffer arena instead (the per-pixel resolve composites them later).
-// M selects the shading path at compile time: the Flat/Phong dispatch folds
-// to `if constexpr`, so each instantiation carries only its own shading code.
-//
-// raster_wireframe runs a reduced copy of this geometry front-end (steal loop, cull,
+// Single-pass geometry + rasterize over this worker's stolen triangle chunks, committing
+// straight into the framebuffer; the CAS depth test makes the closest triangle win per pixel
+// across threads. A narrow race between a winning depth CAS and the following color write is
+// accepted: at most one wrong-coloured pixel per collision per frame, invisible interactively.
+// S == Opaque covers [0, opaque_count), codegen-identical to the pre-transparency single
+// pass; S == Transparent covers the blend tail [opaque_count, total) and pushes shaded
+// fragments into this worker's A-buffer arena for the later per-pixel resolve. M folds the
+// Flat/Phong dispatch to `if constexpr`, so each instantiation carries only its own shading
+// code. raster_wireframe runs a reduced copy of this geometry front-end (steal loop, cull,
 // near-plane clip, clip_reject, ndc_to_screen); keep the two in sync when changing those.
 
 template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
@@ -444,17 +438,15 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
     }
 }
 
-// Work-stealing wireframe pass: each worker claims triangle chunks over [0, total) and
-// draws their three edges as DDA lines in m_wireframe_color. All pixels share one colour
-// and depth resolves via draw_line's atomic CAS min, so the output is identical to a serial
-// draw for any worker count (see raster_wireframe's header in renderer.h).
-//
-// The geometry front-end here (chunked steal loop, world-space backface cull incl. the
-// double-sided bypass, near-plane fast path + clip_near straddle fallback, clip_reject,
-// ndc_to_screen) is a deliberately reduced copy of raster_triangles' — wireframe carries no
-// material/texture/tangent/vcol/uv1 attributes and no normal flip, so the two aren't worth
-// unifying. INVARIANT: if a shared front-end rule changes (cull winding, near_plane
-// semantics, chunk sizing), mirror it in BOTH this function and raster_triangles.
+// Work-stealing wireframe pass: each worker claims triangle chunks over [0, total) and draws
+// their three edges as DDA lines in m_wireframe_color; one shared colour plus draw_line's
+// atomic CAS depth min make the output identical to a serial draw for any worker count. The
+// geometry front-end (chunked steal loop, world-space backface cull incl. the double-sided bypass,
+// near-plane fast path + clip_near straddle fallback, clip_reject, ndc_to_screen) is a
+// deliberately reduced copy of raster_triangles': wireframe carries no material/texture/
+// tangent/vcol/uv1 attributes and no normal flip, so the two are not worth unifying.
+// INVARIANT: if a shared front-end rule changes (cull winding, near_plane semantics, chunk
+// sizing), mirror it in BOTH this function and raster_triangles.
 
 void Renderer::raster_wireframe()
 {
@@ -548,15 +540,14 @@ void Renderer::raster_wireframe()
 }
 
 // Transparent resolve pass: each worker steals disjoint row bands within the merged
-// transparent bounding box (set by render()) and composites that pixel's accumulated
-// fragment list back-to-front over the opaque colour already in the framebuffer. Pixels
-// outside the box were never touched (heads still SENTINEL), so the sweep skips them.
-// The common single-layer pixel takes a fast path that composites the
-// lone fragment directly, skipping the gather vector and the sort entirely; only multi-layer
-// pixels build and sort the stack. Disjoint pixels + the post-accumulate barrier make the
-// single-threaded color_at/set_color_at safe here (no two workers touch one slot; the
-// half-block 2-px-per-cell packing is a present()-only concern). Each resolved head is
-// reset to SENTINEL so the array self-cleans for the next frame.
+// transparent bounding box (set by render()) and composites each pixel's fragment list
+// back-to-front over the opaque colour already in the framebuffer; pixels outside the box
+// were never touched (heads still SENTINEL). The common single-layer pixel composites its
+// lone fragment directly, skipping the gather vector and the sort. Disjoint pixels plus the
+// post-accumulate barrier make the single-threaded color_at/set_color_at safe here (no two
+// workers touch one slot; the half-block 2-px-per-cell packing is a present()-only concern).
+// Each resolved head is reset
+// to SENTINEL so the array self-cleans for the next frame.
 
 void Renderer::resolve_pixels()
 {
@@ -822,23 +813,18 @@ void Renderer::render(
         dispatch(Pass::TransAccum);
 
         // Merge the per-worker touched-pixel boxes so the Resolve sweep covers only the
-        // transparent region instead of the whole frame. Merge straight into m_res_box (the
-        // member resolve_pixels() reads — workers can't see a render() stack local); reset it
-        // to empty first since it persists across frames. An empty merged box means zero
-        // fragments were pushed (a box only grows inside push, after the head is published),
-        // so every head is still SENTINEL — nothing to composite or self-clean, skip the
-        // whole pass (also subsumes the fully-occluded / fully-culled transparent case).
-        //
-        // A single AABB degrades to ~full-frame when transparency occupies separated screen
-        // regions (objects in opposite corners), so the gap between them is still swept. That
-        // is the floor, not a regression: the sweep is bounded by `=` the old unconditional
-        // full-frame sweep (identical SENTINEL checks), and the per-push box cost is in the
-        // noise — measured neutral-to-faster even in that worst case. A multi-box / per-tile
-        // dirty mask would tighten the sweep but adds per-frame cost that loses on the common
-        // single-region case, so it is deliberately not done.
-        //
-        // An empty box ({INT_MAX, INT_MIN}) is the identity for this min/max reduction, so
-        // workers that pushed nothing fold in without a guard and leave the result empty.
+        // transparent region. Merge straight into m_res_box (the member resolve_pixels()
+        // reads; workers cannot see a render() stack local), resetting it first since it
+        // persists across frames. An empty merged box means zero pushes (a box only grows
+        // inside push, after the head is published), so every head is still SENTINEL and the
+        // whole pass is skipped, subsuming the fully-occluded / fully-culled case. A single
+        // AABB degrades toward full-frame when transparency occupies separated screen
+        // regions; that is the floor, not a regression: the sweep is bounded by `=` the old
+        // unconditional full-frame sweep and measured neutral-to-faster even in that worst
+        // case, while a multi-box / per-tile dirty mask would add per-frame cost that loses
+        // on the common single-region case, so it is deliberately not done. An empty box
+        // ({INT_MAX, INT_MIN}) is the min/max identity, so workers that pushed nothing fold
+        // in without a guard.
         m_res_box = TouchBox{};
         for (int w = 0; w < m_n_workers; w++)
         {

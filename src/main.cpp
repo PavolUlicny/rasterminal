@@ -183,43 +183,37 @@ namespace
         camera.first_person = first_person;
         camera.fp_centre = centre;
         // Movement scaled to the model, for the same reason the zoom step scales with
-        // distance: at multiplier 1 the model's diameter takes about two seconds to
-        // cross, so the keys feel the same on a 0.01-unit model and a 10000-unit one.
-        // `radius` is half the bounding-box diagonal, so a strongly anisotropic model
-        // (a long thin one) is scaled by its long axis and even FP_SPEED_MIN crosses the
-        // narrow one quickly. Accepted: sizing from the smallest extent instead would
-        // make every ordinary model crawl, and the fix if it ever bites is to lower
-        // FP_SPEED_MIN, now that the flag's range derives from that one constant.
+        // distance: at multiplier 1 the model's diameter takes about two seconds to cross, so
+        // the keys feel the same on a 0.01-unit model and a 10000-unit one. `radius` is half
+        // the bounding-box diagonal, so a long thin model is scaled by its long axis and even
+        // FP_SPEED_MIN crosses the narrow one quickly. Accepted: sizing from the smallest
+        // extent would make every ordinary model crawl, and the fix if it ever bites is to
+        // lower FP_SPEED_MIN, which the flag's range derives from.
         camera.fp_base_speed = radius;
         camera.fp_speed = args.first_person_speed;
         camera.target = centre;
         // --zoom's parse-time bound [0.2, 100] lands the distance inside the
         // interactive clamp [near*2, far*0.5] by construction, so no clamp here.
         camera.distance = radius * 2.0f / args.zoom;
-        // Scale near/far to the model so arbitrarily-sized models aren't clipped.
-        // Accepted in first-person: orbit can never approach closer than near_plane * 2,
-        // but flying has no inner bound by design, so a surface can be pushed inside the
-        // near plane and vanish before the camera reaches it. Shrinking near for the
-        // mode would cost depth precision across the whole scene to fix the last few
-        // centimetres of approach.
+        // Scale near/far to the model so arbitrarily-sized models aren't clipped. Accepted in
+        // first-person: unlike orbit (never closer than near_plane * 2), flying has no inner
+        // bound by design, so a surface can be pushed inside the near plane and vanish before
+        // the camera reaches it; shrinking near for the mode would cost depth precision
+        // scene-wide to fix the last few centimetres of approach.
         camera.near_plane = radius * 0.01f;
         camera.far_plane = radius * 20.0f;
-        // Initial pose via orbit() from the identity orientation, the owner of the
-        // turntable composition, so the flags reach exactly the drag-reachable pose
-        // family. orbit() negates dx (screen-drag convention), so pass -yaw to keep
-        // positive --yaw = positive world-Y spin: the model's front moves left on
-        // screen, like --spin-direction left. As with spin, that on-screen direction
-        // reads mirrored when --pitch past +-90 puts the view upside down (accepted).
-        //
-        // orbit(), not look(): the launch pose is built as a turntable pose in both
-        // modes, which is also what makes it a valid first-person state, since
-        // `target` is left at the centre and the eye lands `distance` away along the
-        // camera's back axis, exactly the target = eye + forward * distance invariant
-        // first-person maintains. --first-person clamps the pitch, since a fly camera
-        // must not start upside down and --pitch accepts past +-90. Clamped to
-        // Camera::FP_MAX_PITCH, the same limit look() enforces, not to a round 90: the
-        // launch pose has to be a pose the mode can hold, or the first look input of
-        // any direction would be forced to pitch back off the pole.
+        // Initial pose via orbit() from the identity orientation, the owner of the turntable
+        // composition, so the flags reach exactly the drag-reachable pose family. orbit()
+        // negates dx (screen-drag convention), so pass -yaw to keep positive --yaw = positive
+        // world-Y spin: the front moves left on screen, like --spin-direction left (reads
+        // mirrored when --pitch past +-90 puts the view upside down; accepted, as with spin).
+        // orbit(), not look(), in both modes: the launch pose is a turntable pose, which is
+        // also a valid first-person state (`target` stays at the centre and the eye lands
+        // `distance` along the back axis, exactly the target = eye + forward * distance
+        // invariant first-person maintains). --first-person clamps the pitch, since a fly
+        // camera must not start upside down and --pitch accepts past +-90; clamped to
+        // Camera::FP_MAX_PITCH, the same limit look() enforces, not a round 90, or the first
+        // look input of any direction would be forced to pitch back off the pole.
         const float pitch_rad = first_person
                                     ? clamp(to_radians(args.pitch), -Camera::FP_MAX_PITCH, Camera::FP_MAX_PITCH)
                                     : to_radians(args.pitch);
@@ -372,15 +366,13 @@ int main(int argc, char *argv[])
 
     const bool bench_mode = args.bench > 0;
 
-    // Interactive rendering writes the ANSI frame stream to stdout and reads raw
-    // input from stdin, so both must be terminals; a piped/redirected fd is failed
-    // loud before the load rather than fed escape soup (or left in a dead input
-    // loop). --bench is headless and exempt. Rejecting the display-only stdin case
-    // (e.g. `--spin < /dev/null`) is deliberate: without working input the session
-    // can only be killed by signal, and raw-mode setup silently fails anyway.
-    // --no-input deliberately does NOT relax this: it ignores the bindings but Q
-    // still quits, so stdin must stay readable for the session to be exitable
-    // without a signal.
+    // Interactive rendering writes the ANSI frame stream to stdout and reads raw input from
+    // stdin, so both must be terminals; a piped/redirected fd fails loud before the load
+    // rather than being fed escape soup or left in a dead input loop. --bench is headless and
+    // exempt. Rejecting the display-only stdin case (e.g. `--spin < /dev/null`) is deliberate:
+    // without working input the session can only be killed by signal, and raw-mode setup
+    // silently fails anyway. --no-input deliberately does NOT relax this: it ignores the
+    // bindings but Q still quits, so stdin must stay readable to exit without a signal.
     // color_mode is assigned in the block below (from detect_term_color, or forced by
     // --color when not auto). This initializer is never actually read: the interactive
     // path always overwrites it before the Framebuffer ctor, and --bench returns from
@@ -511,22 +503,16 @@ int main(int argc, char *argv[])
     float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
     int mouse_last_x = 0;        // last seen drag position (terminal cells)
     int mouse_last_y = 0;
-    // Whether mouse_last_* holds a position from the drag in progress. A motion
-    // report can arrive without its press (a malformed press is dropped by the
-    // parser, and a drag can begin outside the window), and orbiting by the delta
-    // from a stale position would snap the camera; the first such motion seeds
-    // instead.
-    //
-    // Deliberately not also bounded by elapsed time. Button-event tracking reports
-    // motion only on a change of character cell, so a slow or paused drag can go
-    // seconds between reports and any timeout would re-seed mid-drag, which reads
-    // as the camera refusing to move. A missed release then leaves the flag armed,
-    // but the next drag opens with a press and that press re-seeds, so the stale
-    // position is overwritten before it can be used. The one case that slips
-    // through is a lost release followed by a dropped press, where the guard has
-    // nothing to re-seed from and the first motion orbits from the old position;
-    // that needs two malformed reports in a row and costs one jump, which is
-    // cheaper than a timeout that would break every slow drag.
+    // Whether mouse_last_* holds a position from the drag in progress. A motion report can
+    // arrive without its press (a malformed press is dropped by the parser, and a drag can
+    // begin outside the window), and orbiting by the delta from a stale position would snap
+    // the camera, so the first such motion seeds instead. Deliberately not also bounded by
+    // elapsed time: button-event tracking reports motion only on a change of character cell,
+    // so a slow or paused drag can go seconds between reports and any timeout would re-seed
+    // mid-drag, which reads as the camera refusing to move. A missed release leaves the flag
+    // armed, but the next drag opens with a press that re-seeds; the one case that slips
+    // through (a lost release followed by a dropped press) needs two malformed reports in a
+    // row and costs one jump, cheaper than a timeout that would break every slow drag.
     bool mouse_dragging = false;
     // Flag-driven runtime state; value-initialised only pro forma, the real launch
     // values come from reset_to_launch_state() below.
@@ -610,16 +596,13 @@ int main(int argc, char *argv[])
             break;
         }
 
-        // Drain all queued input events so held keys and mouse feel responsive.
-        // poll_event returns Type::None only when nothing is left to report, so this
-        // retires a whole burst rather than one sequence per frame (see its contract
-        // for the one platform where the non-blocking read is not a hard guarantee).
-        //
-        // Bounded so a source that produces events as fast as they are consumed (a
-        // mouse flood, a stuck key) cannot hold the frame: without the cap the loop
-        // never reaches the render, and the quit check sits outside it, so even
-        // Ctrl+C would not get the viewer back. Far above a real burst, so ordinary
-        // input is always retired in one pass; a leftover is picked up next frame.
+        // Drain all queued input events so held keys and mouse feel responsive: poll_event
+        // returns Type::None only when nothing is left, so this retires a whole burst per
+        // frame (see its contract for the one platform where the non-blocking read is not a
+        // hard guarantee). Bounded so a source producing events as fast as they are consumed
+        // (a mouse flood, a stuck key) cannot hold the frame: without the cap the loop never
+        // reaches the render, and the quit check sits outside it, so even Ctrl+C would not get
+        // the viewer back. Far above a real burst; a leftover is picked up next frame.
         constexpr int MAX_EVENTS_PER_FRAME = 4096;
         for (int handled = 0; handled < MAX_EVENTS_PER_FRAME; handled++)
         {
@@ -760,25 +743,20 @@ int main(int argc, char *argv[])
             }
             else if (ev.type == platform::InputEvent::Type::MouseMove)
             {
-                // A single report cannot move the pointer further than the terminal is
-                // wide or tall, so a delta that big is not a pointer movement: either
-                // the origin is stale, or the report names a cell that does not exist.
-                // The parser bounds coordinates against a fixed ceiling because it
-                // cannot know the terminal size, and everything between that ceiling
-                // and the real size lands here (column 9000 in an 80-column terminal
-                // would otherwise orbit by a hundred turns).
-                //
-                // Checked on the delta rather than the position, which matters when
-                // cols/rows are wrong: get_terminal_size falls back to 80x24 when every
-                // ioctl fails, and rejecting positions outside that would leave a real
-                // wider terminal unable to drag past column 80. Judging the delta costs
-                // at worst one re-seeded report there, and no region stops working.
-                // (The fallback already misscales the orbit below and the framebuffer
-                // itself, so this is not a new dependency on that size being right.)
-                //
-                // Re-seeded, not clamped: clamping invents a movement, and the bogus
-                // coordinate would still be the origin the NEXT delta is measured from,
-                // which is the same snap one report later.
+                // A single report cannot move the pointer further than the terminal is wide
+                // or tall, so a delta that big is not a pointer movement: either the origin
+                // is stale or the report names a cell that does not exist (the parser bounds
+                // coordinates only against a fixed ceiling, since it cannot know the terminal
+                // size; everything between that ceiling and the real size lands here, and
+                // column 9000 in an 80-column terminal would otherwise orbit by a hundred
+                // turns). Checked on the DELTA, not the position: get_terminal_size falls
+                // back to 80x24 when every ioctl fails, and rejecting positions outside that
+                // would leave a real wider terminal unable to drag past column 80, while
+                // judging the delta costs at worst one re-seeded report there (the fallback
+                // already misscales the orbit and the framebuffer, so this adds no new
+                // dependency on the size being right). Re-seeded, not clamped: clamping
+                // invents a movement, and the bogus coordinate would still be the origin the
+                // NEXT delta is measured from, the same snap one report later.
                 const bool implausible = std::abs(ev.x - mouse_last_x) > cols || std::abs(ev.y - mouse_last_y) > rows;
                 if (mouse_dragging && !implausible)
                 {

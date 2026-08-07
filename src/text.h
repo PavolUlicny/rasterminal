@@ -92,32 +92,25 @@ namespace text_detail
 
     // Rendered columns for one code point: 0 for a nonspacing mark, 2 for a double-width glyph,
     // 1 otherwise. A short range list rather than a full Unicode width table, so the rule that
-    // decides every doubtful case is which way the error is safe.
-    //
-    // The caller pads a line to exactly the terminal width, so UNDER-counting is the harmful
-    // direction: it runs the line past the right edge, where the terminal clips whatever the
-    // layout protected (the fps reading). Over-counting only leaves a column or two of the
-    // trailing pad unused, which is invisible against the bar background. Every judgement call
-    // below therefore rounds up, and anything not positively known to be zero-width is one.
+    // decides every doubtful case is which way the error is safe: the caller pads a line to
+    // exactly the terminal width, so UNDER-counting runs the line past the right edge, where
+    // the terminal clips whatever the layout protected (the fps reading), while over-counting
+    // only leaves an invisible pad column unused. Every judgement call below therefore rounds
+    // up, and anything not positively known to be zero-width is one.
     inline int cp_width(int32_t cp)
     {
         // Nonspacing (Unicode Mn/Me) only. The SPACING combining marks that share these blocks
         // (Mc: U+0903, U+093B, U+093E-0940, U+0949-094C, U+094E-094F in Devanagari, and their
         // analogues elsewhere) occupy a column of their own and are deliberately absent, so a
-        // block range is never used where the block mixes the two classes. When in doubt, leave
-        // a mark out: counted as one column it costs a column of pad, counted as zero it pushes
-        // the line off the edge.
-        //
-        // Two of these ranges (U+302A-302D, U+3099-309A) sit INSIDE the coarse Wide ranges
-        // further down; ZERO is consulted first, so they win, which is the point. They attach to
-        // the preceding syllable and add no column. U+302E-302F, the Hangul tone marks in the
-        // same block, are spacing and deliberately absent.
-        //
-        // U+FE0F (VARIATION SELECTOR-16) is zero HERE and handled with context in
-        // display_width: it promotes the base character it follows to emoji presentation, which
-        // the terminal draws two columns wide, so its cost depends on what the base already
-        // measured. A context-free answer is wrong either way round (one column double-counts a
-        // base that was already wide, zero under-counts a narrow one).
+        // block range is never used where the block mixes the two classes; when in doubt leave
+        // a mark out (one column costs pad, zero pushes the line off the edge). Two of these
+        // ranges (U+302A-302D, U+3099-309A) sit INSIDE the coarse Wide ranges further down;
+        // ZERO is consulted first, so they win, which is the point (U+302E-302F, the spacing
+        // Hangul tone marks in the same block, are deliberately absent). U+FE0F is zero HERE
+        // and handled with context in display_width: it promotes the base it follows to emoji
+        // presentation (two columns), so its cost depends on what the base already measured,
+        // and a context-free answer is wrong either way round (one double-counts a wide base,
+        // zero under-counts a narrow one).
         static constexpr CpRange ZERO[] = {
             { 0x0300, 0x036F }, // combining diacriticals
             { 0x0483, 0x0489 }, { 0x0591, 0x05BD }, { 0x05BF, 0x05BF }, { 0x05C1, 0x05C2 }, { 0x05C4, 0x05C5 },
@@ -175,19 +168,16 @@ namespace text_detail
 
 } // namespace text_detail
 
-// Rendered width of a UTF-8 string in terminal columns. An invalid byte counts as one column,
-// which is what sanitize_controls leaves behind for it ('?'). Callers that lay out a fixed-width
-// line measure with this rather than with the byte count: a byte count is a safe upper bound but
-// a loose one (three bytes for a one-column glyph), and a bar padded to a loose bound stops
-// visibly short of the terminal's right edge.
-//
-// This is the layer that knows about SEQUENCES; cp_width answers only about a code point in
-// isolation. Exactly one sequence rule exists, for U+FE0F, explained at the branch below. A
-// regional-indicator PAIR deliberately gets none: a terminal that clusters them draws one flag
-// in two columns and one that does not draws two boxed letters in four, both are common, and
-// charging each indicator its full two columns is exact for the second and generous for the
-// first, which is the direction this file rounds. A rule that is exact on only some terminals
-// under-measures on the rest, and under-measuring is what clips the field the bar protects.
+// Rendered width of a UTF-8 string in terminal columns; an invalid byte counts as one, which is
+// what sanitize_controls leaves behind for it ('?'). Fixed-width layout measures with this
+// rather than the byte count, a safe but loose upper bound (three bytes for a one-column glyph)
+// that stops a padded bar visibly short of the right edge. This is the layer that knows about
+// SEQUENCES; cp_width answers only in isolation. Exactly one sequence rule exists, for U+FE0F
+// (at the branch below). A regional-indicator PAIR deliberately gets none: a clustering
+// terminal draws one flag in two columns, a non-clustering one two boxed letters in four, both
+// are common, and charging each indicator its full two columns is exact for the second and
+// generous for the first, the direction this file rounds. A rule exact on only some terminals
+// under-measures on the rest, and under-measuring clips the field the bar protects.
 inline size_t display_width(std::string_view text)
 {
     constexpr int32_t VS16 = 0xFE0F; // emoji presentation selector
@@ -214,14 +204,13 @@ inline size_t display_width(std::string_view text)
 }
 
 // Replace everything that could make a terminal do something other than draw a character with
-// '?'. A model path is an arbitrary byte string on POSIX (and need not be UTF-8 at all), so this
-// covers more than the C0 controls: C1 (0x80-0x9F, which a terminal not in UTF-8 mode reads as
-// escape-sequence introducers, 0x9B being CSI), any byte sequence that is not valid UTF-8 (its
-// rendering, and therefore its width, is the terminal's guess), and the bidi and zero-width
-// formatting controls, which can silently reorder or hide the rest of the name.
-//
-// One '?' per replaced BYTE, so the result is exactly as long as the input: both the byte budget
-// truncate_middle applies and the width bound the layout derives from it survive the pass.
+// '?'. A model path is an arbitrary byte string on POSIX (need not be UTF-8 at all), so this
+// covers more than the C0 controls: C1 (0x80-0x9F, escape-sequence introducers to a terminal
+// not in UTF-8 mode, 0x9B being CSI), any byte sequence that is not valid UTF-8 (its rendering,
+// and therefore its width, is the terminal's guess), and the bidi and zero-width formatting
+// controls, which can silently reorder or hide the rest of the name. One '?' per replaced BYTE,
+// so the result is exactly as long as the input: both truncate_middle's byte budget and the
+// width bound the layout derives from it survive the pass.
 inline std::string sanitize_controls(std::string_view text)
 {
     // Unicode general category Cf in full (15.1), plus the line and paragraph separators. The
@@ -264,24 +253,18 @@ inline std::string sanitize_controls(std::string_view text)
 }
 
 // Shorten text to at most max_bytes bytes by replacing its middle with "...", so a long field
-// cannot push the fields after it past the terminal edge (the HUD is drawn with auto-wrap off,
-// so an overlong line is clipped rather than wrapped). The middle is cut rather than the tail so
-// that a filename keeps its extension.
-//
-// The budget is in bytes, not columns, and stays that way now that display_width() exists: bytes
-// bound the storage as well as the width (no 1-byte code point is wider than one column, and
-// every 2-column code point costs at least 3 bytes, so byte count >= column count always), and
-// walking a middle split by columns from both ends would buy a slightly longer name for the one
-// case, a name in a non-Latin script, where the extra characters are least likely to be what
-// distinguishes it. The caller measures the RESULT with display_width to lay the line out, so a
-// loose budget no longer costs the layout anything.
-//
-// Splits land on a code point boundary but NOT a grapheme cluster boundary, so a cut between a
-// base character and its combining marks separates them, and a leading orphan mark on the tail
-// renders against the ellipsis's last dot. Accepted, not fixed: cluster boundaries need Unicode
-// tables nothing else here wants, the output stays well-formed UTF-8 either way (only the
-// rendering is odd), and it takes a filename with combining marks landing on one of two exact
-// byte offsets.
+// cannot push the fields after it past the terminal edge; the middle rather than the tail so a
+// filename keeps its extension. The budget is in BYTES, not columns, and stays that way now
+// that display_width() exists: bytes bound the storage as well as the width (no 1-byte code
+// point exceeds one column and every 2-column code point costs at least 3 bytes, so byte count
+// >= column count always), and a column-walked split would buy a slightly longer name only for
+// a non-Latin-script name, where the extra characters are least likely to be what
+// distinguishes it; the caller measures the RESULT with display_width, so a loose budget costs
+// the layout nothing. Splits land on a code point boundary but NOT a grapheme cluster
+// boundary, so a cut can separate a base from its combining marks and render an orphan mark
+// against the ellipsis. Accepted, not fixed: cluster boundaries need Unicode tables nothing
+// else here wants, the output stays well-formed UTF-8 either way, and it takes combining marks
+// landing on one of two exact byte offsets.
 inline std::string truncate_middle(std::string_view text, size_t max_bytes)
 {
     // ASCII, so the marker's own width is fixed and independent of the terminal's encoding.

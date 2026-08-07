@@ -206,15 +206,14 @@ template <bool TC> void Framebuffer::present_impl()
     };
 
     // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. Deliberately not
-    // color.h's append_fg_sgr, which is the shared spelling for styling a string: this one emits a
-    // BODY so a changed fg and bg combine into a single escape, writes into a fixed buffer rather
-    // than a std::string, and goes through write_byte's LUT to avoid a division. It runs per cell
-    // per frame, where those three differences are the point; append_fg_sgr runs a dozen times a
-    // frame, where clarity is. The two colour modes
-    // differ only here: 38;2;r;g;b vs 38;5;idx for fg, 48;2;r;g;b vs 48;5;idx for bg. `if constexpr`
-    // gives each present_impl instantiation only its own body, so the truecolor bytes are exactly the
-    // historical output. `raw` is a raw cell value from load_color (packed RGB in truecolor, palette
-    // index in the low byte in 256). `lead` is '3' (fg) or '4' (bg).
+    // color.h's append_fg_sgr (the shared spelling for styling a string): this one emits a BODY so
+    // a changed fg and bg combine into one escape, writes into a fixed buffer, and uses
+    // write_byte's LUT to avoid a division; it runs per cell per frame, where those differences
+    // are the point, while append_fg_sgr runs a dozen times a frame, where clarity is. The two
+    // colour modes differ only here (38;2;r;g;b vs 38;5;idx, 48;... for bg); `if constexpr` gives
+    // each present_impl instantiation only its own body, keeping the truecolor bytes exactly the
+    // historical output. `raw` is load_color's cell value (packed RGB in truecolor, palette index
+    // in the low byte in 256); `lead` is '3' (fg) or '4' (bg).
     auto write_color = [&](char lead, uint32_t raw)
     {
         tmp[n++] = lead;
@@ -398,15 +397,12 @@ template <bool TC> void Framebuffer::present_impl()
     m_buf += "\033[0m";
 
     // The HUD changes at the fps latch rate or on a keypress, far below the frame rate, so an
-    // unchanged line is skipped outright (most frames emit zero HUD bytes). A full redraw always
-    // re-emits: \033[2J wiped the row.
-    //
-    // This does give up the old block's incidental self-healing, where re-writing the row every
-    // frame repainted it after something else wrote over the terminal. Deliberate: the pixel
-    // rows above have never had that property (they are diffed against m_prev_color the same
-    // way), so unconditional HUD output could only ever restore one row of a screen that was
-    // corrupted as a whole, and the recovery for both is the same full redraw, which any resize
-    // already triggers.
+    // unchanged line is skipped outright (most frames emit zero HUD bytes); a full redraw always
+    // re-emits, since \033[2J wiped the row. This deliberately gives up the old incidental
+    // self-healing of re-writing the row every frame: the pixel rows above never had that
+    // property (diffed against m_prev_color the same way), so unconditional HUD output could
+    // only restore one row of a screen corrupted as a whole, and the recovery for both is the
+    // same full redraw any resize already triggers.
     if (m_hud.empty())
     {
         // Nothing is drawn, so nothing is on the row that a later frame could match against.

@@ -57,16 +57,13 @@ bool decode_draco_mesh(
     const draco::PointAttribute *uv1 = attr_or_null(*mesh, uv1_id);
     const draco::PointAttribute *col = attr_or_null(*mesh, color_id);
 
-    // Partial file-size-based bound (per CLAUDE.md "Loader security"): catches the
-    // case where Draco decoded successfully but reports counts that would OOM our
-    // flat-float resize. **It does NOT bound Draco's own internal allocations during
-    // DecodeMeshFromBuffer** — a crafted bitstream that inflates internally and only
-    // then reports small counts still risks an uncaught bad_alloc inside Draco. Cap
-    // here is 200× the compressed input (Draco's real-world expansion is ~5–10×, so
-    // 200× leaves generous headroom for legitimate highly-compressed content while
-    // still rejecting our-side OOM attacks). Division form sidesteps overflow at huge
-    // sizes. A truly hardened path would pre-parse Draco's header for the declared
-    // point count before calling Decode, which the public API doesn't expose.
+    // Partial file-size bound (CLAUDE.md "Loader security"): rejects decoded counts that would
+    // OOM our flat-float resize, but does NOT bound Draco's own allocations inside
+    // DecodeMeshFromBuffer: a bitstream that inflates internally and only then reports small
+    // counts can still bad_alloc inside Draco, and the public API exposes no header pre-parse
+    // of the declared point count to close that. 200x the compressed input leaves generous
+    // headroom over Draco's real-world ~5-10x expansion; the division form sidesteps overflow
+    // at huge sizes.
     constexpr size_t MAX_EXPANSION = 200;
     const size_t n = mesh->num_points();
     const size_t nf = mesh->num_faces();

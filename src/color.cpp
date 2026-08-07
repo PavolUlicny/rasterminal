@@ -164,14 +164,12 @@ namespace
             scan(0, 64);
         }
 
-        // Exact-palette overwrite: a palette colour must round-trip to itself (distance zero) even
-        // when its cell centre, up to ~2.6 RGB units away, is nearest a different entry: a pure
-        // black background must never wash to the adjacent grey. With the current CIELAB constants
-        // every such cell already picks its contained colour, so this pins the guarantee rather
-        // than changing anything today (under OKLab it was load-bearing: black's cell centre sat
-        // nearer grey 8 than black). At 64^3 no two palette entries share a cell (the closest
-        // pairs, cube grey levels vs their ramp neighbours 3 units away such as 95/98, land in
-        // adjacent cells), so overwrites cannot collide.
+        // Exact-palette overwrite: a palette colour must round-trip to itself even when its cell
+        // centre (up to ~2.6 RGB units away) is nearest a different entry. Under the current
+        // CIELAB constants this pins the guarantee rather than changing anything (under OKLab it
+        // was load-bearing: black's cell centre sat nearer grey 8 than black). Overwrites cannot collide: at
+        // 64^3 no two palette entries share a cell, the closest pairs (cube grey levels vs ramp
+        // neighbours 3 units away, e.g. 95/98) landing in adjacent cells.
         for (int j = 0; j < n_pal; ++j)
         {
             lut[quant256_idx(quant256_palette_entry(j))] = static_cast<uint8_t>(16 + j);

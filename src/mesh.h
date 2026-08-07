@@ -75,14 +75,12 @@ struct Mesh
     // compute_normals() when the file has no normals. Returns false on failure.
     bool load_obj(const std::string &path, int n_threads = 1, float crease_cos = -1.0f);
 
-    // Load geometry from a PLY file (ASCII or binary little/big-endian).
-    // Supports vertex positions, normals (nx/ny/nz), and UVs (s/t, u/v, texture_u/v).
-    // A `comment TextureFile <name>` header (MeshLab / photogrammetry convention)
-    // binds an albedo texture to the default material, resolved relative to the PLY
-    // directory; only honoured when the mesh has UVs, and a missing/undecodable file
-    // is silently dropped (consistent with the OBJ/glTF loaders).
-    // crease_cos is forwarded to compute_normals() when normals are absent.
-    // Returns false on failure.
+    // Load geometry from a PLY file (ASCII or binary little/big-endian): positions, normals
+    // (nx/ny/nz), UVs (s/t, u/v, texture_u/v). A `comment TextureFile <name>` header
+    // (MeshLab / photogrammetry convention) binds an albedo texture to the default material,
+    // resolved relative to the PLY directory, honoured only when the mesh has UVs; a missing
+    // or undecodable file drops silently like the OBJ/glTF loaders. crease_cos is forwarded
+    // to compute_normals() when normals are absent. Returns false on failure.
     bool load_ply(const std::string &path, float crease_cos = -1.0f);
 
     // Load geometry from an STL file (ASCII or binary).
@@ -101,34 +99,27 @@ struct Mesh
     bool load_gltf(const std::string &path, int n_threads = 1, float crease_cos = -1.0f);
 
   private:
-    // Compute smooth per-vertex normals from face geometry, splitting vertices
-    // across hard edges. crease_cos is the cosine of the crease-angle threshold:
-    // two faces sharing an edge are smoothed together iff the angle between their
-    // normals stays below the threshold (dot of unit normals >= crease_cos),
-    // otherwise the shared vertices split so each side keeps its own normal.
-    // crease_cos = -1 (cos 180deg) never creases across edges — full smoothing
-    // on manifold input; bowtie (point-only-shared) vertices always split.
-    // May append new entries to `vertices` (and the parallel `vertex_colors` when
-    // present) and rewrite Triangle::v[] indices to point at the split copies.
-    // Called by each loader when the file provides no normal data.
+    // Compute smooth per-vertex normals, splitting vertices across hard edges. crease_cos
+    // is the cosine of the crease threshold: faces sharing an edge smooth together iff the
+    // dot of their unit normals >= crease_cos, else the shared vertices split so each side
+    // keeps its own normal. -1 (cos 180deg) never creases (full smoothing on manifold
+    // input); bowtie (point-only-shared) vertices always split. May append to `vertices`
+    // (and the parallel `vertex_colors` when present) and rewrite Triangle::v[] to the
+    // split copies. Called by each loader when the file provides no normal data.
     //
-    // weld (optional) maps each vertex index to a position-group id so adjacency
-    // is computed in welded space: distinct vertices sharing a group are treated
-    // as one position for edge-sharing and smoothing, but stay separate output
-    // vertices (each keeps its own UV) sharing the welded normal. OBJ supplies it
-    // to smooth across UV seams (the loader splits one position into several
-    // vertices by texcoord); the source OBJ vertex index is the group id, and
-    // n_groups is the upper bound on those ids (the OBJ position count). Passing
-    // weld = nullptr means identity grouping (group id == vertex index) —
-    // byte-identical to no welding, used by PLY/STL/glTF; n_groups is ignored.
+    // weld (optional) maps vertex index -> position-group id so adjacency runs in welded
+    // space: vertices sharing a group count as one position for smoothing but stay
+    // separate outputs (each keeps its own UV) sharing the welded normal. OBJ supplies it
+    // to smooth across UV seams (group id = source OBJ position index, n_groups = the OBJ
+    // position count); nullptr means identity grouping, byte-identical to no welding
+    // (PLY/STL/glTF; n_groups ignored).
     //
-    // smooth_groups (optional, OBJ only) carries one smoothing-group id per
-    // triangle (parallel to `triangles`). When non-null, groups are authoritative
-    // and crease_cos is ignored: two faces sharing an edge smooth iff they share
-    // the same non-zero group id; id 0 (OBJ `s off`/`s 0`) never smooths, even
-    // with another id-0 face. Composes with weld — a welded UV seam smooths iff
-    // both halves share a position group AND the faces share a smoothing group.
-    // nullptr selects the crease-angle path above (PLY/STL/glTF and group-less OBJs).
+    // smooth_groups (optional, OBJ only): one smoothing-group id per triangle. When
+    // non-null, groups are authoritative and crease_cos is ignored: faces sharing an edge
+    // smooth iff they share the same non-zero id; id 0 (OBJ `s off`/`s 0`) never smooths, even with
+    // another id-0 face. Composes with weld: a welded UV seam smooths iff the halves share
+    // a position group AND the faces share a smoothing group. nullptr selects the
+    // crease-angle path (PLY/STL/glTF and group-less OBJs).
     void compute_normals(
         float crease_cos,
         const std::vector<uint32_t> *weld = nullptr,

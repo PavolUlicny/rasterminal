@@ -66,20 +66,18 @@ namespace
         return false;
     }
 
-    // Bake MTL -s (scale) / -o (origin offset) into a texture slot's 2x3 affine, the same
+    // Bake MTL -s (scale) / -o (origin offset) into the texture slot's 2x3 affine, the same
     // affine glTF's KHR_texture_transform feeds (TexSlot::t in light.h, applied per-sample by
-    // apply_tex_transform). MTL authors offset/scale in OBJ's stored (v-up) UV space and has no
-    // rotation term, so this acts directly on the interpolated UV with NO v-flip fold — unlike
-    // mesh_gltf's bake_transform, whose authoring space is v-down. Scale-then-offset:
-    //   feed.u = sx*u + ox,  feed.v = sy*v + oy.
-    // The -o SIGN is deliberate: the Wavefront spec phrases -o only as "shifting the map origin",
-    // which is ambiguous, so we add the offset to the scaled coordinate to match
-    // KHR_texture_transform's scale-then-offset — this makes OBJ<->glTF round-trips of the same
-    // authored transform agree. Flip ox/oy here if a stricter literal reading is ever needed.
-    // Only the u/v components matter; the 3rd (w) value is for 3-D solid textures and is ignored,
-    // as is -t (turbulence) — a procedural noise displacement, not an affine, hence not
-    // representable here. Identity (scale 1, offset 0) leaves has_transform false so the
-    // no-transform sample fast path stays byte-identical.
+    // apply_tex_transform). MTL authors its offset/scale in OBJ's stored v-up UV space with no
+    // rotation term, so
+    // there is NO v-flip fold, unlike mesh_gltf's bake_transform (v-down authoring space).
+    // Scale-then-offset: feed.u = sx*u + ox, feed.v = sy*v + oy. The -o SIGN is deliberate: the
+    // Wavefront spec's "shifting the map origin" is ambiguous, so the offset adds to the scaled
+    // coordinate to match KHR_texture_transform and make OBJ<->glTF round-trips of the same
+    // authored transform agree (flip ox/oy here if a stricter literal reading is ever needed).
+    // The 3rd (w) component (3-D solid textures) and -t (turbulence: procedural noise
+    // displacement, not an affine) are ignored. Identity (scale 1, offset 0) leaves
+    // has_transform false so the no-transform sample fast path stays byte-identical.
     void bake_obj_transform(TexSlot &slot, const tinyobj::texture_option_t &opt)
     {
         const float sx = opt.scale[0];
@@ -388,16 +386,12 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
     if (attrib.normals.empty() || !all_have_normals)
     {
-        // OBJ smoothing groups, when authored, are authoritative over the crease
-        // angle. Build a per-triangle group id (parallel to `triangles`) mirroring
-        // the triangle-build loop's order exactly so the indices line up. Only
-        // built when the file actually authors `s` directives — otherwise the
-        // crease-angle path runs byte-identically (nullptr).
-        //
-        // Any non-zero id proves a directive exists, so the disk rescan is needed
-        // only to disambiguate the all-zero case (no directive vs. explicit `s off`,
-        // which tinyobjloader both map to 0): the former is the angle fallback, the
-        // latter is faceted group mode.
+        // OBJ smoothing groups, when authored, are authoritative over the crease angle: build a
+        // per-triangle group id mirroring the triangle-build loop's order exactly, and only when
+        // the file authors `s` directives (else nullptr, the byte-identical crease-angle path).
+        // Any non-zero id proves a directive exists, so the disk rescan is needed only to
+        // disambiguate the all-zero case (no directive vs explicit `s off`, both 0 in
+        // tinyobjloader): angle fallback vs faceted group mode.
         std::vector<uint32_t> smooth_groups;
         const bool any_nonzero = std::any_of(
             shapes.begin(), shapes.end(),
@@ -442,19 +436,17 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
     );
 
-    // map_Bump/bump resolution: classify each decoded bump texture and convert the true
-    // height maps to tangent-space normal maps (height_to_normal_map). Chromatic textures
-    // are mislabeled normal maps (common from Blender's legacy exporter) and pass through
-    // unchanged. An explicit non-luminance -imfchan (r/g/b/m/z) forces the height path —
-    // naming a single channel only makes sense for a scalar source. (-imfchan l is the
-    // tinyobjloader default and carries no "was it written?" flag, so it is indistinguishable
-    // from absent and correctly falls through to grayscale detection.) This deliberately
-    // deviates from the MTL letter (map_Bump is unconditionally a height map) because a
-    // no-human-in-the-loop viewer must not wreck the large mislabeled-normal-map corpus;
-    // grayscale detection separates the two near-perfectly. The conversion runs serially here
-    // (not dispatched onto the worker pool like decode_textures): an OBJ binding several distinct
-    // large height maps is rare, the per-source dedup/classification logic is inherently serial,
-    // and each conversion is bounded O(w*h) — not worth a parallel split.
+    // map_Bump/bump resolution: classify each decoded bump texture, converting true height maps
+    // to tangent-space normal maps (height_to_normal_map) while chromatic textures (mislabeled
+    // normal maps, common from Blender's legacy exporter) pass through unchanged. An explicit
+    // non-luminance -imfchan (r/g/b/m/z) forces the height path, since naming one channel only
+    // makes sense for a scalar source (-imfchan l is tinyobjloader's default with no
+    // was-it-written flag, so it correctly falls through to grayscale detection). This
+    // deliberately deviates from the MTL letter (map_Bump is unconditionally a height map): a
+    // no-human-in-the-loop viewer must not wreck the large mislabeled-normal-map corpus, and
+    // grayscale detection separates the two near-perfectly. Conversion runs serially (not on the
+    // worker pool): multiple large height maps per OBJ are rare, the dedup/classification is
+    // inherently serial, and each conversion is bounded O(w*h).
     if (!bump_bindings.empty())
     {
         std::map<std::tuple<int, char, uint32_t>, int> converted; // (src_idx, imfchan, bm-bits) → new tex

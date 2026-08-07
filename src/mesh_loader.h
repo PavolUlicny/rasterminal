@@ -71,15 +71,12 @@ struct MeshSnapshot
     bool m_done = false;
 };
 
-// Decode `count` textures into `textures` (must be empty on entry), in parallel
-// across n_threads when count >= 2. decode(i) returns the i-th Texture
-// independently (an invalid Texture signals a failed decode). Successful
-// decodes populate `textures` in request order; on any failure, the failed
-// slot is dropped and material *_tex indices are remapped through the
-// compaction (failed -> -1) so the textures vector contains only valid entries.
-//
-// Workers write disjoint, pre-sized slots and read only immutable inputs, so no
-// locking is needed. decode(i) must not mutate shared loader state.
+// Decode `count` textures into `textures` (must be empty on entry), parallel across
+// n_threads when count >= 2. decode(i) returns the i-th Texture independently (an invalid
+// Texture = failed decode); successes populate in request order, failed slots are dropped
+// and material *_tex indices remapped through the compaction (failed -> -1) so only valid
+// entries remain. Workers write disjoint pre-sized slots and read only immutable inputs,
+// so no locking; decode(i) must not mutate shared loader state.
 template <class Decode>
 inline void decode_textures(
     std::vector<Texture> &textures, std::vector<Material> &materials, size_t count, int n_threads, Decode decode

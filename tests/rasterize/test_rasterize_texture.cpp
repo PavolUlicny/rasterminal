@@ -54,7 +54,7 @@ static void rast_tex(
 
 // Group A: diffuse texture in rasterize_flat()
 
-// A1: 1×1 red texture × white vertex colour → red pixel.
+// 1×1 red texture × white vertex colour → red pixel.
 // Catches: texture multiply silently dropped.
 TEST(rasterize, solid_diffuse_texture_replaces_color)
 {
@@ -78,7 +78,7 @@ TEST(rasterize, solid_diffuse_texture_replaces_color)
     }
 }
 
-// A2: 1×1 red texture × green vertex colour → black (R*G = 0 per component).
+// 1×1 red texture × green vertex colour → black (R*G = 0 per component).
 // Catches: texture applied to wrong channel or in wrong multiply order.
 TEST(rasterize, texture_modulates_with_vertex_color)
 {
@@ -97,7 +97,7 @@ TEST(rasterize, texture_modulates_with_vertex_color)
     }
 }
 
-// A3: 2×1 red/blue texture; wa=wb=10 (far), wc=1 (near).
+// 2×1 red/blue texture; wa=wb=10 (far), wc=1 (near).
 // Pixel (12,10) midpoint of edge a→c. Perspective-correct UV.x≈0.835 → blue-biased
 // (B≈213, R≈42). Plain barycentric would give UV.x≈0.525 → mixed.
 // Catches: UV interpolation regressed to plain barycentric.
@@ -127,7 +127,7 @@ TEST(rasterize, texture_uv_perspective_correct_unequal_w)
     }
 }
 
-// A4: 1×2 texture (row 0=red, row 1=blue); UV v=0.
+// 1×2 texture (row 0=red, row 1=blue); UV v=0.
 // V-flip maps UV v=0 → image bottom row (row 1) = blue.
 // Catches: V-flip removed (produces red) or doubled (also produces red).
 TEST(rasterize, texture_v_flip_convention)
@@ -151,7 +151,7 @@ TEST(rasterize, texture_v_flip_convention)
     }
 }
 
-// A5: 2×1 red/blue texture; UV u=1.1 wraps to 0.1 → mostly red (R≈230, B≈26).
+// 2×1 red/blue texture; UV u=1.1 wraps to 0.1 → mostly red (R≈230, B≈26).
 // Without wrap: u=1.1 clamps to blue edge → R≈0.
 // Catches: UV wrap removed (would clamp to blue instead of wrapping to red).
 TEST(rasterize, texture_uv_wrap)
@@ -177,7 +177,7 @@ TEST(rasterize, texture_uv_wrap)
     }
 }
 
-// A6: same 2×1 red/blue texture, constant UV u=0 (→ pure red without a transform). A diffuse_map
+// same 2×1 red/blue texture, constant UV u=0 (→ pure red without a transform). A diffuse_map
 // affine carrying a +0.5 u offset (MTL `-o 0.5 0`) advances the sampled coordinate to u=0.5, mid
 // red↔blue, so blue must appear. Pins the OBJ -o/-s sign convention (positive offset advances the
 // sampled coordinate) through the real sample path. The material pointer (not the bare tex arg)
@@ -216,7 +216,7 @@ TEST(rasterize, diffuse_transform_offset_advances_sampled_coord)
     }
 }
 
-// A7: same 2×1 red/blue texture, constant UV u=0.4 (→ red-biased without a transform). A diffuse_map
+// same 2×1 red/blue texture, constant UV u=0.4 (→ red-biased without a transform). A diffuse_map
 // affine with 2× u scale (MTL `-s 2 1`) multiplies the coordinate to u=0.8 → blue-biased. Pins that
 // scale acts on (multiplies) the sampled coordinate, in the right order (scale*u + offset), through
 // the real sample path.
@@ -255,7 +255,7 @@ TEST(rasterize, diffuse_transform_scale_multiplies_sampled_coord)
 
 // Group B: diffuse texture in rasterize_phong()
 
-// B1: 1×1 gray (128,128,128) texture halves both diffuse and ambient.
+// 1×1 gray (128,128,128) texture halves both diffuse and ambient.
 // Ambient-only setup (n_lights=0): without tex R≈255, with tex R≈128.
 // Catches: texture not applied to ambient, or applied to diffuse only.
 TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
@@ -299,7 +299,7 @@ TEST(rasterize_phong, texture_modulates_diffuse_and_ambient)
     }
 }
 
-// B2: Same 2×1 red/blue + unequal-w setup as A3, but in the Phong path.
+// Same 2×1 red/blue + unequal-w setup as the flat-path test above, but in the Phong path.
 // At pixel (12,10): UV.x≈0.835 → blue-biased result.
 // Catches: Phong UV interpolation diverges from the rasterize_flat() path (separate code).
 TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
@@ -336,7 +336,7 @@ TEST(rasterize_phong, texture_uv_perspective_correct_unequal_w)
     }
 }
 
-// B3: 1×1 white texture must not change the rendered colour.
+// 1×1 white texture must not change the rendered colour.
 // Catches: tex multiply introduces precision loss or incorrect normalization.
 TEST(rasterize_phong, white_texture_matches_no_texture)
 {
@@ -370,7 +370,7 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
 
 // Group C: specular texture
 
-// C1: 1×1 black specular texture zeroes the specular highlight.
+// 1×1 black specular texture zeroes the specular highlight.
 // normal=(0,0,1), eye=(0,0,5), light dir=(0,0,1): H=N → ndh=1 → peak specular.
 // mat.diffuse=mat.ambient=(0,0,0) so only specular contributes.
 // Without stex: R≈255.  With black stex: R≈0.
@@ -419,7 +419,7 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
 
 // Group D: normal map
 
-// D1: nmap texel (255,128,128) unpacks to nm≈(1,0,0) via *2−1.
+// nmap texel (255,128,128) unpacks to nm≈(1,0,0) via *2−1.
 // Vertex normals=(0,0,1), tangents=(1,0,0) → TBN redirects normal to +x.
 // Light dir=(1,0,0): without nmap dot=0→R≈0; with nmap dot=1→R≈255.
 // Catches: nmap unpack removed, or TBN basis transposed/wrong handedness.
@@ -466,7 +466,7 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
 
 // Group D+: glTF normalScale applied to the tangent-space normal
 
-// Same D1 geometry: nmap texel (255,128,128) → nm≈(1,0,0), tan=(1,0,0),
+// Same geometry as the basic normal-map test: nmap texel (255,128,128) → nm≈(1,0,0), tan=(1,0,0),
 // light dir+color along +x. scale=0 must zero nm.x so the normal falls back to
 // N=(0,0,1); dot(N, +x)=0 → no red. Run side-by-side with apply_normal_scale=false
 // (scale ignored → full red) to isolate the gate AND prove the multiply hits
@@ -564,7 +564,7 @@ TEST(rasterize_phong, normal_scale_negative_flips_bump)
     }
 }
 
-// D2: degenerate tangent (tan parallel to normal) must not crash or produce NaN.
+// degenerate tangent (tan parallel to normal) must not crash or produce NaN.
 // When tan=(0,0,1) == N=(0,0,1): Gram-Schmidt gives T=normalize(0,0,0)=(0,0,0),
 // B=cross(N,T)=(0,0,0). Mapped normal = T*nm.x + B*nm.y + N*nm.z = N*nm.z.
 // With nmap texel (128,128,255): nm≈(0,0,1) → normal≈N → same as no nmap.
@@ -609,7 +609,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
 
 // Group D3: degenerate tangent — colour value validation
 
-// D3: Validates the pixel VALUE when tangent is degenerate (D2 checks no-crash only).
+// Validates the pixel VALUE when tangent is degenerate (the test above checks no-crash only).
 // tan=(0,0,1) ∥ N=(0,0,1) → Gram-Schmidt yields T=B={0,0,0}.
 // nmap texel (128,128,255): nm≈(0,0,1) → normal_mapped = N*nm.z ≈ N.
 // Baseline: valid tangent (1,0,0) + nmap=nullptr — vertex normal used directly.
@@ -654,7 +654,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
 
 // Group E: diffuse + specular texture simultaneously
 
-// E1: tex and stex both non-null. The if(tex||stex) block must apply both:
+// tex and stex both non-null. The if(tex||stex) block must apply both:
 //   mat_tex.diffuse  *= tex->sample_rgb()
 //   mat_tex.specular *= stex->sample_rgb()
 // Setup: mat.diffuse=(1,1,1), mat.specular=(1,1,1), mat.ambient=(1,1,1).
@@ -719,7 +719,7 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
 
 // Group F: specular texture combined with alpha cutout
 
-// F1: has_cutout=true (alpha_cutoff=0.5, opaque white diffuse tex) AND stex != nullptr.
+// has_cutout=true (alpha_cutoff=0.5, opaque white diffuse tex) AND stex != nullptr.
 // When has_cutout=true the UV is computed in the cutout pre-pass; the post-depth
 // UV recompute block (`if (!has_cutout && ...)`) is skipped.  stex sampling uses
 // that pre-pass UV.  This is the only test exercising the stex+cutout code path.
@@ -785,7 +785,7 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
 // Diffuse is intentionally NOT zeroed (no IBL → diffuse-less metals go near-black).
 // Dielectrics (metallic == 0) are untouched.
 
-// F1: a metal keeps its diffuse-lit surface. Grazing view (eye on +x, light/normal
+// a metal keeps its diffuse-lit surface. Grazing view (eye on +x, light/normal
 // on +z) gives full N·L (diffuse) but tiny N·H (no specular peak), so brightness can
 // only come from diffuse. Both metal and dielectric stay lit — guards against
 // re-introducing the diffuse-kill, which would render the metal near-black here.
@@ -836,7 +836,7 @@ TEST(rasterize_phong, metallic_keeps_diffuse)
     }
 }
 
-// F2: metallic=1 tints F0 by the base colour. Peak specular (H=N) with a blue base
+// metallic=1 tints F0 by the base colour. Peak specular (H=N) with a blue base
 // must stay blue — a regression to the old white specular={metallic} would light up
 // R/G. An MR texture with B=0 (dielectric texel) overrides metallic back to 0.
 TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)

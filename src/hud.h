@@ -35,13 +35,12 @@ struct HudInfo
 
 // Compose the bar for a terminal `cols` wide: identity left, render modes centred, toggles and
 // live numbers right-aligned, padded with spaces to exactly `cols` columns. When the full set
-// does not fit, low-priority fields are dropped (then the name budget shrinks) until it does.
-// The ladder runs all the way down rather than stopping at some floor and letting the line
-// overrun: the right zone is right-aligned, so an overrun is taken off the LAST field, which is
-// the fps reading. In order it drops the background, the lighting mode, the toggle tags, the
-// wireframe colour, then shrinks the name twice, drops the name, and finally drops the
-// first-person speed. The reading therefore survives to about ten columns; below that the line
-// still runs past the edge and the terminal clips it (the framebuffer draws with auto-wrap
-// off), keeping its inter-field gap on the way out. `cols < 1` returns an empty string. Emits
-// fg SGRs only, in `mode`'s depth; the bar background is set once by the framebuffer.
+// does not fit, fields drop by priority: background, lighting mode, toggle tags, wireframe
+// colour, name shrunk twice, name, first-person speed. The ladder runs all the way down rather
+// than letting the line overrun: the right zone is right-aligned, so an overrun is taken off
+// the LAST field, the fps reading, which therefore survives to about ten columns; below that
+// the line runs past the edge and the terminal clips it (the framebuffer draws with auto-wrap
+// off), keeping its
+// inter-field gap. `cols < 1` returns an empty string. Emits fg SGRs only, in `mode`'s depth;
+// the bar background is set once by the framebuffer.
 std::string compose_hud(const HudInfo &info, int cols, ColorMode mode);

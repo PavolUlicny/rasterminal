@@ -1,7 +1,7 @@
 #include "tests/renderer_test_util.h"
 
 // Group M: vertex-color end-to-end through the renderer
-// test_rasterize_vcol.cpp (V1–V6) exercises rasterize_phong() directly.
+// test_rasterize_vcol.cpp exercises rasterize_phong()'s vertex-color handling directly.
 // These tests cover the renderer's own dispatch:
 //   • p_vcols = has_vertex_colors ? vertex_colors.data() : nullptr
 //   • ClipVert.color loaded from p_vcols or white

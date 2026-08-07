@@ -37,13 +37,11 @@ namespace platform
         }
         return _ftelli64(f);
 #else
-        // ftello returns off_t, 64-bit on every POSIX target via -D_FILE_OFFSET_BITS=64
-        // (both build systems define it); returned without a cast because on LP64 the
-        // types coincide and static_cast<int64_t>(off_t) would trip -Wuseless-cast.
-        // The assert makes that build-system contract self-enforcing: a flag-set edit
-        // that drops the define would otherwise silently regress 32-bit builds to the
-        // 2 GB EOVERFLOW behavior, and no CI test can catch it (multi-GB fixtures are
-        // uncreatable on runners); this turns it into a cross32-job compile error.
+        // ftello returns off_t; no cast, because on LP64 the types coincide and the cast
+        // would trip -Wuseless-cast. The assert makes the -D_FILE_OFFSET_BITS=64 build
+        // contract (both build systems define it) self-enforcing: no CI test can catch
+        // losing it (multi-GB fixtures are uncreatable on runners), so a dropped define
+        // becomes a cross32-job compile error instead of a silent 2 GB EOVERFLOW regression.
         static_assert(sizeof(off_t) == 8, "64-bit off_t required; build with -D_FILE_OFFSET_BITS=64");
         if (fseeko(f, 0, SEEK_END) != 0)
         {
@@ -93,22 +91,17 @@ namespace platform
 #endif
     }
 
-    // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal.
-    // Windows probes the console API rather than _isatty: _isatty is true for ANY
-    // character device (NUL, COM ports), while GetConsoleMode succeeds only on a
-    // real console handle. A mintty/MSYS pty is a named pipe, not a console, so it
-    // is rejected too; that is intentional: interactive input (_kbhit/_getch)
-    // cannot work on such a pty either, so rejecting it up front is fail-loud
-    // rather than silently broken. Windows Terminal / conhost / winpty all pass.
-    // _get_osfhandle (not GetStdHandle) so is_tty works on any CRT fd, not only a
-    // std stream. Callers pass std fds (0/1) or freshly opened valid fds: for a
-    // std fd on a no-console launch _get_osfhandle yields the -2 sentinel and
-    // GetConsoleMode fails cleanly to false. (A closed/never-opened fd would trip
-    // the CRT invalid-parameter handler instead, but no caller passes one.)
-    // Accepted limitation: GetConsoleMode needs GENERIC_READ on the handle, so a
-    // console std handle a launcher opened write-only would misreport as false.
-    // Every normal shell (cmd/PowerShell/Windows Terminal/conhost) hands us
-    // read+write console handles, so this does not arise in practice.
+    // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal. Windows
+    // probes the console API, not _isatty: _isatty accepts ANY character device (NUL, COM
+    // ports), GetConsoleMode only a real console handle. A mintty/MSYS pty (a named pipe)
+    // is rejected on purpose: interactive input (_kbhit/_getch) cannot work on it either,
+    // so failing up front beats silently broken input; Windows Terminal / conhost / winpty
+    // all pass. _get_osfhandle (not GetStdHandle) so any CRT fd works, not only a std
+    // stream; on a no-console launch a std fd yields the -2 sentinel and GetConsoleMode
+    // fails cleanly to false (a closed fd would trip the CRT invalid-parameter handler, but
+    // no caller passes one). Accepted limitation: GetConsoleMode needs GENERIC_READ, so a
+    // console std handle a launcher opened write-only would misreport as false; every
+    // normal shell hands out read+write console handles, so this does not arise.
     inline bool is_tty(int fd)
     {
 #ifdef _WIN32
@@ -399,30 +392,23 @@ namespace platform
         constexpr int MAX_KEY_SEQUENCE = 64;
 
         // arrival rate meter
-        // How fast bytes are arriving, measured continuously as a token bucket. Its
-        // one consumer is the skip below: a sequence being skipped to its terminator
-        // is given up on once the arrivals fall under RATE_QUOTA bytes per
-        // RATE_WINDOW_MS, about 256 B/s. The meter itself runs unconditionally, which
-        // is why none of these names says "skip": a skip that had to start the meter
-        // would have to seed it with a guess, and no number available at that moment
-        // is meaningful (tried twice, leaked both times).
-        //
-        // A rate, not a per-read size, and that is what makes it safe. The fastest a
-        // person can produce bytes is key autorepeat, around 30 a second, so this
-        // floor sits roughly eight times above anything a human can sustain and well
-        // below any program. Set with that much headroom deliberately: a floor close
-        // to the delivery rate of a slow link turns ordinary jitter into a leak, and
-        // the margin that matters is the one over typing, not the one under a stream.
-        // A per-read byte count was tried instead and cannot work, because the
-        // terminal writes on the user's behalf and a mouse drag delivers reads as
-        // large and as fast as a program does.
-        //
-        // This is the only thing that ends a skip whose sequence never terminates,
-        // and it is deliberately the only thing. A cap on how much may be skipped was
-        // tried and is exactly the mistake this whole design exists to avoid: every
-        // bounded-consumption rule dispatches whatever falls past its bound, so a cap
-        // large enough not to fire on a real reply still leaks that reply's tail once
-        // a larger one arrives. Raising it only moves the boundary.
+        // How fast bytes are arriving, measured continuously as a token bucket. Its one
+        // consumer is the skip below: a sequence being skipped to its terminator is given up
+        // on once arrivals fall under RATE_QUOTA bytes per RATE_WINDOW_MS, about 256 B/s.
+        // The meter runs unconditionally, which is why none of these names says "skip": a
+        // skip that had to start the meter would have to seed it with a guess, and no number
+        // available at that moment is meaningful (tried; it leaked). A RATE,
+        // not a per-read size, is what makes it safe: the fastest a person can produce is
+        // key autorepeat, around 30 B/s, so the floor sits roughly eight times above
+        // anything a human can sustain and well below any program, and the margin that
+        // matters is the one over typing, not the one under a stream (a floor near a slow
+        // link's delivery rate turns ordinary jitter into a leak). A per-read byte count was
+        // tried instead and cannot work, because the terminal writes on the user's behalf
+        // and a mouse drag delivers reads as large and fast as a program does. This is
+        // deliberately the ONLY thing that ends a skip whose sequence never terminates: a
+        // cap on how much may be skipped was tried and is exactly the mistake this design
+        // exists to avoid, since every bounded-consumption rule dispatches whatever falls
+        // past its bound, and raising it only moves the boundary.
         constexpr int RATE_WINDOW_MS = 500;
         constexpr int RATE_QUOTA = 128;
 
@@ -430,8 +416,8 @@ namespace platform
         // rate and not merely presence-per-window. A window that resets to zero is
         // phase-sensitive: a reply delivered in 1 KB bursts every 700 ms averages more
         // than five times the floor, yet whichever window happens to fall between two
-        // bursts sees nothing and tears the skip down (measured, 5120 payload bytes
-        // dispatched as quit keys). Carrying the surplus fixes that; the cap is what
+        // bursts sees nothing and tears the skip down (measured). Carrying the surplus
+        // fixes that; the cap is what
         // stops it turning into an unbounded hold, since a stream that has really
         // stopped must still be given up on. At two windows' worth, a burst covers
         // about a second of silence, and arrivals that fall below the floor are given
@@ -447,8 +433,8 @@ namespace platform
         // windows by the time it arrives and must be charged for all of them; charging
         // one per tick makes the floor bytes-per-FRAME instead of a rate, and at a
         // frame interval past about four seconds ordinary typing clears the bar and
-        // sustains a skip for as long as the user keeps typing (measured: 60 s and
-        // counting at a 5 s frame). Capped so an arbitrarily long gap cannot demand an
+        // sustains a skip for as long as the user keeps typing (measured). Capped so an
+        // arbitrarily long gap cannot demand an
         // arbitrary burst to survive, and so the multiply cannot overflow.
         constexpr int RATE_MAX_WINDOWS = 4;
 
@@ -498,27 +484,21 @@ namespace platform
             }
         };
 
-        // Fairness bound on one drain pass, not a limit on the input. poll_event
-        // refills the buffer as often as the bytes keep coming rather than once per
-        // call, because anything that resolves without producing an event (a skip, a
-        // backlog of sequences with no binding) would otherwise advance one bufferful
-        // per rendered frame: the caller drains until Type::None, so one fill per call
-        // paces input at the frame rate instead of the arrival rate.
-        //
-        // Counted per pass rather than per call, and reset only when Type::None is
-        // returned, precisely because that is what ends the caller's drain. Per call
-        // it would bound nothing: the caller is free to call again, so the two bounds
-        // would not compose into a bound on one frame. Nothing is dropped on reaching
-        // it; the next pass resumes where this one left off.
-        //
-        // Roughly a megabyte per pass, which no ordinary reply comes near. What that
-        // costs is not the same on both platforms: POSIX pays about a thousand bulk
-        // reads for it (well under a millisecond), while the Windows console API
-        // yields one byte per CRT round-trip and so pays a million. The bound is not
-        // lowered there anyway, because the only alternative is spreading the same
-        // reads over later frames, which is the frame-rate pacing above; a console
-        // that could actually deliver a megabyte this way would be the more
-        // surprising thing.
+        // Fairness bound on one drain pass, not a limit on the input. poll_event refills
+        // the buffer as often as bytes keep coming rather than once per call, because
+        // anything that resolves without producing an event (a skip, a backlog of unbound
+        // sequences) would otherwise advance one bufferful per rendered frame: the caller
+        // drains until Type::None, so one fill per call paces input at the frame rate
+        // instead of the arrival rate. Counted per PASS and reset only at the Type::None
+        // return, precisely because that is what ends the caller's drain; per call it would
+        // bound nothing (the caller is free to call again) and would not compose with the
+        // caller's event cap into a bound on one frame. Nothing is dropped on reaching it;
+        // the next pass resumes where this one left off. Roughly a megabyte per pass, which
+        // no ordinary reply comes near: POSIX pays about a thousand bulk reads (well under
+        // a millisecond) while the Windows console API yields one byte per CRT round-trip
+        // and so pays a million; not lowered there anyway, since the only alternative is
+        // the frame-rate pacing above, and a console that could actually deliver a megabyte
+        // this way would be the more surprising thing.
         constexpr int MAX_REFILLS_PER_PASS = 1024;
 
         // Bytes read but not yet parsed, carried across poll_event calls so a
@@ -606,30 +586,24 @@ namespace platform
         }
 
         // Starts a skip of the sequence at the front, or carries one on: the buffer
-        // collapses to a prefix skip_scan can resume the SAME sequence from, so it
-        // goes on looking through the bytes still to come for that family's
-        // terminator. Two things have to survive the collapse:
-        //   - the two-byte introducer, which names the family and so its terminator;
-        //   - a trailing ESC, if the buffer ends on one. The scan stopped there
-        //     precisely because that ESC may be the first half of an ST, so dropping
-        //     it leaves the reply unterminatable: the skip then runs to the rate floor
-        //     and swallows whatever is typed in the meantime. This one was a measured
-        //     leak when it was missing.
-        // Both entry points hold far more than three bytes, so the ESC being appended
-        // never overwrites part of the introducer. Nothing of the payload is kept,
-        // because skip_scan reads only the introducer and then scans: an earlier
-        // version held the first payload byte for the decoding grammar's sake, and
-        // that grammar no longer runs during a skip.
+        // collapses to a prefix skip_scan can resume the SAME sequence from. Two things have
+        // to survive the collapse: the two-byte introducer, which names the family and so its
+        // terminator; and a trailing ESC when the buffer ends on one, since the scan
+        // stopped there precisely because that ESC may be the first half of an ST, and
+        // dropping it leaves the reply unterminatable, so the skip runs to the rate floor
+        // and swallows the typing in between (measured). No payload
+        // byte is kept: skip_scan reads only the introducer and then scans (an earlier
+        // version held one for the decoding grammar's sake, and that grammar no longer runs
+        // during a skip). Both entry points hold far more than three bytes, so the appended
+        // ESC never overwrites the introducer.
         //
-        // Deliberately does not touch the rate floor's accounting: the arrival meter
-        // has been running all along, so a skip inherits a rate that was actually
-        // measured rather than one seeded from whatever happened last. Seeding it was
-        // tried twice and cannot be made to work, because the number available at
-        // entry is arbitrary: the read that crosses the buffer is capped by the space
-        // left in it, and a skip reached from a stalled partial has no such read at
-        // all, so both entered below the floor and were torn down at the first window,
-        // dispatching the reply as keypresses. Measured across burst sizes, every size
-        // leaked except one, and that one was the buffer size itself.
+        // Deliberately does not touch the rate floor's accounting: the meter has been
+        // running all along, so a skip inherits a rate that was actually measured. Seeding
+        // at entry was tried and cannot be made to work, because no number available
+        // there is meaningful (the read that crosses the buffer is capped by the space left
+        // in it, and a skip reached from a stalled partial has no such read at all), so a
+        // seeded entry sits below the floor and is torn down at the first window,
+        // dispatching the reply as keypresses (measured).
         inline void enter_skip(Pending &p)
         {
             const bool ends_on_esc = p.buf[p.len - 1] == '\033';
@@ -643,51 +617,41 @@ namespace platform
         }
     } // namespace detail
 
-    // Returns the next keyboard or mouse event, or InputEvent{Type::None} when no
-    // complete event is available. On POSIX it never blocks: the readiness probe and
-    // the read are both zero-timeout, so a caller in a render loop never pays a stall
-    // for input it did not get. On Windows the pairing of _kbhit() with _getch() is
-    // the CRT's only non-blocking idiom and is not a hard guarantee, since _kbhit()
-    // can report a queued console event that _getch() then waits on; this predates
-    // the buffered design and would need the ReadConsoleInput API to close.
+    // Returns the next keyboard or mouse event, or InputEvent{Type::None} when no complete
+    // event is available. On POSIX it never blocks (readiness probe and read are both
+    // zero-timeout). On Windows the _kbhit()/_getch() pairing is the CRT's only non-blocking
+    // idiom and not a hard guarantee, since _kbhit() can report a queued console event that
+    // _getch() then waits on; this predates the buffered design and would need the
+    // ReadConsoleInput API to close.
     //
-    // Bytes are drained into a pending buffer and parsed from there by
-    // detail::parse_input, so a sequence split across frames is reassembled rather
-    // than decided on partial evidence. A partial that stops growing for
-    // PARTIAL_TIMEOUT_MS is discarded, because an unparsable fragment must not reach
-    // the dispatch as keypresses: 'q' quits. Losing the user's next keystroke to such
-    // a discard is the deliberate trade. One that has grown past MAX_KEY_SEQUENCE is
-    // too long to be a keypress at all, so it is skipped to its terminator instead of
-    // discarded, on the same terms as a sequence too long for the buffer.
+    // Bytes drain into a pending buffer and are parsed from there by detail::parse_input, so
+    // a sequence split across frames is reassembled rather than decided on partial evidence.
+    // A partial that stops growing for PARTIAL_TIMEOUT_MS is discarded, because an
+    // unparsable fragment must not reach the dispatch as keypresses ('q' quits; losing the
+    // user's next keystroke is the deliberate trade), unless it has grown past
+    // MAX_KEY_SEQUENCE, too long to be a keypress at all, in which case it is skipped to its
+    // terminator on the same terms as a sequence too long for the buffer. What a discard
+    // drops is the buffered prefix, not the sequence: bytes of it arriving after the gap are
+    // indistinguishable from fresh input and parse as such, so its tail can dispatch. That
+    // is a property of the input, not a gap here: a sequence spaced wider than the timeout
+    // cannot be told from someone typing those bytes, and reassembling it anyway would
+    // abandon live sequences on every slow frame.
     //
-    // What is discarded is the buffered prefix, not the sequence. Anything of that
-    // same sequence that arrives after the gap is indistinguishable from fresh input
-    // and is parsed as such, so its tail can dispatch. That is a property of the
-    // input, not a gap in the implementation: a sequence whose bytes are spaced
-    // further apart than the timeout cannot be told from someone typing those same
-    // bytes, and choosing to reassemble it instead would abandon live sequences on
-    // every slow frame.
+    // A sequence too long for the buffer has no such ambiguity: its introducer is kept, the
+    // middle dropped, and detail::skip_scan keeps looking for that family's terminator,
+    // indifferent to how fast or in what pieces the rest arrives. Such a skip ends in
+    // exactly two ways: the family's terminator, or the rate floor giving up on one that
+    // never terminates. An ESC is deliberately NOT one of them, unlike everywhere else in
+    // the grammar: the bare-ESC-aborts-a-string rule is a terminal parser's rule, and
+    // applying it here reads "this reply is over" when the terminal actually wrote an
+    // ordinary sequence between two chunks of it; the reply goes on afterwards, and ending
+    // the skip hands its tail to the dispatch as keypresses, quit key included (measured).
+    // Those bytes are nobody's input either way, so they are swallowed. See detail::skip_scan.
     //
-    // A sequence too long for the buffer is handled differently, and without any such
-    // ambiguity: its introducer is kept and the middle dropped, so detail::skip_scan
-    // keeps looking for that family's terminator. Nothing there depends on how fast or
-    // in what sized pieces the rest arrives. Such a skip ends in exactly two ways: the
-    // family's terminator, or the rate floor giving up on one that never terminates.
-    //
-    // An ESC is deliberately NOT one of them, unlike everywhere else in the grammar.
-    // The rule that a bare ESC aborts a string sequence is a terminal parser's rule,
-    // and applying it here reads the abort as "this reply is over" when what actually
-    // happened is that the terminal wrote an ordinary sequence between two chunks of
-    // the reply: the reply goes on afterwards, and ending the skip hands its tail to
-    // the dispatch as keypresses, quit key included (measured, with a scroll notch
-    // delivered inside a clipboard reply). Whichever it was, those bytes are nobody's
-    // input, so they are swallowed. See detail::skip_scan.
-    //
-    // Only 7-bit ESC-prefixed forms are recognized. An 8-bit C1 introducer (0x9B
-    // CSI, 0x9D OSC) is not: rasterminal requires a UTF-8 terminal for its
-    // half-block output, and in UTF-8 those bytes are continuation bytes, never
-    // standalone controls, so treating them as introducers would corrupt input
-    // rather than fix anything.
+    // Only 7-bit ESC-prefixed forms are recognized. An 8-bit C1 introducer (0x9B CSI, 0x9D
+    // OSC) is not: on the UTF-8 terminal the half-block output already requires, those bytes
+    // are continuation bytes, never standalone controls, so treating them as introducers
+    // would corrupt input rather than fix anything.
 
     // Ends a drain pass, releasing the read budget poll_event spends within one (see
     // MAX_REFILLS_PER_PASS). poll_event releases it itself when it returns Type::None,
@@ -825,38 +789,31 @@ namespace platform
             // idle path: a poll that finds nothing reaches exactly here.
             const auto now = std::chrono::steady_clock::now();
 
-            // The partial is abandoned only when THIS CALL saw no new bytes. The
-            // timestamp records when bytes were last appended, which is observed at
-            // the caller's cadence, not at arrival: judging staleness while bytes are
-            // still arriving would abandon a perfectly good sequence whenever the
-            // frame interval exceeds the timeout (a heavy model, or --fps 10), and its
-            // tail would then dispatch as loose keypresses.
-            //
-            // The cost is more than a swallowed keystroke. Keys struck close enough
-            // together are indistinguishable from a fragmented sequence, so typing
-            // Escape then [ then A reports one arrow. That much is inherent: the
-            // bytes are identical and only arrival timing separates them.
-            //
-            // The window is wider than PARTIAL_TIMEOUT_MS, though, in two ways, and the
-            // read-this-call guard is why. Bytes that arrive during a long frame are
-            // all read by the same drain, which then never takes this branch however
-            // much time has passed, so the window is at least max(timeout, frame): at
-            // fps 10 two keys 80 ms apart still merge. And because ANY byte arriving
-            // both refreshes last_growth and sets the guard, a partial survives for as
-            // long as input keeps coming faster than the timeout, whatever that input
-            // is: hold a key at the usual 25/s autorepeat in front of a truncated
-            // ESC [ (which is also what alt+[ sends) and those keystrokes are swallowed
-            // for as long as the key is held, since none of them is a CSI final. It
-            // self-heals on release, which is what makes it the accepted side of the
-            // trade rather than a lockout. Widening the window is deliberate either
-            // way: the alternative is abandoning live sequences on every slow frame,
+            // The partial is abandoned only when THIS CALL saw no new bytes. last_growth is
+            // observed at the caller's cadence, not at arrival: judging staleness while
+            // bytes still arrive would abandon a perfectly good sequence whenever the frame
+            // interval exceeds the timeout (a heavy model, or --fps 10) and dispatch its
+            // tail as loose keypresses. The inherent cost: keys struck close enough
+            // together are indistinguishable from a fragmented sequence, so typing Escape
+            // then [ then A reports one arrow. The window is wider than PARTIAL_TIMEOUT_MS
+            // in two ways, and the read-this-call guard is why: bytes arriving during a
+            // long frame are all read by one drain, which then never takes this branch, so
+            // the window is at least max(timeout, frame interval) (at fps 10 two keys 80 ms
+            // apart still merge); and since ANY arriving byte both refreshes last_growth
+            // and sets the guard, a partial survives for as long as input keeps coming
+            // faster than the timeout, whatever it is: a key held at the usual ~25/s
+            // autorepeat in front of a truncated ESC [ (also what alt+[ sends) has its
+            // keystrokes swallowed for as long as it is held, none of them being a CSI
+            // final. It self-heals on
+            // release, which is what makes it the accepted side of the trade rather than a
+            // lockout; the alternative is abandoning live sequences on every slow frame,
             // and fragmented delivery is far more common than hand-typing an escape
             // sequence this fast.
             // Not applied to a skip in progress. A skip holds only its resume prefix
             // between chunks, so this rule would see it go quiet on any inter-chunk gap
-            // wider than the timeout and tear the skip down; the next chunk would then
-            // parse as fresh input and dispatch the payload. That is what the rate
-            // floor below is for, and it never got the chance because this fired first.
+            // wider than the timeout and tear the skip down, the next chunk then parsing as
+            // fresh input and dispatching the payload. That is what the rate floor below is
+            // for, and it never got the chance because this fired first.
             if (!p.skipping && !read_this_call && p.len > 0 &&
                 now - p.last_growth > std::chrono::milliseconds(detail::PARTIAL_TIMEOUT_MS))
             {

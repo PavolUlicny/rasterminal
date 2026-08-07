@@ -12,19 +12,16 @@
 #include <utility>
 #include <vector>
 
-// Soft-knee highlight rolloff: the display transform that maps the renderer's HDR
-// shading output into the displayable range. Identity below `knee`; above it values
-// bend smoothly toward (but never reach) 1.0, slope-continuous at the knee so there is
-// no visible crease. Lighting accumulates past 1.0, and a hard clamp would collapse
-// every over-range value to flat white, erasing the shading gradient on bright/untextured
-// surfaces; the rolloff keeps the gradient instead.
-//
-// Applied exactly once per shaded contribution: at the opaque commit and at the transparent
-// A-buffer push (both in rasterize.cpp). The transparent resolve therefore composites values
-// that are already display-referred and must NOT tonemap again (doing so would double-darken
-// the opaque base under glass). The unlit path is excluded (its output is bounded [0,1] and is
-// meant to be faithful), as is UI chrome (wireframe/HUD/background), which is authored in
-// display space and bypasses vec3_to_color entirely.
+// Soft-knee highlight rolloff mapping the renderer's HDR shading output into displayable
+// range: identity below `knee`, above it values bend smoothly toward (never reaching) 1.0,
+// slope-continuous at the knee. Lighting accumulates past 1.0, and a hard clamp would
+// collapse every over-range value to flat white, erasing the shading gradient on bright or
+// untextured surfaces. Applied exactly once per shaded contribution, at the opaque commit
+// and the transparent A-buffer push (both in rasterize.cpp): the transparent resolve
+// composites already display-referred values and must NOT tonemap again (that would
+// double-darken the opaque base under glass). The unlit path (bounded [0,1], meant faithful)
+// is excluded; UI chrome (wireframe/HUD/background, authored in display space) bypasses
+// vec3_to_color entirely.
 inline float tonemap_channel(float x) noexcept
 {
     constexpr float knee = 0.7f;
@@ -157,14 +154,12 @@ class Framebuffer
         return commit_pixel(pixel_idx(x, y), depth, color);
     }
 
-    // Set a one-line status string rendered below the pixel rows each frame. Call before
-    // present(). Pass an empty string to clear. By value so a composed line (the usual caller)
-    // moves in rather than being copied every frame.
-    //
-    // The text may carry its own SGR colour escapes, as compose_hud's does; present() sets the
-    // bar background and a default foreground first, so a plain unstyled string is drawn
-    // legibly too. It must not contain a newline or cursor movement: the row is written with
-    // auto-wrap off and nothing re-positions the cursor afterwards.
+    // Set a one-line status string rendered below the pixel rows each frame; call before
+    // present(), empty clears, by value so the composed line moves in. The text may carry its
+    // own SGR colour escapes (present() sets the bar background and a default foreground
+    // first, so a plain unstyled string draws legibly too) but must not contain a newline or
+    // cursor movement: the row is written with auto-wrap off and nothing re-positions the
+    // cursor afterwards.
     void set_hud(std::string text) { m_hud = std::move(text); }
 
     // Flush the pixel buffer to the terminal as a single write.

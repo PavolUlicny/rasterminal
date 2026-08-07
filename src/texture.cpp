@@ -247,14 +247,13 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
     {
         for (int x = 0; x < w; x++)
         {
-            // Heightfield z=h(u,v) ⇒ tangent-space normal (-∂h/∂u, -∂h/∂v, 1). The gradient is a
-            // Sobel 3×3 (÷8 ⇒ same magnitude as a central difference): the cross-axis 1-2-1
-            // averaging suppresses the per-texel speckle that differentiating an 8-bit height map
-            // otherwise produces (quantization stair-steps become derivative spikes). kHeightScale
-            // converts the height step into a slope. MTL leaves the height-to-surface unit
-            // undefined (only -bm scales it), so the scale is renderer-defined: a fixed per-texel
-            // strength matches industry bakers (xNormal/Substance/GIMP) and does NOT explode on
-            // high-res maps the way the true texture-space derivative ∂h/∂u = dx·width would.
+            // Heightfield z=h(u,v) ⇒ tangent-space normal (-∂h/∂u, -∂h/∂v, 1), gradient via a
+            // Sobel 3×3 (÷8 ⇒ central-difference magnitude; the cross-axis 1-2-1 averaging
+            // suppresses the derivative spikes an 8-bit height map's quantization steps produce).
+            // MTL leaves the height unit undefined (only -bm scales it), so kHeightScale is
+            // renderer-defined: a fixed per-texel strength, matching bakers (xNormal/Substance/
+            // GIMP), unlike the true texture-space derivative dx·width, which explodes on
+            // high-res maps.
             const float tl = height_at(x - 1, y - 1);
             const float tc = height_at(x, y - 1);
             const float tr = height_at(x + 1, y - 1);

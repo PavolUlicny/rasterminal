@@ -106,7 +106,7 @@ static Mesh make_fully_behind_triangle()
 // All tests verify that Renderer::render() forwards clip_near results correctly
 // for both the MT (Phong/Flat) and wireframe code paths.
 
-// G1: one vertex behind near plane, two in front.
+// one vertex behind near plane, two in front.
 // clip_near produces 2 output tris → pixels must be drawn (MT path).
 TEST(renderer, near_clip_one_vertex_behind_renders)
 {
@@ -125,7 +125,7 @@ TEST(renderer, near_clip_one_vertex_behind_renders)
     }
 }
 
-// G2: two vertices behind near plane, one in front.
+// two vertices behind near plane, one in front.
 // clip_near produces 1 output tri → pixels must be drawn (MT path).
 TEST(renderer, near_clip_two_vertices_behind_renders)
 {
@@ -144,7 +144,7 @@ TEST(renderer, near_clip_two_vertices_behind_renders)
     }
 }
 
-// G3: all three vertices behind near plane → clip_near returns 0 → no pixels (MT path).
+// all three vertices behind near plane → clip_near returns 0 → no pixels (MT path).
 TEST(renderer, near_clip_fully_behind_draws_nothing)
 {
     Renderer r(1);
@@ -160,7 +160,7 @@ TEST(renderer, near_clip_fully_behind_draws_nothing)
     }
 }
 
-// G4: wireframe path with a straddling triangle → clip_near fires → pixels drawn.
+// wireframe path with a straddling triangle → clip_near fires → pixels drawn.
 // Covers the separate clip_near call in the wireframe branch (renderer.cpp:430).
 TEST(renderer, near_clip_wireframe_straddling_renders)
 {
@@ -177,7 +177,7 @@ TEST(renderer, near_clip_wireframe_straddling_renders)
     }
 }
 
-// G5: wireframe path with all vertices behind → no pixels.
+// wireframe path with all vertices behind → no pixels.
 TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
 {
     Renderer r(1);
@@ -193,7 +193,7 @@ TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
     }
 }
 
-// G6: raising camera.near_plane above all clip-w values rejects a front-facing
+// raising camera.near_plane above all clip-w values rejects a front-facing
 // triangle that would otherwise render. Verifies m_near_plane is forwarded from
 // camera.near_plane in the MT dispatch path (renderer.cpp:480).
 TEST(renderer, near_clip_uses_camera_near_plane_value)
@@ -273,7 +273,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
 // → 8 chunks → ~2 iterations per worker in the Phase 1 steal loop.
 // Projected coverage: screen rect (12..28)×(2..18) ≈ 256 pixels.
 
-// H1: 512-triangle grid renders with expected pixel coverage (single worker).
+// 512-triangle grid renders with expected pixel coverage (single worker).
 // Catches: chunk-loop early exit → only ~12% of grid processed.
 TEST(renderer, many_triangles_grid_renders_expected_coverage)
 {
@@ -293,7 +293,7 @@ TEST(renderer, many_triangles_grid_renders_expected_coverage)
     }
 }
 
-// H2: same grid with 1 vs 4 workers → identical pixel counts.
+// same grid with 1 vs 4 workers → identical pixel counts.
 // Catches: worker data race, cursor double-claim, band ordering bug.
 TEST(renderer, many_triangles_consistent_across_thread_counts)
 {
@@ -326,7 +326,7 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
     }
 }
 
-// H3: rendering same mesh twice reuses same Renderer → second frame must match.
+// rendering same mesh twice reuses same Renderer → second frame must match.
 // Catches: m_tri_cursor not reset before dispatch → second render claims 0 work → empty fb2.
 TEST(renderer, many_triangles_repeated_render_resets_cursor)
 {
@@ -355,7 +355,7 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
 }
 
-// H4: after rendering a full grid, rendering an empty mesh must produce nothing.
+// after rendering a full grid, rendering an empty mesh must produce nothing.
 // Catches: stale framebuffer pixels not cleared between renders (fb.clear() must
 // be called by the test, and the empty mesh must not draw anything new).
 TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
@@ -458,7 +458,7 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
 //   ao=0.0  → R = 0
 //   ao=1/3  → R ≈ 68  (Flat average of 1+0+0)
 
-// I1: Flat — all ao=0 → ambient term zero → pixel is essentially black.
+// Flat — all ao=0 → ambient term zero → pixel is essentially black.
 // Catches: ao dropped from ClipVert construction or Flat face_ao path.
 TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
 {
@@ -478,8 +478,8 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
     }
 }
 
-// I8: Flat — all ao=1 → full ambient → bright baseline.
-// Counterpart to I1: ensures the n_lights=0 + ambient setup actually produces
+// Flat — all ao=1 → full ambient → bright baseline.
+// Counterpart to the all-ao=0 test above: ensures the n_lights=0 + ambient setup actually produces
 // a bright pixel when ao=1, making the uniform-zero tests falsifiable.
 TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
 {
@@ -499,7 +499,7 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
     }
 }
 
-// I2: Flat — ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
+// Flat — ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
 // Catches: Flat picking a single vertex's ao instead of averaging.
 TEST(renderer, flat_ao_averaged_across_vertices)
 {
@@ -520,7 +520,7 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     }
 }
 
-// I5: Phong — all ao=0 → rasterize_phong produces 0 ambient → black.
+// Phong — all ao=0 → rasterize_phong produces 0 ambient → black.
 // Catches: ao not copied into rt.ph.aoa/b/c or not forwarded to rasterize_phong.
 TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 {
@@ -540,7 +540,7 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
     }
 }
 
-// I6: Phong — ao=(1,0,0) → per-pixel AO gradient across triangle.
+// Phong — ao=(1,0,0) → per-pixel AO gradient across triangle.
 // Catches: Phong using a uniform ao or hardcoding ao=1 per pixel.
 TEST(renderer, phong_ao_interpolates_per_pixel)
 {
@@ -571,7 +571,7 @@ TEST(renderer, phong_ao_interpolates_per_pixel)
     }
 }
 
-// I7: AO must not affect direct diffuse (only ambient).
+// AO must not affect direct diffuse (only ambient).
 // Render once with ao=0 and once with ao=1; ambient=0 so the ao×ambient
 // term is zero in both cases.  Both centre pixels must match within ±1.
 // Catches: a regression multiplying AO into the diffuse term.

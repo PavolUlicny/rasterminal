@@ -180,9 +180,8 @@ namespace platform
         };
 
         // Single home for the ESC-boundary rule on the CSI-final arms. Keeping it in
-        // one place matters: the rule was twice added to some arms and forgotten on
-        // others, and each time the omission let a truncated sequence swallow the
-        // next one's introducer and dispatch its body as keypresses.
+        // one place matters: an arm that forgets it lets a truncated sequence swallow
+        // the next one's introducer and dispatch its body as keypresses.
         inline Scan scan_to_csi_final(const char *buf, int len, int from)
         {
             for (int i = from; i < len; i++)
@@ -414,31 +413,29 @@ namespace platform
             return parse_complete(consumed, ev);
         }
 
-        // Where the sequence at the front ends, when it is being skipped because it
-        // is too long to hold. Returns the count through its terminator, or 0 while
-        // that terminator has not arrived. Nothing is decoded: a skipped sequence is
-        // missing its middle, so the only question left about it is where it stops.
+        // Where the sequence at the front ends, when it is being skipped because it is too
+        // long to hold: the count through its terminator, or 0 while that has not arrived.
+        // Nothing is decoded; a skipped sequence is missing its middle, so the only question
+        // left about it is where it stops.
         //
-        // Deliberately does NOT treat an embedded ESC as a boundary, which is the one
-        // way it differs from parse_input, and the reason it exists separately. While
-        // a sequence is being skipped, an ESC is either payload of a reply that is not
-        // conforming, or the start of an ordinary sequence the terminal wrote between
-        // two chunks of this one. In both cases THIS sequence has not ended, and
-        // treating the ESC as its end hands the rest of the reply to the dispatch as
-        // keypresses: measured, a clipboard reply with a scroll notch delivered inside
-        // it dispatched its tail as keys, quit key included. Whatever is interleaved is
-        // swallowed instead, which is the direction this design always errs in.
+        // Deliberately does NOT treat an embedded ESC as a boundary, the one way this differs
+        // from parse_input and the reason it exists separately: while a sequence is being
+        // skipped, an ESC is either payload of a non-conforming reply or the start of an
+        // ordinary sequence the terminal wrote between two chunks of this one. In both cases
+        // THIS sequence has not ended, and treating the ESC as its end hands the rest of the
+        // reply to the dispatch as keypresses (measured: a clipboard reply with a scroll
+        // notch delivered inside it dispatched its tail, quit key included). Whatever is
+        // interleaved is swallowed instead, the direction this design always errs in.
         //
-        // The cost is that a reply the terminal really did abandon mid-string no longer
-        // yields to the next keypress; it runs to the rate floor. Measured at 1.9 s to
-        // recover once whatever else was arriving stops. While it does not stop, the
-        // floor cannot fire, so a never-terminating reply plus continuous input (a
-        // mouse drag clears 256 B/s comfortably) swallows that input for as long as it
-        // lasts. Accepted: it needs a terminal that opens a string sequence and never
-        // closes it, which a conforming one does not do, and Ctrl+C still quits
-        // throughout, because raw mode leaves ISIG set and main.cpp checks the signal
-        // flag outside the input drain. The alternative is the leak this rule exists to
-        // stop, which ends the session outright rather than delaying it.
+        // The cost: a reply the terminal really did abandon mid-string no longer yields to
+        // the next keypress; it runs to the rate floor (measured 1.9 s to recover once other
+        // arrivals stop), and while continuous input keeps arriving (a mouse drag clears
+        // 256 B/s comfortably) the floor cannot fire, so a never-terminating reply plus
+        // continuous input swallows that input for as long as it lasts. Accepted: that needs a
+        // terminal that opens a string sequence and never closes it, which a conforming one
+        // does not do, and Ctrl+C still quits throughout (raw mode leaves ISIG set and
+        // main.cpp checks the signal flag outside the input drain). The alternative is the
+        // leak this rule exists to stop, which ends the session rather than delaying it.
         inline int skip_scan(const char *buf, int len)
         {
             if (len < 2)
@@ -458,8 +455,7 @@ namespace platform
                     // SHORT of it, leaving whatever it introduces to parse whole. That
                     // matters because '[' is itself a legal final (0x5B), so without
                     // this an interleaved sequence's own introducer would end the skip
-                    // and strand the rest of it for the dispatch (measured: an X10
-                    // report delivered inside a skipped CSI surfaced Space and Q).
+                    // and strand the rest of it for the dispatch (measured).
                     if (buf[i] == '\033')
                     {
                         return i;

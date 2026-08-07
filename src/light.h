@@ -39,17 +39,14 @@ inline float roughness_to_shininess(float roughness) noexcept
     return ((1.0f - roughness) * 126.0f) + 2.0f;
 }
 
-// One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it
-// samples (glTF textureInfo.texCoord: 0 = TEXCOORD_0, 1 = TEXCOORD_1), and an optional
-// KHR_texture_transform. uv_set is always 0 for non-glTF loaders and is clamped to {0,1}
-// at load (a reference to an absent set degrades to 0 — see mesh_gltf.cpp).
-//
-// has_transform/t[] carry KHR_texture_transform. t is a 2x3 affine applied to the
-// interpolated UV before sampling: feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5.
-// The glTF spec defines the transform on v-down UVs, but we store UVs v-flipped (and sample
-// re-flips), so the loader bakes the v-flip in — net effect is the spec transform with its
-// ROTATION NEGATED (the flipY convention; see bake_transform in mesh_gltf.cpp for the full
-// derivation). Identity by default; callers gate the per-pixel apply on has_transform.
+// One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it samples
+// (glTF textureInfo.texCoord; always 0 for non-glTF loaders, clamped to {0,1} at load with an
+// absent set degrading to 0), and an optional KHR_texture_transform: t is a 2x3 affine on the
+// interpolated UV before sampling (feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5).
+// The spec defines the transform on v-down UVs but we store UVs v-flipped, so the loader
+// bakes the flip in: the spec transform with its ROTATION NEGATED (flipY convention; full
+// derivation at bake_transform in mesh_gltf.cpp). Identity by default; callers gate the
+// per-pixel apply on has_transform.
 struct TexSlot
 {
     int tex = -1;

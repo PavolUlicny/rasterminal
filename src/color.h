@@ -36,21 +36,19 @@ enum class ColorMode : uint8_t
     Palette256
 };
 
-// The RGB -> xterm-256 quantization table used by present()'s Palette256 mode and by the HUD's
-// styling: 64x64x64 cells (6 high bits per channel, 256 KB), each holding the palette index
-// (16..231 colour cube, 232..255 grey ramp; never a theme-dependent 0..15 system colour) nearest
-// to the cell's centre by squared CIELAB (deltaE76) distance, ties broken toward the lower index
-// (so the cube beats the ramp). The metric is perceptual (CIELAB, not squared RGB) because the
-// palette's cube has no chromatic entry below 95 per channel: an RGB metric sends dark and muted
-// colours to the grey ramp even when a perceptually closer chromatic cell exists, visibly
-// desaturating dark models (the metric choice over OKLab is argued at cielab_from_linear in
-// color.cpp). A cell that contains a palette colour exactly maps to that colour (at 64^3 no cell
-// holds two palette colours), so palette-exact pixels (the black and grey backgrounds and the HUD
-// bar background {18,18,18} among them) round-trip unchanged, while the white background
-// {240,240,240} is not a palette colour and takes ramp 238; every other colour takes its cell
-// centre's nearest entry, an error far below the palette's own spacing (>= 10 grey, >= 40 cube).
-// Built once at runtime because CIELAB needs cbrt, which is not constexpr in C++17; only the first
-// quantize pays it (256-colour presents and tests, never a truecolor session or --bench).
+// The RGB -> xterm-256 quantization table behind present()'s Palette256 mode and the HUD styling:
+// 64x64x64 cells (6 high bits per channel, 256 KB), each holding the palette index (16..231 cube,
+// 232..255 grey ramp; never a theme-dependent 0..15 system colour) nearest the cell centre by
+// squared CIELAB (deltaE76), ties toward the lower index so the cube beats the ramp. CIELAB rather
+// than squared RGB because the cube has no chromatic entry below 95 per channel, so an RGB metric
+// visibly desaturates dark models onto the grey ramp (the choice over OKLab is argued at
+// cielab_from_linear in color.cpp). A cell that contains a palette colour maps exactly to it
+// (at 64^3 no cell holds two), so palette-exact pixels (the black and grey backgrounds and the
+// HUD bar bg {18,18,18}) round-trip unchanged;
+// white {240,240,240} is not a palette colour and takes ramp 238; everything else errs by far
+// less than the palette's own spacing (>= 10 grey, >= 40 cube). Built at runtime (CIELAB needs
+// cbrt, not constexpr in C++17), paid on the first quantize only: 256-colour presents and tests,
+// never a truecolor session or --bench.
 inline constexpr size_t QUANT256_LUT_SIZE = size_t{ 64 } * 64u * 64u;
 
 // Defined in color.cpp; the first call builds the table (thread-safe magic static).

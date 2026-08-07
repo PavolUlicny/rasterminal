@@ -83,21 +83,21 @@ struct ABuffer
     TouchBox *box = nullptr;
     uint32_t worker_id = 0;
 
-    // Append a shaded fragment for pixel `idx` at screen (x,y). push_back runs first so
-    // a bad_alloc leaves `head` untouched (no chain pointing at a non-existent node); the
-    // worker loop catches it and stops. Then publish the node by swapping it to the chain
-    // head and linking the previous head as its successor. The box update is last and
-    // nothrow — reached only once head[idx] is published, so the invariant "head set ⇒
-    // pixel inside box" holds even if push_back throws (box stays untouched then). const:
-    // only the pointees (head array, node arena, box) are mutated, not ABuffer's own members.
+    // Append a shaded fragment for pixel `idx` at screen (x,y). The order is load-bearing:
+    // push_back first (a bad_alloc then leaves `head` untouched, no chain pointing at a
+    // missing node; the worker loop catches it and stops), then publish the node by swapping
+    // it to the chain head and linking the previous head as its successor, then the nothrow
+    // box update, so the invariant "head set ⇒ pixel
+    // inside box" holds even if push_back throws. const: only the pointees (head array, node
+    // arena, box) are mutated, not ABuffer's own members.
     //
-    // Keep the box update PER-PUSH and post-publish — do not hoist/batch it per-triangle or
-    // per-scanline (it looks cheaper: O(tris) min/max instead of O(frags)). A deferred flush
-    // is exactly the code a mid-triangle bad_alloc skips on its way to the worker catch, which
-    // would strand the already-published heads #1..k of that triangle OUTSIDE the merged box →
-    // the box-bounded resolve never resets them → next frame reads stale non-SENTINEL heads.
-    // The only exception-safe hoist (pre-loop, by clamped tri AABB) loses the occluded-skip and
-    // loosens the box, eroding the resolve win; the per-push cost benchmarked neutral anyway.
+    // Keep the box update PER-PUSH and post-publish; do not hoist/batch it per-triangle or
+    // per-scanline even though that looks cheaper (O(tris) instead of O(frags)): a deferred
+    // flush is exactly the code a mid-triangle bad_alloc skips, stranding that triangle's
+    // already-published heads OUTSIDE the merged box, which the box-bounded resolve then never
+    // resets, so the next frame reads stale non-SENTINEL heads. The only exception-safe hoist
+    // (pre-loop clamped tri AABB) loosens the box and loses the occluded-skip; the per-push
+    // cost benchmarked neutral anyway.
     void push(size_t idx, int x, int y, float depth, const vec3 &color, float alpha) const
     {
         const auto my_idx = static_cast<uint32_t>(nodes->size());

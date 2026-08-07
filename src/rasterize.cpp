@@ -307,15 +307,14 @@ void rasterize_flat(
     const bool emissive_xf = mat && mat->emissive_map.has_transform;
 
     // Transparent: per-edge top-left flags so a pixel center landing exactly on a shared edge
-    // is owned by one triangle (no double-composited seam). The barycentric gradients are
-    // winding-normalized (always point toward the interior), so the classification is
-    // winding-independent. bc's gradient is -(grad ba + grad bb). Compiles out for Opaque.
-    // NOTE: this is the float-barycentric approximation of a top-left rule, not an exact one.
-    // Barycentrics are accumulated by repeated += per pixel, so an exact == 0.0f on an edge
-    // almost never occurs; ownership effectively rests on the strict > 0 tests. Where rounding
-    // puts a shared-edge pixel tiny-negative for both neighbours you get a 1px gap, tiny-positive
-    // for both a faint double-blend seam. Cosmetic and blend-only; an exact rule would need
-    // fixed-point edge functions, which this incremental-float rasterizer does not use.
+    // is owned by one triangle (no double-composited seam); the gradients are
+    // winding-normalized (always toward the interior) so the classification is
+    // winding-independent, and bc's gradient is -(grad ba + grad bb). Compiles out for Opaque.
+    // NOTE: this is the float-barycentric approximation of a top-left rule: barycentrics
+    // accumulate by repeated += per pixel, so an exact == 0.0f edge value almost never occurs
+    // and ownership rests on the strict > 0 tests; rounding can give a 1px gap (tiny-negative
+    // on both sides) or a faint double-blend seam (tiny-positive on both). Cosmetic and
+    // blend-only; an exact rule needs fixed-point edge functions this rasterizer does not use.
     [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
     [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
     [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);

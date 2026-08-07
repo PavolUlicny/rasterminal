@@ -58,7 +58,7 @@ static void rast_phong_vcol(
 //   Pixel (20,10): ba=0.21875, bb=0.25,  bc=0.53125
 //   Pixel (12,10): ba=0.46875, bb=0,     bc=0.53125
 
-// V1: has_vcol=false: red vcol on all vertices must NOT tint a white result.
+// has_vcol=false: red vcol on all vertices must NOT tint a white result.
 // Catches: has_vcol flag silently ignored (always-on tinting).
 TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 {
@@ -82,7 +82,7 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
     }
 }
 
-// V2: has_vcol=true: red vcol on all vertices must produce a red pixel.
+// has_vcol=true: red vcol on all vertices must produce a red pixel.
 // Catches: the has_vcol branch never executes.
 TEST(rasterize_phong, has_vcol_true_tints_ambient)
 {
@@ -107,7 +107,7 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
     }
 }
 
-// V3: white vcol with has_vcol=true must match the has_vcol=false result within ±2.
+// white vcol with has_vcol=true must match the has_vcol=false result within ±2.
 // Catches: the has_vcol=true path introduces drift with the identity colour
 // (wrong material copy, lost specular, double-multiply, etc.).
 TEST(rasterize_phong, white_vcol_matches_no_vcol)
@@ -127,7 +127,7 @@ TEST(rasterize_phong, white_vcol_matches_no_vcol)
     assert_pixel_near(fb_on, 20, 10, fb_off.get_pixel(20, 10), 2);
 }
 
-// V4: RGB vcol interpolated at centroid with equal w=1.
+// RGB vcol interpolated at centroid with equal w=1.
 // At (20,10): ba=0.21875, bb=0.25, bc=0.53125.
 // Expected: vcol ≈ (0.219, 0.250, 0.531) → pixel ≈ (56, 64, 135) ±5.
 // Catches: vcol interpolation broken (constant, swapped indices, wrong weights).
@@ -146,7 +146,7 @@ TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
     assert_pixel_near(fb, 20, 10, expected, 5);
 }
 
-// V5: vcola=red, vcolb=red, vcolc=blue; wa=wb=10, wc=1.
+// vcola=red, vcolb=red, vcolc=blue; wa=wb=10, wc=1.
 // Pixel (12,10): pwa=0.046875, pwb=0, pwc=0.53125 → w_corr≈1.7297
 // vcol_b = 0.53125*1.7297 ≈ 0.919 → B≥200; R≤60.
 // Catches: vcol interpolation regressed to plain barycentric (much redder result).
@@ -177,7 +177,7 @@ TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
     }
 }
 
-// V6: red vcol × green diffuse texture → black.
+// red vcol × green diffuse texture → black.
 // ambient*(mat.ambient*tex)*vcol = (1)*(0,1,0)*(1,0,0) = (0,0,0).
 // Also asserts was_drawn (pixel rendered, not skipped).
 // Catches: vcol applied to a fresh mat copy ignoring the tex-modified copy

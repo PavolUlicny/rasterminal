@@ -506,17 +506,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         const tinyply::Type tct = tc->t;
         const uint8_t *fb = faces->buffer.get();
 
-        // Reserve to the realistic floor (n_verts), not the no-sharing worst case
-        // (n_faces * ipf). The typical photogrammetry scan has one UV seam per
-        // ~20 positions, so unique-tuple count is close to n_verts; sizing to the
-        // worst case wastes 3–6× memory for the program lifetime (vertices keeps
-        // its capacity) and forces a giant bucket array we never use. Vector and
-        // hashmap growth handles the seam-split overshoot in amortized O(1).
-        // The weld map is only consumed by compute_normals, which the post-load
-        // block below skips when the file authored its own normals. Skip the
-        // allocate-and-fill when it would be discarded — for a multi-million-
-        // vertex authored-normal scan, that's the difference between ~20 MB of
-        // throwaway weld work and zero.
+        // Reserve to the realistic floor (n_verts), not the no-sharing worst case (n_faces *
+        // ipf): a typical photogrammetry scan has one UV seam per ~20 positions, so the
+        // unique-tuple count is close to n_verts, while worst-case sizing wastes 3-6x memory
+        // for the program lifetime (vertices keeps its capacity). Growth absorbs the
+        // seam-split overshoot in amortized O(1). The weld map is consumed only by
+        // compute_normals, which is skipped when the file authored normals, so skip the
+        // allocate-and-fill then too: ~20 MB of throwaway work on a multi-million-vertex scan.
         const bool need_weld = !normals;
 
         std::unordered_map<UVKey, uint32_t, UVKeyHash> vert_cache;
@@ -805,18 +801,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
-    // PLY albedo binding: `comment TextureFile <name>` (MeshLab / photogrammetry
-    // convention; PLY has no material system). Only meaningful with UVs to sample
-    // it, so a UV-less file skips the potentially multi-MB decode entirely. The
-    // single default material at index 0 covers every triangle. A missing or
-    // undecodable file is silently dropped — decode_textures leaves `textures`
-    // empty, so the guard below skips the assignment and diffuse_map stays at its
-    // -1 default. Silent-drop is consistent with the OBJ/glTF loaders.
-    //
-    // The name is always resolved relative to ply_dir (prepended unconditionally),
-    // so an absolute or already-rooted name yields a broken path and drops the
-    // texture. This matches load_obj's MTL handling and the bare-relative-filename
-    // convention every PLY exporter actually uses; not special-cased.
+    // PLY albedo binding: `comment TextureFile <name>` (MeshLab / photogrammetry convention;
+    // PLY has no material system). Only meaningful with UVs, so a UV-less file skips the
+    // potentially multi-MB decode; the single default material covers every triangle; a
+    // missing or undecodable file drops silently (textures stays empty, diffuse_map stays -1),
+    // consistent with OBJ/glTF. The name is resolved relative to ply_dir unconditionally, so
+    // an absolute name yields a broken path and drops: matches load_obj's MTL handling and the
+    // bare-relative-filename convention every PLY exporter actually uses; not special-cased.
     const bool has_uv = (uvs != nullptr) || (tc != nullptr);
     const std::string tex_name = has_uv ? ply_texture_file(file.get_comments()) : std::string();
     if (!tex_name.empty())

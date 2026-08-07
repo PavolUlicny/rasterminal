@@ -184,18 +184,15 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         return false;
     }
 
-    // EXT_meshopt_compression / KHR_meshopt_compression: cgltf parses both (same JSON
-    // shape, same fields) but decodes nothing.
-    // Decompress each compressed buffer view in place: allocate with cgltf's own
-    // allocator, decode into it, then assign view->data. cgltf_buffer_view_data()
-    // then transparently returns the decoded bytes to every accessor read, the
-    // Draco path, and the texture loader. Ownership transfers to cgltf — cgltf_free
-    // frees view->data (cgltf.h), so it MUST come from data->memory.alloc_func,
-    // never new/malloc, or the two allocators disagree and double-free. Runs after
-    // cgltf_validate, so its meshopt invariants (mc.buffer non-null, buffer size >=
-    // offset+size, bv.size == stride*count, valid mode, per-mode/filter stride)
-    // already hold here. view->data is assigned right after alloc, so any early
-    // return below is cleaned up by the cgltf_free guard — no manual free path.
+    // EXT_meshopt_compression / KHR_meshopt_compression: cgltf parses both (same JSON shape,
+    // same fields) but decodes nothing, so decompress each compressed buffer view in place and
+    // assign view->data; cgltf_buffer_view_data() then transparently serves the decoded bytes
+    // to every consumer. The buffer MUST come from data->memory.alloc_func, never new/malloc:
+    // cgltf_free owns view->data, and mismatched allocators double-free. Runs after
+    // cgltf_validate, so its meshopt invariants (mc.buffer non-null, buffer size >= offset+size,
+    // bv.size == stride*count, valid
+    // mode/filter strides) already hold. view->data is assigned right after alloc, so any early
+    // return below is cleaned up by the cgltf_free guard; no manual free path.
     for (size_t i = 0; i < data->buffer_views_count; i++)
     {
         cgltf_buffer_view &bv = data->buffer_views[i];
@@ -336,19 +333,15 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         const WrapMode wrap_s = tex->sampler ? to_wrap_mode(tex->sampler->wrap_s) : WrapMode::Repeat;
         const WrapMode wrap_t = tex->sampler ? to_wrap_mode(tex->sampler->wrap_t) : WrapMode::Repeat;
         // Fallback applies only when an extension source (KTX2 or WebP) was preferred over a
-        // distinct ordinary source on the same texture, i.e. the picked primary is not the
-        // plain image itself.
-        //
-        // The single fallback is deliberately the plain image (tex->image), not a chain: that is
-        // the one fallback glTF defines — both KHR_texture_basisu and EXT_texture_webp designate
-        // texture.source as the fallback for clients that can't decode the extension image. A
-        // texture carrying BOTH extensions but no plain image is therefore not handled as
-        // KTX2->WebP->plain: if the preferred KTX2 fails to decode, the WebP peer (which lost
-        // precedence in pick_image, not a defined fallback for the KTX2) is not tried and the
-        // texture drops. That input is self-contradictory in practice (an author encoding the
-        // same image as both compressed forms would not omit the universally-decodable plain
-        // source) and degrades gracefully, so we mirror the spec's single fallback slot rather
-        // than invent an inter-extension chain.
+        // distinct ordinary source on the same texture. The single fallback is deliberately the
+        // plain image (tex->image), not a chain: that is the one fallback glTF defines (both
+        // KHR_texture_basisu and EXT_texture_webp designate texture.source for clients that
+        // cannot decode the extension image). So a texture carrying BOTH extensions but no plain
+        // image is NOT tried as KTX2->WebP->plain: a failed KTX2 drops the texture without trying
+        // the WebP peer, which lost precedence in pick_image and is not a defined fallback. That
+        // input is self-contradictory in practice (an author encoding both compressed forms would
+        // not omit the universally-decodable plain source) and degrades gracefully, so we mirror
+        // the spec's single fallback slot rather than invent an inter-extension chain.
         const cgltf_image *fallback = (tex->image && primary != tex->image) ? tex->image : nullptr;
         const TexKey key{ primary, fallback, wrap_s, wrap_t };
         const auto it = tex_cache.find(key);
@@ -368,18 +361,16 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 
     // Bake KHR_texture_transform into a slot's 2x3 affine. The spec composes T = translate ·
     // rotate · scale on v-down glTF UVs, but we store UVs v-flipped (uv.y = 1 - v_gltf) and the
-    // sampler re-flips. Working that full round trip through (feed = A · (u, 1 - v_g), then sample's
-    // v = 1 - feed.y) shows the texel actually read sits at the v-down coordinate Tr · R(-θ) · S · g
-    // — i.e. the spec transform with the ROTATION ANGLE NEGATED (only the sin terms flip; cos,
-    // offset and axis-aligned scale are unchanged). That -θ is the standard flipY compensation
-    // every glTF reference renderer makes for a v-flipped texture (three.js, Babylon, Filament).
-    // The naive +θ points the Khronos TextureTransformTest arrow at its dedicated red "opposite
-    // direction" marker — the asset's purpose-built diagnostic for exactly this sign slip, which
-    // our first cut hit. So sin is negated below (s = -sin); the rest of the coefficients carry the
-    // v-flip fold for the offset. Verified end-to-end against that reference render (see the
-    // matches_gltf_spec_sampling and rotation_handedness_end_to_end tests). Acts on stored UVs
-    // (c=cos, s=-sin, sx/sy=scale, ox/oy=offset); see TexSlot in light.h. Animated transforms are
-    // not handled — static authored values baked once at load.
+    // sampler re-flips; working that round trip through shows the texel actually read sits at
+    // the spec transform with the ROTATION ANGLE NEGATED (only the sin terms flip; cos, offset
+    // and axis-aligned scale are unchanged), the standard flipY compensation
+    // every glTF reference renderer makes (three.js, Babylon, Filament). The naive +θ points the
+    // Khronos TextureTransformTest arrow at its dedicated red "opposite direction" marker, the
+    // asset's purpose-built diagnostic for exactly this sign slip. So
+    // s = -sin below, and the offset coefficients carry the v-flip fold; verified end-to-end
+    // against the reference render (matches_gltf_spec_sampling, rotation_handedness_end_to_end).
+    // Acts on stored UVs (c=cos, s=-sin, sx/sy=scale, ox/oy=offset; TexSlot in light.h).
+    // Animated transforms are not handled: static authored values baked once at load.
     auto bake_transform = [](TexSlot &slot, const cgltf_texture_transform &tr)
     {
         const float c = std::cos(tr.rotation);
@@ -506,15 +497,13 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             mat.blend = true;
             mat.alpha = pbr.base_color_factor[3];
         }
-        // KHR_materials_transmission: this CPU viewer has no refraction, so approximate a
-        // transmissive surface (glass) as alpha blending — fully transmissive reads as mostly
-        // see-through. The alpha is floored so the glass shape and its highlights stay visible
-        // instead of vanishing at transmissionFactor 1. Only applied when the base material did
-        // not already declare BLEND or MASK. KHR_materials_volume.attenuationColor (the tint
-        // transmitted light takes on) is folded in as a faint, uniform surface tint — thickness is
-        // not modelled, so the depth-dependent deepening in the reference render is not reproduced.
-        // The MASK guard (alpha_cutoff == 0) avoids a contradictory cutout+blend material: a MASK
-        // surface that also declares transmission keeps its authored binary cutout (opaque path).
+        // KHR_materials_transmission: no refraction in this CPU viewer, so approximate glass as
+        // alpha blending, with the alpha floored so the shape and highlights stay visible at
+        // transmissionFactor 1. Applied only when the base material declared neither BLEND nor
+        // MASK (the alpha_cutoff == 0 guard: a MASK surface declaring transmission keeps its
+        // authored binary cutout). KHR_materials_volume.attenuationColor folds in as a faint
+        // uniform surface tint; thickness is not modelled, so the reference render's
+        // depth-dependent deepening is not reproduced.
         if (!mat.blend && mat.alpha_cutoff == 0.0f && m->has_transmission && m->transmission.transmission_factor > 0.0f)
         {
             constexpr float GLASS_ALPHA_FLOOR = 0.18f;

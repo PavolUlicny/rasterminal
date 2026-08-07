@@ -89,33 +89,30 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     // one predicate, so the two cannot drift apart.
     const bool fits_binary = have_tri_count && file_size >= 0 && static_cast<uint64_t>(file_size) >= expected_binary;
 
-    // A binary STL whose header happens to start with "solid" is disambiguated by
-    // size: >= expected_binary, not ==, matching the binary guard's own
-    // surplus-trailing-bytes policy so such a file with trailing bytes still loads.
-    // >= cannot misfire on a real ASCII file: bytes 80-83 of ASCII text are all
-    // >= 0x09, so the little-endian tri_count is >= 9 * 2^24 (~151M) and
-    // expected_binary >= ~7.5 GB. A misfire would NOT reject cleanly (the binary
-    // reader would happily parse text bytes as floats into garbage geometry); the
-    // safety rests entirely on no real ASCII file being that large. The reverse
-    // ambiguity is accepted: a TRUNCATED solid-headed binary (declared count
-    // exceeding the file) is indistinguishable from genuine ASCII here, so it
-    // keeps is_ascii and reaches the ASCII parser, which rejects it: slower than
-    // the binary size guard but the same outcome, with memory bounded by the
-    // line guard below.
+    // A binary STL whose header happens to start with "solid" is disambiguated by size:
+    // >= expected_binary, not ==, matching the binary guard's own surplus-trailing-bytes
+    // policy so such a file with trailing bytes still loads. >= cannot misfire on a real
+    // ASCII file: bytes 80-83 of ASCII text are all >= 0x09, so the little-endian tri_count
+    // is >= 9 * 2^24 (~151M) and expected_binary >= ~7.5 GB. A misfire would NOT reject
+    // cleanly (the binary reader would parse text bytes as floats into garbage geometry);
+    // the safety rests entirely on no real ASCII file being that large. Accepted reverse
+    // ambiguity: a TRUNCATED solid-headed binary (declared count exceeding the file) is
+    // indistinguishable from genuine ASCII here, so it keeps is_ascii and reaches the ASCII
+    // parser's rejection: slower than the binary size guard but the same outcome, with memory
+    // bounded by the line guard below.
     if (is_ascii && fits_binary)
     {
         is_ascii = false;
     }
 
-    // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes.
-    // Accepted TOCTOU, covering BOTH pre-parse guards (this size check and the
-    // ASCII line bound below): they read this FILE handle while stl_reader
-    // reopens the file by path, so a concurrent swap bypasses them. The
-    // consequence is a failed parse here (the binary reader streams per-triangle
-    // with no upfront reserve, so a crafted count cannot force a large
-    // allocation) or, for the line bound, one unbounded-line parse at the
-    // vendored parser's ~20x transient-allocation cost. The threat model is
-    // malformed files, not an adversary racing the local filesystem.
+    // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes. Accepted
+    // TOCTOU covering BOTH pre-parse guards (this size check and the ASCII line bound below):
+    // they read this FILE handle while stl_reader reopens the file by path, so a concurrent
+    // swap bypasses them. The consequence is a failed parse (the binary reader streams
+    // per-triangle with no upfront reserve, so a crafted count cannot force a large
+    // allocation) or, for the line bound, one unbounded-line parse at the vendored parser's
+    // ~20x transient-allocation cost; the threat model is malformed files, not an adversary
+    // racing the local filesystem.
     if (!is_ascii)
     {
         if (!fits_binary)
@@ -125,21 +122,17 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     }
     else
     {
-        // The ASCII branch gets the complementary guard: a line-length bound.
-        // The vendored ASCII parser is line-based and materializes one heap
-        // string per token of the current line (getline + istringstream + a
-        // token vector grown to the line's token count), so a multi-megabyte
-        // line costs a large multiple of its size in transient allocations
-        // (measured 1.17 GB peak on a 52 MB single-line file). Bounding the
-        // LINE, not the file or the mesh, rejects no real STL: the grammar
-        // puts one `solid <name>` or facet/vertex statement per line, so
-        // legitimate lines are tens of bytes and 64 KB is orders of magnitude
-        // of headroom. Any number of lines remains fine; that is mesh data.
-        // A file no larger than the bound cannot contain a longer line, so the
-        // extra read pass is skipped for it outright. For larger files the scan
-        // costs one full sequential pass before stl_reader's own read of the
-        // file; accepted, since ASCII files are the small ones in practice and
-        // the pass warms the page cache for the parse that follows.
+        // The ASCII branch gets the complementary guard, a line-length bound: the vendored
+        // parser is line-based and materializes one heap string per token of the current
+        // line, so a multi-megabyte line costs a large multiple of its size in transient
+        // allocations (measured 1.17 GB peak on a 52 MB single-line file). Bounding the
+        // LINE, not the file or the mesh, rejects no real STL: the grammar puts one
+        // `solid <name>` or facet/vertex statement per line, so legitimate lines are tens
+        // of bytes and 64 KB is orders of magnitude of headroom; any number of lines
+        // remains fine, since that is mesh data. A file no larger than the bound cannot
+        // contain a longer line, so the extra read pass is skipped for it; larger files pay one full
+        // sequential pass before stl_reader's own read, accepted since ASCII files are the
+        // small ones in practice and the pass warms the page cache for the parse.
         constexpr size_t MAX_ASCII_LINE_BYTES = size_t{ 64 } * 1024;
         if (file_size < 0 || static_cast<uint64_t>(file_size) > MAX_ASCII_LINE_BYTES)
         {

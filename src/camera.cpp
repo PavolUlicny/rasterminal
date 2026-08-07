@@ -28,20 +28,13 @@ namespace
         c.target = eye_before + c.forward() * c.distance;
     }
 
-    // Growth applied to the first-person speed multiplier for one frame of a held
-    // +/- key, derived from Camera's two constants rather than hand-computed from them
-    // so neither can drift away from the other.
-    //
-    // Fed dts summing to HELD_KEY_WINDOW the factors multiply to exactly one wheel
-    // notch, but a real tap only lands within a frame of it, in EITHER direction.
-    // main.cpp observes the latch at frame boundaries and hands over whole frame
-    // intervals, and the first of those measures the interval that ended BEFORE the
-    // key arrived, so the total is a whole number of frames offset from the window by
-    // where in a frame the byte fell. Under even pacing that only ever overshoots
-    // (+1.3% at 60 fps, +3.9% at 20); a short frame at the press followed by longer
-    // ones undershoots instead (measured -0.38%). Bounded by one frame either way,
-    // which is why the dt cap exists. Held for a second the multiplier moves about
-    // 2.2x, crossing the whole speed range in about eight.
+    // Growth of the first-person speed multiplier for one frame of a held +/- key, derived
+    // from Camera's two constants so neither can drift away from the other. Fed dts summing
+    // to HELD_KEY_WINDOW the factors multiply to exactly one wheel notch, but a real tap
+    // lands within ONE FRAME of it in EITHER direction (main.cpp hands over whole frame
+    // intervals, the first of which measures the interval that ended BEFORE the byte
+    // arrived): even pacing only overshoots, a short frame at the press followed by longer
+    // ones undershoots (both measured). The dt cap exists to bound this at one frame.
     float speed_key_factor(float dt)
     {
         return std::pow(Camera::FP_SPEED_WHEEL_STEP, dt / Camera::HELD_KEY_WINDOW);
@@ -116,21 +109,17 @@ void Camera::look(float dx, float dy)
     // while swinging the eye, and as "the view follows the drag" while swinging the
     // look direction. Negating an axis here would invert first-person, not fix it.
 
-    // Pitch clamps to straight up / straight down: a fly camera must never roll, and
-    // looping past a pole would invert the horizon. The rotation is about the camera's
-    // right axis, which stays horizontal for as long as there is no roll, so the
-    // elevation change equals the rotation angle exactly and the limit applies to the
-    // delta rather than being corrected for afterwards.
-    //
-    // asin() alone cannot express that limit, because it is even about the pole: at
-    // 90+d it returns 90-d, so an overshoot reads as room for exactly as much again and
-    // the excess DOUBLES every call. Rounding in the rotation is enough to start it,
-    // and the horizon then inverts within about 31 calls, half a second of holding a
-    // key (measured, and equally from pure pitch: dx is not involved). Two things stop
-    // it. The up vector's Y component carries the sign asin drops, so folding it in
-    // makes an overshoot pull back instead of pushing on; and stopping a hair short of
-    // the pole keeps ordinary rounding from crossing at all. A test that watches only
-    // forward.y cannot see any of this, since that value is identical either side.
+    // Pitch clamps to straight up / straight down: a fly camera must never roll, and looping
+    // past a pole would invert the horizon. The rotation is about the camera's right axis,
+    // horizontal while there is no roll, so the elevation change equals the rotation angle
+    // and the limit applies to the delta directly. asin() alone cannot express that limit:
+    // it is even about the pole (90+d returns 90-d), so an overshoot reads as headroom and
+    // the excess DOUBLES every call; rounding is enough to start it, and the horizon then
+    // inverts within about 31 calls, half a second of held key (measured, equally from pure
+    // pitch: dx is not involved). Two things stop it: the up vector's Y component carries
+    // the sign asin drops (an overshoot then pulls back instead of pushing on), and stopping
+    // a hair short of the pole keeps ordinary rounding from crossing at all. A test watching
+    // only forward.y cannot see any of this, since that value is identical either side.
     constexpr float PI = 3.14159265f;
     const vec3 fwd = forward();
     float pitch_now = std::asin(clamp(fwd.y, -1.0f, 1.0f));
@@ -196,28 +185,21 @@ void Camera::process_key(platform::Key key, float dt)
 
     if (first_person)
     {
-        // WASD leaves the rotation group to translate, so the arrows stop being an
-        // alias for it and become the only keyboard look. +/- retune the movement
-        // speed rather than zooming: `distance` is the lever arm `target` is derived
-        // through, so scaling it does move the eye, but it moves it straight along the
-        // view axis, which is what W and S already do. The wheel would be duplicating
-        // a key instead of adding a control, and speed is what freelook puts there.
-        //
-        // Looking is slower than orbiting deliberately. Orbiting keeps the model
-        // centred and only turns it, while looking sweeps the whole scene across the
-        // frame, so the same angular rate reads much faster here. The anchor is one
-        // VERTICAL field of view per second, `fov` being the vertical one: a pitch
-        // sweeps the frame's height in about a second, and a yaw sweeps that same
-        // angle, which on a wide terminal is less than the frame's width (roughly
-        // two thirds of it at 80x24). Deliberate: the alternative is scaling yaw by
-        // the aspect, which would change how fast you turn when the terminal is
-        // resized, and a turn rate that moves under you is worse than a slow one.
-        //
-        // One key acts per frame, so there is no diagonal flight (no forward+strafe,
-        // no moving while turning). That is not a choice: a terminal delivers no key
-        // releases, so a held key is inferred from autorepeat, and the operating system
-        // repeats only the most recently pressed one. The others stop sending anything
-        // at all, which nothing here can observe. Drag the mouse to look while moving.
+        // WASD leaves the rotation group to translate, so the arrows become the only keyboard
+        // look. +/- retune movement speed rather than zooming: `distance` is the lever arm
+        // `target` is derived through, so scaling it dollies the eye straight along the view
+        // axis, which W and S already do; the wheel would duplicate a key instead of adding
+        // the control freelook wants (speed). Looking is deliberately slower than orbiting:
+        // orbiting only turns a centred model while looking sweeps the whole scene across the
+        // frame, so the same angular rate reads much faster here. The anchor is one VERTICAL
+        // field of view per second (`fov` is the vertical one): a pitch sweeps the frame's
+        // height in about a second and a yaw sweeps that same angle, less than a wide frame's
+        // width (roughly two thirds at 80x24). Scaling yaw by aspect instead would change how
+        // fast you turn on every resize, and a turn rate that moves under you is worse than a
+        // slow one. One key acts per frame, so there is no diagonal flight; not a choice: a
+        // terminal delivers no key releases, a held key is inferred from autorepeat, and the
+        // OS repeats only the most recent key while the others go silent, which nothing here
+        // can observe. Drag the mouse to look while moving.
         const float look_speed = fov;
         switch (key)
         {

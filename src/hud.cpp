@@ -33,20 +33,15 @@ namespace
         int cols;
     };
 
-    // " · " (U+00B7 MIDDLE DOT): 4 bytes, counted as 3 columns.
-    //
-    // U+00B7 is East Asian Ambiguous, so a terminal configured for a CJK locale may render it
-    // two columns wide and the bar would then over-run by one column per separator. That is not
-    // a new assumption: ▀ (U+2580), which every rendered pixel cell is made of, is Ambiguous
-    // too, so ambiguous-as-narrow is a precondition of the whole viewer rather than of this
-    // line. A terminal that breaks it turns the render itself into stripes long before the
-    // status bar's alignment matters.
-    //
-    // Stated generally, because it licenses more than this one glyph: any character the bar
-    // draws may be East Asian Ambiguous and counted narrow, and needs no separate argument for
-    // it. What a new glyph does still have to clear is cp_width's own rule, that a doubtful
-    // width rounds UP, and the older bar for a terminal font: nothing beyond the ASCII range
-    // and the handful of characters (▀ and this dot) that predate every font a terminal ships.
+    // " · " (U+00B7 MIDDLE DOT): 4 bytes, counted as 3 columns. U+00B7 is East Asian
+    // Ambiguous, so a CJK-configured terminal may render it two columns wide and over-run the bar;
+    // not a new assumption, since ▀ (U+2580), which every rendered pixel cell is made of, is
+    // Ambiguous too: ambiguous-as-narrow is a precondition of the whole viewer, and a terminal
+    // that breaks it turns the render into stripes long before the bar's alignment matters.
+    // Stated generally because it licenses any bar glyph to be Ambiguous and counted narrow
+    // with no separate argument; a new glyph still has to clear cp_width's rule that a
+    // doubtful width rounds UP, and the font bar: nothing beyond ASCII plus the handful of
+    // characters (▀ and this dot) that predate every font a terminal ships.
     constexpr std::string_view SEPARATOR = " \xc2\xb7 ";
     constexpr int SEPARATOR_COLS = 3;
 
