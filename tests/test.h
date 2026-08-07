@@ -18,7 +18,7 @@
 #include <type_traits>
 #include <vector>
 
-// ─── Portable fd helpers (used across several test files for stdio capture) ──
+// Portable fd helpers (used across several test files for stdio capture)
 #ifdef _WIN32
 #include <fcntl.h>
 #include <io.h>

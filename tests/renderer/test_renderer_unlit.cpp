@@ -2,7 +2,7 @@
 
 #include <utility>
 
-// ─── KHR_materials_unlit rendering ────────────────────────────────────────────
+// KHR_materials_unlit rendering
 // Unlit materials bypass lighting/ambient/emissive and output
 // baseColor * diffuse texture * vertex color directly, regardless of the active
 // shading mode. The unit triangle's centre pixel (20,10) maps to world (0,0,0).

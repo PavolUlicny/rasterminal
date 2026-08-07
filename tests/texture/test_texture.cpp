@@ -25,7 +25,7 @@ static Texture solid(uint8_t r, uint8_t g, uint8_t b)
     return make_tex(1, 1, { r, g, b, 255 });
 }
 
-// ─── valid() ──────────────────────────────────────────────────────────────────
+// valid()
 
 TEST(texture, valid_true_when_populated)
 {
@@ -38,7 +38,7 @@ TEST(texture, valid_false_when_default_constructed)
     ASSERT_FALSE(t.valid());
 }
 
-// ─── 1×1 solid colour ─────────────────────────────────────────────────────────
+// 1×1 solid colour
 
 TEST(texture, solid_1x1_returns_exact_color)
 {
@@ -60,7 +60,7 @@ TEST(texture, solid_1x1_is_invariant_to_uv_coords)
     ASSERT_NEAR(a.x, c.x, 1e-5f);
 }
 
-// ─── UV wrap ──────────────────────────────────────────────────────────────────
+// UV wrap
 
 TEST(texture, uv_wraps_very_large_positive)
 {
@@ -93,7 +93,7 @@ TEST(texture, uv_wraps_for_negative_coords)
     ASSERT_NEAR(a.z, b.z, 1e-5f);
 }
 
-// ─── bilinear interpolation ───────────────────────────────────────────────────
+// bilinear interpolation
 
 TEST(texture, bilinear_midpoint_averages_horizontal_neighbors)
 {
@@ -116,7 +116,7 @@ TEST(texture, bilinear_midpoint_averages_vertical_neighbors)
     ASSERT_NEAR(c.z, 0.5f, 1e-4f);
 }
 
-// ─── V-axis flip ──────────────────────────────────────────────────────────────
+// V-axis flip
 // OBJ v=0 means "bottom of texture"; image row 0 is the top. sample_rgb flips V.
 
 TEST(texture, v_zero_maps_to_bottom_image_row)
@@ -138,7 +138,7 @@ TEST(texture, v_near_one_maps_toward_top_image_row)
     ASSERT_TRUE(c.z < 0.1f); // little blue
 }
 
-// ─── Texture::load / load_from_memory ────────────────────────────────────────
+// Texture::load / load_from_memory
 
 TEST(texture_load, load_nonexistent_returns_false)
 {
@@ -170,7 +170,7 @@ TEST(texture_load, load_from_memory_garbage_returns_false)
     ASSERT_FALSE(t.valid());
 }
 
-// ─── bilinear 2×2 full interpolation ─────────────────────────────────────────
+// bilinear 2×2 full interpolation
 
 TEST(texture, bilinear_2x2_center_averages_all_four_corners)
 {
@@ -235,7 +235,7 @@ TEST(texture, sample_rgba_2x2_center_averages_all_four_corners)
     ASSERT_NEAR(c.w, (0.0f + 64.0f + 128.0f + 255.0f) / 4.0f / 255.0f, 1e-4f);
 }
 
-// ─── sample_rgba UV wrap ──────────────────────────────────────────────────────
+// sample_rgba UV wrap
 // sample_rgba has the same wrap + V-flip code as sample_rgb; these tests confirm
 // all four channels including alpha.
 
@@ -276,7 +276,7 @@ TEST(texture, sample_rgba_flips_v_axis)
     ASSERT_NEAR(c.z, 1.0f, 1e-4f); // blue channel confirms row1 was sampled
 }
 
-// ─── wrap modes ───────────────────────────────────────────────────────────────
+// wrap modes
 // 2×1 reference texture: texel0 = red (u→0), texel1 = blue (u→1). With width 2 the
 // bilinear fx = u*(width-1) = u, so u=0 is pure red, u=1 pure blue, u=0.5 the midpoint.
 static Texture wrap_ref()
@@ -465,7 +465,7 @@ TEST(texture_load, load_from_memory_failure_preserves_previous_data)
     }
 }
 
-// ─── success paths for load() and load_from_memory() ─────────────────────────
+// success paths for load() and load_from_memory()
 
 TEST(texture_load, load_from_memory_valid_image_populates_texture)
 {
@@ -548,7 +548,7 @@ TEST(texture_load, load_empty_path_returns_false)
     ASSERT_FALSE(t.valid());
 }
 
-// ─── very large negative UV precision ────────────────────────────────────────
+// very large negative UV precision
 // floor(-1000.75f) = -1001.0f exactly in float32; frac = 0.25f — wrapping must
 // produce the same result as u = 0.25f.
 
@@ -571,7 +571,7 @@ TEST(texture, uv_wraps_very_large_negative_rgba)
     ASSERT_NEAR(a.w, b.w, 1e-4f);
 }
 
-// ─── is_grayscale (bump/normal classification) ───────────────────────────────
+// is_grayscale (bump/normal classification)
 
 TEST(texture_bump, is_grayscale_true_for_achromatic)
 {
@@ -592,7 +592,7 @@ TEST(texture_bump, is_grayscale_false_for_empty)
     ASSERT_FALSE(is_grayscale(t));
 }
 
-// ─── height_to_normal_map ────────────────────────────────────────────────────
+// height_to_normal_map
 
 TEST(texture_bump, height_to_normal_flat_is_plus_z)
 {
@@ -650,7 +650,7 @@ TEST(texture_bump, height_to_normal_preserves_wrap_modes)
     ASSERT_TRUE(n.wrap_t == WrapMode::Mirror);
 }
 
-// ─── is_grayscale edge cases ──────────────────────────────────────────────────
+// is_grayscale edge cases
 
 TEST(texture_bump, is_grayscale_ignores_alpha)
 {
@@ -689,7 +689,7 @@ TEST(texture_bump, is_grayscale_rejects_beyond_tolerance)
     ASSERT_FALSE(is_grayscale(t));
 }
 
-// ─── height_to_normal_map edge cases ─────────────────────────────────────────
+// height_to_normal_map edge cases
 
 TEST(texture_bump, height_to_normal_v_ramp_tilts_positive_y)
 {

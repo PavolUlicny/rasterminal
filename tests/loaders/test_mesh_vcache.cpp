@@ -16,7 +16,7 @@
 //   Pass 3 without vcol       — geometry_* (OBJ, no vcol)
 //   Pass 3 with vcol          — vertex_colors_remapped_correctly (PLY with vcol)
 
-// ─── Group A: Early exits ─────────────────────────────────────────────────────
+// Group A: Early exits
 
 TEST(vcache, early_exit_single_triangle)
 {
@@ -97,7 +97,7 @@ TEST(vcache, early_exit_max_adj_lt_2)
     }
 }
 
-// ─── Group B: Geometry invariants on shared-vertex mesh ──────────────────────
+// Group B: Geometry invariants on shared-vertex mesh
 // 6-triangle fan: central vertex shared by all 6 triangles, each rim vertex
 // shared by 2. Enough iterations to exercise both the initial linear-scan
 // path (best=-1 on first iteration) and the cache-hit re-score path.
@@ -181,7 +181,7 @@ TEST(vcache, tangents_remain_orthogonal_to_normals)
     }
 }
 
-// ─── Group C: Vertex color remap ─────────────────────────────────────────────
+// Group C: Vertex color remap
 
 TEST(vcache, vertex_colors_remapped_correctly)
 {
@@ -253,7 +253,7 @@ TEST(vcache, vertex_colors_not_populated_without_vcol)
     ASSERT_TRUE(m.vertex_colors.empty());
 }
 
-// ─── Group D: Order-change validation ────────────────────────────────────────
+// Group D: Order-change validation
 
 TEST(vcache, triangle_order_changed_for_suboptimal_input)
 {
@@ -291,7 +291,7 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
     (void)expected_xz; // positions are implicitly verified by geometry_all_positions_preserved
 }
 
-// ─── Group E: Remaining cache-path gaps ──────────────────────────────────────
+// Group E: Remaining cache-path gaps
 
 TEST(vcache, cache_update_cur_zero)
 {
@@ -398,7 +398,7 @@ TEST(vcache, cache_eviction_large_mesh)
     }
 }
 
-// ─── Group F: Material-grouping correctness ──────────────────────────────────
+// Group F: Material-grouping correctness
 
 TEST(vcache, material_idx_stays_aligned_with_geometry)
 {

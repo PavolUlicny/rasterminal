@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <climits>
 
-// ─── Group N — renderer edge cases not covered elsewhere ─────────────────────
+// Group N — renderer edge cases not covered elsewhere
 
-// ─── N1: small framebuffer still completes with many workers ─────────────────
+// N1: small framebuffer still completes with many workers
 //
 // Renderer dispatches all workers regardless of framebuffer height. With 4
 // workers and height=4, all workers participate (no fast-exit path). The CAS
@@ -34,7 +34,7 @@ TEST(renderer, n_active_capped_to_half_framebuffer_height)
     }
 }
 
-// ─── N2: render completes correctly when framebuffer height changes ───────────
+// N2: render completes correctly when framebuffer height changes
 //
 // Frame 1 uses a 40x20 buffer, frame 2 uses a 40x4 buffer.
 // The single-pass design has no band buffers to resize; this test verifies
@@ -67,7 +67,7 @@ TEST(renderer, band_tris_resize_across_frames)
     }
 }
 
-// ─── N3: alpha_cutoff end-to-end with show_texture=true ──────────────────────
+// N3: alpha_cutoff end-to-end with show_texture=true
 //
 // Texture with alpha=0 everywhere; mat.alpha_cutoff=0.5; show_texture=true.
 // Renderer sets rt.alpha_cutoff = show_tex ? mat.alpha_cutoff : 0 = 0.5.
@@ -101,7 +101,7 @@ TEST(renderer, alpha_cutoff_show_tex_on_transparent_not_drawn)
     }
 }
 
-// ─── N4: alpha_cutoff zeroed when show_texture=false ─────────────────────────
+// N4: alpha_cutoff zeroed when show_texture=false
 //
 // Same mesh as N3 (alpha=0 texture, alpha_cutoff=0.5) but show_texture=false.
 // Renderer sets rt.alpha_cutoff = 0 and tex = nullptr -> rasterize_flat() never
@@ -134,7 +134,7 @@ TEST(renderer, alpha_cutoff_zeroed_when_show_tex_false)
     }
 }
 
-// ─── N5: clip_reject fires in MT path for a laterally off-screen triangle ────
+// N5: clip_reject fires in MT path for a laterally off-screen triangle
 //
 // Triangle at world x=50, z=0 is in front of the near plane (clip_w=5 > 0.1)
 // so clip_near passes it. But all three vertices have clip_x >> clip_w
@@ -181,7 +181,7 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_mt)
     }
 }
 
-// ─── N6: clip_reject fires in wireframe path for a laterally off-screen triangle
+// N6: clip_reject fires in wireframe path for a laterally off-screen triangle
 
 TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
 {
@@ -218,7 +218,7 @@ TEST(renderer, clip_reject_removes_off_screen_triangle_wireframe)
     }
 }
 
-// ─── N7: Phong mode with zero tangents uses vertex normals ───────────────────
+// N7: Phong mode with zero tangents uses vertex normals
 //
 // Mesh with all-zero tangents (no TBN perturbation available).
 // p_tans[i] = {0,0,0} → rasterize_phong receives zero tangents and falls

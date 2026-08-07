@@ -16,7 +16,7 @@ static vec4 clip_v(float x, float y, float z, float w)
     return { x, y, z, w };
 }
 
-// ─── inside the frustum ──────────────────────────────────────────────────────
+// inside the frustum
 
 TEST(clip_reject, triangle_fully_inside_is_accepted)
 {
@@ -26,7 +26,7 @@ TEST(clip_reject, triangle_fully_inside_is_accepted)
     ASSERT_FALSE(clip_reject(a, b, c));
 }
 
-// ─── behind-camera rejection (w ≤ 0) ────────────────────────────────────────
+// behind-camera rejection (w ≤ 0)
 
 TEST(clip_reject, any_vertex_with_zero_w_rejects)
 {
@@ -45,7 +45,7 @@ TEST(clip_reject, any_vertex_with_negative_w_rejects)
     ASSERT_TRUE(clip_reject(a, b, c));
 }
 
-// ─── per-plane rejection: all vertices outside the same half-space ──────────
+// per-plane rejection: all vertices outside the same half-space
 
 TEST(clip_reject, all_outside_right_plane_rejects)
 {
@@ -98,7 +98,7 @@ TEST(clip_reject, all_in_front_of_near_plane_rejects)
     ASSERT_TRUE(clip_reject(a, b, c));
 }
 
-// ─── must NOT reject borderline cases ───────────────────────────────────────
+// must NOT reject borderline cases
 // Dropping these would lose visible pixels — the whole point of "conservative".
 
 TEST(clip_reject, straddling_right_plane_is_accepted)

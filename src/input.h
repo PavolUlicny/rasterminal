@@ -14,7 +14,7 @@
 
 namespace platform
 {
-    // ─── input events ────────────────────────────────────────────────────────────
+    // input events
 
     enum class Key : std::uint8_t
     {
@@ -63,7 +63,7 @@ namespace platform
         int x = 0, y = 0;    // terminal cell position (1-based)
     };
 
-    // ─── input parsing helpers ───────────────────────────────────────────────────
+    // input parsing helpers
 
     namespace detail
     {

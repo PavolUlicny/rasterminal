@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// helpers
 
 namespace
 {
@@ -78,7 +78,7 @@ namespace
     constexpr vec3 GREEN{ 0.0f, 1.0f, 0.0f };
 } // namespace
 
-// ─── compositing over the background ────────────────────────────────────────────
+// compositing over the background
 
 // A red transparent triangle (alpha 0.5) over a blue background composites to purple.
 TEST(transparency, blend_over_background)
@@ -112,7 +112,7 @@ TEST(transparency, blend_over_background_threaded)
     assert_pixel_near(fb, 20, 10, { 128, 0, 128 }, 2);
 }
 
-// ─── ordering ─────────────────────────────────────────────────────────────────
+// ordering
 
 // Two overlapping transparent triangles composite back-to-front regardless of the
 // order they are rasterized in (the per-pixel resolve sorts by depth).
@@ -173,7 +173,7 @@ TEST(transparency, interpenetration_per_pixel_order)
     ASSERT_TRUE(right.g > right.r);
 }
 
-// ─── shared-edge fill rule ──────────────────────────────────────────────────────
+// shared-edge fill rule
 
 // A quad split into two transparent triangles sharing a diagonal. Every covered pixel
 // — including those on the shared edge — must be composited exactly once: a missing
@@ -209,7 +209,7 @@ TEST(transparency, shared_edge_no_double_blend)
     }
 }
 
-// ─── bounding-box-limited resolve ────────────────────────────────────────────────
+// bounding-box-limited resolve
 
 // The resolve pass sweeps only the transparent region (the merged per-worker touched-pixel
 // box), not the whole framebuffer. A single small blend triangle must composite inside its
@@ -305,7 +305,7 @@ TEST(transparency, multi_worker_box_merge_covers_all_regions)
     ASSERT_TRUE(mid.r == 0 && mid.g == 0 && mid.b == 255);
 }
 
-// ─── interaction with opaque geometry ───────────────────────────────────────────
+// interaction with opaque geometry
 
 // A transparent triangle behind an opaque one is occluded (depth test vs the opaque
 // buffer culls it): the pixel keeps the opaque colour.
@@ -381,7 +381,7 @@ TEST(transparency, resolve_does_not_double_tonemap_opaque_base)
     ASSERT_TRUE(q.r > p.r - 10); // explicitly rules out the ~25-level double-tonemap darkening
 }
 
-// ─── per-vertex alpha ───────────────────────────────────────────────────────────
+// per-vertex alpha
 
 // Per-vertex opacity (COLOR_0 / PLY alpha) folds into the fragment alpha. A uniform
 // vertex alpha of 0.5 on an otherwise-opaque (mat.alpha=1) red triangle halves it.
@@ -403,7 +403,7 @@ TEST(transparency, vertex_alpha_modulates)
     assert_pixel_near(fb, 20, 10, { 128, 0, 0 }, 2);
 }
 
-// ─── opaque path unaffected ─────────────────────────────────────────────────────
+// opaque path unaffected
 
 // A purely opaque mesh (no blend material) skips the transparent passes and renders
 // its solid colour unchanged.
@@ -422,7 +422,7 @@ TEST(transparency, opaque_only_unchanged)
     assert_pixel_near(fb, 20, 10, { 255, 0, 0 }, 2);
 }
 
-// ─── loaders ────────────────────────────────────────────────────────────────────
+// loaders
 
 // MTL dissolve (d < 1) marks the material as blended and records the opacity.
 TEST(transparency, mtl_dissolve_sets_blend)

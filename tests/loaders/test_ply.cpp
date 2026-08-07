@@ -1,9 +1,7 @@
 #include "tests/inline_bmp.h"
 #include "tests/loader_util.h"
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  HAND-CRAFTED VALID PLY
-// ═══════════════════════════════════════════════════════════════════════════
+// HAND-CRAFTED VALID PLY
 
 TEST(ply_valid, ascii_minimal_triangle)
 {
@@ -294,9 +292,7 @@ TEST(ply_valid, float_vertex_colors)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  REJECTIONS — malformed/corrupt PLY must not crash
-// ═══════════════════════════════════════════════════════════════════════════
+// REJECTIONS — malformed/corrupt PLY must not crash
 
 TEST(reject, ply_missing_magic)
 {
@@ -587,9 +583,7 @@ TEST(reject, ply_non_finite_vertex)
     assert_rejects(t.path);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  UV PROPERTY NAME FALLBACKS
-// ═══════════════════════════════════════════════════════════════════════════
+// UV PROPERTY NAME FALLBACKS
 
 TEST(ply_valid, ascii_uv_st_property_names)
 {
@@ -637,9 +631,7 @@ TEST(ply_valid, ascii_uv_texture_uv_property_names)
     ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FLOAT64 COORDINATE TYPE
-// ═══════════════════════════════════════════════════════════════════════════
+// FLOAT64 COORDINATE TYPE
 
 static void emit_f64_le(std::string &s, double v)
 {
@@ -684,9 +676,7 @@ TEST(ply_valid, binary_le_float64_coordinates)
     ASSERT_NEAR(m.vertices[2].pos.y, 2.5f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE PROPERTY NAME ALIAS: vertex_index (singular)
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE PROPERTY NAME ALIAS: vertex_index (singular)
 
 TEST(ply_valid, ascii_vertex_index_singular_alias)
 {
@@ -707,9 +697,7 @@ TEST(ply_valid, ascii_vertex_index_singular_alias)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  UV PROPERTY NAME: u/v (primary alias)
-// ═══════════════════════════════════════════════════════════════════════════
+// UV PROPERTY NAME: u/v (primary alias)
 
 TEST(ply_valid, ascii_uv_u_v_property_names)
 {
@@ -735,9 +723,7 @@ TEST(ply_valid, ascii_uv_u_v_property_names)
     ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FLOAT-TYPED VERTEX COLORS (rd_col FLOAT32 and FLOAT64 paths)
-// ═══════════════════════════════════════════════════════════════════════════
+// FLOAT-TYPED VERTEX COLORS (rd_col FLOAT32 and FLOAT64 paths)
 
 TEST(ply_valid, ascii_vertex_colors_float32)
 {
@@ -796,9 +782,7 @@ TEST(ply_valid, binary_le_vertex_colors_float64)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.6f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE COLOR r/g/b ALIAS
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE COLOR r/g/b ALIAS
 
 TEST(ply_valid, ascii_face_colors_r_g_b_alias)
 {
@@ -823,9 +807,7 @@ TEST(ply_valid, ascii_face_colors_r_g_b_alias)
     ASSERT_NEAR(m.vertex_colors[0].z, 200.0f / 255.0f, 1e-4f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE COLORS + FILE NORMALS: compute_normals always runs
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE COLORS + FILE NORMALS: compute_normals always runs
 
 TEST(ply_valid, face_colors_with_file_normals_recomputes)
 {
@@ -854,9 +836,7 @@ TEST(ply_valid, face_colors_with_file_normals_recomputes)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE COLOR + NO UV PROPERTIES
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE COLOR + NO UV PROPERTIES
 
 TEST(ply_valid, face_color_path_no_uv_properties_zero_uvs)
 {
@@ -882,9 +862,7 @@ TEST(ply_valid, face_color_path_no_uv_properties_zero_uvs)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  ipf < 3 REJECTION
-// ═══════════════════════════════════════════════════════════════════════════
+// ipf < 3 REJECTION
 
 TEST(reject, ply_face_list_count_below_3)
 {
@@ -902,9 +880,7 @@ TEST(reject, ply_face_list_count_below_3)
     assert_rejects(t.path);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  OOB INDEX SKIPPING
-// ═══════════════════════════════════════════════════════════════════════════
+// OOB INDEX SKIPPING
 
 TEST(reject, ply_all_faces_have_oob_indices_standard_path)
 {
@@ -960,9 +936,7 @@ TEST(ply_valid, partial_oob_indices_valid_faces_survive)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  NON-INT32 FACE INDEX TYPES (rd_idx UINT16 and UINT32)
-// ═══════════════════════════════════════════════════════════════════════════
+// NON-INT32 FACE INDEX TYPES (rd_idx UINT16 and UINT32)
 
 TEST(ply_valid, binary_le_uint16_face_indices)
 {
@@ -1127,9 +1101,7 @@ TEST(ply_valid, binary_le_int16_face_indices)
     ASSERT_EQ(m.triangles[0].v[2], 2u);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FLOAT64 FACE COLORS (rd_col FLOAT64 path for face element)
-// ═══════════════════════════════════════════════════════════════════════════
+// FLOAT64 FACE COLORS (rd_col FLOAT64 path for face element)
 
 TEST(ply_valid, binary_le_face_colors_float64)
 {
@@ -1168,9 +1140,7 @@ TEST(ply_valid, binary_le_face_colors_float64)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FILE-OPEN FAILURE
-// ═══════════════════════════════════════════════════════════════════════════
+// FILE-OPEN FAILURE
 
 TEST(reject, ply_file_open_failure)
 {
@@ -1178,9 +1148,7 @@ TEST(reject, ply_file_open_failure)
     assert_rejects(tmp_path("rast_ply_no_such.ply"));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE-COLOR MIXED VALID / INVALID INDICES
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE-COLOR MIXED VALID / INVALID INDICES
 
 TEST(ply_valid, face_color_mixed_valid_invalid_indices)
 {
@@ -1204,9 +1172,7 @@ TEST(ply_valid, face_color_mixed_valid_invalid_indices)
     ASSERT_TRUE(m.has_vertex_colors);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE COLORS + UV COORDINATES
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE COLORS + UV COORDINATES
 
 TEST(ply_valid, ascii_face_color_with_uv_coords)
 {
@@ -1232,9 +1198,7 @@ TEST(ply_valid, ascii_face_color_with_uv_coords)
     ASSERT_TRUE(m.has_vertex_colors);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CREASE SMOOTHING: load_ply forwards crease_cos to compute_normals
-// ═══════════════════════════════════════════════════════════════════════════
+// CREASE SMOOTHING: load_ply forwards crease_cos to compute_normals
 
 TEST(ply_valid, crease_smoothing_splits_hard_edge)
 {
@@ -1332,9 +1296,7 @@ TEST(ply_valid, crease_threshold_controls_split)
     ASSERT_EQ(count_origin(hard), 2); // 90 deg > 45 deg threshold → split
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  FACE-LIST TEXCOORD (per-corner UVs, photogrammetry / scanner PLYs)
-// ═══════════════════════════════════════════════════════════════════════════
+// FACE-LIST TEXCOORD (per-corner UVs, photogrammetry / scanner PLYs)
 
 // Count split copies of a target position in the loaded mesh.
 [[maybe_unused]] static int count_at(const Mesh &m, float x, float y, float z)
@@ -1908,9 +1870,7 @@ TEST(ply_valid, binary_le_face_texcoord_float64)
     ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  comment TextureFile  (MeshLab / photogrammetry albedo binding)
-// ═══════════════════════════════════════════════════════════════════════════
+// comment TextureFile  (MeshLab / photogrammetry albedo binding)
 //
 // The texture name is resolved relative to the PLY's directory; tmp_path() puts
 // the .ply and the .bmp in the same temp dir, so the comment carries the bare

@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-// ─── vec2 ────────────────────────────────────────────────────────────────────
+// vec2
 
 struct vec2
 {
@@ -17,7 +17,7 @@ struct vec2
     constexpr vec2 operator/(float t) const noexcept { return { x / t, y / t }; }
 };
 
-// ─── vec3 ────────────────────────────────────────────────────────────────────
+// vec3
 
 struct vec3
 {
@@ -78,7 +78,7 @@ constexpr vec3 lerp(const vec3 &a, const vec3 &b, float t) noexcept
     return a + (b - a) * t;
 }
 
-// ─── vec4 ────────────────────────────────────────────────────────────────────
+// vec4
 
 struct vec4
 {
@@ -101,7 +101,7 @@ struct vec4
     }
 };
 
-// ─── mat4 ────────────────────────────────────────────────────────────────────
+// mat4
 // column-major: m[col][row]
 
 struct mat4
@@ -142,7 +142,7 @@ struct mat4
     }
 };
 
-// ─── view / projection ───────────────────────────────────────────────────────
+// view / projection
 
 inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up) noexcept
 {
@@ -180,7 +180,7 @@ inline mat4 perspective(float fov_y, float aspect, float near, float far) noexce
     return m;
 }
 
-// ─── quat ────────────────────────────────────────────────────────────────────
+// quat
 
 struct quat
 {
@@ -223,7 +223,7 @@ inline quat normalize(const quat &q) noexcept
     return { q.x * inv, q.y * inv, q.z * inv, q.w * inv };
 }
 
-// ─── scalar utilities ────────────────────────────────────────────────────────
+// scalar utilities
 
 constexpr float clamp(float v, float lo, float hi) noexcept
 {

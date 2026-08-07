@@ -17,7 +17,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-// ─── Texture::load ───────────────────────────────────────────────────────────
+// Texture::load
 
 bool Texture::load(const std::string &path)
 {
@@ -51,7 +51,7 @@ bool Texture::load(const std::string &path)
     return true;
 }
 
-// ─── Texture::load_from_memory ───────────────────────────────────────────────
+// Texture::load_from_memory
 
 bool Texture::load_from_memory(const uint8_t *data, size_t size)
 {
@@ -86,7 +86,7 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     return true;
 }
 
-// ─── Texture::load_ktx2_from_memory ──────────────────────────────────────────
+// Texture::load_ktx2_from_memory
 
 bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
 {
@@ -103,7 +103,7 @@ bool Texture::load_ktx2_from_memory(const uint8_t *data, size_t size)
     return true;
 }
 
-// ─── is_grayscale ────────────────────────────────────────────────────────────
+// is_grayscale
 
 bool is_grayscale(const Texture &t)
 {
@@ -132,7 +132,7 @@ bool is_grayscale(const Texture &t)
     return true;
 }
 
-// ─── height_to_normal_map ────────────────────────────────────────────────────
+// height_to_normal_map
 
 namespace
 {
@@ -293,7 +293,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
     return out;
 }
 
-// ─── Texture::load_webp_from_memory ──────────────────────────────────────────
+// Texture::load_webp_from_memory
 
 bool Texture::load_webp_from_memory(const uint8_t *data, size_t size)
 {

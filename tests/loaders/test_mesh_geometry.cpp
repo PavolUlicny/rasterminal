@@ -7,7 +7,7 @@
 // All three functions (compute_normals, compute_tangents, compute_ao) are private
 // and exercised indirectly through load_model with crafted OBJ strings.
 
-// ─── compute_normals ──────────────────────────────────────────────────────────
+// compute_normals
 // The OBJ loader calls compute_normals when the file contains no normal data.
 
 TEST(normals, flat_xy_triangle_normal_points_along_z)
@@ -56,7 +56,7 @@ TEST(normals, two_coplanar_triangles_normal_consistent)
     }
 }
 
-// ─── compute_tangents ─────────────────────────────────────────────────────────
+// compute_tangents
 // Called by load_model after every successful load.
 
 TEST(tangents, all_tangents_have_unit_length)
@@ -144,7 +144,7 @@ TEST(tangents, collapsed_uvs_use_safe_perpendicular_fallback)
     }
 }
 
-// ─── compute_ao ───────────────────────────────────────────────────────────────
+// compute_ao
 
 TEST(ao, all_values_in_unit_range)
 {
@@ -204,7 +204,7 @@ TEST(ao, isolated_vertex_is_one_and_finite)
     ASSERT_TRUE(std::isfinite(m.vertices[3].ao));
 }
 
-// ─── Mesh::clear() ────────────────────────────────────────────────────────────
+// Mesh::clear()
 
 TEST(mesh_clear, empties_all_containers)
 {
@@ -243,7 +243,7 @@ TEST(mesh_clear, idempotent)
     ASSERT_TRUE(m.triangles.empty());
 }
 
-// ─── compute_normals edge cases ───────────────────────────────────────────────
+// compute_normals edge cases
 
 TEST(normals, degenerate_zero_area_triangle_no_nan)
 {
@@ -302,7 +302,7 @@ TEST(normals, area_weighted_averaging)
     ASSERT_TRUE(found);
 }
 
-// ─── compute_normals: crease-angle smoothing ──────────────────────────────────
+// compute_normals: crease-angle smoothing
 
 TEST(normals, crease_splits_hard_edge)
 {
@@ -454,7 +454,7 @@ TEST(normals, bowtie_point_share_splits)
     ASSERT_EQ(at_origin, 2); // bowtie split despite full-smooth threshold
 }
 
-// ─── compute_normals: smoothing groups (OBJ) ──────────────────────────────────
+// compute_normals: smoothing groups (OBJ)
 // When an OBJ authors `s` directives they are authoritative over the crease angle:
 // faces smooth iff they share the same non-zero group; `s off`/`s 0` is faceted.
 // Each test below uses geometry whose crease-angle outcome is the OPPOSITE of the
@@ -763,7 +763,7 @@ TEST(normals, high_valence_fan_apex_merges)
     ASSERT_EQ(apex_count, 1); // the whole fan merged into one apex wedge
 }
 
-// ─── compute_tangents: Z-up fallback branch ───────────────────────────────────
+// compute_tangents: Z-up fallback branch
 
 TEST(tangents, fallback_z_up_branch_for_non_z_normal)
 {
@@ -799,7 +799,7 @@ TEST(tangents, zero_normal_fallback_is_finite)
     }
 }
 
-// ─── compute_ao: missing branches ────────────────────────────────────────────
+// compute_ao: missing branches
 
 TEST(ao, concave_vertex_darkened)
 {
@@ -984,7 +984,7 @@ TEST(mesh, load_model_sets_has_double_sided_false_for_obj)
     ASSERT_FALSE(m.has_double_sided);
 }
 
-// ─── load_model failure path ──────────────────────────────────────────────────
+// load_model failure path
 
 TEST(mesh_clear, failed_load_clears_previous_state)
 {
@@ -1000,7 +1000,7 @@ TEST(mesh_clear, failed_load_clears_previous_state)
     ASSERT_TRUE(m.materials.empty());
 }
 
-// ─── mat_at / tex_at accessors ────────────────────────────────────────────────
+// mat_at / tex_at accessors
 
 TEST(mesh_accessors, mat_at_oob_returns_first_material)
 {
@@ -1025,7 +1025,7 @@ TEST(mesh_accessors, tex_at_negative_and_oob_return_nullptr)
     ASSERT_TRUE(m.tex_at(0) != nullptr);
 }
 
-// ─── compute_ao: multi-threaded path ─────────────────────────────────────────
+// compute_ao: multi-threaded path
 
 TEST(ao, mt_matches_single_threaded)
 {

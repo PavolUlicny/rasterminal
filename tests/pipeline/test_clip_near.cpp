@@ -13,7 +13,7 @@ make_cv(float w, float u = 0.0f, float v_coord = 0.0f, float px = 0.0f, float py
 
 static constexpr float NEAR = 0.1f;
 
-// ─── count tests ──────────────────────────────────────────────────────────────
+// count tests
 
 TEST(clip_near, all_inside_returns_one_triangle)
 {
@@ -62,7 +62,7 @@ TEST(clip_near, exactly_on_plane_treated_as_outside)
     ASSERT_EQ(clip_near(a, b, c, out, NEAR), 2);
 }
 
-// ─── clipped vertex position ──────────────────────────────────────────────────
+// clipped vertex position
 
 TEST(clip_near, clipped_vertices_land_at_near_w)
 {
@@ -89,7 +89,7 @@ TEST(clip_near, two_inside_all_output_verts_at_or_beyond_near)
     }
 }
 
-// ─── attribute interpolation ──────────────────────────────────────────────────
+// attribute interpolation
 
 TEST(clip_near, uv_is_linearly_interpolated)
 {
@@ -120,7 +120,7 @@ TEST(clip_near, world_pos_is_linearly_interpolated)
     ASSERT_NEAR(out[0][2].pos.y, 9.5f, 1e-4f);
 }
 
-// ─── inside vertex preservation ───────────────────────────────────────────────
+// inside vertex preservation
 
 TEST(clip_near, inside_vertex_is_copied_verbatim)
 {
@@ -216,7 +216,7 @@ TEST(clip_near, two_inside_uv_interpolated_at_both_crossings)
     ASSERT_NEAR(out[1][2].uv.y, 0.95f, 1e-4f);
 }
 
-// ─── varying near_w ───────────────────────────────────────────────────────────
+// varying near_w
 
 TEST(clip_near, alternate_near_w_clips_correctly)
 {
@@ -230,7 +230,7 @@ TEST(clip_near, alternate_near_w_clips_correctly)
     ASSERT_NEAR(out[0][2].c.w, NEAR2, 1e-5f);
 }
 
-// ─── grazing clip precision ───────────────────────────────────────────────────
+// grazing clip precision
 
 TEST(clip_near, grazing_clip_t_near_zero)
 {

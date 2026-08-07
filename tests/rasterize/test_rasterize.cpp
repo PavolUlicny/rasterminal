@@ -15,7 +15,7 @@ static void rast(Framebuffer &fb, vec3 sa, vec3 sb, vec3 sc, int y_min, int y_ma
     );
 }
 
-// ─── draw_line ────────────────────────────────────────────────────────────────
+// draw_line
 
 TEST(draw_line, horizontal)
 {
@@ -124,7 +124,7 @@ TEST(draw_line, fully_offscreen_draws_nothing)
     }
 }
 
-// ─── rasterize ────────────────────────────────────────────────────────────────
+// rasterize
 // Triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40x20 framebuffer.
 // Verified: pixel center (20.5,10.5) is inside; (0.5,10.5) and (39.5,10.5) outside.
 // Pixel center (20.5,4.5) is inside geometrically — used for band-clipping test.
@@ -204,7 +204,7 @@ TEST(rasterize, subpixel_degenerate_no_crash)
     rast(fb, { 10.0f, 10.0f, 0.5f }, { 10.3f, 10.0f, 0.5f }, { 10.15f, 10.3f, 0.5f }, 0, fb.height() - 1);
 }
 
-// ─── rasterize_phong ──────────────────────────────────────────────────────────
+// rasterize_phong
 
 TEST(rasterize_phong, fills_interior)
 {
@@ -249,7 +249,7 @@ TEST(rasterize_phong, respects_y_band)
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
 }
 
-// ─── Framebuffer ──────────────────────────────────────────────────────────────
+// Framebuffer
 
 TEST(framebuffer, resize_resets_depth_and_dimensions)
 {
@@ -322,7 +322,7 @@ TEST(framebuffer, multithread_depth_color_race)
     }
 }
 
-// ─── perspective-correct interpolation ───────────────────────────────────────
+// perspective-correct interpolation
 //
 // Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40×20 framebuffer.
 // Key pixel centres and their pre-computed screen-space barycentric weights:
@@ -355,7 +355,7 @@ static void rast_colored(
     );
 }
 
-// ── Group A: equal-w invariance ───────────────────────────────────────────────
+// Group A: equal-w invariance
 
 // With wa=wb=wc (uniform), perspective-correct reduces to plain barycentric.
 // Scaling all three w's by the same factor must not change pixel colours.
@@ -422,7 +422,7 @@ TEST(rasterize, equal_w_does_not_change_depth)
     assert_depth_near(fb, 20, 10, 0.5f, 0.01f);
 }
 
-// ── Group B: unequal w biases attributes toward the smaller-w (nearer) vertex ─
+// Group B: unequal w biases attributes toward the smaller-w (nearer) vertex
 
 // a=(red), b=(red), c=(blue); wa=wb=10 (far), wc=1 (near).
 // Pixel (12,10) is at the screen midpoint of edge a→c.
@@ -550,7 +550,7 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
     }
 }
 
-// ── Group C: depth interpolation is linear (not perspective-corrected) ────────
+// Group C: depth interpolation is linear (not perspective-corrected)
 
 // z_ndc varies: sa.z=0.2, sc.z=0.8; wa=wb=10, wc=1.
 // At pixel (12,10): linear depth = 0.46875*0.2 + 0*0.2 + 0.53125*0.8 = 0.51875.
@@ -585,7 +585,7 @@ TEST(rasterize_phong, unequal_w_depth_still_linear)
     assert_depth_near(fb, 12, 10, 0.519f, 0.015f);
 }
 
-// ── Group D: y_band clipping is unaffected by w values ───────────────────────
+// Group D: y_band clipping is unaffected by w values
 
 // Repeats the band-clipping test with wa=wb=10, wc=1 to confirm perspective
 // correction does not bleed into the row-exclusion decision.
@@ -602,7 +602,7 @@ TEST(rasterize, unequal_w_y_band_unaffected)
     ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
 }
 
-// ─── setup_tri bounding-box & band clamping ───────────────────────────────────
+// setup_tri bounding-box & band clamping
 
 TEST(rasterize, bbox_clamps_to_right_edge)
 {
@@ -661,7 +661,7 @@ TEST(rasterize, band_disjoint_from_triangle_draws_nothing)
     }
 }
 
-// ─── degenerate triangle edge cases ──────────────────────────────────────────
+// degenerate triangle edge cases
 
 TEST(rasterize, three_identical_vertices_no_draw)
 {
@@ -690,7 +690,7 @@ TEST(rasterize, winding_agnostic_cw_also_draws)
     ASSERT_TRUE(was_drawn(fb2, 20, 10));
 }
 
-// ─── HDR highlight rolloff ─────────────────────────────────────────────────────
+// HDR highlight rolloff
 
 TEST(rasterize, color_above_one_rolls_off_below_255)
 {
@@ -717,7 +717,7 @@ TEST(rasterize, color_below_zero_clamps_to_0)
     assert_pixel_near(fb, 20, 10, Color{ 0, 0, 0 }, 0);
 }
 
-// ─── draw_line additional paths ───────────────────────────────────────────────
+// draw_line additional paths
 
 TEST(draw_line, depth_interpolates_along_line)
 {
@@ -753,7 +753,7 @@ TEST(draw_line, negative_slope)
     ASSERT_FALSE(was_drawn(fb, 0, 8)); // before start
 }
 
-// ─── rasterize_phong additional edge cases ────────────────────────────────────
+// rasterize_phong additional edge cases
 
 // Minimal rasterize_phong helper: no lights, no textures, AO=1.
 static void rast_phong_minimal(

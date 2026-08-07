@@ -4,9 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  HAND-CRAFTED VALID OBJ — exercises specific format features in isolation
-// ═══════════════════════════════════════════════════════════════════════════
+// HAND-CRAFTED VALID OBJ — exercises specific format features in isolation
 
 TEST(obj_valid, mtl_multi_material_loaded)
 {
@@ -197,9 +195,7 @@ TEST(obj_valid, comments_and_blank_lines_ignored)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  REJECTIONS — malformed/corrupt OBJ must not crash
-// ═══════════════════════════════════════════════════════════════════════════
+// REJECTIONS — malformed/corrupt OBJ must not crash
 
 TEST(reject, obj_only_comments)
 {
@@ -274,9 +270,7 @@ TEST(reject, obj_non_finite_vertex)
     assert_rejects(t.path);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  MTL MATERIAL PARSING
-// ═══════════════════════════════════════════════════════════════════════════
+// MTL MATERIAL PARSING
 
 TEST(obj_valid, mtl_default_material_is_white)
 {
@@ -356,7 +350,7 @@ TEST(obj_valid, mtl_map_ks_parses_alongside_neighbors)
     ASSERT_EQ(m.materials[1].specular_map.tex, -1);
 }
 
-// ─── map_Bump / bump → height-map classification ─────────────────────────────
+// map_Bump / bump → height-map classification
 // A real height map (grayscale, or an explicit -imfchan channel) is converted to a
 // tangent-space normal map at load; an RGB texture mislabeled under map_Bump (common
 // from Blender's legacy exporter) is kept as a normal map. See mesh_obj.cpp / texture.cpp.
@@ -562,7 +556,7 @@ TEST(obj_bump, lowercase_bump_keyword_converts)
     ASSERT_EQ(nm->pixels[2], uint8_t{ 255 }); // converted
 }
 
-// ─── MTL -s / -o texture transform (KHR_texture_transform analog) ─────────────
+// MTL -s / -o texture transform (KHR_texture_transform analog)
 // -s (scale) and -o (origin offset) bake per map into the TexSlot 2×3 affine (light.h),
 // the same affine apply_tex_transform feeds at sample time. MTL authors in OBJ's stored
 // (v-up) UV space with no rotation, so the bake is feed.u=sx*u+ox, feed.v=sy*v+oy with no
@@ -1087,11 +1081,9 @@ TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  UV-SEAM NORMAL WELDING — normal-less OBJs split one position into several
-//  vertices by texcoord; compute_normals welds them by source position so the
-//  seam smooths like a desktop viewer, while the dihedral crease test still wins.
-// ═══════════════════════════════════════════════════════════════════════════
+// UV-SEAM NORMAL WELDING — normal-less OBJs split one position into several
+// vertices by texcoord; compute_normals welds them by source position so the
+// seam smooths like a desktop viewer, while the dihedral crease test still wins.
 
 namespace
 {
@@ -1311,9 +1303,7 @@ TEST(obj_valid, uv_seam_smooth_angle_extremes)
     ASSERT_NEAR(sn[0].z, sn[1].z, 1e-5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TEXTURE SUCCESS PATHS — load_tex() with a real BMP on disk
-// ═══════════════════════════════════════════════════════════════════════════
+// TEXTURE SUCCESS PATHS — load_tex() with a real BMP on disk
 
 TEST(obj_valid, mtl_map_kd_real_file_sets_diffuse_tex)
 {

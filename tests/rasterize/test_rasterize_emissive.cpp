@@ -4,7 +4,7 @@
 
 #include <initializer_list>
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// helpers
 
 static Texture make_em_tex(int w, int h, std::initializer_list<int> rgba)
 {
@@ -46,7 +46,7 @@ static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Text
     );
 }
 
-// ─── Flat emissive in rasterize_flat() ────────────────────────────────────────────
+// Flat emissive in rasterize_flat()
 
 // Pure factor with no lit color, no texture: pixel should be the emissive colour.
 TEST(rasterize_emissive, factor_only_adds_pure_colour)
@@ -85,7 +85,7 @@ TEST(rasterize_emissive, zero_factor_no_texture_is_noop)
     assert_pixel_near(fb, 20, 10, Color{ 0, 0, 0 }, 2);
 }
 
-// ─── Phong emissive in rasterize_phong() ─────────────────────────────────────
+// Phong emissive in rasterize_phong()
 
 TEST(rasterize_phong_emissive, factor_only_bypasses_lighting)
 {

@@ -40,9 +40,7 @@ static std::string stl_ascii_one_facet(const std::string &first_line)
                         "endsolid test\n";
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  HAND-CRAFTED VALID STL
-// ═══════════════════════════════════════════════════════════════════════════
+// HAND-CRAFTED VALID STL
 
 TEST(stl_valid, ascii_single_facet)
 {
@@ -78,9 +76,7 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  REJECTIONS — malformed/corrupt STL must not crash
-// ═══════════════════════════════════════════════════════════════════════════
+// REJECTIONS — malformed/corrupt STL must not crash
 
 TEST(reject, stl_too_small_for_header)
 {
@@ -217,9 +213,7 @@ TEST(reject, stl_ascii_missing_third_vertex)
     assert_rejects(t.path);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  CORRECTNESS — verify loaded geometry values
-// ═══════════════════════════════════════════════════════════════════════════
+// CORRECTNESS — verify loaded geometry values
 
 TEST(stl_valid, ascii_vertex_positions_and_defaults)
 {

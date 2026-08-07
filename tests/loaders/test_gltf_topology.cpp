@@ -5,9 +5,7 @@
 #include <cmath>
 #include <vector>
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TRIANGLE STRIP / FAN DE-STRIPIFY HELPERS
-// ═══════════════════════════════════════════════════════════════════════════
+// TRIANGLE STRIP / FAN DE-STRIPIFY HELPERS
 //
 // Vertices are authored with a unique integer x per index (a zig-zag in y so the
 // triangles are non-degenerate), so a vertex id is recoverable from its world
@@ -315,7 +313,7 @@ static std::string strip_attr_glb(bool normal, bool uv, int color_dim, int mat)
     return make_glb(json, bin);
 }
 
-// ─── Group A: non-triangle primitive types rejected ───────────────────────
+// Group A: non-triangle primitive types rejected
 
 TEST(reject, gltf_points_only_mesh)
 {
@@ -368,11 +366,9 @@ TEST(gltf_valid, gltf_triangle_fan_min)
     assert_tris_eq(m, { { 0, 1, 2 } });
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TRIANGLE STRIP / FAN DE-STRIPIFY
-// ═══════════════════════════════════════════════════════════════════════════
+// TRIANGLE STRIP / FAN DE-STRIPIFY
 
-// ─── A: strip topology + winding ──────────────────────────────────────────
+// A: strip topology + winding
 
 TEST(gltf_strip, non_indexed_4verts)
 {
@@ -415,7 +411,7 @@ TEST(gltf_strip, indexed_u32_wide)
     assert_uniform_winding(m);
 }
 
-// ─── B: fan topology + winding ────────────────────────────────────────────
+// B: fan topology + winding
 
 TEST(gltf_fan, non_indexed_4verts)
 {
@@ -444,7 +440,7 @@ TEST(gltf_fan, indexed_u16)
     assert_uniform_winding(m);
 }
 
-// ─── C: count edge cases ──────────────────────────────────────────────────
+// C: count edge cases
 // (count == 3 is covered by gltf_triangle_strip_min / gltf_triangle_fan_min above.)
 
 TEST(reject, gltf_strip_2verts_empty)
@@ -470,7 +466,7 @@ TEST(gltf_fan, indexed_count4_boundary)
     assert_tris_eq(m, { { 0, 1, 2 }, { 0, 2, 3 } });
 }
 
-// ─── D: winding under a mirror (negative-determinant) node transform ───────
+// D: winding under a mirror (negative-determinant) node transform
 
 TEST(gltf_strip, mirror_preserves_consistent_winding)
 {
@@ -498,7 +494,7 @@ TEST(gltf_fan, mirror_preserves_consistent_winding)
     ASSERT_EQ(smir, sid);
 }
 
-// ─── E: degenerate stitch triangles kept ──────────────────────────────────
+// E: degenerate stitch triangles kept
 
 TEST(gltf_strip, degenerate_stitch_triangles_kept)
 {
@@ -509,7 +505,7 @@ TEST(gltf_strip, degenerate_stitch_triangles_kept)
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(3)); // count(5) - 2, degenerates included
 }
 
-// ─── F: mixed primitives in one mesh ──────────────────────────────────────
+// F: mixed primitives in one mesh
 
 TEST(gltf_mixed, triangles_plus_strip)
 {
@@ -542,7 +538,7 @@ TEST(gltf_mixed, strip_plus_fan)
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(4)); // 2 + 2
 }
 
-// ─── G: per-vertex attributes carried through de-stripify ──────────────────
+// G: per-vertex attributes carried through de-stripify
 
 TEST(gltf_strip, carries_normals)
 {
@@ -625,7 +621,7 @@ TEST(gltf_valid, default_mode_is_triangles)
     ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
 }
 
-// ─── Group B: mixed primitive types ──────────────────────────────────────
+// Group B: mixed primitive types
 
 TEST(gltf_valid, mixed_mesh_triangles_and_points_only_loads_triangles)
 {

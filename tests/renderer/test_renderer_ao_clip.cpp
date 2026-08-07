@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// ─── near-clip mesh helpers ───────────────────────────────────────────────────
+// near-clip mesh helpers
 //
 // Camera eye=(0,0,5), near_plane=0.1.  Clip w = 5 − world_z.
 // World z=0   → w=5   (comfortably in front).
@@ -99,7 +99,7 @@ static Mesh make_fully_behind_triangle()
     return m;
 }
 
-// ─── Group G — near-plane clip integration ────────────────────────────────────
+// Group G — near-plane clip integration
 //
 // Camera: eye=(0,0,5), near_plane=0.1. Clip w = 5 − world_z.
 // Vertices at z=4.95 have w=0.05 → behind near plane (w < 0.1).
@@ -214,7 +214,7 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
     }
 }
 
-// ─── grid mesh helper ─────────────────────────────────────────────────────────
+// grid mesh helper
 
 // Build a grid_w×grid_h cell mesh over x,y ∈ [-half, +half] at z=0.
 // Each cell splits into 2 CCW front-facing triangles → 2*grid_w*grid_h tris.
@@ -267,7 +267,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     return m;
 }
 
-// ─── Group H — multiple triangles / work-stealing at scale ───────────────────
+// Group H — multiple triangles / work-stealing at scale
 //
 // 16×16 grid = 512 triangles. With 4 workers, choose_phase1_chunk=64
 // → 8 chunks → ~2 iterations per worker in the Phase 1 steal loop.
@@ -385,7 +385,7 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
     }
 }
 
-// ─── AO mesh helpers ──────────────────────────────────────────────────────────
+// AO mesh helpers
 
 // Same geometry as make_unit_triangle (front-facing, centre pixel (20,10))
 // but with caller-specified per-vertex AO values.
@@ -450,7 +450,7 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
     return m;
 }
 
-// ─── Group I — AO end-to-end ──────────────────────────────────────────────────
+// Group I — AO end-to-end
 //
 // Strategy: n_lights=0 so compute_lighting output = ambient * mat.ambient * ao.
 // With ambient=(0.8,0,0) and default mat.ambient=(1,1,1):

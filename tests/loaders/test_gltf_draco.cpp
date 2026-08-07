@@ -98,9 +98,7 @@ namespace
     constexpr const char *acc_uv_24 = R"({"componentType":5126,"count":24,"type":"VEC2"})";
 } // namespace
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Multi-attribute decode: the common real-world case.
-// ═══════════════════════════════════════════════════════════════════════════
+// Multi-attribute decode: the common real-world case.
 
 TEST(gltf_draco, decode_position_normal_uv)
 {
@@ -138,9 +136,7 @@ TEST(gltf_draco, decode_position_normal_uv)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Position-only Draco prim → compute_normals fallback runs.
-// ═══════════════════════════════════════════════════════════════════════════
+// Position-only Draco prim → compute_normals fallback runs.
 
 TEST(gltf_draco, position_only_runs_compute_normals)
 {
@@ -162,9 +158,7 @@ TEST(gltf_draco, position_only_runs_compute_normals)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Corrupt bitstream → load fails (fail-loud, no silent degradation).
-// ═══════════════════════════════════════════════════════════════════════════
+// Corrupt bitstream → load fails (fail-loud, no silent degradation).
 
 TEST(gltf_draco, corrupt_bitstream_fails_load)
 {
@@ -182,9 +176,7 @@ TEST(gltf_draco, corrupt_bitstream_fails_load)
     ASSERT_FALSE(m.load_model(f.path, /*ao=*/false, /*n_threads=*/1, /*crease_angle_deg=*/60.0f));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  COLOR_0 vertex colours (RGBA fixture → RGB, alpha dropped).
-// ═══════════════════════════════════════════════════════════════════════════
+// COLOR_0 vertex colours (RGBA fixture → RGB, alpha dropped).
 
 TEST(gltf_draco, decode_color0)
 {
@@ -234,9 +226,7 @@ TEST(gltf_draco, decode_color0)
     ASSERT_NEAR(cyan.z, 1.0f, 1e-2f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  COLOR_0 per-vertex alpha (vec4) survives onto vertex_alpha under alphaMode=BLEND.
-// ═══════════════════════════════════════════════════════════════════════════
+// COLOR_0 per-vertex alpha (vec4) survives onto vertex_alpha under alphaMode=BLEND.
 
 namespace
 {
@@ -316,9 +306,7 @@ TEST(gltf_draco, color0_alpha_ignored_without_blend)
     ASSERT_TRUE(m.vertex_alpha.empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Node world transform is applied to decoded Draco vertices.
-// ═══════════════════════════════════════════════════════════════════════════
+// Node world transform is applied to decoded Draco vertices.
 
 TEST(gltf_draco, node_transform_applies_to_draco)
 {
@@ -339,9 +327,7 @@ TEST(gltf_draco, node_transform_applies_to_draco)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Mirror (negative-determinant) transform flips triangle winding.
-// ═══════════════════════════════════════════════════════════════════════════
+// Mirror (negative-determinant) transform flips triangle winding.
 
 TEST(gltf_draco, mirror_transform_flips_winding)
 {
@@ -371,9 +357,7 @@ TEST(gltf_draco, mirror_transform_flips_winding)
     ASSERT_EQ(plain.triangles[0].v[2], mirror.triangles[0].v[1]);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Mixed Draco + plain-accessor primitives in one mesh.
-// ═══════════════════════════════════════════════════════════════════════════
+// Mixed Draco + plain-accessor primitives in one mesh.
 
 TEST(gltf_draco, mixed_draco_and_accessor_primitives)
 {
@@ -415,9 +399,7 @@ TEST(gltf_draco, mixed_draco_and_accessor_primitives)
     ASSERT_EQ(m.triangles.size(), 13u); // 12 (Draco) + 1 (accessor)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Two Draco primitives in one mesh accumulate with correct vert_base offset.
-// ═══════════════════════════════════════════════════════════════════════════
+// Two Draco primitives in one mesh accumulate with correct vert_base offset.
 
 TEST(gltf_draco, multiple_draco_primitives)
 {
@@ -449,9 +431,7 @@ TEST(gltf_draco, multiple_draco_primitives)
     ASSERT_TRUE(m.triangles[12].v[0] >= 24u);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fail-loud guards.
-// ═══════════════════════════════════════════════════════════════════════════
+// Fail-loud guards.
 
 TEST(gltf_draco, missing_position_fails)
 {
@@ -506,9 +486,7 @@ TEST(gltf_draco, missing_accessors_array_fails)
 //     standard input (it'd require a hand-crafted generic attribute), so the guard is
 //     reasoning-covered rather than fixture-tested; the clamp makes it safe regardless.
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  TEXCOORD_1 (second UV set) decoded from the Draco bitstream.
-// ═══════════════════════════════════════════════════════════════════════════
+// TEXCOORD_1 (second UV set) decoded from the Draco bitstream.
 
 TEST(gltf_draco, decode_texcoord1_second_uv_set)
 {

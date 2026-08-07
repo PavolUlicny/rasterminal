@@ -2,7 +2,7 @@
 #include "src/linalg.h"
 #include <cmath>
 
-// ─── vec3 ─────────────────────────────────────────────────────────────────────
+// vec3
 
 TEST(vec3, dot_product)
 {
@@ -42,7 +42,7 @@ TEST(vec3, length_pythagorean)
     ASSERT_NEAR(vec3(3, 4, 0).length(), 5.0f, 1e-6f);
 }
 
-// ─── mat4 ─────────────────────────────────────────────────────────────────────
+// mat4
 
 TEST(mat4, identity_times_vec_is_vec)
 {
@@ -112,7 +112,7 @@ TEST(mat4, multiplication_is_noncommutative)
     ASSERT_TRUE(diff > 0.5f);
 }
 
-// ─── projection ───────────────────────────────────────────────────────────────
+// projection
 
 TEST(perspective, point_on_near_plane_has_z_ndc_minus_one)
 {
@@ -149,7 +149,7 @@ TEST(perspective, wide_aspect_squashes_x_relative_to_y)
     ASSERT_TRUE(std::abs(ndc.x) < std::abs(ndc.y));
 }
 
-// ─── utilities ────────────────────────────────────────────────────────────────
+// utilities
 
 TEST(util, clamp_bounds)
 {
@@ -164,7 +164,7 @@ TEST(util, to_radians)
     ASSERT_NEAR(to_radians(0.0f), 0.0f, 1e-6f);
 }
 
-// ─── vec3 additional ──────────────────────────────────────────────────────────
+// vec3 additional
 
 TEST(vec3, normalize_zero_vector_returns_zero)
 {
@@ -303,7 +303,7 @@ TEST(vec3, length_sq_matches_length_squared)
     ASSERT_NEAR(v.length_sq(), l * l, 1e-4f);
 }
 
-// ─── vec4 ─────────────────────────────────────────────────────────────────────
+// vec4
 
 TEST(vec4, perspective_divide_divides_by_w)
 {
@@ -365,7 +365,7 @@ TEST(vec4, vec3_constructor_copies_xyz)
     ASSERT_NEAR(r.w, 5.0f, 1e-6f);
 }
 
-// ─── vec2 ─────────────────────────────────────────────────────────────────────
+// vec2
 
 TEST(vec2, arithmetic_operators)
 {
@@ -389,7 +389,7 @@ TEST(vec2, arithmetic_operators)
     ASSERT_NEAR(q.y, 3.5f, 1e-6f);
 }
 
-// ─── look_at ──────────────────────────────────────────────────────────────────
+// look_at
 
 TEST(look_at, eye_transforms_to_origin)
 {
@@ -472,7 +472,7 @@ TEST(look_at, non_axis_aligned_eye_maps_to_origin)
     ASSERT_NEAR(e.z, 0.0f, 1e-4f);
 }
 
-// ─── quat ─────────────────────────────────────────────────────────────────────
+// quat
 
 TEST(quat, identity_rotate_is_no_op)
 {
@@ -630,7 +630,7 @@ TEST(quat, from_axis_angle_non_unit_axis_scales_imaginary)
     ASSERT_TRUE(q.x > 1.0f);
 }
 
-// ─── util edge cases ─────────────────────────────────────────────────────────
+// util edge cases
 
 TEST(util, clamp_lo_equals_hi)
 {
@@ -656,7 +656,7 @@ TEST(util, to_radians_360)
     ASSERT_NEAR(to_radians(360.0f), 2.0f * 3.14159265f, 1e-5f);
 }
 
-// ─── perspective() degenerate planes ─────────────────────────────────────────
+// perspective() degenerate planes
 
 TEST(perspective, near_equals_far_produces_nonfinite)
 {
@@ -676,7 +676,7 @@ TEST(perspective, near_greater_than_far_produces_finite)
     ASSERT_TRUE(std::isfinite(P.m[3][2]));
 }
 
-// ─── normalize(quat) 1e-8 threshold boundary ─────────────────────────────────
+// normalize(quat) 1e-8 threshold boundary
 
 TEST(quat, normalize_just_below_threshold_returns_identity)
 {

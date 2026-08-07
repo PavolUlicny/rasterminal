@@ -36,7 +36,7 @@ namespace
     }
 } // namespace
 
-// ─── get_pixel / depth_at bounds ──────────────────────────────────────────────
+// get_pixel / depth_at bounds
 
 TEST(framebuffer, get_pixel_oob_returns_default)
 {
@@ -61,7 +61,7 @@ TEST(framebuffer, depth_at_oob_returns_infinity)
     ASSERT_TRUE(fb.depth_at(0, fb.height()) == inf);
 }
 
-// ─── clear() ─────────────────────────────────────────────────────────────────
+// clear()
 
 TEST(framebuffer, clear_fills_all_pixels_with_bg)
 {
@@ -90,7 +90,7 @@ TEST(framebuffer, clear_resets_depth_to_infinity)
     ASSERT_TRUE(fb.depth_at(2, 2) == std::numeric_limits<float>::infinity());
 }
 
-// ─── resize() ────────────────────────────────────────────────────────────────
+// resize()
 
 TEST(framebuffer, resize_resets_depth_to_infinity)
 {
@@ -140,7 +140,7 @@ TEST(framebuffer, resize_sequence_clears_each_time)
     ASSERT_TRUE(fb.depth_at(3, 3) == std::numeric_limits<float>::infinity());
 }
 
-// ─── construction edge cases ──────────────────────────────────────────────────
+// construction edge cases
 
 TEST(framebuffer, zero_size_construction_present_does_not_crash)
 {
@@ -165,7 +165,7 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     fb.present();                                         // must not crash
 }
 
-// ─── headless mode ───────────────────────────────────────────────────────────
+// headless mode
 
 TEST(framebuffer, headless_dimensions_correct)
 {
@@ -218,7 +218,7 @@ TEST(framebuffer, headless_clear_resets_depth)
     ASSERT_TRUE(fb.depth_at(2, 2) == std::numeric_limits<float>::infinity()); // reset to +inf
 }
 
-// ─── dirty-tracking path ──────────────────────────────────────────────────────
+// dirty-tracking path
 
 TEST(framebuffer, present_dirty_then_present_again_no_crash)
 {
@@ -241,7 +241,7 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
     fb.present(); // dirty-tracking path — must not crash
 }
 
-// ─── HUD ─────────────────────────────────────────────────────────────────────
+// HUD
 // CaptureStdout redirects stdout to a temp file for the duration of its lifetime,
 // then reads back the captured bytes. Used to verify HUD presence/absence.
 
@@ -425,7 +425,7 @@ TEST(framebuffer, hud_cleared_after_set_is_omitted)
     ASSERT_TRUE(out.find("\033[?7l", first_pos + 1) == std::string::npos);
 }
 
-// ─── incremental skip path ────────────────────────────────────────────────────
+// incremental skip path
 
 namespace
 {
@@ -535,7 +535,7 @@ TEST(framebuffer, present_hud_positions_absolutely_after_dropped_advance)
     ASSERT_TRUE(inc.find("HUD") != std::string::npos);
 }
 
-// ─── additional incremental / emit_cell paths ────────────────────────────────
+// additional incremental / emit_cell paths
 
 TEST(framebuffer, present_incremental_entirely_clean_row_emits_no_cursor_pos)
 {
@@ -618,7 +618,7 @@ TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
     ASSERT_TRUE(out.find(sgr, first + 1) == std::string::npos); // suppressed for second cell
 }
 
-// ─── write_byte() LUT boundary values ────────────────────────────────────────
+// write_byte() LUT boundary values
 
 TEST(framebuffer, write_byte_lut_boundary_values)
 {
@@ -642,7 +642,7 @@ TEST(framebuffer, write_byte_lut_boundary_values)
     }
 }
 
-// ─── all-cells-dirty incremental frame ───────────────────────────────────────
+// all-cells-dirty incremental frame
 
 TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
 {
@@ -659,7 +659,7 @@ TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
     ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
 }
 
-// ─── non-headless ctor/dtor ───────────────────────────────────────────────────
+// non-headless ctor/dtor
 
 TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
 {
@@ -675,7 +675,7 @@ TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
     ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos); // exit alternate screen
 }
 
-// ─── tonemap (soft-knee highlight rolloff) ────────────────────────────────────
+// tonemap (soft-knee highlight rolloff)
 // The display transform applied once per shaded contribution before quantization. Knee 0.7.
 
 TEST(tonemap, identity_below_and_at_knee)
@@ -739,7 +739,7 @@ TEST(tonemap, vec3_applies_per_channel)
     ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
 }
 
-// ─── quantize_256 (perceptual CIELAB nearest via the 64^3 LUT) ────────────────
+// quantize_256 (perceptual CIELAB nearest via the 64^3 LUT)
 // The RGB->palette-index map used by present() in ColorMode::Palette256. Cube 16..231,
 // grey ramp 232..255; never returns a 0..15 system colour. Each colour takes the
 // deltaE76-nearest entry for its 64^3 cell's centre, except that a cell containing an
@@ -918,7 +918,7 @@ TEST(framebuffer, quantize_256_matches_cielab_reference)
     }
 }
 
-// ─── 256-colour present() emission ────────────────────────────────────────────
+// 256-colour present() emission
 
 TEST(framebuffer, present_256_emits_palette_fg_and_bg)
 {
@@ -975,7 +975,7 @@ TEST(framebuffer, present_truecolor_default_still_24bit)
     ASSERT_TRUE(out.find("48;5;") == std::string::npos);
 }
 
-// ─── 256-colour index coalescing / skip path ──────────────────────────────────
+// 256-colour index coalescing / skip path
 
 TEST(framebuffer, present_256_distinct_rgb_same_index_is_clean)
 {
@@ -1012,7 +1012,7 @@ TEST(framebuffer, present_256_single_skip_emits_cursor_advance)
     ASSERT_TRUE(inc.find("\033[C") != std::string::npos);
 }
 
-// ─── 256-colour HUD, plumbing, degenerate sizes ───────────────────────────────
+// 256-colour HUD, plumbing, degenerate sizes
 
 TEST(framebuffer, present_256_hud_uses_palette_colors)
 {

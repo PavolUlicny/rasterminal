@@ -572,7 +572,7 @@ int main(int argc, char *argv[])
     bool running = true;
     while (running)
     {
-        // ── Frame timing ──────────────────────────────────────────────────
+        // Frame timing
         auto now = clock::now();
         const float raw_dt = std::chrono::duration<float>(now - prev).count();
         prev = now;
@@ -604,7 +604,7 @@ int main(int argc, char *argv[])
             fps_latch_time = 0.0f;
         }
 
-        // ── Input ─────────────────────────────────────────────────────────
+        // Input
         if (g_interrupted)
         {
             break;
@@ -804,7 +804,7 @@ int main(int argc, char *argv[])
             break;
         }
 
-        // ── Camera key movement (once per frame, frame-rate independent) ──
+        // Camera key movement (once per frame, frame-rate independent)
         if (held_cam_key != platform::Key::None)
         {
             const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
@@ -818,13 +818,13 @@ int main(int argc, char *argv[])
             }
         }
 
-        // ── Auto-rotation ────────────────────────────────────────────────
+        // Auto-rotation
         if (spinning)
         {
             camera.spin_world_y(spin_speed * dt);
         }
 
-        // ── Resize detection ─────────────────────────────────────────────
+        // Resize detection
         {
             int new_cols = 0;
             int new_rows = 0;
@@ -837,7 +837,7 @@ int main(int argc, char *argv[])
             }
         }
 
-        // ── HUD ───────────────────────────────────────────────────────────
+        // HUD
         // Composed every frame even though present() drops an unchanged line without emitting a
         // byte, so most of these composes are discarded. Deliberate: the compose measures 679 ns
         // for a name within budget and 713 ns for one long enough to be cut (200k iterations
@@ -868,7 +868,7 @@ int main(int argc, char *argv[])
             fb.set_hud(compose_hud(info, cols, color_mode));
         }
 
-        // ── Render ────────────────────────────────────────────────────────
+        // Render
         fb.clear(background_color(bg_mode));
         const int n_lights = light_count(lighting_mode);
         const vec3 cur_ambient = lighting_ambient(lighting_mode, ambient);
@@ -878,7 +878,7 @@ int main(int argc, char *argv[])
         renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
         fb.present();
 
-        // ── Frame cap ────────────────────────────────────────────────────
+        // Frame cap
         // fps == 0 means uncapped (skip the sleep entirely).
         if (args.fps > 0)
         {

@@ -96,11 +96,9 @@ namespace
     }
 } // namespace
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Embedded KHR_texture_basisu decodes — the headline "untextured -> textured".
-//  The 6x6 fixture is non-block-aligned (physical 8x8), so this also covers the
-//  transcoder's crop / row-pitch path that the 4x4 unit fixtures cannot.
-// ═══════════════════════════════════════════════════════════════════════════
+// Embedded KHR_texture_basisu decodes — the headline "untextured -> textured".
+// The 6x6 fixture is non-block-aligned (physical 8x8), so this also covers the
+// transcoder's crop / row-pitch path that the 4x4 unit fixtures cannot.
 
 TEST(gltf_ktx2, embedded_basisu_texture_decodes_with_correct_layout)
 {
@@ -128,10 +126,8 @@ TEST(gltf_ktx2, embedded_basisu_texture_decodes_with_correct_layout)
     ASSERT_TRUE(chan(5, 5, 0) > 180 && chan(5, 5, 2) > 170); // row5 magenta
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Precedence: a texture carrying BOTH a plain image and a KHR_texture_basisu
-//  image must decode the KTX2 source, not the fallback.
-// ═══════════════════════════════════════════════════════════════════════════
+// Precedence: a texture carrying BOTH a plain image and a KHR_texture_basisu
+// image must decode the KTX2 source, not the fallback.
 
 TEST(gltf_ktx2, basisu_source_preferred_over_fallback_image)
 {
@@ -168,11 +164,9 @@ TEST(gltf_ktx2, basisu_source_preferred_over_fallback_image)
     ASSERT_EQ(t.height, 6);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Graceful degradation: when the preferred KTX2 fails to transcode but the
-//  texture also supplies an ordinary source, fall back to it (KHR_texture_basisu
-//  intent) rather than dropping the texture.
-// ═══════════════════════════════════════════════════════════════════════════
+// Graceful degradation: when the preferred KTX2 fails to transcode but the
+// texture also supplies an ordinary source, fall back to it (KHR_texture_basisu
+// intent) rather than dropping the texture.
 
 TEST(gltf_ktx2, falls_back_to_ordinary_source_when_ktx2_fails)
 {
@@ -209,9 +203,7 @@ TEST(gltf_ktx2, falls_back_to_ordinary_source_when_ktx2_fails)
     ASSERT_EQ(t.height, 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  External (.gltf + sidecar .ktx2) routed by content sniff, not extension.
-// ═══════════════════════════════════════════════════════════════════════════
+// External (.gltf + sidecar .ktx2) routed by content sniff, not extension.
 
 TEST(gltf_ktx2, external_uri_ktx2_decodes)
 {
@@ -281,10 +273,8 @@ TEST(gltf_ktx2, external_uri_percent_encoded_filename_decodes)
     ASSERT_EQ(t.height, 6);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fail-loud: a corrupt KTX2 drops the texture slot (index -> -1) but the model
-//  still loads, matching how a failed stb image decode is handled.
-// ═══════════════════════════════════════════════════════════════════════════
+// Fail-loud: a corrupt KTX2 drops the texture slot (index -> -1) but the model
+// still loads, matching how a failed stb image decode is handled.
 
 TEST(gltf_ktx2, corrupt_basisu_drops_texture_but_loads)
 {
@@ -299,10 +289,8 @@ TEST(gltf_ktx2, corrupt_basisu_drops_texture_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  A KTX2 carried by an inline base64 data: URI decodes — proves the data-URI
-//  path routes through decode_bytes to the KTX2 transcoder, not just stb.
-// ═══════════════════════════════════════════════════════════════════════════
+// A KTX2 carried by an inline base64 data: URI decodes — proves the data-URI
+// path routes through decode_bytes to the KTX2 transcoder, not just stb.
 
 TEST(gltf_ktx2, data_uri_basisu_decodes)
 {

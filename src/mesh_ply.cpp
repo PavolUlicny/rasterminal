@@ -27,7 +27,7 @@
 #pragma GCC diagnostic pop
 #endif
 
-// ─── typed-buffer helpers ────────────────────────────────────────────────────
+// typed-buffer helpers
 
 namespace
 {
@@ -200,7 +200,7 @@ namespace
 
 } // namespace
 
-// ─── Mesh::load_ply ───────────────────────────────────────────────────────────
+// Mesh::load_ply
 
 bool Mesh::load_ply(const std::string &path, float crease_cos)
 {
@@ -492,7 +492,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     std::vector<uint32_t> ply_weld;
     bool use_weld = false;
 
-    // ── Split-by-UV path: per-face texcoord lists, no face colors ────────────
+    // Split-by-UV path: per-face texcoord lists, no face colors
     // Hash-dedups vertices by (pos_idx, u, v) so corners that genuinely share
     // position+UV collapse to one vertex, but distinct UVs at the same position
     // (UV seams) become separate vertices. The weld map records the source
@@ -615,7 +615,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
         use_weld = need_weld;
     }
-    // ── Standard path: shared vertices ───────────────────────────────────────
+    // Standard path: shared vertices
     else if (!use_face_colors)
     {
         const uint8_t *pb = positions->buffer.get();
@@ -687,7 +687,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
             }
         }
     }
-    // ── Face-color path: expand to unshared vertices ──────────────────────────
+    // Face-color path: expand to unshared vertices
     else
     {
         // Build a vertex pool, then expand per triangle with face color.

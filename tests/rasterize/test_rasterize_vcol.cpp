@@ -4,7 +4,7 @@
 
 #include <initializer_list>
 
-// ─── helper ───────────────────────────────────────────────────────────────────
+// helper
 
 // Build an in-memory Texture without disk I/O.
 static Texture make_vcol_tex(int w, int h, std::initializer_list<int> rgba)
@@ -50,7 +50,7 @@ static void rast_phong_vcol(
     );
 }
 
-// ─── vertex-color in rasterize_phong() ───────────────────────────────────────
+// vertex-color in rasterize_phong()
 //
 // Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 framebuffer.
 // Key pixel centres and pre-computed screen-space barycentric weights:

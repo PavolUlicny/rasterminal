@@ -4,7 +4,7 @@
 
 #include <initializer_list>
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// helpers
 
 // Build an in-memory Texture without disk I/O.
 // Takes int values to avoid uint8_t narrowing-conversion issues at call sites.
@@ -44,7 +44,7 @@ static void rast_tex(
     rasterize_flat(fb, sa, sb, sc, wa, wb, wc, ca, cb, cc, uva, uvb, uvc, tex, 0.0f, y_min, y_max);
 }
 
-// ─── texture-rasterizer integration ──────────────────────────────────────────
+// texture-rasterizer integration
 //
 // Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 framebuffer.
 // Key pixel centres and pre-computed screen-space barycentric weights:
@@ -52,7 +52,7 @@ static void rast_tex(
 //   Pixel (12,10): ba=0.46875, bb=0,       bc=0.53125
 //   Pixel (20,10): ba=0.21875, bb=0.25,    bc=0.53125
 
-// ── Group A: diffuse texture in rasterize_flat() ───────────────────────────────────
+// Group A: diffuse texture in rasterize_flat()
 
 // A1: 1×1 red texture × white vertex colour → red pixel.
 // Catches: texture multiply silently dropped.
@@ -253,7 +253,7 @@ TEST(rasterize, diffuse_transform_scale_multiplies_sampled_coord)
     }
 }
 
-// ── Group B: diffuse texture in rasterize_phong() ────────────────────────────
+// Group B: diffuse texture in rasterize_phong()
 
 // B1: 1×1 gray (128,128,128) texture halves both diffuse and ambient.
 // Ambient-only setup (n_lights=0): without tex R≈255, with tex R≈128.
@@ -368,7 +368,7 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
     assert_pixel_near(fb_tex, 20, 10, fb_notex.get_pixel(20, 10), 2);
 }
 
-// ── Group C: specular texture ─────────────────────────────────────────────────
+// Group C: specular texture
 
 // C1: 1×1 black specular texture zeroes the specular highlight.
 // normal=(0,0,1), eye=(0,0,5), light dir=(0,0,1): H=N → ndh=1 → peak specular.
@@ -417,7 +417,7 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
     }
 }
 
-// ── Group D: normal map ───────────────────────────────────────────────────────
+// Group D: normal map
 
 // D1: nmap texel (255,128,128) unpacks to nm≈(1,0,0) via *2−1.
 // Vertex normals=(0,0,1), tangents=(1,0,0) → TBN redirects normal to +x.
@@ -464,7 +464,7 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     }
 }
 
-// ── Group D+: glTF normalScale applied to the tangent-space normal ───────────
+// Group D+: glTF normalScale applied to the tangent-space normal
 
 // Same D1 geometry: nmap texel (255,128,128) → nm≈(1,0,0), tan=(1,0,0),
 // light dir+color along +x. scale=0 must zero nm.x so the normal falls back to
@@ -607,7 +607,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
     }
 }
 
-// ── Group D3: degenerate tangent — colour value validation ───────────────────
+// Group D3: degenerate tangent — colour value validation
 
 // D3: Validates the pixel VALUE when tangent is degenerate (D2 checks no-crash only).
 // tan=(0,0,1) ∥ N=(0,0,1) → Gram-Schmidt yields T=B={0,0,0}.
@@ -652,7 +652,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
     assert_pixel_near(fb_degen, 20, 10, fb_base.get_pixel(20, 10), 5);
 }
 
-// ── Group E: diffuse + specular texture simultaneously ────────────────────────
+// Group E: diffuse + specular texture simultaneously
 
 // E1: tex and stex both non-null. The if(tex||stex) block must apply both:
 //   mat_tex.diffuse  *= tex->sample_rgb()
@@ -717,7 +717,7 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
     }
 }
 
-// ── Group F: specular texture combined with alpha cutout ─────────────────────
+// Group F: specular texture combined with alpha cutout
 
 // F1: has_cutout=true (alpha_cutoff=0.5, opaque white diffuse tex) AND stex != nullptr.
 // When has_cutout=true the UV is computed in the cutout pre-pass; the post-depth
@@ -779,7 +779,7 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
     }
 }
 
-// ── Group F: glTF metallic-roughness remap ────────────────────────────────────
+// Group F: glTF metallic-roughness remap
 // rasterize_phong tints specular reflectance toward the base colour when
 // mat.metallic > 0:  specular(F0) = lerp(0.04, base, m),  m = mat.metallic * MR_tex.b.
 // Diffuse is intentionally NOT zeroed (no IBL → diffuse-less metals go near-black).
@@ -896,7 +896,7 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
     }
 }
 
-// ── Group O: glTF occlusion texture overrides baked AO (Phong) ────────────────
+// Group O: glTF occlusion texture overrides baked AO (Phong)
 //
 // Isolate AO: no lights, ambient={1,0,0}, mat defaults (mat.ambient={1,1,1}), so the
 // lit colour is exactly ambient * mat.ambient * ao → R = 255 * ao. uv={0.5,0.5} hits
@@ -1010,7 +1010,7 @@ TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
     assert_pixel_near(fb_separate, 20, 10, fb_shared.get_pixel(20, 10), 1);
 }
 
-// ── Group T1: per-slot UV set selection (TEXCOORD_1) ──────────────────────────
+// Group T1: per-slot UV set selection (TEXCOORD_1)
 //
 // 2×1 texture (left red, right blue). uv0 samples the red half, uv1 the blue half.
 // rasterize_flat() reads the diffuse binding's uv_set from the Material*, so flipping

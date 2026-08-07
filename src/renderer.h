@@ -15,7 +15,7 @@
 #include <thread>
 #include <vector>
 
-// ─── Renderer ─────────────────────────────────────────────────────────────────
+// Renderer
 
 struct Renderer
 {
@@ -112,7 +112,7 @@ struct Renderer
     int m_generation = 0;                 // bumped before each dispatch to wake workers
     bool m_stop = false;                  // set by destructor to terminate worker loops
 
-    // ── Transparency state ────────────────────────────────────────────────────
+    // Transparency state
     Pass m_pass = Pass::Opaque;
     uint32_t m_opaque_count = 0; // triangle range split: [0,opaque) opaque, [opaque,total) blend
     int m_ab_width = 0, m_ab_height = 0;

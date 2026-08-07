@@ -10,7 +10,7 @@
 
 static constexpr float EPS = 1e-4f;
 
-// ─── eye() ───────────────────────────────────────────────────────────────────
+// eye()
 
 TEST(camera, eye_identity_orientation_puts_eye_on_plus_z)
 {
@@ -51,7 +51,7 @@ TEST(camera, eye_on_unit_sphere_scaled_by_distance)
     ASSERT_NEAR(r, 7.5f, EPS);
 }
 
-// ─── view() matrix ───────────────────────────────────────────────────────────
+// view() matrix
 
 TEST(camera, view_transforms_eye_to_origin)
 {
@@ -88,7 +88,7 @@ TEST(camera, view_puts_target_on_negative_z_at_distance)
     ASSERT_NEAR(r.z, -6.0f, EPS);
 }
 
-// ─── projection() ────────────────────────────────────────────────────────────
+// projection()
 
 TEST(camera, projection_square_aspect)
 {
@@ -133,7 +133,7 @@ TEST(camera, projection_degenerate_size_does_not_divide_by_zero)
     ASSERT_TRUE(std::isfinite(P.m[1][1]));
 }
 
-// ─── process_key() ───────────────────────────────────────────────────────────
+// process_key()
 // Tested behaviourally: verify that eye() moves in the expected world direction
 // after each key, starting from identity orientation.
 
@@ -283,7 +283,7 @@ TEST(camera, process_key_unknown_does_not_change_state)
     ASSERT_NEAR(e_after.z, e_before.z, EPS);
 }
 
-// ─── orbit() — turntable-specific ────────────────────────────────────────────
+// orbit() — turntable-specific
 
 TEST(camera, orbit_keeps_eye_on_sphere)
 {
@@ -392,7 +392,7 @@ TEST(camera, orbit_upside_down_keeps_eye_on_sphere)
     ASSERT_NEAR(r, 6.0f, 1e-4f);
 }
 
-// ─── look(): first-person ────────────────────────────────────────────────────
+// look(): first-person
 // In first-person the rotation applied to `orientation` is the same one orbit()
 // applies; only the pivot moves, from `target` to the eye. Sign conventions are
 // pinned behaviourally here rather than derived from the quaternion algebra.
@@ -627,7 +627,7 @@ TEST(camera, fp_look_zero_is_noop)
     ASSERT_NEAR(c.forward().y, f_before.y, EPS);
 }
 
-// ─── move() / adjust_speed(): first-person ───────────────────────────────────
+// move() / adjust_speed(): first-person
 
 TEST(camera, fp_move_forward_follows_the_look_direction)
 {
@@ -811,7 +811,7 @@ TEST(camera, adjust_speed_clamps_at_both_ends)
     ASSERT_NEAR(c.fp_speed, Camera::FP_SPEED_MIN, EPS);
 }
 
-// ─── process_key(): first-person routing ─────────────────────────────────────
+// process_key(): first-person routing
 
 TEST(camera, fp_process_key_WASD_moves_without_rotating)
 {
@@ -988,7 +988,7 @@ TEST(camera, fp_process_key_leaves_distance_alone)
     ASSERT_NEAR(c.distance, 5.0f, EPS);
 }
 
-// ─── spin_world_y() ──────────────────────────────────────────────────────────
+// spin_world_y()
 
 TEST(camera, spin_world_y_rotates_around_world_up)
 {
@@ -1102,7 +1102,7 @@ TEST(camera, spin_world_y_zero_is_noop)
     ASSERT_NEAR(e_after.z, e_before.z, EPS);
 }
 
-// ─── projection() additional degenerate inputs ────────────────────────────────
+// projection() additional degenerate inputs
 
 TEST(camera, projection_zero_height_fallback)
 {
@@ -1131,7 +1131,7 @@ TEST(camera, projection_both_zero_fallback)
     ASSERT_NEAR(P_00.m[0][0], P_sq.m[0][0], EPS); // x-scale encodes aspect
 }
 
-// ─── view(eye_pos) overload ───────────────────────────────────────────────────
+// view(eye_pos) overload
 
 TEST(camera, view_explicit_eye_pos_maps_to_origin)
 {
@@ -1159,7 +1159,7 @@ TEST(camera, view_eye_at_target_does_not_crash)
     (void)V;
 }
 
-// ─── orbit() zero step ────────────────────────────────────────────────────────
+// orbit() zero step
 
 TEST(camera, orbit_zero_is_noop)
 {
@@ -1201,7 +1201,7 @@ TEST(camera, orbit_compound_nonzero_matches_formula)
     ASSERT_NEAR(act.z, exp.z, EPS);
 }
 
-// ─── process_key() dt=0 ───────────────────────────────────────────────────────
+// process_key() dt=0
 
 TEST(camera, eye_zero_distance_returns_target)
 {

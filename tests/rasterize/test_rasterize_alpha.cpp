@@ -4,7 +4,7 @@
 
 #include <initializer_list>
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
+// helpers
 
 static Texture make_tex(int w, int h, std::initializer_list<int> rgba)
 {
@@ -50,7 +50,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
     );
 }
 
-// ─── Group A: alpha_cutoff = 0 (disabled) is bit-identical to no cutoff ──────
+// Group A: alpha_cutoff = 0 (disabled) is bit-identical to no cutoff
 
 // A1: cutoff=0 with an opaque texture must produce the same pixel as cutoff=0.
 // Verifies the sentinel path doesn't silently branch differently.
@@ -79,7 +79,7 @@ TEST(rasterize_alpha, cutoff_zero_flat_and_phong_both_draw)
     ASSERT_TRUE(was_drawn(fb_p, 20, 10));
 }
 
-// ─── Group B: cutout discards transparent pixels ─────────────────────────────
+// Group B: cutout discards transparent pixels
 
 // B1: fully transparent texture (alpha=0) + cutoff=0.5 → pixel not drawn (Flat).
 // Core correctness: a fully-transparent pixel must be discarded.
@@ -147,7 +147,7 @@ TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_phong)
     ASSERT_EQ(cb.b, cc.b);
 }
 
-// ─── Group C: discarded pixels must not write the depth buffer ────────────────
+// Group C: discarded pixels must not write the depth buffer
 
 // C1: transparent foreground triangle must not occlude an opaque triangle behind it.
 // If discarded pixels claim z-buffer entries, the rear triangle would be invisible.
@@ -247,7 +247,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
     }
 }
 
-// ─── Group D: no overhead on non-cutout path ─────────────────────────────────
+// Group D: no overhead on non-cutout path
 
 // D1: texture without cutout (alpha_cutoff=0) with opaque image → same colour
 // as cutoff active but alpha=1 image. Verifies the two paths are equivalent when
@@ -279,7 +279,7 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
     ASSERT_EQ(cn.b, cw.b);
 }
 
-// ─── Group E: alpha exactly at cutoff boundary ────────────────────────────────
+// Group E: alpha exactly at cutoff boundary
 // The discard condition is strict < (alpha < cutoff), so alpha == cutoff → drawn.
 // cutoff = 128 * (1/255) matches how sample_rgba converts alpha bytes, making
 // the comparison bit-exact.
@@ -302,7 +302,7 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
 
-// ─── Group F: has_cutout + nmap/stex combined ─────────────────────────────────
+// Group F: has_cutout + nmap/stex combined
 
 // F1: has_cutout=true + nmap active — the UV from the cutout pre-pass must be reused
 // for nmap sampling (the `if (!has_cutout && ...)` UV recompute is skipped).
@@ -357,7 +357,7 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
     }
 }
 
-// ─── Group G: has_vcol + alpha_cutoff combined ────────────────────────────────
+// Group G: has_vcol + alpha_cutoff combined
 
 // G1: has_vcol=true + alpha_cutoff active — both compose correctly: pixel passes
 // alpha test AND is tinted red by vcol.
@@ -399,7 +399,7 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
     }
 }
 
-// ─── Group H: cutout-only path (no nmap, no stex) — UV lifecycle ─────────────
+// Group H: cutout-only path (no nmap, no stex) — UV lifecycle
 
 // H1: has_cutout=true, nmap=nullptr, stex=nullptr.
 // The block `if (!has_cutout && (tex || nmap || stex))` evaluates false on both

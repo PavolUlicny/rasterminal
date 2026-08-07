@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// ─── Group N: load_tex path coverage ──────────────────────────────────────────
+// Group N: load_tex path coverage
 
 TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
 {
@@ -76,7 +76,7 @@ TEST(gltf_valid, zero_emissive_factor_with_texture_skips_decode)
     ASSERT_FALSE(m.has_emissive);
 }
 
-// ─── Group N+: glTF normalTexture.scale parsing + has_normal_scale gate ────────
+// Group N+: glTF normalTexture.scale parsing + has_normal_scale gate
 
 TEST(gltf_valid, normal_scale_read_and_sets_has_flag)
 {
@@ -173,7 +173,7 @@ TEST(gltf_valid, normal_scale_with_failed_decode_no_has_flag)
     ASSERT_FALSE(m.has_normal_scale);
 }
 
-// ─── glTF occlusionTexture parsing + has_occlusion gate ───────────────────────
+// glTF occlusionTexture parsing + has_occlusion gate
 
 TEST(gltf_valid, occlusion_strength_read_and_sets_has_flag)
 {
@@ -348,7 +348,7 @@ TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
     ASSERT_TRUE(m.materials[1].diffuse_map.tex < 0);
 }
 
-// ─── Group V: embedded texture load success ───────────────────────────────────
+// Group V: embedded texture load success
 
 TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
 {
@@ -383,7 +383,7 @@ TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
     ASSERT_FALSE(m.textures.empty());
 }
 
-// ─── Group V+: shared image deduplicates texture ──────────────────────────────
+// Group V+: shared image deduplicates texture
 
 TEST(gltf_valid, shared_image_deduplicates_texture)
 {
@@ -428,7 +428,7 @@ TEST(gltf_valid, shared_image_deduplicates_texture)
     ASSERT_TRUE(found);
 }
 
-// ─── Group V++: parallel texture decode (n_threads > 1) ───────────────────────
+// Group V++: parallel texture decode (n_threads > 1)
 
 TEST(gltf_valid, parallel_decode_two_distinct_textures)
 {
@@ -518,7 +518,7 @@ TEST(gltf_valid, parallel_decode_failure_compacts_and_remaps)
     ASSERT_EQ(m.materials[2].diffuse_map.tex, -1);
 }
 
-// ─── Group: sampler wrap modes ────────────────────────────────────────────────
+// Group: sampler wrap modes
 
 // One-triangle GLB: single material whose baseColorTexture is image 0 (embedded BMP),
 // with caller-supplied `textures` and `samplers` JSON segments. `samplers` is the full
@@ -648,7 +648,7 @@ TEST(gltf_sampler, dedup_keeps_identical_sampler)
     ASSERT_TRUE(m.textures[0].wrap_s == WrapMode::Clamp);
 }
 
-// ─── Group: inline data: URI images ───────────────────────────────────────────
+// Group: inline data: URI images
 
 // One-triangle GLB whose single material's baseColorTexture is image 0 carrying `uri`.
 static std::string data_uri_tex_glb(const std::string &uri)

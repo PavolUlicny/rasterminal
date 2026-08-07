@@ -4,9 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  KHR_texture_transform
-// ═══════════════════════════════════════════════════════════════════════════
+// KHR_texture_transform
 
 // baseColorTexture with KHR_texture_transform (offset + scale, no rotation) → the slot bakes
 // the flip-folded 2x3 affine. With rotation 0: c=1,s=0, so for offset (ox,oy) and scale

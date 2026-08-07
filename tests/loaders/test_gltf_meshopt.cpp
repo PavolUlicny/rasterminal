@@ -243,9 +243,7 @@ namespace
     }
 } // namespace
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Core round-trip: ATTRIBUTES vertex stream + TRIANGLES index stream.
-// ═══════════════════════════════════════════════════════════════════════════
+// Core round-trip: ATTRIBUTES vertex stream + TRIANGLES index stream.
 
 TEST(gltf_meshopt, position_only_triangles)
 {
@@ -273,9 +271,7 @@ TEST(gltf_meshopt, position_only_triangles)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Interleaved POSITION + NORMAL in one ATTRIBUTES stream (stride 24).
-// ═══════════════════════════════════════════════════════════════════════════
+// Interleaved POSITION + NORMAL in one ATTRIBUTES stream (stride 24).
 
 TEST(gltf_meshopt, interleaved_position_normal)
 {
@@ -317,9 +313,7 @@ TEST(gltf_meshopt, interleaved_position_normal)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  INDICES (sequence) mode and 32-bit index width.
-// ═══════════════════════════════════════════════════════════════════════════
+// INDICES (sequence) mode and 32-bit index width.
 
 TEST(gltf_meshopt, index_sequence_mode)
 {
@@ -365,9 +359,7 @@ TEST(gltf_meshopt, uint32_indices)
     ASSERT_TRUE(has_all_quad_positions(m));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Filters: each cgltf filter enum must dispatch to the right decode-filter call.
-// ═══════════════════════════════════════════════════════════════════════════
+// Filters: each cgltf filter enum must dispatch to the right decode-filter call.
 
 TEST(gltf_meshopt, filter_exponential_positions)
 {
@@ -479,9 +471,7 @@ TEST(gltf_meshopt, filter_quaternion_dispatch)
     ASSERT_TRUE(has_all_quad_positions(m));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Mixed: a meshopt-compressed view and a plain (uncompressed) view in one file.
-// ═══════════════════════════════════════════════════════════════════════════
+// Mixed: a meshopt-compressed view and a plain (uncompressed) view in one file.
 
 TEST(gltf_meshopt, mixed_compressed_and_plain_views)
 {
@@ -508,9 +498,7 @@ TEST(gltf_meshopt, mixed_compressed_and_plain_views)
     ASSERT_TRUE(has_all_quad_positions(m));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fail-loud: corrupt / truncated streams reject the whole load.
-// ═══════════════════════════════════════════════════════════════════════════
+// Fail-loud: corrupt / truncated streams reject the whole load.
 
 TEST(gltf_meshopt, corrupt_stream_fails_load)
 {
@@ -554,11 +542,9 @@ TEST(gltf_meshopt, truncated_stream_fails_load)
     assert_rejects(f.path);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  KHR_meshopt_compression: the ratified extension name, same JSON shape as
-//  EXT_meshopt_compression. cgltf must parse it into the same fields and the
-//  loader's existing decode path must run unmodified.
-// ═══════════════════════════════════════════════════════════════════════════
+// KHR_meshopt_compression: the ratified extension name, same JSON shape as
+// EXT_meshopt_compression. cgltf must parse it into the same fields and the
+// loader's existing decode path must run unmodified.
 
 TEST(gltf_meshopt, khr_extension_name)
 {
@@ -582,9 +568,7 @@ TEST(gltf_meshopt, khr_extension_name)
     ASSERT_TRUE(has_all_quad_positions(m));
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  COLOR filter (KHR_meshopt_compression only): YCoCg(+A) vertex color decode.
-// ═══════════════════════════════════════════════════════════════════════════
+// COLOR filter (KHR_meshopt_compression only): YCoCg(+A) vertex color decode.
 
 TEST(gltf_meshopt, filter_color_vertex_colors)
 {
@@ -625,9 +609,7 @@ TEST(gltf_meshopt, filter_color_vertex_colors)
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Node world transform applies to decoded meshopt vertices.
-// ═══════════════════════════════════════════════════════════════════════════
+// Node world transform applies to decoded meshopt vertices.
 
 TEST(gltf_meshopt, node_transform_applies)
 {

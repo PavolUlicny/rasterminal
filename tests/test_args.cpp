@@ -48,7 +48,7 @@ static ParseResult run(std::initializer_list<const char *> tokens)
     return result;
 }
 
-// ─── program_name (diagnostic prefix) ───────────────────────────────────────────
+// program_name (diagnostic prefix)
 
 TEST(args, program_name_strips_unix_path)
 {
@@ -100,7 +100,7 @@ TEST(args, program_name_trailing_separator_falls_back)
     ASSERT_TRUE(std::strcmp(program_name("/usr/bin/"), "rasterminal") == 0);
 }
 
-// ─── defaults ─────────────────────────────────────────────────────────────────
+// defaults
 
 TEST(args, defaults_when_only_model_given)
 {
@@ -128,7 +128,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_NEAR(r.args.zoom, 1.0f, 1e-6f);
 }
 
-// ─── --help ───────────────────────────────────────────────────────────────────
+// --help
 
 TEST(args, help_short_exits_zero)
 {
@@ -144,7 +144,7 @@ TEST(args, help_long_exits_zero)
     ASSERT_EQ(r.exit_code, 0);
 }
 
-// ─── --version ──────────────────────────────────────────────────────────────
+// --version
 
 TEST(args, version_short_exits_zero)
 {
@@ -174,7 +174,7 @@ TEST(args, version_clusters_after_boolean)
     ASSERT_EQ(r.exit_code, 0);
 }
 
-// ─── error: no model ─────────────────────────────────────────────────────────
+// error: no model
 
 TEST(args, no_model_is_error)
 {
@@ -183,7 +183,7 @@ TEST(args, no_model_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: unknown flag ──────────────────────────────────────────────────────
+// error: unknown flag
 
 TEST(args, unknown_long_flag_is_error)
 {
@@ -199,7 +199,7 @@ TEST(args, unknown_short_flag_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── lone "-" operand (POSIX stdin sentinel) ──────────────────────────────────
+// lone "-" operand (POSIX stdin sentinel)
 
 TEST(args, lone_dash_is_model_path)
 {
@@ -231,7 +231,7 @@ TEST(args, operand_then_lone_dash_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: extra positional ──────────────────────────────────────────────────
+// error: extra positional
 
 TEST(args, two_positional_args_is_error)
 {
@@ -240,7 +240,7 @@ TEST(args, two_positional_args_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── "--" end-of-options terminator (POSIX Guideline 10) ──────────────────────
+// "--" end-of-options terminator (POSIX Guideline 10)
 
 TEST(args, double_dash_allows_dash_prefixed_model)
 {
@@ -293,7 +293,7 @@ TEST(args, double_dash_then_lone_dash_is_model)
     ASSERT_TRUE(r.args.model_path == "-");
 }
 
-// ─── error: missing value ─────────────────────────────────────────────────────
+// error: missing value
 
 TEST(args, missing_value_for_shading_is_error)
 {
@@ -316,7 +316,7 @@ TEST(args, missing_value_for_lighting_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: short flags reject = form ────────────────────────────────────────
+// error: short flags reject = form
 
 TEST(args, short_flag_equals_form_is_rejected)
 {
@@ -335,7 +335,7 @@ TEST(args, bare_threads_long_form_uses_all)
     ASSERT_TRUE(r.args.model_path == "m.obj");
 }
 
-// ─── --shading ────────────────────────────────────────────────────────────────
+// --shading
 
 TEST(args, shading_wireframe_by_name)
 {
@@ -381,7 +381,7 @@ TEST(args, shading_invalid_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --shading compact and equals forms ──────────────────────────────────────
+// --shading compact and equals forms
 
 TEST(args, shading_compact_short_form)
 {
@@ -405,7 +405,7 @@ TEST(args, shading_compact_invalid_value_is_error)
     ASSERT_FALSE(run({ "-sbad", "m.obj" }).ok);
 }
 
-// ─── --bg ─────────────────────────────────────────────────────────────────────
+// --bg
 
 TEST(args, bg_black)
 {
@@ -468,7 +468,7 @@ TEST(args, bg_invalid_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --lighting ───────────────────────────────────────────────────────────────
+// --lighting
 
 TEST(args, lighting_dual)
 {
@@ -526,7 +526,7 @@ TEST(args, lighting_invalid_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --threads ────────────────────────────────────────────────────────────────
+// --threads
 
 TEST(args, threads_bare_j_at_end)
 {
@@ -589,7 +589,7 @@ TEST(args, threads_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --spin / --no-spin ───────────────────────────────────────────────────────
+// --spin / --no-spin
 
 TEST(args, spin_default_is_off)
 {
@@ -639,7 +639,7 @@ TEST(args, no_spin_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --ao / --no-ao ───────────────────────────────────────────────────────────
+// --ao / --no-ao
 
 TEST(args, ao_default_is_on)
 {
@@ -682,7 +682,7 @@ TEST(args, no_ao_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --hud / --no-hud ─────────────────────────────────────────────────────────
+// --hud / --no-hud
 
 TEST(args, hud_default_is_on)
 {
@@ -725,7 +725,7 @@ TEST(args, no_hud_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --input / --no-input ─────────────────────────────────────────────────────
+// --input / --no-input
 
 TEST(args, input_default_is_on)
 {
@@ -768,7 +768,7 @@ TEST(args, no_input_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --first-person / --no-first-person ───────────────────────────────────────
+// --first-person / --no-first-person
 
 TEST(args, first_person_default_is_off)
 {
@@ -814,7 +814,7 @@ TEST(args, no_first_person_rejects_value)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --first-person-speed ─────────────────────────────────────────────────────
+// --first-person-speed
 
 TEST(args, first_person_speed_default_is_one)
 {
@@ -903,7 +903,7 @@ TEST(args, first_person_speed_order_does_not_matter)
     ASSERT_NEAR(r.args.first_person_speed, 2.0f, 1e-6f);
 }
 
-// ─── combined flags ───────────────────────────────────────────────────────────
+// combined flags
 
 TEST(args, multiple_flags_all_applied)
 {
@@ -937,7 +937,7 @@ TEST(args, flags_before_and_after_model_path)
     ASSERT_EQ(r.args.bg, Background::Gray);
 }
 
-// ─── short-option clustering (POSIX Guideline 5) ──────────────────────────────
+// short-option clustering (POSIX Guideline 5)
 
 TEST(args, cluster_spin_help_exits_zero)
 {
@@ -1207,7 +1207,7 @@ TEST(args, cluster_then_double_dash_dash_model)
     ASSERT_TRUE(r.args.model_path == "-m.obj");
 }
 
-// ─── --wireframe-color ────────────────────────────────────────────────────────
+// --wireframe-color
 
 TEST(args, wireframe_color_default)
 {
@@ -1276,7 +1276,7 @@ TEST(args, wireframe_color_missing_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --color ──────────────────────────────────────────────────────────────────
+// --color
 
 TEST(args, color_default_is_auto)
 {
@@ -1329,7 +1329,7 @@ TEST(args, color_missing_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --fps ────────────────────────────────────────────────────────────────────
+// --fps
 
 TEST(args, fps_default)
 {
@@ -1396,7 +1396,7 @@ TEST(args, fps_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --bench ──────────────────────────────────────────────────────────────────
+// --bench
 
 TEST(args, bench_default_is_off)
 {
@@ -1463,7 +1463,7 @@ TEST(args, bench_non_integer_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --cull / --no-cull ───────────────────────────────────────────────────────
+// --cull / --no-cull
 
 TEST(args, cull_default_is_on)
 {
@@ -1515,7 +1515,7 @@ TEST(args, cull_short_flag_is_unknown)
     ASSERT_FALSE(run({ "-c", "off", "m.obj" }).ok);
 }
 
-// ─── --texture / --no-texture ─────────────────────────────────────────────────
+// --texture / --no-texture
 
 TEST(args, texture_default_is_on)
 {
@@ -1565,7 +1565,7 @@ TEST(args, texture_short_flag_is_unknown)
     ASSERT_FALSE(run({ "-t", "off", "m.obj" }).ok);
 }
 
-// ─── error: integer overflow / compact-form numeric errors ───────────────────
+// error: integer overflow / compact-form numeric errors
 
 TEST(args, threads_long_overflow_is_error)
 {
@@ -1674,7 +1674,7 @@ TEST(args, fps_short_explicit_zero_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: --help rejects =value ────────────────────────────────────────────
+// error: --help rejects =value
 
 TEST(args, help_with_equals_value_is_error)
 {
@@ -1683,7 +1683,7 @@ TEST(args, help_with_equals_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── error: empty value after = ──────────────────────────────────────────────
+// error: empty value after =
 
 TEST(args, empty_value_after_equals_is_error)
 {
@@ -1697,7 +1697,7 @@ TEST(args, empty_value_after_equals_is_error)
     ASSERT_FALSE(run({ "--color=", "m.obj" }).ok);
 }
 
-// ─── --bench-size / --bench-warmup ───────────────────────────────────────────
+// --bench-size / --bench-warmup
 
 TEST(args, bench_size_default)
 {
@@ -1883,7 +1883,7 @@ TEST(args, bench_warmup_equals_form)
     ASSERT_EQ(r.args.bench_warmup, 10);
 }
 
-// ─── --smooth-angle ───────────────────────────────────────────────────────────
+// --smooth-angle
 
 TEST(args, smooth_angle_valid)
 {
@@ -1962,7 +1962,7 @@ TEST(args, smooth_angle_inf_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --spin-speed ─────────────────────────────────────────────────────────────
+// --spin-speed
 
 TEST(args, spin_speed_valid)
 {
@@ -2034,7 +2034,7 @@ TEST(args, spin_speed_inf_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --spin-direction ─────────────────────────────────────────────────────────
+// --spin-direction
 
 TEST(args, spin_direction_left)
 {
@@ -2092,7 +2092,7 @@ TEST(args, spin_flags_do_not_imply_spin)
     ASSERT_FALSE(r.args.spin);
 }
 
-// ─── --yaw ────────────────────────────────────────────────────────────────────
+// --yaw
 
 TEST(args, yaw_valid)
 {
@@ -2186,7 +2186,7 @@ TEST(args, yaw_inf_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --pitch ──────────────────────────────────────────────────────────────────
+// --pitch
 // --pitch shares parse_orbit_angle with --yaw, whose suite owns the wrapper's
 // error paths (range, malformed, nan/inf, missing/empty value); these pin only
 // the branch wiring, the target field, and one fail-loud rejection.
@@ -2227,7 +2227,7 @@ TEST(args, pitch_above_max_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
-// ─── --zoom ───────────────────────────────────────────────────────────────────
+// --zoom
 
 TEST(args, zoom_valid)
 {

@@ -18,7 +18,7 @@ namespace
     }
 } // namespace
 
-// ─── decode_webp_rgba: lossy happy path ──────────────────────────────────────
+// decode_webp_rgba: lossy happy path
 
 TEST(webp_decode, lossy_solid_decodes_to_expected_color)
 {
@@ -44,7 +44,7 @@ TEST(webp_decode, lossy_solid_decodes_to_expected_color)
     }
 }
 
-// ─── decode_webp_rgba: lossless layout (catches wrong pitch/orientation) ──────
+// decode_webp_rgba: lossless layout (catches wrong pitch/orientation)
 
 TEST(webp_decode, lossless_quad_decodes_with_correct_layout)
 {
@@ -85,7 +85,7 @@ TEST(webp_decode, lossless_quad_decodes_with_correct_layout)
     }
 }
 
-// ─── decode_webp_rgba: alpha channel ─────────────────────────────────────────
+// decode_webp_rgba: alpha channel
 
 TEST(webp_decode, alpha_decodes_transparency)
 {
@@ -104,7 +104,7 @@ TEST(webp_decode, alpha_decodes_transparency)
     ASSERT_EQ(px(rgba, w, 1, 1, 3), 128);
 }
 
-// ─── decode_webp_rgba: minimum dimensions ────────────────────────────────────
+// decode_webp_rgba: minimum dimensions
 
 TEST(webp_decode, one_pixel_decodes)
 {
@@ -121,7 +121,7 @@ TEST(webp_decode, one_pixel_decodes)
     ASSERT_EQ(px(rgba, w, 0, 0, 3), 255);
 }
 
-// ─── decode_webp_rgba: non-square dimensions (catches transpose / wrong pitch) ─
+// decode_webp_rgba: non-square dimensions (catches transpose / wrong pitch)
 
 TEST(webp_decode, non_square_decodes_with_correct_dimensions_and_layout)
 {
@@ -142,7 +142,7 @@ TEST(webp_decode, non_square_decodes_with_correct_dimensions_and_layout)
     ASSERT_EQ(px(rgba, w, 5, 1, 1), 200);
 }
 
-// ─── decode_webp_rgba: lossy colour + alpha plane (ALPH chunk) ────────────────
+// decode_webp_rgba: lossy colour + alpha plane (ALPH chunk)
 
 TEST(webp_decode, lossy_alpha_decodes_color_and_alpha)
 {
@@ -162,7 +162,7 @@ TEST(webp_decode, lossy_alpha_decodes_color_and_alpha)
     ASSERT_EQ(px(rgba, w, 3, 3, 3), 180); // (3+3)*30
 }
 
-// ─── decode_webp_rgba: fail-loud paths ───────────────────────────────────────
+// decode_webp_rgba: fail-loud paths
 
 TEST(webp_decode, null_data_returns_false)
 {
@@ -238,7 +238,7 @@ TEST(webp_decode, valid_header_corrupt_body_returns_false)
     ASSERT_FALSE(decode_webp_rgba(k_webp_corrupt_body, k_webp_corrupt_body_len, rgba, w, h));
 }
 
-// ─── Texture::load_webp_from_memory ──────────────────────────────────────────
+// Texture::load_webp_from_memory
 
 TEST(webp_texture, load_success_populates_texture)
 {
@@ -273,7 +273,7 @@ TEST(webp_texture, load_failure_preserves_previous_data)
     }
 }
 
-// ─── Thread safety: parallel decode (decode_textures runs in parallel) ────────
+// Thread safety: parallel decode (decode_textures runs in parallel)
 
 TEST(webp_decode, concurrent_decode_is_thread_safe)
 {

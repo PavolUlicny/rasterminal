@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-// ─── Group A — constructor / lifecycle ───────────────────────────────────────
+// Group A — constructor / lifecycle
 
 // A1: default construction and clean destruction (no hang or deadlock).
 TEST(renderer, constructor_default_threads)
@@ -38,7 +38,7 @@ TEST(renderer, constructor_thread_count_clamping)
     ASSERT_TRUE(true);
 }
 
-// ─── Group B — wireframe path ─────────────────────────────────────────────────
+// Group B — wireframe path
 
 // B1: front-facing triangle draws pixels in wireframe mode.
 TEST(renderer, wireframe_visible_triangle_drawn)
@@ -120,7 +120,7 @@ TEST(renderer, wireframe_uses_wireframe_color)
     }
 }
 
-// ─── Group B2 — wireframe parallelization (multi-worker) ──────────────────────
+// Group B2 — wireframe parallelization (multi-worker)
 //
 // The wireframe pass now runs on the worker pool. Because every edge pixel is written
 // with one uniform colour and depth resolves via draw_line's atomic CAS min, the output
@@ -309,7 +309,7 @@ TEST(renderer, wireframe_multiworker_empty_mesh_no_crash)
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
-// ─── Group C — shading dispatch ───────────────────────────────────────────────
+// Group C — shading dispatch
 //
 // Scene: front-facing unit triangle, red light from +Z, tiny ambient.
 // Normal (0,0,1) · light (0,0,1) = 1 → full diffuse → R≥150 at centre pixel.
@@ -402,7 +402,7 @@ TEST(renderer, untextured_overbright_phong_rolls_off_below_white)
     }
 }
 
-// ─── Group D — backface culling in MT path ────────────────────────────────────
+// Group D — backface culling in MT path
 
 // D1: backface triangle is culled — no pixels drawn in Phong mode.
 TEST(renderer, mt_backface_culled)
@@ -440,7 +440,7 @@ TEST(renderer, mt_double_sided_renders_backface)
     }
 }
 
-// ─── Group E — MT correctness / multi-frame ───────────────────────────────────
+// Group E — MT correctness / multi-frame
 
 // E1: empty mesh completes without hanging; framebuffer stays undrawn.
 TEST(renderer, empty_mesh_completes)
@@ -512,7 +512,7 @@ TEST(renderer, large_triangle_spans_all_bands)
     }
 }
 
-// ─── Group F — lights, texture toggle ─────────────────────────────────────────
+// Group F — lights, texture toggle
 
 // F1: n_lights=0 → ambient-only output.
 TEST(renderer, zero_lights_renders_ambient_only)
@@ -863,7 +863,7 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
     }
 }
 
-// ─── Group J: double-sided lighting correctness ───────────────────────────────
+// Group J: double-sided lighting correctness
 // Existing D2 only checks pixels-drawn (ambient-only). These tests exercise the
 // three normal-flip code paths under a directional light so that a dropped or
 // misplaced flip_normals branch causes an actual failure.

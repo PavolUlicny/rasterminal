@@ -97,11 +97,9 @@ namespace
     }
 } // namespace
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Embedded EXT_texture_webp decodes — the headline "untextured -> textured".
-//  The 6x2 non-square fixture also proves the loader keeps width vs height and
-//  row pitch straight end-to-end (a square fixture could not).
-// ═══════════════════════════════════════════════════════════════════════════
+// Embedded EXT_texture_webp decodes — the headline "untextured -> textured".
+// The 6x2 non-square fixture also proves the loader keeps width vs height and
+// row pitch straight end-to-end (a square fixture could not).
 
 TEST(gltf_webp, embedded_webp_texture_decodes_with_correct_layout)
 {
@@ -128,10 +126,8 @@ TEST(gltf_webp, embedded_webp_texture_decodes_with_correct_layout)
     ASSERT_EQ(chan(5, 1, 1), 200);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Routing is by content sniff, not the declared mimeType: a texture declaring
-//  EXT_texture_webp whose bytes are actually a PNG still decodes (via stb).
-// ═══════════════════════════════════════════════════════════════════════════
+// Routing is by content sniff, not the declared mimeType: a texture declaring
+// EXT_texture_webp whose bytes are actually a PNG still decodes (via stb).
 
 TEST(gltf_webp, image_routed_by_content_not_declared_webp_type)
 {
@@ -151,10 +147,8 @@ TEST(gltf_webp, image_routed_by_content_not_declared_webp_type)
     ASSERT_EQ(t.height, 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Precedence: a texture carrying BOTH a plain image and an EXT_texture_webp
-//  image must decode the WebP source, not the fallback.
-// ═══════════════════════════════════════════════════════════════════════════
+// Precedence: a texture carrying BOTH a plain image and an EXT_texture_webp
+// image must decode the WebP source, not the fallback.
 
 TEST(gltf_webp, webp_source_preferred_over_fallback_image)
 {
@@ -191,10 +185,8 @@ TEST(gltf_webp, webp_source_preferred_over_fallback_image)
     ASSERT_EQ(t.height, 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Graceful degradation: when the preferred WebP fails to decode but the texture
-//  also supplies an ordinary source, fall back to it rather than dropping it.
-// ═══════════════════════════════════════════════════════════════════════════
+// Graceful degradation: when the preferred WebP fails to decode but the texture
+// also supplies an ordinary source, fall back to it rather than dropping it.
 
 TEST(gltf_webp, falls_back_to_ordinary_source_when_webp_fails)
 {
@@ -230,10 +222,8 @@ TEST(gltf_webp, falls_back_to_ordinary_source_when_webp_fails)
     ASSERT_EQ(t.height, 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Cross-extension precedence: a texture carrying BOTH KHR_texture_basisu and
-//  EXT_texture_webp must pick the KTX2 source (KTX2 -> WebP -> plain).
-// ═══════════════════════════════════════════════════════════════════════════
+// Cross-extension precedence: a texture carrying BOTH KHR_texture_basisu and
+// EXT_texture_webp must pick the KTX2 source (KTX2 -> WebP -> plain).
 
 TEST(gltf_webp, basisu_preferred_over_webp)
 {
@@ -269,9 +259,7 @@ TEST(gltf_webp, basisu_preferred_over_webp)
     ASSERT_EQ(t.height, 6);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  External (.gltf + sidecar .webp) routed by content sniff, not extension.
-// ═══════════════════════════════════════════════════════════════════════════
+// External (.gltf + sidecar .webp) routed by content sniff, not extension.
 
 TEST(gltf_webp, external_uri_webp_decodes)
 {
@@ -305,10 +293,8 @@ TEST(gltf_webp, external_uri_webp_decodes)
     ASSERT_EQ(t.height, 2);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Fail-loud: a corrupt WebP with no fallback drops the texture slot (-> -1) but
-//  the model still loads, matching how a failed stb/KTX2 decode is handled.
-// ═══════════════════════════════════════════════════════════════════════════
+// Fail-loud: a corrupt WebP with no fallback drops the texture slot (-> -1) but
+// the model still loads, matching how a failed stb/KTX2 decode is handled.
 
 TEST(gltf_webp, corrupt_webp_drops_texture_but_loads)
 {
@@ -321,11 +307,9 @@ TEST(gltf_webp, corrupt_webp_drops_texture_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  Animated WebP is not a still texture: decode_webp_rgba rejects it, so with no
-//  fallback the slot drops and the model still loads (end-to-end of the still-only
-//  contract through the loader).
-// ═══════════════════════════════════════════════════════════════════════════
+// Animated WebP is not a still texture: decode_webp_rgba rejects it, so with no
+// fallback the slot drops and the model still loads (end-to-end of the still-only
+// contract through the loader).
 
 TEST(gltf_webp, animated_webp_dropped_but_loads)
 {
@@ -338,12 +322,10 @@ TEST(gltf_webp, animated_webp_dropped_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-//  A WebP carried by an inline base64 data: URI decodes — proves the data-URI
-//  path routes through decode_bytes to libwebp (the is_webp sniff branch), the
-//  third decode_bytes branch the data-URI tests cover (KTX2 and stb are covered
-//  in test_gltf_ktx2.cpp and test_gltf.cpp).
-// ═══════════════════════════════════════════════════════════════════════════
+// A WebP carried by an inline base64 data: URI decodes — proves the data-URI
+// path routes through decode_bytes to libwebp (the is_webp sniff branch), the
+// third decode_bytes branch the data-URI tests cover (KTX2 and stb are covered
+// in test_gltf_ktx2.cpp and test_gltf.cpp).
 
 TEST(gltf_webp, data_uri_webp_decodes)
 {

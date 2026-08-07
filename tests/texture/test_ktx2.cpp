@@ -18,7 +18,7 @@ namespace
     }
 } // namespace
 
-// ─── decode_ktx2_rgba: ETC1S happy path ──────────────────────────────────────
+// decode_ktx2_rgba: ETC1S happy path
 
 TEST(ktx2_decode, etc1s_solid_decodes_to_expected_color)
 {
@@ -44,7 +44,7 @@ TEST(ktx2_decode, etc1s_solid_decodes_to_expected_color)
     }
 }
 
-// ─── decode_ktx2_rgba: UASTC + Zstd happy path (also proves the zstd link path) ──
+// decode_ktx2_rgba: UASTC + Zstd happy path (also proves the zstd link path)
 
 TEST(ktx2_decode, uastc_zstd_quad_decodes_with_correct_layout)
 {
@@ -77,7 +77,7 @@ TEST(ktx2_decode, uastc_zstd_quad_decodes_with_correct_layout)
     ASSERT_TRUE(px(rgba, w, 3, 3, 2) > 220);
 }
 
-// ─── decode_ktx2_rgba: fail-loud paths ───────────────────────────────────────
+// decode_ktx2_rgba: fail-loud paths
 
 TEST(ktx2_decode, null_data_returns_false)
 {
@@ -146,7 +146,7 @@ TEST(ktx2_decode, failure_leaves_outputs_untouched)
     ASSERT_EQ(h, 9);
 }
 
-// ─── Texture::load_ktx2_from_memory ──────────────────────────────────────────
+// Texture::load_ktx2_from_memory
 
 TEST(ktx2_texture, load_success_populates_texture)
 {
@@ -181,7 +181,7 @@ TEST(ktx2_texture, load_failure_preserves_previous_data)
     }
 }
 
-// ─── Thread safety: the one-time basisu_transcoder_init() under contention ────
+// Thread safety: the one-time basisu_transcoder_init() under contention
 
 TEST(ktx2_decode, concurrent_decode_is_thread_safe)
 {

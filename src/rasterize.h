@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <vector>
 
-// ─── ClipVert ─────────────────────────────────────────────────────────────────
+// ClipVert
 // A clip-space vertex bundled with the world-space attributes needed for
 // lighting and near-plane clipping.
 
@@ -33,7 +33,7 @@ struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
                                // identical. Only read when the material binds a uv_set==1 texture; == {} otherwise.
 };
 
-// ─── Transparency: A-buffer ───────────────────────────────────────────────────
+// Transparency: A-buffer
 // Selects the rasterizer's per-pixel sink at compile time: Opaque commits to the
 // framebuffer (depth-CAS); Transparent pushes the shaded fragment onto a per-pixel
 // linked list for the later back-to-front resolve. The Opaque instantiation is
@@ -113,7 +113,7 @@ struct ABuffer
     }
 };
 
-// ─── Rasterization primitives ─────────────────────────────────────────────────
+// Rasterization primitives
 
 // Clip triangle (a,b,c) against the near plane w = near_w.
 // Produces 0 (fully behind), 1, or 2 output triangles written into out[0..n-1].

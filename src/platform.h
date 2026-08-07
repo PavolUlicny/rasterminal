@@ -24,7 +24,7 @@
 namespace platform
 {
 
-    // ─── file size ───────────────────────────────────────────────────────────────
+    // file size
 
     // 64-bit size of an open binary stream, or -1 on failure. std::ftell returns long,
     // which is 32-bit on Windows (LLP64) and ILP32, so files >= 2 GB need the platform's
@@ -55,7 +55,7 @@ namespace platform
 #endif
     }
 
-    // ─── terminal size ────────────────────────────────────────────────────────────
+    // terminal size
 
     inline void get_terminal_size(int &cols, int &rows)
     {
@@ -97,7 +97,7 @@ namespace platform
 #endif
     }
 
-    // ─── tty detection ───────────────────────────────────────────────────────────
+    // tty detection
 
     // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal.
     // Windows probes the console API rather than _isatty: _isatty is true for ANY
@@ -125,7 +125,7 @@ namespace platform
 #endif
     }
 
-    // ─── color capability ────────────────────────────────────────────────────────
+    // color capability
 
     // Terminal color capability, classified from the environment at startup.
     enum class TermColor : std::uint8_t
@@ -261,7 +261,7 @@ namespace platform
         return classify_term_color(colorterm, term, unset_default);
     }
 
-    // ─── raw mode ────────────────────────────────────────────────────────────────
+    // raw mode
 
 #ifndef _WIN32
     namespace detail
@@ -346,7 +346,7 @@ namespace platform
 #endif
     }
 
-    // ─── mouse support ───────────────────────────────────────────────────────────
+    // mouse support
     // Uses SGR extended mouse mode (\033[?1006h) — supported by all modern terminals
     // including Windows Terminal. Reports: scroll wheel, and button drags (the
     // button number is not decoded, so any button drags).
@@ -404,7 +404,7 @@ namespace platform
         // so the skip is entered instead and the rate floor takes over.
         constexpr int MAX_KEY_SEQUENCE = 64;
 
-        // ─── arrival rate meter ──────────────────────────────────────────────────
+        // arrival rate meter
         // How fast bytes are arriving, measured continuously as a token bucket. Its
         // one consumer is the skip below: a sequence being skipped to its terminator
         // is given up on once the arrivals fall under RATE_QUOTA bytes per
@@ -649,7 +649,7 @@ namespace platform
         }
     } // namespace detail
 
-    // ─── poll_event ──────────────────────────────────────────────────────────────
+    // poll_event
     // Returns the next keyboard or mouse event, or InputEvent{Type::None} when no
     // complete event is available. On POSIX it never blocks: the readiness probe and
     // the read are both zero-timeout, so a caller in a render loop never pays a stall

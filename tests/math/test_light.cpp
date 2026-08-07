@@ -11,7 +11,7 @@
 
 static constexpr float EPS = 1e-5f;
 
-// ─── ambient-only behaviour ──────────────────────────────────────────────────
+// ambient-only behaviour
 
 TEST(light, no_lights_returns_ambient_times_diffuse)
 {
@@ -70,7 +70,7 @@ TEST(light, ao_does_not_affect_direct_diffuse)
     ASSERT_NEAR(full.z, zero_ao.z, EPS);
 }
 
-// ─── diffuse (Lambert) ──────────────────────────────────────────────────────
+// diffuse (Lambert)
 
 TEST(light, perpendicular_light_gives_max_diffuse)
 {
@@ -144,7 +144,7 @@ TEST(light, light_color_tints_diffuse)
     ASSERT_NEAR(r.z, 0.0f, EPS);
 }
 
-// ─── specular (Blinn-Phong) ──────────────────────────────────────────────────
+// specular (Blinn-Phong)
 
 TEST(light, specular_peaks_when_half_vector_equals_normal)
 {
@@ -190,7 +190,7 @@ TEST(light, specular_is_strictly_smaller_off_peak)
     ASSERT_TRUE(off.x >= 0.0f);
 }
 
-// ─── accumulation ────────────────────────────────────────────────────────────
+// accumulation
 
 TEST(light, multiple_lights_sum_their_contributions)
 {
@@ -212,7 +212,7 @@ TEST(light, multiple_lights_sum_their_contributions)
     ASSERT_NEAR(r.z, 0.0f, EPS);
 }
 
-// ─── specular_pow_sq fast paths ──────────────────────────────────────────────
+// specular_pow_sq fast paths
 // specular_pow_sq(ndh², s) computes ndh^s = (ndh²)^(s/2).
 // The fast paths for shininess ∈ {8, 16, 32} must match the general exp2/log2 form.
 
@@ -260,7 +260,7 @@ TEST(specular_pow_sq, zero_base_returns_zero)
     ASSERT_NEAR(specular_pow_sq(0.0f, 1.0f), 0.0f, 1e-5f);
 }
 
-// ─── robustness ────────────────────────────────────────────────────────────────
+// robustness
 
 TEST(light, normal_is_normalized_internally)
 {
@@ -374,7 +374,7 @@ TEST(light, specular_independent_of_diffuse_branch)
     ASSERT_TRUE(r.x > 0.0f);
 }
 
-// ─── apply_light negative ndh_raw ────────────────────────────────────────────
+// apply_light negative ndh_raw
 
 TEST(light, negative_ndh_suppresses_specular)
 {
@@ -397,7 +397,7 @@ TEST(light, negative_ndh_suppresses_specular)
     ASSERT_NEAR(r.z, 0.4f, EPS);
 }
 
-// ─── specular_pow_sq intermediate shininess ───────────────────────────────────
+// specular_pow_sq intermediate shininess
 
 TEST(specular_pow_sq, shininess_4_matches_power)
 {
@@ -411,7 +411,7 @@ TEST(specular_pow_sq, shininess_12_matches_power)
     ASSERT_NEAR(specular_pow_sq(x * x, 12.0f), std::pow(x, 12.0f), 1e-5f);
 }
 
-// ─── assume_unit overloads ────────────────────────────────────────────────────
+// assume_unit overloads
 
 TEST(light, assume_unit_precomputed_v_matches_regular)
 {

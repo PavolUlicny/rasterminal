@@ -106,7 +106,7 @@ TEST(platform, is_tty_true_for_pty_slave)
 }
 #endif
 
-// ─── color-capability classifier ─────────────────────────────────────────────
+// color-capability classifier
 // classify_term_color is pure (env values passed in), so every case incl. the
 // platform-divergent unset default is testable identically on all platforms.
 
@@ -295,7 +295,7 @@ TEST(platform, detect_term_color_reads_env)
 #endif
 }
 
-// ─── file size ───────────────────────────────────────────────────────────────
+// file size
 // platform::file_size sizes streams via the platform's 64-bit seek/tell so >= 2 GB
 // model files work on Windows/ILP32. The large case itself is not creatable in CI
 // (multi-GB files on every runner); these pin the exact byte count, the empty-file
@@ -372,7 +372,7 @@ TEST(platform, file_size_empty_file_is_zero)
     ASSERT_EQ(size, int64_t{ 0 });
 }
 
-// ─── input parser ────────────────────────────────────────────────────────────
+// input parser
 // detail::parse_input is pure (a byte span in, a decision out), so the grammar is
 // tested directly: no pipes, no dup2, no timing, and it runs on every platform
 // rather than POSIX only. The contract it must uphold is that a sequence is
@@ -843,7 +843,7 @@ TEST(parse_input, consumed_length_never_exceeds_input)
     }
 }
 
-// ─── poll_event integration ──────────────────────────────────────────────────
+// poll_event integration
 // The read path and the pending buffer, exercised over a real fd. POSIX-only:
 // the Windows path reads the console via _kbhit/_getch, which a pipe cannot
 // stand in for. The grammar itself is covered above, without any of this.
