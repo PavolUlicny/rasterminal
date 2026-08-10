@@ -15,7 +15,7 @@ make test       # build and run the test suite
 
 Or with CMake: `cmake --preset release && cmake --build --preset release && ctest --preset release`.
 
-The project is C++17 with no external dependencies (everything third-party is vendored under `vendor/`). You need a C++17 compiler (GCC, Clang, and MSVC are all supported) plus a C compiler for the vendored C sources (the zstd amalgam and the libwebp decode subset; any system `cc`, selected by the Makefile's `CC` variable), and the preset commands need CMake 3.21 or newer (plain `cmake -B build` works on older versions). See the [Build section of the README](README.md#build) for the full set of build variants and platforms.
+The project is C++17 with no external dependencies (everything third-party is vendored under `vendor/`). You need a C++17 compiler (GCC, Clang, and MSVC are all supported) plus a C compiler for the vendored C sources (the zstd and miniz amalgams and the libwebp decode subset; any system `cc`, selected by the Makefile's `CC` variable), and the preset commands need CMake 3.21 or newer (plain `cmake -B build` works on older versions). See the [Build section of the README](README.md#build) for the full set of build variants and platforms.
 
 ### Adding a test file
 

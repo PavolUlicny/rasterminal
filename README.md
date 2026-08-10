@@ -295,6 +295,7 @@ Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 | [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_1_0r | Apache-2.0 | KTX2 / Basis Universal texture transcoding (`KHR_texture_basisu`) |
 | [zstd](https://github.com/facebook/zstd) | bundled w/ basis_universal v2_1_0r | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
 | [libwebp](https://chromium.googlesource.com/webm/libwebp) | v1.6.0 | BSD-3 + PATENTS | WebP texture decoding (`EXT_texture_webp`) |
+| [miniz](https://github.com/richgel999/miniz) | 3.1.2 | MIT | zlib deflate for the kitty graphics direct transport |
 
 ## License
 

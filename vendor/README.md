@@ -14,6 +14,7 @@ Libraries are chosen for fit, not size, and vendored directly — a library may 
 | basis_universal (`vendor/basisu/`) | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
 | zstd (decode amalgam) | bundled with basis_universal `v2_1_0r` | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> (vendored copy of <https://github.com/facebook/zstd>) | BSD-3-Clause |
 | libwebp (decode subset, `vendor/libwebp/`) | v1.6.0 | `4fa21912338357f89e4fd51cf2368325b59e9bd9` | <https://chromium.googlesource.com/webm/libwebp> | BSD-3-Clause + PATENTS |
+| miniz (release amalgamation) | 3.1.2 | `77d0dce8627735138c51770d1799a1ef48f2117d` | <https://github.com/richgel999/miniz> | MIT |
 
 ## Refresh recipe
 
@@ -22,7 +23,7 @@ Libraries are chosen for fit, not size, and vendored directly — a library may 
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/cgltf.h -o vendor/cgltf/cgltf.h
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/LICENSE  -o vendor/cgltf/LICENSE
 git ls-remote https://github.com/jkuhlmann/cgltf refs/tags/v1.16
-# Update the commit and version in this table, update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
+# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
 ```
 
 For stb (no per-file tags), use `master` and record the resolved HEAD SHA:
@@ -40,6 +41,23 @@ curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/include/stl_
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/LICENSE -o vendor/stl_reader/LICENSE
 ```
 
+For miniz (the repo stores unamalgamated sources; the release asset carries the amalgamated `miniz.c`/`miniz.h` pair we vendor):
+
+```sh
+curl -sL https://github.com/richgel999/miniz/releases/download/<tag>/miniz-<tag>.zip -o /tmp/miniz.zip
+unzip -o -j /tmp/miniz.zip miniz.c miniz.h LICENSE -d vendor/miniz
+git ls-remote https://github.com/richgel999/miniz refs/tags/<tag>
+```
+
+Update the commit and version in this table (and in the README's third-party table); update
+`THIRD_PARTY_NOTICES` if the license changed. Re-verify the three config macros the build systems define globally
+(`MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, `MINIZ_NO_STDIO`, `MINIZ_NO_ARCHIVE_APIS`; set in the
+Makefile, CMakeLists.txt and `compile_flags.txt`) still exist upstream: a bump that renames
+or drops one silently restores the zlib-name compatibility layer, the stdio layer and its
+`#pragma message` note, and the ZIP archive layer, with nothing failing. Never set
+`MINIZ_NO_INFLATE_APIS` (the tests round-trip frames through `mz_uncompress`); then test:
+`make clean && make && make test`.
+
 For meshoptimizer (header lives in `src/`, compiled via unity shim `meshoptimizer_impl.cpp`):
 
 ```sh
@@ -53,7 +71,7 @@ for f in allocator clusterizer indexanalyzer indexcodec indexgenerator \
     curl -sL "$BASE/src/$f.cpp" -o "vendor/meshoptimizer/src/$f.cpp"
 done
 git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
-# Update the commit and version in this table, update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
+# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
 ```
 
 For draco (decode-only glTF-bitstream subset, compiled via unity shim `draco_impl.cpp`):
@@ -83,7 +101,8 @@ cp build/draco/draco_features.h /path/to/vendor/draco/src/draco/draco_features.h
 git rev-parse HEAD   # record the commit SHA in the table above
 ```
 
-Update the commit and version in this table; verify `vendor/draco/src/draco/draco_features.h`
+Update the commit and version in this table (and in the README's third-party table); verify
+`vendor/draco/src/draco/draco_features.h`
 still matches what `DRACO_GLTF_BITSTREAM=ON` generates; update `THIRD_PARTY_NOTICES` if the
 license changed; then test: `make clean && make && make test`.
 

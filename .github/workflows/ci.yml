@@ -327,6 +327,7 @@ jobs:
           -I vendor/basisu/transcoder
           -I vendor/basisu/zstd
           -I vendor/libwebp
+          -I vendor/miniz
           src/*.cpp
 
   # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────

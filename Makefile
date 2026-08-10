@@ -43,6 +43,17 @@ endif
 # size across all TUs (mixed LFS defines are a classic off_t ABI footgun).
 LFS = -D_FILE_OFFSET_BITS=64
 
+# miniz configuration, one uniform set across every C and C++ TU that includes
+# miniz.h (mixed config on a shared header is the same footgun as LFS):
+# NO_ZLIB_COMPATIBLE_NAMES drops the zlib-name compatibility layer (Z_* macros
+# plus, since miniz 3.1, static compress/deflate/crc32 wrapper definitions
+# stamped into every including TU), NO_STDIO + NO_ARCHIVE_APIS drop the file-I/O
+# and ZIP layers nothing calls (the stdio layer also carries a #pragma message
+# note that -w cannot silence; since 3.1.0 it fires only where miniz lacks
+# large-file support, e.g. 32-bit x86 Linux, the cross32 CI target).
+# Inflate stays: the tests round-trip frames through mz_uncompress.
+MINIZ = -DMINIZ_NO_ZLIB_COMPATIBLE_NAMES -DMINIZ_NO_STDIO -DMINIZ_NO_ARCHIVE_APIS
+
 WARN_COMMON = -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion \
               -Wold-style-cast -Wcast-align -Wunused -Woverloaded-virtual \
               -Wnon-virtual-dtor -Wnull-dereference -Wdouble-promotion \
@@ -80,7 +91,7 @@ VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_read
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
               -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
               -isystem vendor/basisu/transcoder -isystem vendor/basisu/zstd \
-              -isystem vendor/libwebp
+              -isystem vendor/libwebp -isystem vendor/miniz
 # Every vendored file a TU can include, found rather than listed, for the same reason
 # as HDRS/TEST_HDRS below: an incomplete prerequisite list does not fail the build, it
 # silently leaves stale objects behind. The list this replaces named 8 headers and none
@@ -109,7 +120,7 @@ OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBU
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
              -fmerge-all-constants -fvisibility=hidden -fvisibility-inlines-hidden \
              -fno-stack-protector -fno-asynchronous-unwind-tables \
-             -pipe -pthread $(GCC_OPTS) $(ARCH32) $(LFS)
+             -pipe -pthread $(GCC_OPTS) $(ARCH32) $(LFS) $(MINIZ)
 
 # Tier 2: machine-specific (release only).
 ARCH_NATIVE = -march=native
@@ -119,7 +130,7 @@ TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funrol
                 -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32) $(LFS)
+                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
@@ -144,6 +155,8 @@ SRCS = src/main.cpp \
        vendor/basisu/basisu_impl.cpp
 
 # C sources, compiled as C with $(CC) — must not go through the C++ flags.
+#  - miniz amalgam: zlib deflate for the kitty graphics direct transport; configured
+#    by the uniform $(MINIZ) define set above.
 #  - zstd decode amalgam: used by the basisu transcoder for KTX2 Zstd supercompression.
 #  - libwebp decode subset: EXT_texture_webp image decode. Listed individually (a unity
 #    #include shim fails on duplicate file-local statics, e.g. clip_8b). The dsp SIMD
@@ -155,7 +168,8 @@ SRCS = src/main.cpp \
 #    forgo that to keep "portable = no arch-specific codegen" uniform across every TU.
 #    Portable WebP decode is correct, just SSE2-only (decode is load-time, not hot-path).
 #    The C flags' blanket -w covers their warnings, so no per-TU suppression needed here.
-CSRCS = vendor/basisu/zstd/zstddeclib.c \
+CSRCS = vendor/miniz/miniz.c \
+        vendor/basisu/zstd/zstddeclib.c \
         vendor/libwebp/src/dec/alpha_dec.c \
         vendor/libwebp/src/dec/buffer_dec.c \
         vendor/libwebp/src/dec/frame_dec.c \
@@ -306,28 +320,30 @@ TEST_SRCS   = tests/test_main.cpp \
 # unnecessary recompiles, so source edits stay incremental.
 OBJDIR             = obj
 PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
-DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32) $(LFS)
+DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
 
-# ─── C flags (vendored zstd amalgam + libwebp decode subset) ──────────────────
+# ─── C flags (vendored zstd + miniz amalgams + libwebp decode subset) ─────────
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++
 # flag set. The speed tier mirrors the C++ OPT_COMMON (-funroll-loops/-ffast-math/
-# -DNDEBUG) so decode isn't left at a bare -O3, but LTO is deliberately omitted: $(LTO)
-# is derived from $(CXX) (so -flto=thin would reach a gcc $(CC) under `make CXX=clang++`),
-# and cross-family C/C++ LTO objects can't link anyway. The decode TUs are load-time and
-# isolated behind webp_decode.cpp/ktx2_decode.cpp, so the lost cross-TU inlining is
-# marginal. -march follows the variant (native for release/test only). libwebp's
+# -DNDEBUG) so these TUs aren't left at a bare -O3, but LTO is deliberately omitted:
+# $(LTO) is derived from $(CXX) (so -flto=thin would reach a gcc $(CC) under `make
+# CXX=clang++`), and cross-family C/C++ LTO objects can't link anyway. The lost
+# cross-TU inlining is marginal in every case: the webp/zstd decode TUs are load-time
+# and isolated behind webp_decode.cpp/ktx2_decode.cpp, and miniz's mz_compress2 runs
+# per transmitted kitty frame but as one self-contained call from framebuffer.cpp.
+# -march follows the variant (native for release/test only). libwebp's
 # internal includes are repo-rooted ("src/dec/..."), so it needs its root on the
 # include path. WEBP_USE_THREAD makes libwebp's lazy SIMD function-pointer init
 # mutex-guarded (cpu.h): texture decode runs on worker threads, and without it the
 # first concurrent WebP decode races on the global DSP tables. Both flags are shared
-# with the self-contained zstd amalgam, which ignores them harmlessly.
+# with the self-contained zstd and miniz amalgams, which ignore them harmlessly.
 CC ?= cc
 C_INC           = -isystem vendor/libwebp -DWEBP_USE_THREAD
 C_OPT           = -std=c11 -O3 -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
-                  -ffunction-sections -fdata-sections -w -pipe $(C_INC) $(ARCH32) $(LFS)
+                  -ffunction-sections -fdata-sections -w -pipe $(C_INC) $(ARCH32) $(LFS) $(MINIZ)
 RELEASE_CFLAGS  = $(C_OPT) $(ARCH_NATIVE)
 PORTABLE_CFLAGS = $(C_OPT)
-DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32) $(LFS)
+DEBUG_CFLAGS    = -std=c11 -O0 -g -w -pipe $(C_INC) $(ARCH32) $(LFS) $(MINIZ)
 TEST_CFLAGS     = $(C_OPT) $(ARCH_NATIVE)
 
 # ─── Install locations (GNU Coding Standards) ─────────────────────────────────

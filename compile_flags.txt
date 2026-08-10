@@ -1,5 +1,8 @@
 -I.
 -D_FILE_OFFSET_BITS=64
+-DMINIZ_NO_ZLIB_COMPATIBLE_NAMES
+-DMINIZ_NO_STDIO
+-DMINIZ_NO_ARCHIVE_APIS
 -isystem
 vendor/cgltf
 -isystem
@@ -20,3 +23,5 @@ vendor/basisu/transcoder
 vendor/basisu/zstd
 -isystem
 vendor/libwebp
+-isystem
+vendor/miniz
