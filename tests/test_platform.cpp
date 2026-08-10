@@ -493,6 +493,30 @@ TEST(parse_input, unknown_csi_consumed_to_final)
     expect_every_prefix_incomplete("\033[15~");
 }
 
+TEST(parse_input, cell_size_report)
+{
+    // XTWINOPS 16 reply, \033[6;<height>;<width>t: height leads on the wire,
+    // the event carries x = width, y = height.
+    const platform::detail::ParseResult r = parse("\033[6;33;15t");
+    ASSERT_EQ(r.kind, PK::Complete);
+    ASSERT_EQ(r.consumed, 10);
+    ASSERT_EQ(r.event.type, platform::InputEvent::Type::CellSize);
+    ASSERT_EQ(r.event.x, 15);
+    ASSERT_EQ(r.event.y, 33);
+    expect_every_prefix_incomplete("\033[6;33;15t");
+}
+
+TEST(parse_input, cell_size_report_malformed_drops)
+{
+    expect_dropped_whole("\033[4;33;15t");   // wrong leading param: another XTWINOPS report
+    expect_dropped_whole("\033[6;33t");      // short of its three parameters
+    expect_dropped_whole("\033[6;33;15;2t"); // a fourth parameter
+    expect_dropped_whole("\033[6;0;15t");    // zero is not a cell size
+    expect_dropped_whole("\033[6;33;1001t"); // past the sanity ceiling
+    expect_dropped_whole("\033[t");          // no parameters at all
+    expect_dropped_whole("\033[6;3:3;15t");  // non-numeric parameter byte (sub-parameter colon)
+}
+
 TEST(parse_input, device_attributes_reply_consumed_whole)
 {
     // A real xterm DA1 response. It far exceeds any short parameter cap, and its

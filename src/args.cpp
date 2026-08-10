@@ -270,6 +270,17 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
+    auto parse_graphics = [prog](const char *flag, const char *val, GraphicsChoice &out) -> bool
+    {
+        return parse_enum(
+            prog, flag, val,
+            { { "auto", GraphicsChoice::Auto },
+              { "kitty", GraphicsChoice::Kitty },
+              { "blocks", GraphicsChoice::Blocks } },
+            "kitty|blocks|auto", out
+        );
+    };
+
     // Shared strtof skeleton for float value flags; each flag supplies only its
     // range predicate and expected-values string (the parse_shading/parse_enum split).
     // errno == ERANGE also fires on subnormal underflow (e.g. 1e-40), rejecting a
@@ -413,6 +424,12 @@ ParseResult parse_args(int argc, char *argv[])
             "          --color <mode>         Color output (default: auto)\n"
             "                                  truecolor|24bit|256|auto\n"
             "                                  auto detects from COLORTERM/TERM\n"
+            "                                  kitty graphics pixels are always 24-bit;\n"
+            "                                  there this affects the HUD only\n"
+            "          --graphics <mode>      Rendering backend (default: auto)\n"
+            "                                  kitty|blocks|auto\n"
+            "                                  auto uses kitty graphics when the terminal\n"
+            "                                  supports it, else unicode half-blocks\n"
             "          --spin-speed DEG/S     Auto-rotation speed in degrees/sec (default: 45)\n"
             "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
             "                                  left|right: the way the model's front face moves\n"
@@ -559,6 +576,14 @@ ParseResult parse_args(int argc, char *argv[])
         {
             const char *val = get_val(i);
             if (!val || !parse_color(flag, val, args.color))
+            {
+                return fail(1);
+            }
+        }
+        else if (arg == "--graphics")
+        {
+            const char *val = get_val(i);
+            if (!val || !parse_graphics(flag, val, args.graphics))
             {
                 return fail(1);
             }

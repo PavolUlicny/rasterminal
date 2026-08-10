@@ -1,6 +1,9 @@
 #include "tests/test.h"
+#include "tests/b64_test_util.h"
 #include "tests/rasterize_test_util.h"
 #include "src/framebuffer.h"
+
+#include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 
 #include <algorithm>
 #include <cmath>
@@ -667,6 +670,22 @@ TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
     ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos); // exit alternate screen
 }
 
+TEST(framebuffer, adopt_alt_screen_skips_enter_but_still_exits)
+{
+    // With adopt_alt_screen the graphics query already entered the alternate
+    // screen: the ctor must not re-enter (a leave/re-enter pair flashes the
+    // normal screen and a second 1049h clobbers the saved cursor), but the dtor
+    // still owns the exit.
+    CaptureStdout cap;
+    {
+        Framebuffer fb(1, 2, /*headless=*/false, ColorMode::TrueColor, {}, /*adopt_alt_screen=*/true);
+    }
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[?1049h") == std::string::npos);
+    ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos);
+    ASSERT_TRUE(out.find("\033[?25l") != std::string::npos); // cursor hide is not skipped
+}
+
 // tonemap (soft-knee highlight rolloff)
 // The display transform applied once per shaded contribution before quantization. Knee 0.7.
 
@@ -1046,4 +1065,123 @@ TEST(framebuffer, construct_explicit_truecolor_matches_default)
     const std::string out = cap.read();
     ASSERT_TRUE(out.find("48;2;") != std::string::npos);
     ASSERT_TRUE(out.find("48;5;") == std::string::npos);
+}
+
+// kitty backend
+
+namespace
+{
+    KittyConfig direct_kitty_config(int cols, int rows)
+    {
+        KittyConfig kc;
+        kc.enabled = true;
+        kc.shm = false; // the direct transport is capturable; shm needs a live reader
+        kc.cols = cols;
+        kc.rows = rows;
+        return kc;
+    }
+} // namespace
+
+TEST(framebuffer, kitty_present_deflated_pixel_roundtrip)
+{
+    // The full path from the pixel slots to the wire: write_rgb's byte order and
+    // the deflate leg, decoded back with an independent inflate.
+    Framebuffer fb(20, 8, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(10, 4));
+    fb.clear({ 10, 20, 30 });
+    (void)fb.commit_pixel(3, 2, 0.5f, { 200, 100, 50 });
+    CaptureStdout cap;
+    fb.present();
+    const std::string out = cap.read();
+
+    const size_t apc = out.find("\033_G");
+    ASSERT_TRUE(apc != std::string::npos);
+    ASSERT_TRUE(out.find("o=z") != std::string::npos);
+    ASSERT_TRUE(out.find("s=20") != std::string::npos);
+    ASSERT_TRUE(out.find("v=8") != std::string::npos);
+    ASSERT_TRUE(out.find("c=10") != std::string::npos);
+    ASSERT_TRUE(out.find("r=4") != std::string::npos);
+
+    // Reassemble every APC payload (chunked or not) in order and decode.
+    std::string b64;
+    size_t i = apc;
+    while ((i = out.find("\033_G", i)) != std::string::npos)
+    {
+        const size_t semi = out.find(';', i);
+        const size_t st = out.find("\033\\", i);
+        ASSERT_TRUE(st != std::string::npos);
+        if (semi != std::string::npos && semi < st)
+        {
+            b64 += out.substr(semi + 1, st - semi - 1);
+        }
+        i = st + 2;
+    }
+    const auto z = b64_decode(b64);
+    std::vector<unsigned char> rgb(static_cast<size_t>(20 * 8 * 3));
+    // unsigned int intermediary for the same -Wuseless-cast/LLP64 reason as
+    // framebuffer.cpp's transmit_direct.
+    const auto rgb_len = static_cast<unsigned int>(rgb.size());
+    mz_ulong len = rgb_len;
+    ASSERT_EQ(mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size())), MZ_OK);
+    ASSERT_EQ(len, rgb_len);
+
+    const size_t bg = 0;                                       // pixel (0,0)
+    const size_t px = ((static_cast<size_t>(2) * 20) + 3) * 3; // pixel (3,2)
+    ASSERT_EQ(rgb[bg], 10);
+    ASSERT_EQ(rgb[bg + 1], 20);
+    ASSERT_EQ(rgb[bg + 2], 30);
+    ASSERT_EQ(rgb[px], 200);
+    ASSERT_EQ(rgb[px + 1], 100);
+    ASSERT_EQ(rgb[px + 2], 50);
+}
+
+TEST(framebuffer, kitty_idle_present_emits_no_image)
+{
+    // Only a clear() (a rewritten pixel buffer) re-arms the transmission; a
+    // present with nothing new emits no image bytes at all.
+    Framebuffer fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033_G") != std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033_G") == std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.clear({ 1, 2, 3 });
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033_G") != std::string::npos);
+    }
+}
+
+TEST(framebuffer, kitty_zero_rows_deletes_resident_image)
+{
+    // A shrink to zero image rows (a one-row terminal with the HUD shown)
+    // transmits nothing, but the frame already resident in the terminal must
+    // not stay displayed over the HUD row: the first present after the shrink
+    // deletes it, exactly once.
+    Framebuffer fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("a=T") != std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.resize(4, 0, 2, 0);
+        fb.present();
+        const std::string out = cap.read();
+        ASSERT_TRUE(out.find("a=d,d=I") != std::string::npos);
+        ASSERT_TRUE(out.find("a=T") == std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033_G") == std::string::npos);
+    }
 }

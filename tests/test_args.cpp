@@ -1327,6 +1327,47 @@ TEST(args, color_missing_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// --graphics
+
+TEST(args, graphics_default_is_auto)
+{
+    ASSERT_EQ(run({ "m.obj" }).args.graphics, GraphicsChoice::Auto);
+}
+
+TEST(args, graphics_values)
+{
+    ASSERT_EQ(run({ "--graphics", "auto", "m.obj" }).args.graphics, GraphicsChoice::Auto);
+    ASSERT_EQ(run({ "--graphics", "kitty", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics", "blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
+}
+
+TEST(args, graphics_case_insensitive)
+{
+    ASSERT_EQ(run({ "--graphics", "KITTY", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics", "Blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
+}
+
+TEST(args, graphics_equals_form)
+{
+    ASSERT_EQ(run({ "--graphics=kitty", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics=blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
+}
+
+TEST(args, graphics_invalid_value_is_error)
+{
+    ParseResult r = run({ "--graphics", "sixel", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+    ASSERT_FALSE(run({ "--graphics", "1", "m.obj" }).ok);
+}
+
+TEST(args, graphics_missing_value_is_error)
+{
+    ParseResult r = run({ "--graphics" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 // --fps
 
 TEST(args, fps_default)

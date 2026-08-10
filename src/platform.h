@@ -1,9 +1,12 @@
 #pragma once
 
+#include "graphics.h" // TermGraphics, filled by query_term_graphics below
 #include "input.h"
+#include "kitty.h" // the capability query escape, sent by query_term_graphics
 
 #include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -15,8 +18,11 @@
 #include <io.h>
 #include <windows.h>
 #else
+#include <cerrno>
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <termios.h>
 #include <unistd.h>
 #endif
@@ -89,6 +95,312 @@ namespace platform
         cols = ws.ws_col > 0 ? ws.ws_col : 80;
         rows = ws.ws_row > 0 ? ws.ws_row : 24;
 #endif
+    }
+
+    // Terminal window size in pixels from TIOCGWINSZ's ws_xpixel/ws_ypixel, 0/0 when
+    // the terminal does not report them (many do not; kitty/ghostty/foot/wezterm do).
+    // Re-read on every resize: a font zoom changes the cell size mid-session, and this
+    // is the one source that reports it without an escape round trip.
+    inline void get_terminal_pixel_size(int &px_w, int &px_h)
+    {
+        px_w = 0;
+        px_h = 0;
+#ifndef _WIN32
+        struct winsize ws = {};
+        // The SAME fd chain as get_terminal_size, advancing on the GRID fields,
+        // so the pixels always come from the fd the grid came from: a chain that
+        // advanced on the pixel fields could pair one tty's grid with another
+        // tty's pixels (stdin and stdout need not be the same terminal). A chosen
+        // fd without pixel fields reports absent and the cell-size tiers move on.
+        if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
+        {
+            ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
+        }
+        if (ws.ws_col == 0)
+        {
+            ioctl(STDERR_FILENO, TIOCGWINSZ, &ws);
+        }
+        // Both grid axes must be real, not just ws_col: callers divide the
+        // pixels by the grid, and get_terminal_size fabricates a missing axis
+        // (80/24), so real pixels over a fabricated axis would derive a garbage
+        // cell size instead of falling through to the next tier.
+        if (ws.ws_col > 0 && ws.ws_row > 0 && ws.ws_xpixel > 0 && ws.ws_ypixel > 0)
+        {
+            px_w = ws.ws_xpixel;
+            px_h = ws.ws_ypixel;
+        }
+#endif
+    }
+
+#ifndef _WIN32
+    // Shared-memory frame helpers for the kitty t=s medium. Each frame is one
+    // fresh POSIX shm object: created and filled here, then named in the escape,
+    // then read AND UNLINKED by the terminal. shm_frame_create unlinks the name
+    // first (ENOENT is the normal case) so a stale object the terminal never got
+    // to read is reclaimed rather than leaked, and O_EXCL then cannot collide.
+    // Accepted residual: a same-named object this uid cannot unlink (a squatter
+    // from another uid) fails the unlink and then the O_EXCL create every time,
+    // so that name's frames permanently take the direct fallback; identical
+    // pixels, no diagnostic.
+    inline void *shm_frame_create(const char *name, size_t size)
+    {
+        shm_unlink(name);
+        const int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
+        if (fd < 0)
+        {
+            return nullptr;
+        }
+        void *ptr = nullptr;
+        bool sized = ftruncate(fd, static_cast<off_t>(size)) == 0;
+#ifdef __linux__
+        // ftruncate sizes the object but tmpfs reserves no pages for it, so the
+        // first write into the mapping on an exhausted /dev/shm raises SIGBUS.
+        // posix_fallocate reserves up front and reports ENOSPC as a clean
+        // failure instead, which the caller turns into the direct fallback.
+        // Cost of the allocate-and-zero pass: noise at 1080p, +1.1-1.5 ms (+7-9%)
+        // per 4K frame (measured); accepted for the clean failure mode. Linux-only
+        // on purpose: the exhaustion mode is a full tmpfs mount, which macOS does
+        // not have (its shm objects are plain VM-backed memory, so pressure there
+        // fails like any allocation, not with a partition-quota SIGBUS).
+        sized = sized && posix_fallocate(fd, 0, static_cast<off_t>(size)) == 0;
+#endif
+        if (sized)
+        {
+            ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        }
+        close(fd); // the mapping keeps the object alive; the fd is not needed
+        if (ptr == MAP_FAILED || ptr == nullptr)
+        {
+            shm_unlink(name);
+            return nullptr;
+        }
+        return ptr;
+    }
+
+    inline void shm_frame_finish(void *ptr, size_t size)
+    {
+        munmap(ptr, size);
+    }
+
+    inline void shm_frame_remove(const char *name)
+    {
+        shm_unlink(name);
+    }
+
+    inline long process_id()
+    {
+        return static_cast<long>(getpid());
+    }
+#else
+    // Windows stubs so the shm call sites compile without #ifdef blocks of their
+    // own (platform.h owns all platform conditionals). The kitty backend is
+    // never selected on Windows, and even a stray call degrades cleanly: a null
+    // create reads as "shm frame unavailable" and the caller falls back.
+    inline void *shm_frame_create(const char * /*name*/, size_t /*size*/)
+    {
+        return nullptr;
+    }
+
+    inline void shm_frame_finish(void * /*ptr*/, size_t /*size*/) {}
+
+    inline void shm_frame_remove(const char * /*name*/) {}
+
+    inline long process_id()
+    {
+        return static_cast<long>(GetCurrentProcessId());
+    }
+#endif
+
+    namespace detail
+    {
+        // Ceiling on the graphics-detection read. The replies total well under a
+        // hundred bytes; the headroom absorbs keystrokes typed into the window.
+        constexpr int GRAPHICS_REPLY_BUF = 512;
+        // Outer bound on waiting for the DSR sentinel. Terminals answer queries
+        // ahead of other processing, so the normal case is one round trip;
+        // the bound only matters for a terminal that never answers DSR at all.
+        constexpr int GRAPHICS_QUERY_TIMEOUT_MS = 1000;
+    } // namespace detail
+
+    // GRAPHICS_QUERY_SUPPORTED lets main.cpp say "not supported on Windows"
+    // instead of blaming a query that was never sent.
+#ifdef _WIN32
+    inline constexpr bool GRAPHICS_QUERY_SUPPORTED = false;
+#else
+    inline constexpr bool GRAPHICS_QUERY_SUPPORTED = true;
+#endif
+
+    // Leaves the alternate screen that query_term_graphics entered. INVARIANT:
+    // once the query has run, only this call or the Framebuffer dtor ever gets
+    // the terminal off the alternate screen, so EVERY path that returns between
+    // the query and the Framebuffer ctor (today: the quit-signal and
+    // forced-kitty bails) must call this first, or it strands the user there
+    // with the shell invisible. On the normal path the ctor adopts the screen
+    // (adopt_alt_screen) and its dtor leaves it.
+    inline void exit_alt_screen()
+    {
+        std::fputs("\033[?1049l", stdout);
+        std::fflush(stdout);
+    }
+
+    // Writes the graphics capability batch (kitty query + cell-size report + DSR
+    // sentinel) and reads the replies synchronously. Preconditions: raw mode is on
+    // and the interactive input loop does not own stdin yet, so the replies never
+    // reach the input state machine. The DSR is what bounds the wait: every
+    // terminal answers it, and replies arrive in request order, so its arrival
+    // means everything the terminal will say has been said. Bytes the scanner
+    // does not recognize are dropped, which loses keystrokes typed inside the
+    // window (about one round trip; accepted). Windows: no terminal there speaks
+    // the kitty protocol, so nothing is queried; revisit when sixel lands.
+    // POSIX postcondition: the terminal is left ON the alternate screen (see the
+    // comment at the enter escape); the caller either constructs the Framebuffer
+    // with adopt_alt_screen or calls exit_alt_screen() before bailing.
+    // `interrupted` is the caller's signal flag (main.cpp's SIGINT/SIGTERM
+    // handler target): an EINTR retry consults it so a quit signal ends the
+    // wait instead of being retried into the deadline.
+    inline TermGraphics query_term_graphics(const volatile std::sig_atomic_t *interrupted = nullptr)
+    {
+        TermGraphics tg;
+#ifndef _WIN32
+        // The whole exchange happens on the ALTERNATE screen: a terminal that
+        // does not consume APC would otherwise print the query bytes into the
+        // user's scrollback. Deliberately NOT left on return: the Framebuffer
+        // ctor adopts it for the session (adopt_alt_screen), because a
+        // leave-and-re-enter pair here flashed the normal screen between the
+        // query and the first frame, and a second 1049h would clobber the saved
+        // cursor with an alternate-screen position. Bail paths that never reach
+        // the ctor call exit_alt_screen() instead.
+        std::fputs("\033[?1049h", stdout);
+
+        // Probe object for the t=s query: one white RGB pixel. If it cannot be
+        // created the query is simply not sent and the transport stays
+        // unverified, which reads as unavailable, the correct answer on a host
+        // without working shm. The probe verifies the MEDIUM, not capacity (the
+        // frame size is not even known yet): a /dev/shm too small for real
+        // frames degrades to the per-frame direct fallback, silent by design.
+        char shm_name[64];
+        std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%ld-q", static_cast<long>(getpid()));
+        bool shm_probe = false;
+        if (void *probe = shm_frame_create(shm_name, 3))
+        {
+            std::memset(probe, 0xFF, 3);
+            shm_frame_finish(probe, 3);
+            shm_probe = true;
+        }
+
+        std::fputs(kitty::QUERY, stdout);
+        if (shm_probe)
+        {
+            std::string shm_query;
+            kitty::append_query_shm(shm_query, shm_name);
+            std::fputs(shm_query.c_str(), stdout);
+        }
+        std::fputs("\033[16t\033[5n", stdout);
+        std::fflush(stdout);
+
+        char buf[detail::GRAPHICS_REPLY_BUF];
+        int len = 0;
+        const auto deadline =
+            std::chrono::steady_clock::now() + std::chrono::milliseconds(detail::GRAPHICS_QUERY_TIMEOUT_MS);
+        for (;;)
+        {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline)
+            {
+                break;
+            }
+            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
+            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+            const int pr = poll(&pfd, 1, static_cast<int>(remaining));
+            if (pr < 0 && errno == EINTR)
+            {
+                if (interrupted != nullptr && *interrupted != 0)
+                {
+                    break; // a quit signal ends the wait
+                }
+                // Not a quit: retry. No non-quit handler is installed (resize is
+                // polled, so no SIGWINCH handler exists to interrupt anything);
+                // the real case is Linux's stop-and-SIGCONT, which fails poll
+                // with EINTR even with no handler (man 7 signal).
+                continue;
+            }
+            if (pr <= 0)
+            {
+                break; // timed out or failed: whatever was going to arrive has
+            }
+            const auto got = read(STDIN_FILENO, buf + len, sizeof(buf) - static_cast<size_t>(len));
+            if (got < 0 && errno == EINTR)
+            {
+                if (interrupted != nullptr && *interrupted != 0)
+                {
+                    break;
+                }
+                continue;
+            }
+            if (got <= 0)
+            {
+                break;
+            }
+            len += static_cast<int>(got);
+            const ReplyScan r = parse_graphics_replies(buf, len, tg);
+            if (r.done)
+            {
+                break;
+            }
+            if (r.consumed > 0)
+            {
+                len -= r.consumed;
+                std::memmove(buf, buf + r.consumed, static_cast<size_t>(len));
+            }
+            if (len >= detail::GRAPHICS_REPLY_BUF)
+            {
+                break; // a bufferful nothing could consume: stop reading, run blocks
+            }
+        }
+
+        // Anything typed inside the query window is dropped with the junk
+        // (accepted, the window is one round trip). That includes draining what
+        // the kernel has buffered but this loop never read: a typed escape
+        // sequence straddling the reply buffer would otherwise leak its tail to
+        // the input loop as keypresses. A tail still in flight can still leak.
+        // The iteration cap bounds the loop (a process flooding the tty must not
+        // spin startup here); 16 KB covers any realistic buffered backlog.
+        for (int i = 0; i < 64; i++)
+        {
+            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
+            if (poll(&pfd, 1, 0) <= 0)
+            {
+                break;
+            }
+            char junk[256];
+            if (read(STDIN_FILENO, junk, sizeof junk) <= 0)
+            {
+                break;
+            }
+        }
+
+        if (shm_probe)
+        {
+            shm_frame_remove(shm_name); // normally already unlinked by the terminal
+        }
+        // A t=s OK without the base query's OK names no usable backend.
+        tg.kitty_shm = tg.kitty_shm && tg.kitty;
+#else
+        (void)interrupted; // nothing is queried on Windows
+#endif
+        return tg;
+    }
+
+    // Asks the terminal for its cell size in pixels (XTWINOPS 16). Fired by the
+    // resize path when TIOCGWINSZ reports no pixel size; the reply travels the
+    // ordinary input stream, parse_input reports it as a CellSize event a frame
+    // or so later, and a terminal that does not answer simply produces no event.
+    // Nothing ever waits on it, which is what lets this run mid-session without
+    // touching the input machinery's rules.
+    inline void request_cell_size()
+    {
+        std::fputs("\033[16t", stdout);
+        std::fflush(stdout);
     }
 
     // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal. Windows

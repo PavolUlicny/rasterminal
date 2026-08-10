@@ -29,6 +29,29 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# shm_open (the kitty graphics shared-memory transport) lives in librt on glibc
+# older than 2.34 (it moved into libc proper there); macOS and musl never split it
+# out, and neither ships a librt to link. A true link check rather than a version
+# probe, so any libc arrangement resolves itself: plain first, then with rt, and
+# fail loud if neither links. POSIX-only: the Windows build compiles no shm code.
+set(RASTERMINAL_SHM_LIB "")
+if(NOT WIN32)
+  include(CheckCXXSourceCompiles)
+  set(RASTERMINAL_SHM_PROBE_SRC
+      "#include <sys/mman.h>\n#include <fcntl.h>\nint main() { return shm_open(\"/rasterminal-probe\", O_RDONLY, 0) == -1; }")
+  check_cxx_source_compiles("${RASTERMINAL_SHM_PROBE_SRC}" RASTERMINAL_SHM_PLAIN)
+  if(NOT RASTERMINAL_SHM_PLAIN)
+    set(CMAKE_REQUIRED_LIBRARIES rt)
+    check_cxx_source_compiles("${RASTERMINAL_SHM_PROBE_SRC}" RASTERMINAL_SHM_NEEDS_RT)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(RASTERMINAL_SHM_NEEDS_RT)
+      set(RASTERMINAL_SHM_LIB rt)
+    else()
+      message(FATAL_ERROR "shm_open links neither plainly nor with librt")
+    endif()
+  endif()
+endif()
+
 # ─── 32-bit (ILP32) target adjustments ────────────────────────────────────────
 # CMAKE_SIZEOF_VOID_P reflects the effective target: a -m32 flag (Linux i686), -A Win32
 # (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling — applied
@@ -61,7 +84,7 @@ add_compile_definitions(_FILE_OFFSET_BITS=64)
 # SYSTEM suppresses warnings from these headers on all compilers.
 add_library(rasterminal_vendor INTERFACE)
 foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/src
-            basisu/transcoder basisu/zstd libwebp)
+            basisu/transcoder basisu/zstd libwebp miniz)
   target_include_directories(rasterminal_vendor SYSTEM INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/${lib})
 endforeach()
@@ -77,6 +100,19 @@ set_source_files_properties(
 set_source_files_properties(
   vendor/basisu/zstd/zstddeclib.c
   PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+# miniz (zlib deflate for the kitty graphics direct transport): a C TU like zstd.
+set_source_files_properties(
+  vendor/miniz/miniz.c
+  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
+# miniz configuration at directory scope so every TU that includes miniz.h sees one
+# uniform set (mixed config on a shared header is the same footgun as _FILE_OFFSET_BITS):
+# NO_ZLIB_COMPATIBLE_NAMES drops the zlib-name compatibility layer (Z_* macros plus,
+# since miniz 3.1, static compress/deflate/crc32 wrapper definitions stamped into every
+# including TU), NO_STDIO + NO_ARCHIVE_APIS drop the file-I/O and ZIP layers nothing
+# calls (the stdio layer also carries a #pragma message note that blanket -w cannot
+# silence; since 3.1.0 it fires only where miniz lacks large-file support, e.g. 32-bit
+# x86 Linux, the cross32 CI target). Inflate stays: tests round-trip via mz_uncompress.
+add_compile_definitions(MINIZ_NO_ZLIB_COMPATIBLE_NAMES MINIZ_NO_STDIO MINIZ_NO_ARCHIVE_APIS)
 
 # libwebp decode subset (EXT_texture_webp). Listed individually — a unity #include shim
 # fails on duplicate file-local statics (e.g. clip_8b). The dsp SIMD variants self-gate on
@@ -161,10 +197,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 add_library(rasterminal_warnings INTERFACE)
-# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the only C sources are the
-# vendored zstd amalgam and the libwebp decode subset, which must not receive the C++-only
-# -W flags (they would trip the driver's "valid for C++ but not C" diagnostics under
-# -Werror). They are suppressed via the per-source -w sets above.
+# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the C sources (the
+# vendored zstd and miniz amalgams and the libwebp decode subset) must not receive the
+# C++-only -W flags (they would trip the driver's "valid for C++ but not C" diagnostics
+# under -Werror). They are suppressed via the per-source -w sets above.
 target_compile_options(rasterminal_warnings INTERFACE
   $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;
@@ -235,6 +271,8 @@ add_executable(rasterminal
   src/color.cpp
   src/framebuffer.cpp
   src/hud.cpp
+  src/graphics.cpp
+  src/kitty.cpp
   src/mesh.cpp
   src/mesh_obj.cpp
   src/mesh_ply.cpp
@@ -251,12 +289,14 @@ add_executable(rasterminal
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
   vendor/basisu/zstd/zstddeclib.c
+  vendor/miniz/miniz.c
   ${WEBP_DEC_SRCS})
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
   rasterminal_release_opts
-  Threads::Threads)
+  Threads::Threads
+  ${RASTERMINAL_SHM_LIB})
 # GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
 # the link-step recompile, where per-TU pragma context (src/draco_decode.cpp +
 # vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
@@ -294,6 +334,8 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_platform.cpp
     tests/test_text.cpp
     tests/test_hud.cpp
+    tests/test_graphics.cpp
+    tests/test_kitty.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
@@ -346,10 +388,13 @@ if(RASTERMINAL_BUILD_TESTS)
     src/rasterize.cpp
     src/framebuffer.cpp
     src/hud.cpp
+    src/graphics.cpp
+    src/kitty.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp
     vendor/basisu/zstd/zstddeclib.c
+    vendor/miniz/miniz.c
     ${WEBP_DEC_SRCS})
   # Repo root on the include path so every test include is root-relative:
   # "src/foo.h" for code under test, "tests/foo.h" for shared helpers/fixtures
@@ -359,7 +404,8 @@ if(RASTERMINAL_BUILD_TESTS)
     rasterminal_vendor
     rasterminal_warnings
     rasterminal_test_opts
-    Threads::Threads)
+    Threads::Threads
+    ${RASTERMINAL_SHM_LIB})
   target_link_options(rasterminal_tests PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
   if(ipo_ok)

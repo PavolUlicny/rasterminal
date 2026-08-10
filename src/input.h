@@ -57,10 +57,15 @@ namespace platform
             MousePress,
             MouseRelease,
             MouseMove, // a button is held and the pointer moved
+            // The terminal's cell size in pixels (the XTWINOPS 16 report),
+            // arriving in reply to a request the resize path made. Machinery,
+            // not a keypress: x/y carry the cell width/height instead of a
+            // position, and main.cpp handles it above the --no-input gate.
+            CellSize,
         } type = Type::None;
 
         Key key = Key::None; // valid when type == Key
-        int x = 0, y = 0;    // terminal cell position (1-based)
+        int x = 0, y = 0;    // terminal cell position (1-based); cell w/h px for CellSize
     };
 
     // input parsing helpers
@@ -237,6 +242,12 @@ namespace platform
         // overflow is UB, and the value reaches main.cpp as a mouse coordinate).
         constexpr int MAX_CSI_PARAM_VALUE = 1000000;
 
+        // Sanity bound on a reported cell dimension in pixels, far beyond any real
+        // font. Shared by this grammar's cell-size arm and the startup detection
+        // scanner (graphics.cpp) so the two validations cannot disagree; a bogus
+        // size would misscale every frame that follows.
+        constexpr int MAX_CELL_REPORT_PX = 1000;
+
         // X10 mouse report payload: exactly three bytes after \033[M. Each is
         // biased by 32 and wraps past column 223, so any byte value is legitimate
         // payload, including 0x00 and ESC. It is consumed by count, never scanned.
@@ -410,6 +421,75 @@ namespace platform
             {
                 ev.type = InputEvent::Type::MouseRelease;
             }
+            return parse_complete(consumed, ev);
+        }
+
+        // The strict `6;<height>;<width>` body of an XTWINOPS cell-size report,
+        // validated over the located CSI body [from, to). ONE implementation for
+        // both consumers of the report (this grammar's arm below for the
+        // mid-session reply, and graphics.cpp's startup scanner) so the two
+        // validations cannot drift. Exactly three numeric parameters led by 6 and inside the
+        // sanity bound; on success w/h carry width/height (the report orders
+        // height first).
+        inline bool parse_cell_size_body(const char *buf, int from, int to, int &w, int &h)
+        {
+            int nums[3] = {};
+            bool given[3] = {};
+            int ni = 0;
+            for (int i = from; i < to; i++)
+            {
+                const char d = buf[i];
+                if (d == ';')
+                {
+                    if (ni >= 2)
+                    {
+                        return false; // a fourth parameter
+                    }
+                    ni++;
+                    continue;
+                }
+                if (!is_csi_param(d))
+                {
+                    return false;
+                }
+                nums[ni] = (nums[ni] * 10) + (d - '0');
+                given[ni] = true;
+                if (nums[ni] > MAX_CSI_PARAM_VALUE)
+                {
+                    return false; // bounds the multiply, like the SGR arm
+                }
+            }
+            if (ni != 2 || !given[0] || !given[1] || !given[2] || nums[0] != 6)
+            {
+                return false;
+            }
+            if (nums[1] < 1 || nums[1] > MAX_CELL_REPORT_PX || nums[2] < 1 || nums[2] > MAX_CELL_REPORT_PX)
+            {
+                return false;
+            }
+            w = nums[2];
+            h = nums[1];
+            return true;
+        }
+
+        // The cell-size report as an input event: the reply to the \033[16t request
+        // the resize path sends when TIOCGWINSZ carries no pixel size. `fin` is the
+        // index of the already-located 't' (locate the terminator, then validate,
+        // like every arm); anything that is not a valid report body is some other
+        // 't'-final CSI and drops exactly as before this arm existed.
+        inline ParseResult parse_cell_size_report(const char *buf, int fin)
+        {
+            const int consumed = fin + 1;
+            int w = 0;
+            int h = 0;
+            if (!parse_cell_size_body(buf, 2, fin, w, h))
+            {
+                return parse_drop(consumed);
+            }
+            InputEvent ev;
+            ev.type = InputEvent::Type::CellSize;
+            ev.x = w;
+            ev.y = h;
             return parse_complete(consumed, ev);
         }
 
@@ -688,8 +768,9 @@ namespace platform
             }
 
             // Generic CSI: consume through the final byte. An unparameterized arrow
-            // is the one binding here; everything else (F5-F12, Home/End, Delete,
-            // modified arrows, shift-tab, focus events) is dropped.
+            // and the cell-size report are the bindings here; everything else
+            // (F5-F12, Home/End, Delete, modified arrows, shift-tab, focus events)
+            // is dropped.
             const Scan s = scan_to_csi_final(buf, len, 2);
             if (s.kind == Scan::Kind::Incomplete)
             {
@@ -698,6 +779,10 @@ namespace platform
             if (s.kind == Scan::Kind::Boundary)
             {
                 return parse_drop(s.index);
+            }
+            if (buf[s.index] == 't')
+            {
+                return parse_cell_size_report(buf, s.index);
             }
             // Only the unparameterized form is an arrow: a final at any later index
             // means parameters were present, which is a modified arrow, not one.

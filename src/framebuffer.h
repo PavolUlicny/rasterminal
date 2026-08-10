@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,14 +49,43 @@ constexpr Color vec3_to_color(vec3 c) noexcept
              static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
 }
 
+// kitty graphics backend configuration, fixed at construction like ColorMode.
+// enabled=false is the historical half-block backend, where a pixel is half a
+// cell; enabled=true presents the pixel buffer as one kitty-protocol image
+// spanning cols x rows cells (the HUD row, when shown, sits just below them).
+// shm selects the shared-memory medium; the caller sets it only when the
+// startup query verified the transport end to end, and a transiently failing
+// frame falls back to direct transmission for that frame alone (identical
+// pixels, so no diagnostic: this is a transport capability, not correctness).
+struct KittyConfig
+{
+    bool enabled = false;
+    bool shm = false;
+    int cols = 0;
+    int rows = 0;
+};
+
 class Framebuffer
 {
   public:
-    // pixel_width  = terminal columns
-    // pixel_height = terminal rows * 2  (two pixels per cell via ▀)
+    // pixel_width  = terminal columns (blocks) or columns * cell width in px (kitty)
+    // pixel_height = terminal rows * 2 via ▀ (blocks) or image rows * cell height (kitty)
     // headless     = true skips all terminal I/O (ANSI escapes, buffer reserve)
     // mode         = terminal colour depth for present() (default 24-bit truecolor)
-    Framebuffer(int pixel_width, int pixel_height, bool headless = false, ColorMode mode = ColorMode::TrueColor);
+    // kitty        = graphics backend selection; default is the half-block backend
+    // adopt_alt_screen = the caller (the graphics query) already entered the
+    //                alternate screen; skip re-entering, so the normal screen
+    //                never flashes between the query and the first frame and the
+    //                saved cursor keeps its pre-launch position. The dtor leaves
+    //                the alternate screen either way.
+    Framebuffer(
+        int pixel_width,
+        int pixel_height,
+        bool headless = false,
+        ColorMode mode = ColorMode::TrueColor,
+        KittyConfig kitty = {},
+        bool adopt_alt_screen = false
+    );
     ~Framebuffer();
 
     Framebuffer(const Framebuffer &) = delete;
@@ -68,7 +98,13 @@ class Framebuffer
 
     // Resize pixel buffer to new dimensions and clear. Emits a one-shot
     // \033[2J so any leftover content from the old (larger) size is wiped.
+    // On a kitty framebuffer use the 4-argument overload: this form leaves the
+    // placement grid (m_kitty.cols/rows, the c=/r= keys and the HUD row) at its
+    // old values, desynchronizing it from the new pixel dimensions.
     void resize(int pixel_width, int pixel_height);
+
+    // Kitty-mode resize: the cell rectangle changes along with the pixel size.
+    void resize(int pixel_width, int pixel_height, int kitty_cols, int kitty_rows);
 
     void clear(Color bg = { 0, 0, 0 });
 
@@ -171,6 +207,29 @@ class Framebuffer
     // 24-bit 38;2/48;2 emission; TC == false selects the quantized 38;5/48;5 palette emission.
     template <bool TC> void present_impl();
 
+    // present() body for the kitty backend: one image transmission (skipped when
+    // the pixel buffer was not rewritten since the last present) plus the HUD row.
+    void present_kitty();
+
+    // The HUD row emission shared by both backends (cursor to the row below the
+    // image/pixel rows, wrap off, bg+default fg, erase BEFORE the text, line,
+    // reset). One implementation so the erase-order rule cannot fork.
+    void append_hud_line(bool full_redraw);
+
+    // \033[row;colH, 1-based cursor position (no reliance on newlines or
+    // auto-wrap); shared by present_impl's row positioning and the HUD block.
+    void append_cursor_pos(int row, int col);
+
+    // Serializes the pixel buffer's colour halves as packed RGB bytes into out
+    // (3 bytes per pixel, row-major), the wire layout of kitty f=24.
+    void write_rgb(unsigned char *out) const;
+
+    // The two kitty transports. transmit_shm returns false when the shm object
+    // cannot be created (present_kitty then falls back to direct for that frame
+    // only; shm is retried next frame).
+    bool transmit_shm();
+    void transmit_direct();
+
     // Packed slot layout: high 32 bits = float depth bit pattern,
     // low 24 bits = packed RGB (0x00BBGGRR), top byte of low half reserved (zero).
     static constexpr uint32_t COLOR_MASK = 0x00FFFFFFu;
@@ -222,8 +281,18 @@ class Framebuffer
     // is one combined fg+bg SGR plus the glyph: ~39 B in TrueColor (38;2;r;g;b;48;2;r;g;bm) but only
     // ~23 B in Palette256 (38;5;i;48;5;jm), so 256 mode reserves less. Both constants keep headroom over
     // the worst case for per-row cursor moves and the HUD tail; a miss only costs a one-time realloc.
+    // Kitty reserves only the HUD row plus escape slack for either transport: shm frames are a
+    // ~60-byte escape, and the direct transport sizes m_buf itself on first transmit
+    // (append_transmit_direct reserves the whole encoded frame, keys included, before its chunk loop,
+    // guarded so it never shrinks), after which the capacity persists until the next resize shrinks
+    // it back. Duplicating that full-frame bound here would be redundant address space and a second
+    // allocation for every direct-mode session.
     [[nodiscard]] size_t buf_reserve_bytes() const noexcept
     {
+        if (m_kitty.enabled)
+        {
+            return (static_cast<size_t>(m_kitty.cols) * 50u) + 4096u;
+        }
         const size_t per_cell = (m_mode == ColorMode::TrueColor) ? 50u : 32u;
         return static_cast<size_t>(m_width) * static_cast<size_t>(m_height / 2) * per_cell;
     }
@@ -233,11 +302,36 @@ class Framebuffer
     // plain: only read/written by single-threaded present(). Value domain is mode-dependent: packed
     // RGB in TrueColor, palette indices in Palette256 (safe because m_mode is fixed at construction; a
     // future runtime mode switch would need m_force_redraw to avoid stale index-vs-RGB comparisons).
+    // Left empty in kitty mode, which has no per-cell diff (8 MB at 1080p it would never read).
     std::vector<uint32_t> m_prev_color;
+    // Kitty direct-transport staging (pixel unpack and deflate output), empty
+    // until first used. Raw arrays rather than vectors on purpose: both are
+    // fully overwritten every use (write_rgb / mz_compress2), and vector::resize
+    // would zero-fill them first, a ~12 MB memset at 1080p on the first direct
+    // frame after every resize. Capacities tracked beside the pointers.
+    std::unique_ptr<unsigned char[]> m_rgb;
+    size_t m_rgb_cap = 0;
+    std::unique_ptr<unsigned char[]> m_z;
+    size_t m_z_cap = 0;
     std::string m_buf;      // reused output buffer, avoids per-frame allocation
     std::string m_hud;      // status line written below pixel rows
     std::string m_prev_hud; // last HUD actually emitted; present() skips an unchanged one
     bool m_force_redraw = true;
     bool m_headless = false;
     ColorMode m_mode = ColorMode::TrueColor;
+    KittyConfig m_kitty;
+    // Whether the pixel buffer was rewritten (clear() ran) since the last kitty
+    // transmission; an unchanged frame emits no image bytes at all. This is why
+    // every rendered frame must begin with clear() (main.cpp gates render and
+    // clear together): commit_pixel and the transparent resolve deliberately do
+    // not arm this flag, since a per-pixel store on the hot path would cost more
+    // than the transmit it saves.
+    bool m_image_dirty = true;
+    // Whether a transmitted image is currently resident in the terminal; lets a
+    // shrink to zero image rows delete the now-orphaned frame exactly once.
+    bool m_image_shown = false;
+    // Rotates the shm object name through a small ring: the terminal unlinks an
+    // object only after reading it, so reusing one name could overwrite a frame
+    // it has not read yet.
+    unsigned m_shm_seq = 0;
 };
