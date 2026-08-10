@@ -112,7 +112,7 @@ TEST(args, defaults_when_only_model_given)
     ASSERT_EQ(r.args.bg, Background::Black);
     ASSERT_EQ(r.args.lighting, LightingMode::Dual);
     ASSERT_EQ(r.args.wireframe_color, WireframeColor::White);
-    ASSERT_EQ(r.args.fps, 60);
+    ASSERT_EQ(r.args.fps, 30);
     ASSERT_TRUE(r.args.cull);
     ASSERT_TRUE(r.args.texture);
     ASSERT_FALSE(r.args.spin);
@@ -1453,7 +1453,7 @@ TEST(args, graphics_scale_allowed_with_kitty_and_auto)
 
 TEST(args, fps_default)
 {
-    ASSERT_EQ(run({ "m.obj" }).args.fps, 60);
+    ASSERT_EQ(run({ "m.obj" }).args.fps, 30);
 }
 
 TEST(args, fps_bare_long_at_end)
@@ -1480,9 +1480,9 @@ TEST(args, fps_bare_with_flag_after)
 
 TEST(args, fps_positive_value)
 {
-    ParseResult r = run({ "-f", "30", "m.obj" });
+    ParseResult r = run({ "-f", "45", "m.obj" });
     ASSERT_TRUE(r.ok);
-    ASSERT_EQ(r.args.fps, 30);
+    ASSERT_EQ(r.args.fps, 45);
 }
 
 TEST(args, fps_compact_short_form)

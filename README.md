@@ -194,7 +194,7 @@ rasterminal [options] <model>
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
 | `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores; `N` above the CPU thread count is clamped |
-| `--fps [N]` | `-f [N]` | `60` | Frame cap; bare `-f` uncaps |
+| `--fps [N]` | `-f [N]` | `30` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto`; with the kitty graphics backend the image is always 24-bit and this affects only the HUD line |
 | `--graphics` | none | `auto` | `kitty`, `blocks`, `auto`: rendering backend; `auto` draws real pixels via the kitty graphics protocol where the terminal supports it, else unicode half-blocks |

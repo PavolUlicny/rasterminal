@@ -415,7 +415,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  -j [N], --threads [N]          Worker threads (default: min(hw,4))\n"
             "                                  bare -j/--threads uses all cores, -j N uses N\n"
             "                                  N above the CPU thread count is clamped\n"
-            "  -f [N], --fps [N]              Frame cap (default: 60)\n"
+            "  -f [N], --fps [N]              Frame cap (default: 30)\n"
             "                                  bare -f/--fps uncapped, -f N caps at N fps\n"
             "  -B [N], --bench [N]            Headless benchmark: N frames (default: 200)\n"
             "                                  prints timing + fps + throughput to stderr\n"

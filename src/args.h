@@ -83,7 +83,7 @@ struct ParsedArgs
     // Render scale for pixel-graphics backends (kitty), [0.05, 1]; 1 = native
     // window resolution. The blocks backend never scales.
     float graphics_scale = 0.75f;
-    int fps = 60;               // 0 = uncapped (set by bare -f), >0 = cap at this value
+    int fps = 30;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
     int bench_width = 200;      // headless framebuffer width in pixels
     int bench_height = 120;     // headless framebuffer height in pixels
