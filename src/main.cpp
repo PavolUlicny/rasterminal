@@ -852,6 +852,7 @@ int main(int argc, char *argv[])
             // reaches the render, and the quit check sits outside it, so even Ctrl+C would not get
             // the viewer back. Far above a real burst; a leftover is picked up next frame.
             constexpr int MAX_EVENTS_PER_FRAME = 4096;
+            bool cell_size_changed = false;
             for (int handled = 0; handled < MAX_EVENTS_PER_FRAME; handled++)
             {
                 const platform::InputEvent ev = platform::poll_event();
@@ -865,6 +866,26 @@ int main(int argc, char *argv[])
                 {
                     running = false;
                     break;
+                }
+
+                // The cell-size reply to the resize path's request. Machinery, not a
+                // binding, so like Q it sits above the --no-input gate. Only the kitty
+                // backend asked and only it consumes the answer; a stray report on the
+                // blocks backend is dropped here rather than fed to the key chain.
+                if (ev.type == platform::InputEvent::Type::CellSize)
+                {
+                    // Recorded here, applied by the resize block below the drain: a
+                    // resize is a full framebuffer reallocation, and the drain's event
+                    // budget assumes every event is O(1), so a flood of reports must
+                    // not pay one reallocation each; folding into the resize block
+                    // also merges with a same-frame grid change into one reallocation.
+                    if (use_kitty && (ev.x != cell_w || ev.y != cell_h))
+                    {
+                        cell_w = ev.x;
+                        cell_h = ev.y;
+                        cell_size_changed = true;
+                    }
+                    continue;
                 }
 
                 // --no-input locks every other binding. Input is still read and parsed:
@@ -1091,12 +1112,14 @@ int main(int argc, char *argv[])
                 // resize, which moves the pixel fields without moving cols/rows.
                 int new_cell_w = cell_w;
                 int new_cell_h = cell_h;
+                bool have_pixel_report = false;
                 if (use_kitty)
                 {
                     int derived_w = 0;
                     int derived_h = 0;
                     if (derive_cell_from_pixels(new_cols, new_rows, derived_w, derived_h))
                     {
+                        have_pixel_report = true;
                         // Adopted only when the derived value itself moves; a stable
                         // disagreement with the query's exact answer is not a change
                         // (see the startup tracker comment).
@@ -1109,8 +1132,13 @@ int main(int argc, char *argv[])
                         }
                     }
                 }
-                if (new_cols != cols || new_rows != rows || new_cell_w != cell_w || new_cell_h != cell_h)
+                // cell_size_changed folds the drain's recorded CellSize reply into
+                // this same branch, so a reply and a grid change landing in one
+                // frame cost one framebuffer reallocation, not two.
+                if (new_cols != cols || new_rows != rows || new_cell_w != cell_w || new_cell_h != cell_h ||
+                    cell_size_changed)
                 {
+                    const bool grid_changed = new_cols != cols || new_rows != rows;
                     cols = new_cols;
                     rows = new_rows;
                     cell_w = new_cell_w;
@@ -1119,6 +1147,16 @@ int main(int argc, char *argv[])
                     {
                         const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h);
                         fb.resize(fbs.w, fbs.h, cols, rows - hud_rows);
+                        // No pixel fields to re-derive the cell size from (a font zoom
+                        // fires this same grid change), so ask the terminal directly:
+                        // the reply arrives through the input drain as a CellSize
+                        // event a frame later. Nothing waits on it, and a terminal
+                        // that answers neither TIOCGWINSZ nor XTWINOPS keeps the
+                        // startup value (the image still fills the window via c=/r=).
+                        if (grid_changed && !have_pixel_report)
+                        {
+                            platform::request_cell_size();
+                        }
                     }
                     else
                     {

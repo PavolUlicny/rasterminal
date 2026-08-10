@@ -391,6 +391,18 @@ namespace platform
         return tg;
     }
 
+    // Asks the terminal for its cell size in pixels (XTWINOPS 16). Fired by the
+    // resize path when TIOCGWINSZ reports no pixel size; the reply travels the
+    // ordinary input stream, parse_input reports it as a CellSize event a frame
+    // or so later, and a terminal that does not answer simply produces no event.
+    // Nothing ever waits on it, which is what lets this run mid-session without
+    // touching the input machinery's rules.
+    inline void request_cell_size()
+    {
+        std::fputs("\033[16t", stdout);
+        std::fflush(stdout);
+    }
+
     // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal. Windows
     // probes the console API, not _isatty: _isatty accepts ANY character device (NUL, COM
     // ports), GetConsoleMode only a real console handle. A mintty/MSYS pty (a named pipe)
