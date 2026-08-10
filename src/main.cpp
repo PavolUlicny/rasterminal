@@ -164,15 +164,16 @@ namespace
         return v >= 1 && v <= platform::detail::MAX_CELL_REPORT_PX;
     }
 
-    // The kitty framebuffer covers the cell grid at native resolution, bounded to
-    // MAX_FB_DIM_PX (8K-display size) on the longest axis: valid_cell_px bounds
-    // each cell axis, but the grid x cell product can still reach gigapixels on a
-    // garbage report. Both axes scale by the same factor, because the c=/r=
-    // placement stretches the frame to the grid rectangle: a lone clamped axis
-    // would render with the wrong aspect ratio, while a uniform scale only costs
-    // sampling resolution. The scaling bounds a hostile report rather than
-    // removing it: the worst case is 8192 on the longest axis and
-    // grid-proportional on the other, a few hundred MB, survivable by design.
+    // The kitty framebuffer covers the cell grid at --graphics-scale times
+    // native resolution, bounded to MAX_FB_DIM_PX (8K-display size) on the
+    // longest axis: valid_cell_px bounds each cell axis, but the grid x cell
+    // product can still reach gigapixels on a garbage report. Both axes scale
+    // by the same factor, because the c=/r= placement stretches the frame to
+    // the grid rectangle: a lone clamped axis would render with the wrong
+    // aspect ratio, while a uniform scale only costs sampling resolution. The
+    // clamp bounds a hostile report rather than removing it: the worst case is
+    // 8192 on the longest axis and grid-proportional on the other, a few
+    // hundred MB, survivable by design.
     constexpr int MAX_FB_DIM_PX = 8192;
 
     struct FbSize
@@ -181,10 +182,20 @@ namespace
         int h;
     };
 
-    FbSize kitty_fb_size(int cols, int image_rows, int cell_w, int cell_h) noexcept
+    // scale is --graphics-scale, applied before the clamp so both bounds compose.
+    FbSize kitty_fb_size(int cols, int image_rows, int cell_w, int cell_h, float scale) noexcept
     {
         int w = cols * cell_w;
         int h = image_rows * cell_h;
+        if (scale != 1.0f)
+        {
+            // A nonzero axis stays nonzero, same rule as the clamp below. Accepted
+            // aspect exception shared with that clamp: the 1 px floor can raise one
+            // axis alone, but only when an axis scales below a pixel (a terminal a
+            // couple of cells wide), where a distorted sliver beats a blank image.
+            w = (w > 0) ? std::max(1, static_cast<int>(static_cast<float>(w) * scale)) : 0;
+            h = (h > 0) ? std::max(1, static_cast<int>(static_cast<float>(h) * scale)) : 0;
+        }
         const int longest = std::max(w, h);
         if (longest > MAX_FB_DIM_PX)
         {
@@ -679,9 +690,9 @@ int main(int argc, char *argv[])
     }
 
     // Blocks: each cell covers 2 vertical pixels via ▀ half-block. Kitty: the
-    // image spans every cell above the HUD at native cell resolution. With the
-    // HUD enabled, the last terminal row is reserved for it; --no-hud reclaims
-    // that row for rendering.
+    // image spans every cell above the HUD, rendered at --graphics-scale of the
+    // grid's pixel size. With the HUD enabled, the last terminal row is reserved
+    // for it; --no-hud reclaims that row for rendering.
     const int hud_rows = args.hud ? 1 : 0;
     KittyConfig kitty_cfg;
     int fb_w = cols;
@@ -698,7 +709,7 @@ int main(int argc, char *argv[])
         kitty_cfg.shm = gfx.shm_ok;
         kitty_cfg.cols = cols;
         kitty_cfg.rows = rows - hud_rows;
-        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h);
+        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h, args.graphics_scale);
         fb_w = fbs.w;
         fb_h = fbs.h;
     }
@@ -1104,9 +1115,9 @@ int main(int argc, char *argv[])
                 // Kitty: re-derive the cell size alongside the grid, from the same
                 // TIOCGWINSZ that reported the resize. A font zoom changes the cell
                 // size and fires the same grid change, so on terminals that fill the
-                // pixel fields (kitty, ghostty, foot, wezterm) this keeps rendering
-                // at native resolution across zooms; terminals that report zeros
-                // keep the startup value. Deliberately polled every frame beside the
+                // pixel fields (kitty, ghostty, foot, wezterm) the render size keeps
+                // tracking the true cell size across zooms; terminals that report
+                // zeros keep the startup value. Deliberately polled every frame beside the
                 // size poll (up to three more ioctls, each ~1 us against a multi-ms
                 // frame): gating it on a grid change would miss a sub-cell window
                 // resize, which moves the pixel fields without moving cols/rows.
@@ -1145,7 +1156,7 @@ int main(int argc, char *argv[])
                     cell_h = new_cell_h;
                     if (use_kitty)
                     {
-                        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h);
+                        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h, args.graphics_scale);
                         fb.resize(fbs.w, fbs.h, cols, rows - hud_rows);
                         // No pixel fields to re-derive the cell size from (a font zoom
                         // fires this same grid change), so ask the terminal directly:

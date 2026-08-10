@@ -227,6 +227,17 @@ still requires the query to succeed, since a terminal without the protocol
 would silently show nothing; it is an error under tmux and GNU screen, which
 do not pass the protocol through.
 .TP
+.BI \-\-graphics\-scale " factor"
+Render scale for the kitty graphics backend, in [0.05, 1]. The frame is
+rendered at this fraction of the window's pixel resolution and stretched
+back over the same cells by the terminal, trading sharpness for speed.
+.B 1
+renders at native resolution. Has no effect on the blocks backend, and is
+an error with an explicit
+.BR "\-\-graphics blocks" .
+Default
+.BR 0.75 .
+.TP
 .BI \-\-spin\-speed " DEG/S"
 Auto-rotation speed in degrees per second, used whenever spinning is active
 (via
