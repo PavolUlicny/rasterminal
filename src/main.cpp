@@ -782,7 +782,11 @@ int main(int argc, char *argv[])
         const float spin_speed =
             to_radians(args.spin_speed) * (args.spin_direction == SpinDirection::Left ? 1.0f : -1.0f);
         constexpr float FPS_LATCH = 0.1f; // seconds between HUD fps refreshes (~10 Hz)
-        constexpr int IDLE_FPS = 60;      // pacing for un-rendered kitty frames when --fps is uncapped
+        // Pacing for un-rendered kitty frames under a bare --fps, and only then: a capped session
+        // idles at its own cap, one cap being easier to reason about than a special case for idle.
+        // Kept above that cap because this is a responsiveness floor, not a frame rate: these frames
+        // render and transmit nothing, so a lower value buys no work back and costs latency out of idle.
+        constexpr int IDLE_FPS = 60;
         // Whether the PREVIOUS loop iteration rendered a frame: raw_dt measures that
         // interval, so this is what decides whether it may feed the fps average. An
         // idle kitty iteration renders nothing, and folding its interval in would
@@ -1181,7 +1185,7 @@ int main(int argc, char *argv[])
             // Composed every frame even though present() drops an unchanged line without emitting a
             // byte, so most of these composes are discarded. Deliberate: the compose measures 679 ns
             // for a name within budget and 713 ns for one long enough to be cut (200k iterations
-            // each, -O3), so at most 0.005% of a 16.6 ms frame either way. Skipping it would mean
+            // each, -O3), so at most 0.003% of a 33 ms frame either way. Skipping it would mean
             // reintroducing a per-field snapshot of the whole displayed state in this loop purely to
             // decide whether to spend a microsecond. The skip exists for the terminal bytes, which
             // are the part that actually costs.
