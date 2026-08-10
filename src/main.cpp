@@ -757,13 +757,14 @@ int main(int argc, char *argv[])
         // through (a lost release followed by a dropped press) needs two malformed reports in a
         // row and costs one jump, cheaper than a timeout that would break every slow drag.
         bool mouse_dragging = false;
-        // Whether anything that shapes the rendered image changed since the last
-        // frame. Only consulted by the kitty backend, where an unchanged frame skips
-        // the render and the retransmission entirely (an idle viewer costs zero
-        // render CPU and zero pty/ssh bandwidth); blocks mode renders every frame as
-        // always, its per-cell diff already making idle frames nearly free. Set
-        // conservatively on every input event rather than per binding: a spurious
-        // render costs one frame, a missed one shows a stale image.
+        // Whether anything that shapes the rendered image changed since the last frame.
+        // An unchanged frame skips the render on either backend, and the retransmission
+        // too under kitty, so an idle viewer costs no render CPU: no bytes at all under
+        // kitty, and under blocks the trailing SGR reset present_impl always emits.
+        // Backend-independent by construction: the image is a function of mesh, camera and
+        // renderer state, none of which knows what is presenting it. Set conservatively on
+        // every input event rather than per binding: a spurious render costs one frame, a
+        // missed one shows a stale image.
         bool scene_dirty = true;
         // Flag-driven runtime state; value-initialised only pro forma, the real launch
         // values come from reset_to_launch_state() below.
@@ -782,16 +783,20 @@ int main(int argc, char *argv[])
         const float spin_speed =
             to_radians(args.spin_speed) * (args.spin_direction == SpinDirection::Left ? 1.0f : -1.0f);
         constexpr float FPS_LATCH = 0.1f; // seconds between HUD fps refreshes (~10 Hz)
-        // Pacing for un-rendered kitty frames under a bare --fps, and only then: a capped session
+        // Pacing for un-rendered frames under a bare --fps, and only then: a capped session
         // idles at its own cap, one cap being easier to reason about than a special case for idle.
         // Kept above that cap because this is a responsiveness floor, not a frame rate: these frames
-        // render and transmit nothing, so a lower value buys no work back and costs latency out of idle.
+        // render nothing, so a lower value buys no work back and costs latency out of idle.
         constexpr int IDLE_FPS = 60;
         // Whether the PREVIOUS loop iteration rendered a frame: raw_dt measures that
         // interval, so this is what decides whether it may feed the fps average. An
-        // idle kitty iteration renders nothing, and folding its interval in would
-        // make the HUD report the empty-loop rate instead of the render rate; frozen,
-        // the reading keeps the last real value until rendering resumes.
+        // idle iteration renders nothing, and folding its interval in would make the
+        // HUD report the empty-loop rate instead of the render rate; frozen, the
+        // reading keeps the last real value until rendering resumes. A viewer that
+        // starts and sits idle therefore shows an average seeded by one sample, the
+        // first rendered frame, which also carries the full redraw: measured 17 fps
+        // against a converged 16 on a 10M-triangle model, and exact wherever the cap
+        // binds, so it is left alone. Any input resumes rendering and converges it.
         bool prev_frame_rendered = true;
 
         using clock = std::chrono::steady_clock;
@@ -1212,9 +1217,9 @@ int main(int argc, char *argv[])
                 fb.set_hud(compose_hud(info, cols, color_mode));
             }
 
-            // Render. In kitty mode a clean frame skips the render and its
-            // retransmission (see scene_dirty); present() still runs for the HUD row.
-            const bool rendered = !use_kitty || scene_dirty;
+            // Render. A clean frame skips it (see scene_dirty), and in kitty mode the
+            // retransmission with it; present() still runs for the HUD row.
+            const bool rendered = scene_dirty;
             if (rendered)
             {
                 fb.clear(background_color(bg_mode));
@@ -1231,11 +1236,11 @@ int main(int argc, char *argv[])
 
             // Frame cap
             // fps == 0 means uncapped (skip the sleep entirely) with one exception:
-            // an idle kitty frame produced nothing, and spinning through empty loop
+            // an idle frame produced nothing, and spinning through empty loop
             // iterations thousands of times a second would burn a core to display a
             // still image, so those are paced at IDLE_FPS regardless. Rendered
             // frames stay genuinely uncapped.
-            const int frame_cap = (use_kitty && !rendered && args.fps == 0) ? IDLE_FPS : args.fps;
+            const int frame_cap = (!rendered && args.fps == 0) ? IDLE_FPS : args.fps;
             if (frame_cap > 0)
             {
                 const float target_dt = 1.0f / static_cast<float>(frame_cap);
