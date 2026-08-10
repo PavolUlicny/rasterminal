@@ -19,6 +19,17 @@ ifeq ($(IS_X86_32),1)
 ARCH32 := -msse2 -mfpmath=sse
 endif
 
+# shm_open (the kitty graphics shared-memory transport) lives in librt on glibc
+# older than 2.34, where it moved into libc proper; macOS and musl always ship it
+# in libc and have no librt to link. Same -P -E probe idiom as the ILP32 checks:
+# -include limits.h pulls in the glibc version macros, any non-glibc expands the
+# condition false and gets no flag. On every link line, incl. tests (the shm
+# helpers are referenced from framebuffer.o regardless of which transport runs).
+# (\043 is '#': a literal one cannot be written inside $(shell), where make's \# escape
+# does not apply and the backslash would reach the preprocessor as a non-directive.)
+NEEDS_LIBRT := $(shell printf '\043if defined(__GLIBC__) && (__GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 34))\nlibrt\n\043endif\n' | $(CXX) -P -E -include limits.h -x c++ - 2>/dev/null | grep -x librt)
+LIBRT := $(if $(filter librt,$(NEEDS_LIBRT)),-lrt)
+
 # ─── Linker dead-code GC (drops unreferenced sections from the final binary) ──
 # Paired with -ffunction-sections/-fdata-sections below. LTO + -fvisibility=hidden
 # already strip unused C++; this mainly reaps the non-LTO C decode TUs (libwebp/zstd).
@@ -138,6 +149,7 @@ SRCS = src/main.cpp \
        src/color.cpp \
        src/framebuffer.cpp \
        src/hud.cpp \
+       src/graphics.cpp \
        src/kitty.cpp \
        src/mesh.cpp \
        src/mesh_obj.cpp \
@@ -255,6 +267,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_platform.cpp \
               tests/test_text.cpp \
               tests/test_hud.cpp \
+              tests/test_graphics.cpp \
               tests/test_kitty.cpp \
               tests/loaders/test_obj.cpp \
               tests/loaders/test_ply.cpp \
@@ -308,6 +321,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/rasterize.cpp \
               src/framebuffer.cpp \
               src/hud.cpp \
+              src/graphics.cpp \
               src/kitty.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
               vendor/draco/draco_impl.cpp \
@@ -438,24 +452,24 @@ $(OBJDIR)/test/vendor/basisu/basisu_impl.o:     TEST_CXXFLAGS      += -w
 
 release: $(RELEASE_OBJS) $(RELEASE_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^
+	$(Q)$(CXX) $(CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^ $(LIBRT)
 
 portable: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^
+	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $(TARGET) $^ $(LIBRT)
 
 # Release artifact: portable codegen (link-only static flags reuse the portable objects).
 dist: $(PORTABLE_OBJS) $(PORTABLE_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) $(DIST_LINK) -o $(TARGET) $^
+	$(Q)$(CXX) $(PORTABLE_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) $(DIST_LINK) -o $(TARGET) $^ $(LIBRT)
 
 debug: $(DEBUG_OBJS) $(DEBUG_COBJS)
 	$(E) LINK $(TARGET)
-	$(Q)$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^
+	$(Q)$(CXX) $(DEBUG_CXXFLAGS) -o $(TARGET) $^ $(LIBRT)
 
 $(TEST_TARGET): $(TEST_OBJS) $(TEST_COBJS)
 	$(E) LINK $@
-	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $@ $^
+	$(Q)$(CXX) $(TEST_CXXFLAGS) $(LTO_SUPPRESS) $(GC_LINK) -o $@ $^ $(LIBRT)
 
 test: $(TEST_TARGET)
 	$(Q)./$(TEST_TARGET)

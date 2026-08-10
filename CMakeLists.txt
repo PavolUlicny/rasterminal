@@ -29,6 +29,29 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
+# shm_open (the kitty graphics shared-memory transport) lives in librt on glibc
+# older than 2.34 (it moved into libc proper there); macOS and musl never split it
+# out, and neither ships a librt to link. A true link check rather than a version
+# probe, so any libc arrangement resolves itself: plain first, then with rt, and
+# fail loud if neither links. POSIX-only: the Windows build compiles no shm code.
+set(RASTERMINAL_SHM_LIB "")
+if(NOT WIN32)
+  include(CheckCXXSourceCompiles)
+  set(RASTERMINAL_SHM_PROBE_SRC
+      "#include <sys/mman.h>\n#include <fcntl.h>\nint main() { return shm_open(\"/rasterminal-probe\", O_RDONLY, 0) == -1; }")
+  check_cxx_source_compiles("${RASTERMINAL_SHM_PROBE_SRC}" RASTERMINAL_SHM_PLAIN)
+  if(NOT RASTERMINAL_SHM_PLAIN)
+    set(CMAKE_REQUIRED_LIBRARIES rt)
+    check_cxx_source_compiles("${RASTERMINAL_SHM_PROBE_SRC}" RASTERMINAL_SHM_NEEDS_RT)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(RASTERMINAL_SHM_NEEDS_RT)
+      set(RASTERMINAL_SHM_LIB rt)
+    else()
+      message(FATAL_ERROR "shm_open links neither plainly nor with librt")
+    endif()
+  endif()
+endif()
+
 # ─── 32-bit (ILP32) target adjustments ────────────────────────────────────────
 # CMAKE_SIZEOF_VOID_P reflects the effective target: a -m32 flag (Linux i686), -A Win32
 # (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling — applied
@@ -248,6 +271,7 @@ add_executable(rasterminal
   src/color.cpp
   src/framebuffer.cpp
   src/hud.cpp
+  src/graphics.cpp
   src/kitty.cpp
   src/mesh.cpp
   src/mesh_obj.cpp
@@ -271,7 +295,8 @@ target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
   rasterminal_release_opts
-  Threads::Threads)
+  Threads::Threads
+  ${RASTERMINAL_SHM_LIB})
 # GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
 # the link-step recompile, where per-TU pragma context (src/draco_decode.cpp +
 # vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
@@ -309,6 +334,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_platform.cpp
     tests/test_text.cpp
     tests/test_hud.cpp
+    tests/test_graphics.cpp
     tests/test_kitty.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
@@ -362,6 +388,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/rasterize.cpp
     src/framebuffer.cpp
     src/hud.cpp
+    src/graphics.cpp
     src/kitty.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
@@ -377,7 +404,8 @@ if(RASTERMINAL_BUILD_TESTS)
     rasterminal_vendor
     rasterminal_warnings
     rasterminal_test_opts
-    Threads::Threads)
+    Threads::Threads
+    ${RASTERMINAL_SHM_LIB})
   target_link_options(rasterminal_tests PRIVATE
     $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
   if(ipo_ok)

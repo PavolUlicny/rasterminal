@@ -237,6 +237,11 @@ namespace platform
         // overflow is UB, and the value reaches main.cpp as a mouse coordinate).
         constexpr int MAX_CSI_PARAM_VALUE = 1000000;
 
+        // Sanity bound on a reported cell dimension in pixels, far beyond any real
+        // font. Consumed by the startup detection scanner (graphics.cpp); a bogus
+        // size would misscale every frame that follows.
+        constexpr int MAX_CELL_REPORT_PX = 1000;
+
         // X10 mouse report payload: exactly three bytes after \033[M. Each is
         // biased by 32 and wraps past column 223, so any byte value is legitimate
         // payload, including 0x00 and ESC. It is consumed by count, never scanned.
@@ -411,6 +416,52 @@ namespace platform
                 ev.type = InputEvent::Type::MouseRelease;
             }
             return parse_complete(consumed, ev);
+        }
+
+        // The strict `6;<height>;<width>` body of an XTWINOPS cell-size report,
+        // validated over the located CSI body [from, to). Lives beside the grammar
+        // it belongs to; graphics.cpp's startup scanner is the consumer. Exactly
+        // three numeric parameters led by 6 and inside the sanity bound; on
+        // success w/h carry width/height (the report orders height first).
+        inline bool parse_cell_size_body(const char *buf, int from, int to, int &w, int &h)
+        {
+            int nums[3] = {};
+            bool given[3] = {};
+            int ni = 0;
+            for (int i = from; i < to; i++)
+            {
+                const char d = buf[i];
+                if (d == ';')
+                {
+                    if (ni >= 2)
+                    {
+                        return false; // a fourth parameter
+                    }
+                    ni++;
+                    continue;
+                }
+                if (!is_csi_param(d))
+                {
+                    return false;
+                }
+                nums[ni] = (nums[ni] * 10) + (d - '0');
+                given[ni] = true;
+                if (nums[ni] > MAX_CSI_PARAM_VALUE)
+                {
+                    return false; // bounds the multiply, like the SGR arm
+                }
+            }
+            if (ni != 2 || !given[0] || !given[1] || !given[2] || nums[0] != 6)
+            {
+                return false;
+            }
+            if (nums[1] < 1 || nums[1] > MAX_CELL_REPORT_PX || nums[2] < 1 || nums[2] > MAX_CELL_REPORT_PX)
+            {
+                return false;
+            }
+            w = nums[2];
+            h = nums[1];
+            return true;
         }
 
         // Where the sequence at the front ends, when it is being skipped because it is too
