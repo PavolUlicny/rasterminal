@@ -7,7 +7,6 @@ toomanyconfigs
 // Utility functions intentionally kept for completeness; exercised by tests.
 unusedFunction:src/framebuffer.h
 unusedFunction:src/linalg.h
-
 // main.cpp carries one inline `cppcheck-suppress knownConditionTrueFalse` (the VT-gate
 // condition, constant only because <windows.h> is absent on the Linux runner so the _WIN32
 // body can't be analysed). Under --inline-suppr that inline directive is a two-sided
@@ -15,6 +14,12 @@ unusedFunction:src/linalg.h
 // inline suppression would itself fail CI. Let it age out harmlessly instead. Scoped to the
 // file, which holds no other suppression, so this masks nothing else.
 unmatchedSuppression:src/main.cpp
+
+// framebuffer.cpp carries one inline knownConditionTrueFalse suppression in
+// present_kitty (transmit_shm is constantly false in the _WIN32 configuration,
+// where the kitty backend is never selected). Same aging-out rationale as the
+// main.cpp entry above.
+unmatchedSuppression:src/framebuffer.cpp
 
 // Raw loops kept where an STL-algorithm rewrite would need a lambda and read worse. The
 // platform.h entry is a separate case (a constexpr context); its reason lives at the code site.

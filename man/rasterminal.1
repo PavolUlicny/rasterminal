@@ -210,6 +210,22 @@ forces 256-color output, and
 Forcing a color mode does not bypass the
 .B TERM=dumb
 rejection or the Windows VT-capability gate.
+With the kitty graphics backend the image is transmitted as 24-bit pixels
+regardless; this option then affects only the HUD line.
+.TP
+.BI \-\-graphics " mode"
+Rendering backend:
+.B kitty
+draws real pixels via the kitty graphics protocol,
+.B blocks
+draws unicode half-block cells, and
+.B auto
+(the default) uses kitty when the terminal answers the startup capability
+query and blocks otherwise. Forcing
+.B kitty
+still requires the query to succeed, since a terminal without the protocol
+would silently show nothing; it is an error under tmux and GNU screen, which
+do not pass the protocol through.
 .TP
 .BI \-\-spin\-speed " DEG/S"
 Auto-rotation speed in degrees per second, used whenever spinning is active

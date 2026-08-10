@@ -1,10 +1,16 @@
 #include "framebuffer.h"
 
-#include "color.h" // Color, ColorMode
+#include "color.h"    // Color, ColorMode
+#include "kitty.h"    // escape composition for the kitty backend
+#include "platform.h" // shm frame helpers (POSIX)
+
+#include "miniz.h" // zlib deflate for the kitty direct transport; config macros come from the build systems
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <vector>
 
 namespace
@@ -81,11 +87,48 @@ namespace
 
 } // namespace
 
-Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless, ColorMode mode)
+namespace
+{
+    // Ring of shm object names, one per in-flight frame. The terminal unlinks an
+    // object after reading it, so by the time a slot comes around again its old
+    // object is normally gone; the pre-create unlink in shm_frame_create reclaims
+    // one that never got read. The ring is slack, not backpressure: the pty
+    // carries only tiny escapes, so a stalled terminal can have more than four of
+    // them queued, and a slot then wraps while its escape is unread. The terminal,
+    // reaching the stale escape, opens the slot's newer object (at worst mid-write:
+    // one torn or dropped frame, replaced by the very next transmit). A create
+    // that fails AFTER its pre-unlink costs the unread predecessor the same way,
+    // and the same-frame direct fallback repaints. Accepted:
+    // real backpressure would need reading per-frame replies, which q=2 suppresses
+    // on purpose so they cannot interleave with interactive input.
+    constexpr unsigned SHM_RING = 4;
+
+    void shm_ring_name(char *buf, size_t cap, unsigned slot)
+    {
+        std::snprintf(buf, cap, "/rasterminal-%ld-%u", platform::process_id(), slot);
+    }
+
+    // Grow-only capacity for the staging arrays; the fresh allocation is left
+    // uninitialized on purpose (see the member comment).
+    void ensure_capacity(std::unique_ptr<unsigned char[]> &buf, size_t &cap, size_t need)
+    {
+        if (need > cap)
+        {
+            // make_unique value-initializes and reset() takes ownership on this same line
+            // NOLINTNEXTLINE(modernize-make-unique,cppcoreguidelines-owning-memory)
+            buf.reset(new unsigned char[need]);
+            cap = need;
+        }
+    }
+} // namespace
+
+Framebuffer::Framebuffer(
+    int pixel_width, int pixel_height, bool headless, ColorMode mode, KittyConfig kitty, bool adopt_alt_screen
+)
     : m_width(pixel_width), m_height(pixel_height),
       m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_prev_color(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u), m_headless(headless),
-      m_mode(mode)
+      m_prev_color(kitty.enabled ? 0u : static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u),
+      m_headless(headless), m_mode(mode), m_kitty(kitty)
 {
     fill_cleared(0u);
     if (!m_headless)
@@ -94,8 +137,11 @@ Framebuffer::Framebuffer(int pixel_width, int pixel_height, bool headless, Color
         // before constructing us); this path and present() write ANSI to it.
         // Preallocate a mode-dependent per-cell upper bound (see buf_reserve_bytes).
         m_buf.reserve(buf_reserve_bytes());
-        std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
-        std::fputs("\033[?25l", stdout);   // hide cursor
+        if (!adopt_alt_screen)
+        {
+            std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
+        }
+        std::fputs("\033[?25l", stdout); // hide cursor
         std::fflush(stdout);
     }
 }
@@ -104,10 +150,32 @@ Framebuffer::~Framebuffer()
 {
     if (!m_headless)
     {
+        if (m_kitty.enabled)
+        {
+            // Free the resident image terminal-side before leaving; without this
+            // the last frame's data stays in the terminal for the session.
+            std::string cleanup;
+            kitty::append_delete(cleanup);
+            std::fputs(cleanup.c_str(), stdout);
+        }
         // Restore cursor, reset colours, then leave the alternate screen buffer —
         // this restores the terminal to exactly the state it was in before launch.
         std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
         std::fflush(stdout);
+    }
+    // Outside the headless guard on purpose: headless only suppresses terminal
+    // escapes, but a headless kitty framebuffer that called present() (tests)
+    // still created ring objects, and unlinking is not terminal output.
+    if (m_kitty.enabled)
+    {
+        // The terminal unlinks what it reads, but frames it never read (and
+        // anything left by an earlier crash of this pid) are ours to reclaim.
+        for (unsigned slot = 0; slot < SHM_RING; slot++)
+        {
+            char name[64];
+            shm_ring_name(name, sizeof name, slot);
+            platform::shm_frame_remove(name);
+        }
     }
 }
 
@@ -117,24 +185,50 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_height = pixel_height;
     const size_t npx = static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height);
     m_pixel = std::vector<std::atomic<uint64_t>>(npx);
-    m_prev_color = std::vector<uint32_t>(npx, 0u);
+    m_prev_color = std::vector<uint32_t>(m_kitty.enabled ? 0u : npx, 0u);
     fill_cleared(0u);
+    // The output and staging buffers are sized to the frame; a resize is where
+    // releasing them is free (everything reallocates to the new size either
+    // way), so a shrunk window gives their memory back: shrink m_buf before
+    // re-reserving (reserve alone never shrinks, and in kitty direct mode the
+    // old capacity, grown by the first transmit, is the largest allocation in
+    // the process). The staging buffers' session-long retention at a CONSTANT
+    // size after a transient shm fallback stays deliberate (see buf_reserve_bytes).
     m_buf.clear();
+    m_buf.shrink_to_fit();
     m_buf.reserve(buf_reserve_bytes());
+    m_rgb.reset();
+    m_rgb_cap = 0;
+    m_z.reset();
+    m_z_cap = 0;
     m_force_redraw = true;
+    m_image_dirty = true;
 
     // Wipe any leftover content from the previous (possibly larger) terminal.
     std::fputs("\033[2J", stdout);
     std::fflush(stdout);
 }
 
+void Framebuffer::resize(int pixel_width, int pixel_height, int kitty_cols, int kitty_rows)
+{
+    m_kitty.cols = kitty_cols;
+    m_kitty.rows = kitty_rows;
+    resize(pixel_width, pixel_height);
+}
+
 void Framebuffer::clear(Color bg)
 {
     fill_cleared(pack_color(bg));
+    m_image_dirty = true;
 }
 
 void Framebuffer::present()
 {
+    if (m_kitty.enabled)
+    {
+        present_kitty();
+        return;
+    }
     if (m_mode == ColorMode::TrueColor)
     {
         present_impl<true>();
@@ -143,6 +237,134 @@ void Framebuffer::present()
     {
         present_impl<false>();
     }
+}
+
+// Serial on the presenting thread by choice: one relaxed load and three byte
+// stores per pixel, measured at 0.74 ms for a full 1080p frame, a few percent
+// of any frame that needed rendering at all. Parallelizing it would drag the
+// worker pool into the present path for under a millisecond.
+void Framebuffer::write_rgb(unsigned char *out) const
+{
+    const size_t n = m_pixel.size();
+    for (size_t i = 0; i < n; i++)
+    {
+        const uint32_t c = unpack_color_bits(m_pixel[i].load(std::memory_order_relaxed));
+        out[0] = static_cast<unsigned char>(c);
+        out[1] = static_cast<unsigned char>(c >> 8u);
+        out[2] = static_cast<unsigned char>(c >> 16u);
+        out += 3;
+    }
+}
+
+bool Framebuffer::transmit_shm()
+{
+    // On Windows platform.h's shm stubs make the create fail, so this reads as
+    // a per-frame fallback to direct; the backend is never selected there anyway.
+    const size_t size = m_pixel.size() * 3u;
+    char name[64];
+    shm_ring_name(name, sizeof name, m_shm_seq % SHM_RING);
+    m_shm_seq++;
+    void *ptr = platform::shm_frame_create(name, size);
+    // cppcheck suppression: in the _WIN32 configuration the create is the stub
+    // that always returns nullptr, so the multi-config scan reads this condition
+    // as always true. Same false-positive class as the pair in present_kitty.
+    // cppcheck-suppress knownConditionTrueFalse
+    if (ptr == nullptr)
+    {
+        return false;
+    }
+    // The unpack writes straight into the mapping: no staging buffer, and the
+    // pty then carries only the ~60-byte escape naming the object.
+    write_rgb(static_cast<unsigned char *>(ptr));
+    platform::shm_frame_finish(ptr, size);
+    kitty::append_transmit_shm(m_buf, name, m_width, m_height, m_kitty.cols, m_kitty.rows);
+    return true;
+}
+
+void Framebuffer::transmit_direct()
+{
+    const size_t rgb_len = m_pixel.size() * 3u;
+    ensure_capacity(m_rgb, m_rgb_cap, rgb_len);
+    write_rgb(m_rgb.get());
+    // zlib level 1: rendered frames (large flat background, smooth gradients)
+    // compress several-fold even at the fastest level. The deflate runs
+    // synchronously on the presenting thread and is not free: measured 27 ms per
+    // 1080p frame with a model covering ~40% of it (7.8x ratio; 133 ms worst case
+    // on full-frame noise). Accepted for now: it still saves more wall-clock than
+    // it costs on any link below ~1.6 Gbit/s (the 5.4 MB it removes from a
+    // typical frame buys those 27 ms back many times over on a real ssh link),
+    // and pipelining it off-thread is queued post-merge perf work. A compression
+    // failure falls back to the raw form (identical pixels, bigger payload).
+    // unsigned int, not mz_ulong: mz_ulong is unsigned long, which IS size_t at
+    // LP64 (a direct cast trips -Wuseless-cast there) but 32-bit on LLP64 (where
+    // the narrowing must be explicit for /W4). A frame's byte count is far below
+    // either bound.
+    const auto src_len = static_cast<unsigned int>(rgb_len);
+    mz_ulong z_len = mz_compressBound(src_len);
+    ensure_capacity(m_z, m_z_cap, z_len);
+    if (mz_compress2(m_z.get(), &z_len, m_rgb.get(), src_len, 1) == MZ_OK)
+    {
+        kitty::append_transmit_direct(m_buf, m_z.get(), z_len, m_width, m_height, m_kitty.cols, m_kitty.rows, true);
+        return;
+    }
+    kitty::append_transmit_direct(m_buf, m_rgb.get(), rgb_len, m_width, m_height, m_kitty.cols, m_kitty.rows, false);
+}
+
+void Framebuffer::present_kitty()
+{
+    m_buf.clear();
+    const bool full_redraw = m_force_redraw;
+    m_force_redraw = false;
+
+    // A one-row terminal with the HUD shown leaves zero image rows, and a
+    // zero-length shm mapping cannot even be created: nothing to show is
+    // nothing to transmit. But the resident frame from before the shrink is
+    // still displayed (a retransmit no longer replaces it, and nothing else
+    // touches it), covering the HUD row, so it is deleted terminal-side once.
+    if (m_pixel.empty())
+    {
+        if (m_image_shown)
+        {
+            kitty::append_delete(m_buf);
+            m_image_shown = false;
+        }
+    }
+    else if (m_image_dirty || full_redraw)
+    {
+        // The placement renders at the cursor cell; home it first. C=1 in the
+        // transmit keys then leaves the cursor untouched for the HUD block.
+        m_buf += "\033[1;1H";
+        // A failed shm frame falls back to the direct transport for THIS frame
+        // only and shm is retried next frame: the medium itself was verified end
+        // to end by the startup probe, so a failure here is transient (EMFILE, a
+        // momentarily full /dev/shm) and must not demote the transport for the
+        // rest of the session. The retry costs one failed syscall on a frame
+        // that is about to spend milliseconds rendering.
+        //
+        // cppcheck suppression: transmit_shm() is constantly false in the _WIN32
+        // configuration (the backend is never selected there), so the
+        // multi-config scan reads !sent as always true. Same class of false
+        // positive as main.cpp's VT-gate suppression.
+        bool sent = false;
+        if (m_kitty.shm)
+        {
+            sent = transmit_shm();
+        }
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!sent)
+        {
+            transmit_direct();
+        }
+        m_image_dirty = false;
+        m_image_shown = true;
+    }
+
+    append_hud_line(full_redraw);
+
+    // Return values intentionally ignored, as in present_impl: no recovery path
+    // exists for a broken terminal write.
+    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
+    (void)std::fflush(stdout);
 }
 
 template <bool TC> void Framebuffer::present_impl()
@@ -175,19 +397,6 @@ template <bool TC> void Framebuffer::present_impl()
     uint32_t prev_bg = 0;
     bool fg_known = false;
     bool bg_known = false;
-
-    // \033[row;colH — 1-based coordinates, no reliance on newlines or auto-wrap.
-    auto append_cursor_pos = [&](int row, int col)
-    {
-        tmp[0] = '\033';
-        tmp[1] = '[';
-        n = 2;
-        n += write_int(tmp + n, row);
-        tmp[n++] = ';';
-        n += write_int(tmp + n, col);
-        tmp[n++] = 'H';
-        m_buf.append(tmp, static_cast<size_t>(n));
-    };
 
     // \033[NC — advance the cursor N columns; the bare form is 1 byte shorter for N == 1.
     auto append_cursor_advance = [&](int cols)
@@ -396,6 +605,29 @@ template <bool TC> void Framebuffer::present_impl()
     // when the HUD is empty and prevents bleed into HUD's own colour escapes.
     m_buf += "\033[0m";
 
+    append_hud_line(full_redraw);
+
+    // Return values intentionally ignored: a write failure to a terminal means
+    // the session is already broken; there is no meaningful recovery path here.
+    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
+    (void)std::fflush(stdout);
+}
+
+void Framebuffer::append_cursor_pos(int row, int col)
+{
+    char tmp[24]; // exact worst case: ESC [ + two 10-digit int coordinates + ; + H
+    tmp[0] = '\033';
+    tmp[1] = '[';
+    int n = 2;
+    n += write_int(tmp + n, row);
+    tmp[n++] = ';';
+    n += write_int(tmp + n, col);
+    tmp[n++] = 'H';
+    m_buf.append(tmp, static_cast<size_t>(n));
+}
+
+void Framebuffer::append_hud_line(bool full_redraw)
+{
     // The HUD changes at the fps latch rate or on a keypress, far below the frame rate, so an
     // unchanged line is skipped outright (most frames emit zero HUD bytes); a full redraw always
     // re-emits, since \033[2J wiped the row. This deliberately gives up the old incidental
@@ -411,50 +643,51 @@ template <bool TC> void Framebuffer::present_impl()
         // unchanged, forever. Not reachable from main.cpp, which sets a non-empty line every
         // frame or none at all, but the skip must not depend on that.
         m_prev_hud.clear();
+        return;
     }
-    else if (full_redraw || m_hud != m_prev_hud)
+    if (!full_redraw && m_hud == m_prev_hud)
     {
-        append_cursor_pos(term_rows + 1, 1);
-
-        // Disable auto-wrap so a long HUD string clips at the terminal edge
-        // instead of wrapping onto the next line and corrupting the display.
-        m_buf += "\033[?7l";
-        if constexpr (TC)
-        {
-            // bg {18,18,18} and a default fg {220,220,220}; keep both in sync with the Palette256
-            // branch and the test pins (quantize_256_grey_ramp_exact ties 233 and 253 below to
-            // the quantizer of these same RGBs). A composed line overrides the fg immediately
-            // with its own per-segment SGRs, so this exists for the other kind of caller: set_hud
-            // takes an arbitrary string, and an unstyled one would otherwise draw in whatever
-            // foreground the terminal happened to be left with. {220,220,220} is hud.cpp's
-            // FG_VALUE, so an unstyled line matches the styled line's primary text.
-            static_assert(
-                HUD_BAR_BG.r == 18 && HUD_BAR_BG.g == 18 && HUD_BAR_BG.b == 18 && HUD_BAR_FG.r == 220 &&
-                    HUD_BAR_FG.g == 220 && HUD_BAR_FG.b == 220,
-                "the escape literal below spells these out; change both together"
-            );
-            m_buf += "\033[48;2;18;18;18m\033[38;2;220;220;220m";
-        }
-        else
-        {
-            m_buf += "\033[48;5;233m\033[38;5;253m";
-        }
-        // Erase BEFORE drawing, never after: the line runs the full width, and with auto-wrap
-        // off the cursor finishes ON the last column, so a trailing EL0 would erase from that
-        // column inclusive and eat the final character (invisible to byte-level tests and to
-        // pyte; only a real terminal shows it, see the tmux recipe in CLAUDE.md). Erasing first
-        // also clears residue from a previously wider line, and on BCE terminals paints the row
-        // in the bar background, covering the few columns the composer can underfill when it
-        // rounds a doubtful glyph width up; non-BCE terminals get the bar from its own padding.
-        m_buf += "\033[K";
-        m_buf += m_hud;
-        m_buf += "\033[0m";
-        m_buf += "\033[?7h"; // re-enable auto-wrap
-        m_prev_hud = m_hud;
+        return;
     }
 
-    // Return values intentionally ignored: a write failure to a terminal means
-    // the session is already broken; there is no meaningful recovery path here.
-    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
-    (void)std::fflush(stdout);
+    // The row just below the pixel/image rows: half the pixel height in cell
+    // rows for the block backend, the placement's cell rows for kitty.
+    const int hud_row = (m_kitty.enabled ? m_kitty.rows : m_height / 2) + 1;
+    append_cursor_pos(hud_row, 1);
+
+    // Disable auto-wrap so a long HUD string clips at the terminal edge
+    // instead of wrapping onto the next line and corrupting the display.
+    m_buf += "\033[?7l";
+    if (m_mode == ColorMode::TrueColor)
+    {
+        // bg {18,18,18} and a default fg {220,220,220}; keep both in sync with the Palette256
+        // branch and the test pins (quantize_256_grey_ramp_exact ties 233 and 253 below to
+        // the quantizer of these same RGBs). A composed line overrides the fg immediately
+        // with its own per-segment SGRs, so this exists for the other kind of caller: set_hud
+        // takes an arbitrary string, and an unstyled one would otherwise draw in whatever
+        // foreground the terminal happened to be left with. {220,220,220} is hud.cpp's
+        // FG_VALUE, so an unstyled line matches the styled line's primary text.
+        static_assert(
+            HUD_BAR_BG.r == 18 && HUD_BAR_BG.g == 18 && HUD_BAR_BG.b == 18 && HUD_BAR_FG.r == 220 &&
+                HUD_BAR_FG.g == 220 && HUD_BAR_FG.b == 220,
+            "the escape literal below spells these out; change both together"
+        );
+        m_buf += "\033[48;2;18;18;18m\033[38;2;220;220;220m";
+    }
+    else
+    {
+        m_buf += "\033[48;5;233m\033[38;5;253m";
+    }
+    // Erase BEFORE drawing, never after: the line runs the full width, and with auto-wrap
+    // off the cursor finishes ON the last column, so a trailing EL0 would erase from that
+    // column inclusive and eat the final character (invisible to byte-level tests and to
+    // pyte; only a real terminal shows it, see the tmux recipe in CLAUDE.md). Erasing first
+    // also clears residue from a previously wider line, and on BCE terminals paints the row
+    // in the bar background, covering the few columns the composer can underfill when it
+    // rounds a doubtful glyph width up; non-BCE terminals get the bar from its own padding.
+    m_buf += "\033[K";
+    m_buf += m_hud;
+    m_buf += "\033[0m";
+    m_buf += "\033[?7h"; // re-enable auto-wrap
+    m_prev_hud = m_hud;
 }

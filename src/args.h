@@ -46,6 +46,18 @@ enum class ColorChoice : std::uint8_t
     Palette256
 };
 
+// --graphics choice: Auto uses kitty graphics when the terminal answers the
+// startup capability query, else half-block cells; Kitty forces the graphics
+// backend but still requires the query to succeed (an unsupported terminal
+// silently swallows kitty escapes and would show nothing at all); Blocks
+// skips the query entirely.
+enum class GraphicsChoice : std::uint8_t
+{
+    Auto,
+    Kitty,
+    Blocks
+};
+
 // --spin-direction: the way the model's front face moves on screen while
 // spinning. Left is the historical direction (no COUNT constant: like
 // ColorChoice, there is no cycling keybinding for it).
@@ -67,6 +79,7 @@ struct ParsedArgs
     LightingMode lighting = LightingMode::Dual;
     WireframeColor wireframe_color = WireframeColor::White;
     ColorChoice color = ColorChoice::Auto;
+    GraphicsChoice graphics = GraphicsChoice::Auto;
     int fps = 60;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
     int bench_width = 200;      // headless framebuffer width in pixels
