@@ -62,10 +62,15 @@ namespace platform
             // not a keypress: x/y carry the cell width/height instead of a
             // position, and main.cpp handles it above the --no-input gate.
             CellSize,
+            // The terminal's maximum sixel image size in pixels (the
+            // XTSMGRAPHICS item-2 read reply), arriving in reply to a request
+            // the resize path made. Same machinery shape as CellSize: x/y
+            // carry the max width/height.
+            SixelGeometry,
         } type = Type::None;
 
         Key key = Key::None; // valid when type == Key
-        int x = 0, y = 0;    // terminal cell position (1-based); cell w/h px for CellSize
+        int x = 0, y = 0;    // terminal cell position (1-based); px sizes for CellSize/SixelGeometry
     };
 
     // input parsing helpers
@@ -493,6 +498,81 @@ namespace platform
             return parse_complete(consumed, ev);
         }
 
+        // The strict `?2;0;<width>;<height>` body of an XTSMGRAPHICS sixel-
+        // geometry reply (item 2, status 0 = success), validated over the
+        // located CSI body [from, to). ONE implementation for both consumers
+        // (this grammar's arm below for the mid-session reply, and
+        // graphics.cpp's startup scanner), the parse_cell_size_body rule. A
+        // failure status, another item, a missing '?', or any other arity
+        // fails. No upper sanity bound beyond MAX_CSI_PARAM_VALUE: the values
+        // only ever shrink the image (consumed via min), so an absurd claim is
+        // inert rather than dangerous.
+        inline bool parse_sixel_geometry_body(const char *buf, int from, int to, int &w, int &h)
+        {
+            if (from >= to || buf[from] != '?')
+            {
+                return false;
+            }
+            int nums[4] = {};
+            bool given[4] = {};
+            int ni = 0;
+            for (int i = from + 1; i < to; i++)
+            {
+                const char d = buf[i];
+                if (d == ';')
+                {
+                    if (ni >= 3)
+                    {
+                        return false; // a fifth parameter
+                    }
+                    ni++;
+                    continue;
+                }
+                if (!is_csi_param(d))
+                {
+                    return false;
+                }
+                nums[ni] = (nums[ni] * 10) + (d - '0');
+                given[ni] = true;
+                if (nums[ni] > MAX_CSI_PARAM_VALUE)
+                {
+                    return false; // bounds the multiply, like the SGR arm
+                }
+            }
+            if (ni != 3 || !given[0] || !given[1] || !given[2] || !given[3] || nums[0] != 2 || nums[1] != 0)
+            {
+                return false;
+            }
+            if (nums[2] < 1 || nums[3] < 1)
+            {
+                return false;
+            }
+            w = nums[2];
+            h = nums[3];
+            return true;
+        }
+
+        // The sixel-geometry report as an input event: the reply to the
+        // \033[?2;1;0S request the resize path sends on a grid change under
+        // the sixel backend. Locate the terminator, then validate, like every
+        // arm; anything that is not a valid reply body is some other S-final
+        // CSI and drops exactly as before this arm existed.
+        inline ParseResult parse_sixel_geometry_report(const char *buf, int fin)
+        {
+            const int consumed = fin + 1;
+            int w = 0;
+            int h = 0;
+            if (!parse_sixel_geometry_body(buf, 2, fin, w, h))
+            {
+                return parse_drop(consumed);
+            }
+            InputEvent ev;
+            ev.type = InputEvent::Type::SixelGeometry;
+            ev.x = w;
+            ev.y = h;
+            return parse_complete(consumed, ev);
+        }
+
         // Where the sequence at the front ends, when it is being skipped because it is too
         // long to hold: the count through its terminator, or 0 while that has not arrived.
         // Nothing is decoded; a skipped sequence is missing its middle, so the only question
@@ -767,10 +847,10 @@ namespace platform
                 return parse_drop(buf[3] == '\033' ? 3 : 4);
             }
 
-            // Generic CSI: consume through the final byte. An unparameterized arrow
-            // and the cell-size report are the bindings here; everything else
-            // (F5-F12, Home/End, Delete, modified arrows, shift-tab, focus events)
-            // is dropped.
+            // Generic CSI: consume through the final byte. An unparameterized
+            // arrow and the cell-size and sixel-geometry reports are the
+            // bindings here; everything else (F5-F12, Home/End, Delete,
+            // modified arrows, shift-tab, focus events) is dropped.
             const Scan s = scan_to_csi_final(buf, len, 2);
             if (s.kind == Scan::Kind::Incomplete)
             {
@@ -783,6 +863,10 @@ namespace platform
             if (buf[s.index] == 't')
             {
                 return parse_cell_size_report(buf, s.index);
+            }
+            if (buf[s.index] == 'S')
+            {
+                return parse_sixel_geometry_report(buf, s.index);
             }
             // Only the unparameterized form is an arrow: a final at any later index
             // means parameters were present, which is a modified arrow, not one.
