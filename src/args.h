@@ -47,14 +47,15 @@ enum class ColorChoice : std::uint8_t
 };
 
 // --graphics choice: Auto uses kitty graphics when the terminal answers the
-// startup capability query, else half-block cells; Kitty forces the graphics
-// backend but still requires the query to succeed (an unsupported terminal
-// silently swallows kitty escapes and would show nothing at all); Blocks
-// skips the query entirely.
+// startup capability query, then sixel when its DA1 reply advertises it, else
+// half-block cells; Kitty and Sixel force the backend but still require the
+// detection to succeed (an unsupported terminal silently swallows the escapes
+// and would show nothing at all); Blocks skips the query entirely.
 enum class GraphicsChoice : std::uint8_t
 {
     Auto,
     Kitty,
+    Sixel,
     Blocks
 };
 
@@ -80,8 +81,9 @@ struct ParsedArgs
     WireframeColor wireframe_color = WireframeColor::White;
     ColorChoice color = ColorChoice::Auto;
     GraphicsChoice graphics = GraphicsChoice::Auto;
-    // Render scale for pixel-graphics backends (kitty), [0.05, 1]; 1 = native
-    // window resolution. The blocks backend never scales.
+    // Render scale for the kitty backend, [0.05, 1]; 1 = native window
+    // resolution. Blocks never scales, and sixel cannot (no terminal-side
+    // stretch), so both reject the flag when forced explicitly.
     float graphics_scale = 0.75f;
     int fps = 30;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly

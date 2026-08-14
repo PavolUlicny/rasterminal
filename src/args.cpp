@@ -276,8 +276,9 @@ ParseResult parse_args(int argc, char *argv[])
             prog, flag, val,
             { { "auto", GraphicsChoice::Auto },
               { "kitty", GraphicsChoice::Kitty },
+              { "sixel", GraphicsChoice::Sixel },
               { "blocks", GraphicsChoice::Blocks } },
-            "kitty|blocks|auto", out
+            "kitty|sixel|blocks|auto", out
         );
     };
 
@@ -426,16 +427,18 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  ignored when an OBJ authors smoothing groups\n"
             "          --color <mode>         Color output (default: auto)\n"
             "                                  truecolor|24bit|256|auto\n"
-            "                                  auto detects from COLORTERM/TERM\n"
-            "                                  kitty graphics pixels are always 24-bit;\n"
-            "                                  there this affects the HUD only\n"
+            "                                  auto detects from COLORTERM/TERM/TMUX/STY\n"
+            "                                  kitty pixels are always 24-bit and sixel\n"
+            "                                  pixels always 240-color; there this\n"
+            "                                  affects the HUD only\n"
             "          --graphics <mode>      Rendering backend (default: auto)\n"
-            "                                  kitty|blocks|auto\n"
-            "                                  auto uses kitty graphics when the terminal\n"
-            "                                  supports it, else unicode half-blocks\n"
+            "                                  kitty|sixel|blocks|auto\n"
+            "                                  auto prefers kitty graphics, then sixel,\n"
+            "                                  else unicode half-blocks\n"
             "          --graphics-scale F     Render scale for kitty in [0.05, 1] (default: 0.75)\n"
             "                                  1 = native window resolution; the terminal\n"
-            "                                  upscales; error with an explicit --graphics blocks\n"
+            "                                  upscales; error with an explicit --graphics\n"
+            "                                  blocks or sixel (neither can scale)\n"
             "          --spin-speed DEG/S     Auto-rotation speed in degrees/sec (default: 45)\n"
             "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
             "                                  left|right: the way the model's front face moves\n"
@@ -932,12 +935,24 @@ ParseResult parse_args(int argc, char *argv[])
         std::fprintf(stderr, "%s: --bench-warmup requires --bench\n", prog);
         return fail(1);
     }
-    // Under an explicit --graphics blocks the scale can never come into play:
-    // reject rather than accept a flag that would silently do nothing. Under
-    // auto it can (the query decides), so auto plus a scale stands alone.
+    // Under an explicit --graphics blocks or sixel the scale can never come
+    // into play (blocks never scales; sixel has no terminal-side stretch, so
+    // it always renders 1:1): reject rather than accept a flag that would
+    // silently do nothing. Under auto it can (the query decides), so auto
+    // plus a scale stands alone.
     if (saw_graphics_scale && args.graphics == GraphicsChoice::Blocks)
     {
-        std::fprintf(stderr, "%s: --graphics-scale is meaningless with --graphics blocks\n", prog);
+        std::fprintf(
+            stderr, "%s: --graphics-scale applies to the kitty backend only (blocks renders per cell)\n", prog
+        );
+        return fail(1);
+    }
+    if (saw_graphics_scale && args.graphics == GraphicsChoice::Sixel)
+    {
+        std::fprintf(
+            stderr, "%s: --graphics-scale applies to the kitty backend only (sixel renders at native resolution)\n",
+            prog
+        );
         return fail(1);
     }
 
