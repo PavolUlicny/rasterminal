@@ -30,26 +30,33 @@ namespace
 
     // The TEST cases below all evaluate classify_term_color at runtime, so none would catch a
     // future edit that silently demotes it (or a helper it calls) from constexpr. These
-    // static_asserts pin that at compile time. The -direct case is the one that covers both
-    // string helpers on its own (it runs ieq for the dumb check, then icontains for the hint);
-    // the COLORTERM case is kept because it is the only one that constant-evaluates the
-    // COLORTERM branch, which the -direct case short-circuits past; the allowlist case is the
-    // only one that constant-evaluates the TRUECOLOR_TERMS loop, which the -direct case never
-    // reaches (xterm-kitty carries no -direct/truecolor/24bit hint, so the loop is its only path).
+    // static_asserts pin that at compile time. The -direct case covers all three string
+    // helpers on its own (ieq at the dumb check, istarts_with at the screen floor, icontains
+    // for the hint); the COLORTERM case is kept because it is the only one that
+    // constant-evaluates the COLORTERM branch, which the -direct case short-circuits past;
+    // the allowlist case is the only one that constant-evaluates the TRUECOLOR_TERMS loop,
+    // which the -direct case never reaches (xterm-kitty carries no hint, so the loop is its
+    // only path); the screen case pins the floor branch's compile-time RESULT, which no
+    // TrueColor-returning case can.
     static_assert(
-        platform::classify_term_color(nullptr, "xterm-direct", platform::TermColor::Palette256) ==
+        platform::classify_term_color(nullptr, "xterm-direct", platform::TermColor::Palette256, false, false) ==
             platform::TermColor::TrueColor,
-        "classify_term_color / ieq / icontains must remain constexpr-evaluable"
+        "classify_term_color / ieq / istarts_with / icontains must remain constexpr-evaluable"
     );
     static_assert(
-        platform::classify_term_color("truecolor", "xterm-256color", platform::TermColor::Palette256) ==
+        platform::classify_term_color("truecolor", "xterm-256color", platform::TermColor::Palette256, false, false) ==
             platform::TermColor::TrueColor,
         "classify_term_color COLORTERM branch must remain constexpr-evaluable"
     );
     static_assert(
-        platform::classify_term_color(nullptr, "xterm-kitty", platform::TermColor::Palette256) ==
+        platform::classify_term_color(nullptr, "xterm-kitty", platform::TermColor::Palette256, false, false) ==
             platform::TermColor::TrueColor,
         "classify_term_color TRUECOLOR_TERMS loop must remain constexpr-evaluable"
+    );
+    static_assert(
+        platform::classify_term_color("truecolor", "screen", platform::TermColor::Palette256, false, false) ==
+            platform::TermColor::Palette256,
+        "classify_term_color screen floor branch must keep its compile-time result"
     );
 
     // Closes a fd on scope exit (via the portable test_close) so a thrown ASSERT
@@ -112,19 +119,19 @@ TEST(platform, is_tty_true_for_pty_slave)
 
 TEST(platform, classify_unset_env_uses_default)
 {
-    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, P256), P256);
-    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, TC), TC);
-    ASSERT_EQ(platform::classify_term_color("", "", P256), P256);
-    ASSERT_EQ(platform::classify_term_color("", "", TC), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, TC, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color("", "", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("", "", TC, false, false), TC);
 }
 
 TEST(platform, classify_dumb_always_fatal)
 {
-    ASSERT_EQ(platform::classify_term_color(nullptr, "dumb", P256), DUMB);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "dumb", P256, false, false), DUMB);
     // Dumb beats a contradictory COLORTERM: a dumb terminal can't render escapes
     // regardless of what claims color support.
-    ASSERT_EQ(platform::classify_term_color("truecolor", "dumb", P256), DUMB);
-    ASSERT_EQ(platform::classify_term_color("24bit", "DUMB", TC), DUMB);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "dumb", P256, false, false), DUMB);
+    ASSERT_EQ(platform::classify_term_color("24bit", "DUMB", TC, false, false), DUMB);
 }
 
 TEST(platform, classify_dumb_is_exact_match_not_substring)
@@ -134,44 +141,44 @@ TEST(platform, classify_dumb_is_exact_match_not_substring)
     // rejected. Without this, a refactor unifying the four TERM checks onto icontains would
     // fatally reject real terminals (e.g. a "dumb"-embedding terminfo alias) with the suite
     // still green.
-    ASSERT_EQ(platform::classify_term_color(nullptr, "dumbo", P256), P256);
-    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-dumbnot", TC), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "dumbo", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-dumbnot", TC, false, false), P256);
 }
 
 TEST(platform, classify_colorterm_truecolor)
 {
     // COLORTERM beats a 256-only TERM.
-    ASSERT_EQ(platform::classify_term_color("truecolor", "xterm-256color", P256), TC);
-    ASSERT_EQ(platform::classify_term_color("24bit", "xterm", P256), TC);
-    ASSERT_EQ(platform::classify_term_color("TRUECOLOR", nullptr, P256), TC);
-    ASSERT_EQ(platform::classify_term_color("Truecolor", "screen", P256), TC);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "xterm-256color", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color("24bit", "xterm", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color("TRUECOLOR", nullptr, P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color("Truecolor", "xterm", P256, false, false), TC);
 }
 
 TEST(platform, classify_colorterm_unrecognized_falls_through)
 {
     // The historical COLORTERM=1/yes (rxvt-era "has color at all") is not a
     // truecolor signal; classification falls through to the TERM rules.
-    ASSERT_EQ(platform::classify_term_color("yes", "xterm-256color", TC), P256);
-    ASSERT_EQ(platform::classify_term_color("1", "xterm", TC), P256);
-    ASSERT_EQ(platform::classify_term_color("yes", nullptr, TC), TC);
-    ASSERT_EQ(platform::classify_term_color("yes", nullptr, P256), P256);
+    ASSERT_EQ(platform::classify_term_color("yes", "xterm-256color", TC, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("1", "xterm", TC, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("yes", nullptr, TC, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color("yes", nullptr, P256, false, false), P256);
 }
 
 TEST(platform, classify_term_direct_hints)
 {
-    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct", P256), TC);
-    ASSERT_EQ(platform::classify_term_color(nullptr, "tmux-direct", P256), TC);
-    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct256", P256), TC);
-    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-truecolor", P256), TC);
-    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-DIRECT", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "tmux-direct", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-direct256", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-truecolor", P256, false, false), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-DIRECT", P256, false, false), TC);
     // The third hint: without this, deleting icontains(term, "24bit") from the classifier
     // leaves the whole suite green.
-    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-24bit", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-24bit", P256, false, false), TC);
     // A set-but-unrecognized COLORTERM must fall through (step 2 -> step 3) to the TERM
     // hint, not short-circuit to the floor. Without this every -direct case above passes
     // colorterm=nullptr, so a regression that returned Palette256 on a non-truecolor
     // COLORTERM would pass them all while breaking e.g. COLORTERM=gnome-terminal here.
-    ASSERT_EQ(platform::classify_term_color("gnome-terminal", "xterm-direct", P256), TC);
+    ASSERT_EQ(platform::classify_term_color("gnome-terminal", "xterm-direct", P256, false, false), TC);
 }
 
 TEST(platform, classify_known_truecolor_terms)
@@ -183,20 +190,61 @@ TEST(platform, classify_known_truecolor_terms)
     const char *terms[] = { "xterm-kitty", "wezterm", "alacritty", "xterm-ghostty", "foot", "contour" };
     for (const char *t : terms)
     {
-        ASSERT_EQ(platform::classify_term_color(nullptr, t, P256), TC);
+        ASSERT_EQ(platform::classify_term_color(nullptr, t, P256, false, false), TC);
     }
-    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-KITTY", P256), TC);
+    ASSERT_EQ(platform::classify_term_color(nullptr, "XTERM-KITTY", P256, false, false), TC);
+}
+
+TEST(platform, classify_real_screen_floors_colorterm)
+{
+    // Inside real GNU screen (TERM screen-family, no TMUX) an inherited
+    // COLORTERM describes the OUTER terminal; screen 4.x misparses 24-bit SGR
+    // into garbage, so the floor must win over COLORTERM. Covers the plain,
+    // -suffixed, derived (screen.xterm-256color), and case-folded entry forms
+    // and both canonical COLORTERM spellings.
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen-256color", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen.xterm-256color", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("24bit", "screen", P256, false, false), P256);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "SCREEN-256COLOR", P256, false, false), P256);
+    // The prefix is anchored: a hypothetical non-screen TERM merely containing
+    // the word is untouched.
+    ASSERT_EQ(platform::classify_term_color("truecolor", "xterm-screenish", P256, false, false), TC);
+}
+
+TEST(platform, classify_sty_floors_regardless_of_term_and_tmux)
+{
+    // STY is screen's own session marker, exported to every child: it floors
+    // even when a .screenrc/`screen -T` rewrote TERM to a non-screen name, and
+    // even under an inherited TMUX (screen nested inside tmux).
+    ASSERT_EQ(platform::classify_term_color("truecolor", "xterm-256color", P256, false, true), P256);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen", P256, true, true), P256);
+    ASSERT_EQ(platform::classify_term_color(nullptr, nullptr, TC, false, true), P256);
+    // Dumb still exits fatal whatever the multiplexer signals say.
+    ASSERT_EQ(platform::classify_term_color("truecolor", "dumb", P256, true, true), DUMB);
+}
+
+TEST(platform, classify_screen_under_tmux_keeps_colorterm)
+{
+    // tmux always sets TMUX, even in older configs that set TERM=screen-256color,
+    // and it translates 24-bit SGR for the outer terminal, so COLORTERM stays
+    // trusted there (the surviving half of the original decision).
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen-256color", P256, true, false), TC);
+    ASSERT_EQ(platform::classify_term_color("truecolor", "screen", P256, true, false), TC);
+    // Without COLORTERM, screen-family TERMs stay on the floor either way.
+    ASSERT_EQ(platform::classify_term_color(nullptr, "screen-256color", P256, true, false), P256);
 }
 
 TEST(platform, classify_plain_terms_are_256)
 {
-    const char *terms[] = { "xterm", "xterm-256color", "screen-256color", "tmux-256color",
-                            "linux", "vt100",          "st-256color" };
+    // No screen-family entry here: those return at the screen floor, not the
+    // final fall-through this test exercises (they have their own tests above).
+    const char *terms[] = { "xterm", "xterm-256color", "tmux-256color", "linux", "vt100", "st-256color" };
     for (const char *t : terms)
     {
         // Never Dumb, never TrueColor: sub-256-color entries still get the
         // 256-color floor rather than a fatal error (16-color is unsupported).
-        ASSERT_EQ(platform::classify_term_color(nullptr, t, TC), P256);
+        ASSERT_EQ(platform::classify_term_color(nullptr, t, TC, false, false), P256);
     }
 }
 
@@ -218,8 +266,9 @@ namespace
     // sees the CRT environment, which setenv/unsetenv (POSIX) and _putenv_s (the MSVC CRT)
     // both update; the Win32 Set/GetEnvironmentVariable pair is a separate environment that
     // getenv does NOT see. _putenv_s(name, "") removes the variable, and even if a CRT left
-    // it empty instead, the classifier treats an empty TERM/COLORTERM the same as unset, so
-    // the assertions below hold either way. Single-threaded test binary, so mutation is safe.
+    // it empty instead, the assertions below hold either way: the classifier treats an empty
+    // TERM/COLORTERM the same as unset, and detect_term_color reads TMUX/STY as non-empty,
+    // not mere presence. Single-threaded test binary, so mutation is safe.
     void set_env(const char *name, const char *value)
     {
 #ifdef _WIN32
@@ -276,10 +325,40 @@ TEST(platform, detect_term_color_reads_env)
 {
     ScopedEnv colorterm_guard("COLORTERM");
     ScopedEnv term_guard("TERM");
+    ScopedEnv tmux_guard("TMUX");
+    ScopedEnv sty_guard("STY");
 
     set_env("COLORTERM", "truecolor");
     set_env("TERM", "xterm");
+    unset_env("TMUX");
+    unset_env("STY");
     ASSERT_EQ(platform::detect_term_color(), TC);
+
+    // The wrapper feeds both multiplexer signals through: real screen floors
+    // the inherited COLORTERM, tmux (which sets TMUX) keeps it, and screen's
+    // own STY floors even under a rewritten TERM.
+    set_env("TERM", "screen");
+    ASSERT_EQ(platform::detect_term_color(), P256);
+    set_env("TMUX", "/tmp/fake-tmux,1,0");
+    ASSERT_EQ(platform::detect_term_color(), TC);
+    unset_env("TMUX");
+    set_env("TERM", "xterm");
+    set_env("STY", "1234.pts-0.host");
+    ASSERT_EQ(platform::detect_term_color(), P256);
+    unset_env("STY");
+#ifndef _WIN32
+    // Empty means absent for both multiplexer signals (tmux's own nesting
+    // workaround is TMUX=), which unset_env alone cannot pin since it truly
+    // unsets. POSIX-only: _putenv_s(name, "") deletes the variable instead.
+    set_env("TERM", "screen");
+    set_env("TMUX", "");
+    ASSERT_EQ(platform::detect_term_color(), P256);
+    unset_env("TMUX");
+    set_env("TERM", "xterm");
+    set_env("STY", "");
+    ASSERT_EQ(platform::detect_term_color(), TC);
+    unset_env("STY");
+#endif
 
     unset_env("COLORTERM");
     set_env("TERM", "dumb");
@@ -515,6 +594,37 @@ TEST(parse_input, cell_size_report_malformed_drops)
     expect_dropped_whole("\033[6;33;1001t"); // past the sanity ceiling
     expect_dropped_whole("\033[t");          // no parameters at all
     expect_dropped_whole("\033[6;3:3;15t");  // non-numeric parameter byte (sub-parameter colon)
+}
+
+TEST(parse_input, sixel_geometry_report)
+{
+    // XTSMGRAPHICS item-2 read reply, \033[?2;0;<width>;<height>S: width leads
+    // on the wire, the event carries x = width, y = height (asymmetric values
+    // so a swap cannot pass).
+    const platform::detail::ParseResult r = parse("\033[?2;0;480;312S");
+    ASSERT_EQ(r.kind, PK::Complete);
+    ASSERT_EQ(r.consumed, 15);
+    ASSERT_EQ(r.event.type, platform::InputEvent::Type::SixelGeometry);
+    ASSERT_EQ(r.event.x, 480);
+    ASSERT_EQ(r.event.y, 312);
+    expect_every_prefix_incomplete("\033[?2;0;480;312S");
+}
+
+TEST(parse_input, sixel_geometry_report_malformed_drops)
+{
+    expect_dropped_whole("\033[?1;0;1024S");       // item 1: colour registers, not geometry
+    expect_dropped_whole("\033[?1;0;100;100S");    // wrong item at the full arity
+    expect_dropped_whole("\033[?2;3;0S");          // failure status
+    expect_dropped_whole("\033[?2;3;10;10S");      // failure status at the full arity
+    expect_dropped_whole("\033[?2;;480;312S");     // EMPTY status: nums[1]==0 must not read as success
+    expect_dropped_whole("\033[?2;0;1000S");       // short of its four parameters
+    expect_dropped_whole("\033[?2;0;10;10;2S");    // a fifth parameter
+    expect_dropped_whole("\033[?2;0;0;100S");      // zero is not a size
+    expect_dropped_whole("\033[2;0;100;100S");     // no private marker
+    expect_dropped_whole("\033[?2;0;1000001;10S"); // past the accumulation cap
+    expect_dropped_whole("\033[?2;0;10:10;5S");    // sub-parameter colon
+    expect_dropped_whole("\033[?S");               // no parameters at all
+    expect_dropped_whole("\033[S");                // bare final (scroll-up CSI)
 }
 
 TEST(parse_input, device_attributes_reply_consumed_whole)
