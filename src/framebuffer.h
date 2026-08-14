@@ -1,7 +1,9 @@
 #pragma once
 
-#include "color.h"  // Color, ColorMode (re-exported: every includer of this header sees them)
-#include "linalg.h" // vec3 (for vec3_to_color)
+#include "color.h"    // Color, ColorMode (re-exported: every includer of this header sees them)
+#include "graphics.h" // GraphicsBackend (GraphicsConfig tags the present() backend with it)
+#include "linalg.h"   // vec3 (for vec3_to_color)
+#include "sixel.h"    // sixel::Scratch (the encoder's caller-owned staging)
 
 #include <atomic>
 #include <cmath>
@@ -49,30 +51,37 @@ constexpr Color vec3_to_color(vec3 c) noexcept
              static_cast<uint8_t>(clamp(c.z, 0.0f, 1.0f) * 255.0f) };
 }
 
-// kitty graphics backend configuration, fixed at construction like ColorMode.
-// enabled=false is the historical half-block backend, where a pixel is half a
-// cell; enabled=true presents the pixel buffer as one kitty-protocol image
+// Graphics backend configuration, fixed at construction like ColorMode.
+// Blocks is the historical half-block backend, where a pixel is half a cell;
+// the pixel backends (Kitty, Sixel) present the pixel buffer as one image
 // spanning cols x rows cells (the HUD row, when shown, sits just below them).
-// shm selects the shared-memory medium; the caller sets it only when the
-// startup query verified the transport end to end, and a transiently failing
-// frame falls back to direct transmission for that frame alone (identical
-// pixels, so no diagnostic: this is a transport capability, not correctness).
-struct KittyConfig
+// shm is kitty-only and selects the shared-memory medium; the caller sets it
+// only when the startup query verified the transport end to end, and a
+// transiently failing frame falls back to direct transmission for that frame
+// alone (identical pixels, so no diagnostic: this is a transport capability,
+// not correctness).
+struct GraphicsConfig
 {
-    bool enabled = false;
+    GraphicsBackend backend = GraphicsBackend::Blocks;
     bool shm = false;
     int cols = 0;
     int rows = 0;
+    // 1-based cursor cell where the sixel frame is homed: (1, 1) when the
+    // image spans the grid, the centered cell when the terminal's geometry
+    // limit letterboxes it (main.cpp's pixel_fb_size computes it). Kitty
+    // ignores these: its c=/r= placement always spans the full grid.
+    int origin_col = 1;
+    int origin_row = 1;
 };
 
 class Framebuffer
 {
   public:
-    // pixel_width  = terminal columns (blocks) or columns * cell width in px (kitty)
-    // pixel_height = terminal rows * 2 via ▀ (blocks) or image rows * cell height (kitty)
+    // pixel_width  = terminal columns (blocks) or columns * cell width in px (pixel backends)
+    // pixel_height = terminal rows * 2 via ▀ (blocks) or image rows * cell height (pixel backends)
     // headless     = true skips all terminal I/O (ANSI escapes, buffer reserve)
     // mode         = terminal colour depth for present() (default 24-bit truecolor)
-    // kitty        = graphics backend selection; default is the half-block backend
+    // gfx          = graphics backend selection; default is the half-block backend
     // adopt_alt_screen = the caller (the graphics query) already entered the
     //                alternate screen; skip re-entering, so the normal screen
     //                never flashes between the query and the first frame and the
@@ -83,7 +92,7 @@ class Framebuffer
         int pixel_height,
         bool headless = false,
         ColorMode mode = ColorMode::TrueColor,
-        KittyConfig kitty = {},
+        const GraphicsConfig &gfx = {},
         bool adopt_alt_screen = false
     );
     ~Framebuffer();
@@ -95,16 +104,26 @@ class Framebuffer
 
     [[nodiscard]] int width() const { return m_width; }
     [[nodiscard]] int height() const { return m_height; }
+    // The sixel home cell (see GraphicsConfig); the resize path compares the
+    // recomputed origin against these, like width()/height() for the dims.
+    [[nodiscard]] int origin_col() const { return m_gfx.origin_col; }
+    [[nodiscard]] int origin_row() const { return m_gfx.origin_row; }
 
-    // Resize pixel buffer to new dimensions and clear. Emits a one-shot
-    // \033[2J so any leftover content from the old (larger) size is wiped.
-    // On a kitty framebuffer use the 4-argument overload: this form leaves the
-    // placement grid (m_kitty.cols/rows, the c=/r= keys and the HUD row) at its
-    // old values, desynchronizing it from the new pixel dimensions.
+    // Resize pixel buffer to new dimensions and clear. Owes the terminal a
+    // one-shot \033[2J so leftover content from the old (larger) size is
+    // wiped; the erase is deferred into the next present's synchronized
+    // bracket (see m_pending_clear), so resize itself writes nothing.
+    // On a pixel-backend framebuffer use the overload below: this form leaves
+    // the image cell rectangle (m_gfx.cols/rows, kitty's c=/r= keys and the
+    // HUD row) at its old values, desynchronizing it from the new pixel
+    // dimensions.
     void resize(int pixel_width, int pixel_height);
 
-    // Kitty-mode resize: the cell rectangle changes along with the pixel size.
-    void resize(int pixel_width, int pixel_height, int kitty_cols, int kitty_rows);
+    // Pixel-backend resize: the cell rectangle changes along with the pixel
+    // size, and so does the sixel home cell. No origin defaults on purpose: a
+    // sixel caller that forgot them would silently re-home a centered image
+    // to 1;1, so every caller spells its origins (uncapped configs pass 1, 1).
+    void resize(int pixel_width, int pixel_height, int image_cols, int image_rows, int origin_col, int origin_row);
 
     void clear(Color bg = { 0, 0, 0 });
 
@@ -211,7 +230,19 @@ class Framebuffer
     // the pixel buffer was not rewritten since the last present) plus the HUD row.
     void present_kitty();
 
-    // The HUD row emission shared by both backends (cursor to the row below the
+    // present() body for the sixel backend: quantize the pixel buffer to the
+    // xterm-240 palette (m_idx) and emit one full sixel frame, gated like kitty.
+    void present_sixel();
+
+    // Frame composition brackets shared by the three present bodies: begin
+    // clears m_buf and opens synchronized output (mode 2026), so capable
+    // terminals paint the whole frame atomically and the rest ignore the pair;
+    // end closes it and performs the single fwrite, or writes nothing at all
+    // when the frame composed no content (every backend's idle contract).
+    void begin_frame();
+    void end_frame();
+
+    // The HUD row emission shared by all three backends (cursor to the row below the
     // image/pixel rows, wrap off, bg+default fg, erase BEFORE the text, line,
     // reset). One implementation so the erase-order rule cannot fork.
     void append_hud_line(bool full_redraw);
@@ -277,7 +308,8 @@ class Framebuffer
         return (static_cast<size_t>(y) * static_cast<size_t>(m_width)) + static_cast<size_t>(x);
     }
 
-    // Upper bound on present()'s output-buffer size, used to preallocate m_buf. The per-cell worst case
+    // m_buf's preallocation: a worst-case bound for blocks, a deliberately small
+    // starting size for the pixel backends (each branch says why). The per-cell worst case
     // is one combined fg+bg SGR plus the glyph: ~39 B in TrueColor (38;2;r;g;b;48;2;r;g;bm) but only
     // ~23 B in Palette256 (38;5;i;48;5;jm), so 256 mode reserves less. Both constants keep headroom over
     // the worst case for per-row cursor moves and the HUD tail; a miss only costs a one-time realloc.
@@ -287,22 +319,36 @@ class Framebuffer
     // guarded so it never shrinks), after which the capacity persists until the next resize shrinks
     // it back. Duplicating that full-frame bound here would be redundant address space and a second
     // allocation for every direct-mode session.
-    [[nodiscard]] size_t buf_reserve_bytes() const noexcept
+    [[nodiscard]] size_t buf_reserve_bytes() const
     {
-        if (m_kitty.enabled)
+        if (m_gfx.backend == GraphicsBackend::Kitty)
         {
-            return (static_cast<size_t>(m_kitty.cols) * 50u) + 4096u;
+            return (static_cast<size_t>(m_gfx.cols) * 50u) + 4096u;
+        }
+        if (m_gfx.backend == GraphicsBackend::Sixel)
+        {
+            // The encoder's own palette block + a band of slack + the HUD row.
+            // A worst-case bound is unusable here (a noise frame can approach a
+            // byte per pixel per touched register), and a typical frame is a
+            // few hundred KB: the first frames grow m_buf amortized and the
+            // capacity then persists until the next resize shrinks it, the
+            // kitty-direct precedent.
+            return sixel::palette_block().size() + (static_cast<size_t>(m_width) * 4u) + 4096u;
         }
         const size_t per_cell = (m_mode == ColorMode::TrueColor) ? 50u : 32u;
         return static_cast<size_t>(m_width) * static_cast<size_t>(m_height / 2) * per_cell;
     }
+
+    // The pixel protocols share the image-spanning present model (cols x rows
+    // cells above the HUD row); Blocks alone renders per cell.
+    [[nodiscard]] bool is_pixel_backend() const noexcept { return m_gfx.backend != GraphicsBackend::Blocks; }
 
     int m_width, m_height;
     std::vector<std::atomic<uint64_t>> m_pixel;
     // plain: only read/written by single-threaded present(). Value domain is mode-dependent: packed
     // RGB in TrueColor, palette indices in Palette256 (safe because m_mode is fixed at construction; a
     // future runtime mode switch would need m_force_redraw to avoid stale index-vs-RGB comparisons).
-    // Left empty in kitty mode, which has no per-cell diff (8 MB at 1080p it would never read).
+    // Left empty on the pixel backends, which have no per-cell diff (8 MB at 1080p it would never read).
     std::vector<uint32_t> m_prev_color;
     // Kitty direct-transport staging (pixel unpack and deflate output), empty
     // until first used. Raw arrays rather than vectors on purpose: both are
@@ -313,15 +359,29 @@ class Framebuffer
     size_t m_rgb_cap = 0;
     std::unique_ptr<unsigned char[]> m_z;
     size_t m_z_cap = 0;
+    // Sixel staging: the frame quantized to xterm-256 palette indices, the
+    // emitter's input plane. Same raw-array rationale as m_rgb/m_z above.
+    std::unique_ptr<unsigned char[]> m_idx;
+    size_t m_idx_cap = 0;
+    // The sixel encoder's caller-owned band masks (grow-only, dirty between
+    // frames by contract; see sixel::Scratch).
+    sixel::Scratch m_sixel_scratch;
     std::string m_buf;      // reused output buffer, avoids per-frame allocation
     std::string m_hud;      // status line written below pixel rows
     std::string m_prev_hud; // last HUD actually emitted; present() skips an unchanged one
     bool m_force_redraw = true;
+    // A resize owes the terminal one whole-screen erase (\033[2J), emitted by
+    // the NEXT present inside its synchronized-output bracket rather than by
+    // resize() itself: flushed immediately it blanks the window for however
+    // long the first re-render takes, exactly the flash mode 2026 exists to
+    // prevent; deferred, the terminal swaps atomically from the old content to
+    // the erased-and-repainted frame.
+    bool m_pending_clear = false;
     bool m_headless = false;
     ColorMode m_mode = ColorMode::TrueColor;
-    KittyConfig m_kitty;
-    // Whether the pixel buffer was rewritten (clear() ran) since the last kitty
-    // transmission; an unchanged frame emits no image bytes at all. This is why
+    GraphicsConfig m_gfx;
+    // Whether the pixel buffer was rewritten (clear() ran) since the last
+    // pixel-backend emission; an unchanged frame emits no image bytes at all. This is why
     // every rendered frame must begin with clear() (main.cpp gates render and
     // clear together): commit_pixel and the transparent resolve deliberately do
     // not arm this flag, since a per-pixel store on the hot path would cost more

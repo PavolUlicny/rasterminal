@@ -257,7 +257,7 @@ TEST(framebuffer, resize_resets_depth_and_dimensions)
     Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, { 2.0f, 5.0f, 0.4f }, { 8.0f, 5.0f, 0.4f }, Color{ 255, 0, 0 });
 
-    fb.resize(30, 16); // resize() emits \033[2J regardless of headless — FdRedirect covers it
+    fb.resize(30, 16); // the deferred resize erase reaches stdout on the next present; FdRedirect covers it
 
     ASSERT_EQ(fb.width(), 30);
     ASSERT_EQ(fb.height(), 16);
