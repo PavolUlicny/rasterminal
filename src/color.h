@@ -47,8 +47,9 @@ enum class ColorMode : uint8_t
 // HUD bar bg {18,18,18}) round-trip unchanged;
 // white {240,240,240} is not a palette colour and takes ramp 238; everything else errs by far
 // less than the palette's own spacing (>= 10 grey, >= 40 cube). Built at runtime (CIELAB needs
-// cbrt, not constexpr in C++17), paid on the first quantize only: 256-colour presents and tests,
-// never a truecolor session or --bench.
+// cbrt, not constexpr in C++17), paid on the first quantize only: 256-colour presents, sixel
+// frames (whose pixels are always palette-quantized), and tests; never a truecolor blocks/kitty
+// session or --bench.
 inline constexpr size_t QUANT256_LUT_SIZE = size_t{ 64 } * 64u * 64u;
 
 // Defined in color.cpp; the first call builds the table (thread-safe magic static).
@@ -60,11 +61,37 @@ constexpr size_t quant256_idx(Color c) noexcept
            static_cast<size_t>(c.b >> 2u);
 }
 
+// quant256_idx over a packed r | g<<8 | b<<16 word (the framebuffer's colour
+// layout), ignoring bits 24 and up: the identical index (pinned by test over
+// the packed range), but full 32-bit shifts where the Color form makes GCC
+// issue 8-bit partial-register shifts per channel (measured -7% on a whole
+// 1080p sixel present).
+constexpr size_t quant256_idx_packed(uint32_t c) noexcept
+{
+    return (static_cast<size_t>((c >> 2u) & 0x3Fu) << 12u) | (static_cast<size_t>((c >> 10u) & 0x3Fu) << 6u) |
+           static_cast<size_t>((c >> 18u) & 0x3Fu);
+}
+
 // Convenience form paying the magic-static init guard per call; present()'s pixel loops instead
 // hoist quant256_lut().data() once per frame and index it with quant256_idx directly.
 inline uint8_t quantize_256(Color c) noexcept
 {
     return quant256_lut()[quant256_idx(c)];
+}
+
+// The 240 addressable xterm-256 palette RGB values by entry number 0..239 (palette index is
+// 16 + j): the 6x6x6 colour cube on levels {0,95,135,175,215,255}, then the 24-step grey ramp.
+// The single source of the palette (one color table, no drift): the LUT build in color.cpp and
+// the sixel emitter's colour-register definitions both consume it.
+constexpr Color quant256_palette_entry(int j) noexcept
+{
+    if (j < 216)
+    {
+        const auto val = [](int l) { return static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l)); };
+        return { val(j / 36), val((j / 6) % 6), val(j % 6) };
+    }
+    const auto v = static_cast<uint8_t>(8 + (10 * (j - 216)));
+    return { v, v, v };
 }
 
 // The status bar's two fixed colours, shared so the escape literals framebuffer.cpp emits for
