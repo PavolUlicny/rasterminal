@@ -1,6 +1,7 @@
 #include "graphics.h"
 
-#include "input.h" // detail::is_string_introducer / scan_to_csi_final / parse_cell_size_body: the shared grammar
+#include "input.h" // the shared grammar: detail::is_string_introducer / scan_to_csi_final /
+                   // parse_cell_size_body / parse_sixel_geometry_body / MAX_CSI_PARAM_VALUE
 #include "kitty.h" // QUERY_ID, so the reply match cannot drift from the query
 
 #include <cstddef>
@@ -134,10 +135,15 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                 continue;
             }
             const char fin = buf[s.index];
-            if (fin == 'n')
+            if (fin == 'n' && buf[i + 2] != '?')
             {
                 // The DSR sentinel. The terminal answers requests in order, so
-                // every reply it will send is already in the buffer: done.
+                // every reply it will send is already in the buffer: done. A
+                // '?'-led n-final is a private DECDSR reply, the most plausible
+                // stale leftover another program could leave in the tty queue;
+                // taking it as the sentinel would end detection before any
+                // capability reply arrives, so it is located-and-skipped
+                // instead (our \033[5n is always answered without the marker).
                 r.done = true;
                 r.consumed = s.index + 1;
                 return r;
@@ -153,6 +159,57 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                 {
                     out.cell_w = w;
                     out.cell_h = h;
+                }
+            }
+            else if (fin == 'S')
+            {
+                // XTSMGRAPHICS sixel-geometry reply, validated by the same
+                // parse_sixel_geometry_body as the mid-session input arm. A
+                // failure status or another item (1 = colour registers) is
+                // located-and-ignored like any other unrecognized CSI.
+                int w = 0;
+                int h = 0;
+                if (platform::detail::parse_sixel_geometry_body(buf, i + 2, s.index, w, h))
+                {
+                    out.sixel_max_w = w;
+                    out.sixel_max_h = h;
+                }
+            }
+            else if (fin == 'c' && buf[i + 2] == '?')
+            {
+                // DA1, \033[?<params>c: parameter 4 (whole token) advertises
+                // sixel. Any other c-final CSI (DA2/DA3 replies lead with '>'
+                // or '=') stays located-and-skipped by the fallthrough below.
+                // A non-digit byte (a ':' sub-parameter, an intermediate the
+                // final-scan walked past) taints only ITS token: a sub-
+                // parametered or annotated 4 is not the plain capability, but
+                // the rest of the reply must still be honoured, or one odd
+                // byte anywhere would silently drop sixel support.
+                bool tainted = false;
+                int v = 0;
+                for (int k = i + 3; k <= s.index; k++)
+                {
+                    // The final acts as the last token's break.
+                    const char ch = (k == s.index) ? ';' : buf[k];
+                    if (ch == ';')
+                    {
+                        if (!tainted && v == 4)
+                        {
+                            out.sixel = true;
+                        }
+                        v = 0;
+                        tainted = false;
+                        continue;
+                    }
+                    if (ch < '0' || ch > '9')
+                    {
+                        tainted = true;
+                        continue;
+                    }
+                    if (v <= platform::detail::MAX_CSI_PARAM_VALUE)
+                    {
+                        v = (v * 10) + (ch - '0');
+                    }
                 }
             }
             i = s.index + 1;

@@ -1338,24 +1338,27 @@ TEST(args, graphics_values)
 {
     ASSERT_EQ(run({ "--graphics", "auto", "m.obj" }).args.graphics, GraphicsChoice::Auto);
     ASSERT_EQ(run({ "--graphics", "kitty", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics", "sixel", "m.obj" }).args.graphics, GraphicsChoice::Sixel);
     ASSERT_EQ(run({ "--graphics", "blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
 }
 
 TEST(args, graphics_case_insensitive)
 {
     ASSERT_EQ(run({ "--graphics", "KITTY", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics", "Sixel", "m.obj" }).args.graphics, GraphicsChoice::Sixel);
     ASSERT_EQ(run({ "--graphics", "Blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
 }
 
 TEST(args, graphics_equals_form)
 {
     ASSERT_EQ(run({ "--graphics=kitty", "m.obj" }).args.graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--graphics=sixel", "m.obj" }).args.graphics, GraphicsChoice::Sixel);
     ASSERT_EQ(run({ "--graphics=blocks", "m.obj" }).args.graphics, GraphicsChoice::Blocks);
 }
 
 TEST(args, graphics_invalid_value_is_error)
 {
-    ParseResult r = run({ "--graphics", "sixel", "m.obj" });
+    ParseResult r = run({ "--graphics", "iterm2", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
     ASSERT_FALSE(run({ "--graphics", "1", "m.obj" }).ok);
@@ -1438,6 +1441,16 @@ TEST(args, graphics_scale_blocks_check_order_does_not_matter)
     ParseResult r = run({ "--graphics-scale=0.5", "--graphics", "blocks", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, graphics_scale_rejected_with_explicit_sixel)
+{
+    // Sixel has no terminal-side stretch, so a scale could never come into
+    // play: same rejection as blocks, in either flag order.
+    ParseResult r = run({ "--graphics", "sixel", "--graphics-scale=0.5", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+    ASSERT_FALSE(run({ "--graphics-scale=0.5", "--graphics", "sixel", "m.obj" }).ok);
 }
 
 TEST(args, graphics_scale_allowed_with_kitty_and_auto)

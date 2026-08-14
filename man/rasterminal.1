@@ -17,10 +17,13 @@ rasterminal \- render a 3D model in the terminal
 .I model
 .SH DESCRIPTION
 .B rasterminal
-is a cross-platform 3D model viewer that renders entirely in the terminal
-using unicode block characters and ANSI color escapes: 24-bit (truecolor)
-where the terminal supports it, with an automatic 256-color fallback
-elsewhere (see
+is a cross-platform 3D model viewer that renders entirely in the terminal:
+as real pixels on terminals with kitty or sixel graphics support, detected at
+startup (see
+.BR \-\-graphics ),
+and as unicode half-block characters with ANSI color escapes elsewhere, in
+24-bit (truecolor) where the terminal supports it with an automatic 256-color
+fallback (see
 .B ENVIRONMENT
 and
 .BR \-\-color ).
@@ -206,35 +209,63 @@ forces 24-bit output,
 forces 256-color output, and
 .B auto
 (the default) detects the terminal's capability from the environment (see
-.BR ENVIRONMENT ).
+.BR ENVIRONMENT ,
+including the GNU screen 256-color floor that
+.B truecolor
+overrides).
 Forcing a color mode does not bypass the
 .B TERM=dumb
 rejection or the Windows VT-capability gate.
-With the kitty graphics backend the image is transmitted as 24-bit pixels
-regardless; this option then affects only the HUD line.
+With the kitty graphics backend the image is transmitted as 24-bit pixels and
+with sixel as the fixed 240-color palette regardless; this option then affects
+only the HUD line.
 .TP
 .BI \-\-graphics " mode"
 Rendering backend:
 .B kitty
 draws real pixels via the kitty graphics protocol,
+.B sixel
+draws real pixels via sixel graphics (always the 240-color xterm palette, at
+native resolution, capped to the maximum image size the terminal advertises,
+when it does, centered when a size limit leaves it smaller than the window
+and the cell size is known rather than guessed, kept to whole 6-pixel sixel
+bands, and never painting the last terminal row even under
+.B \-\-no\-hud
+since an image touching it would scroll every frame),
 .B blocks
 draws unicode half-block cells, and
 .B auto
-(the default) uses kitty when the terminal answers the startup capability
-query and blocks otherwise. Forcing
+(the default) prefers kitty when the terminal answers the startup capability
+query, then sixel when its device attributes reply advertises it, and blocks
+otherwise. xterm defaults to a 1000x1000 pixel maximum and discards anything
+larger, and its
+.B maxStringParse
+resource, default 600000, silently drops any frame whose sixel encoding is
+larger, which very busy scenes can exceed: raise it with
+.BR "xterm \-xrm '*maxStringParse: 10000000'" .
+Forcing
 .B kitty
-still requires the query to succeed, since a terminal without the protocol
-would silently show nothing; it is an error under tmux and GNU screen, which
-do not pass the protocol through.
+or
+.B sixel
+still requires the detection to succeed, since a terminal without the protocol
+would silently show nothing; both are an error under tmux and GNU screen
+(kitty is not passed through, and sixel support there is build-dependent and
+not detected).
 .TP
 .BI \-\-graphics\-scale " factor"
 Render scale for the kitty graphics backend, in [0.05, 1]. The frame is
 rendered at this fraction of the window's pixel resolution and stretched
 back over the same cells by the terminal, trading sharpness for speed.
 .B 1
-renders at native resolution. Has no effect on the blocks backend, and is
-an error with an explicit
-.BR "\-\-graphics blocks" .
+renders at native resolution. Has no effect on the blocks or sixel backends
+(under
+.B \-\-graphics auto
+it is inert when either is selected), and is an error with an explicit
+.B \-\-graphics blocks
+or
+.B \-\-graphics sixel
+(neither scales: blocks by design, sixel because the protocol has no
+terminal-side stretch).
 Default
 .BR 0.75 .
 .TP
@@ -404,7 +435,8 @@ Success (including
 .BR \-\-help " and " \-\-version ).
 .TP
 .B 1
-Usage error (unknown flag, missing or invalid value, unexpected argument),
+Usage error (unknown flag, missing or invalid value, invalid flag
+combination, unexpected argument),
 model load failure, or a terminal
 .B rasterminal
 cannot draw to (outside
@@ -413,10 +445,17 @@ standard input or output is not a terminal,
 .B TERM
 is
 .BR dumb ,
-or a Windows console cannot enable virtual-terminal escape processing.
+a Windows console cannot enable virtual-terminal escape processing, or a
+forced
+.B \-\-graphics kitty
+or
+.B \-\-graphics sixel
+backend is not detected (see
+.BR \-\-graphics ).
 .SH ENVIRONMENT
 .B rasterminal
-reads these variables to pick the color mode when rendering interactively; the
+reads these variables to pick the color mode when rendering interactively
+(and, noted below, to gate the graphics backends under multiplexers); the
 headless
 .B \-\-bench
 mode reads none of them.
@@ -432,7 +471,23 @@ wins:
 .B TERM=dumb
 is fatal even when
 .B COLORTERM
-claims truecolor, and a
+claims truecolor; real GNU screen (a non-empty
+.B STY
+variable, or a screen-family
+.B TERM
+without a non-empty
+.B TMUX
+variable) is floored to 256-color next, before
+.B COLORTERM
+is consulted, since the inherited
+.B COLORTERM
+describes the outer terminal and screen 4.x renders 24-bit color as garbage
+(tmux is exempt: it sets
+.B TMUX
+and resolves 24-bit output against the outer terminal itself; under screen 5
+configured for truecolor, force
+.BR "\-\-color truecolor" );
+and a
 .B COLORTERM
 truecolor signal in turn wins over a
 .B TERM
@@ -442,7 +497,7 @@ that would otherwise map to 256-color.
 .B truecolor
 or
 .B 24bit
-selects 24-bit output.
+selects 24-bit output, except inside real GNU screen (above).
 .TP
 .B TERM
 .B dumb
@@ -451,6 +506,7 @@ makes
 exit with an error (a dumb terminal cannot render escape sequences at all); this
 is checked before
 .BR COLORTERM .
+A screen-family name without tmux takes the GNU screen 256-color floor (above).
 A truecolor hint (the
 .B \-direct
 terminfo family, or a name containing
@@ -467,6 +523,30 @@ is unset or empty and
 .B COLORTERM
 carries no truecolor signal, the default is 256-color (24-bit on native
 Windows consoles).
+.TP
+.B TMUX
+A non-empty value marks a tmux session and exempts a screen-family
+.B TERM
+from the GNU screen floor, unless
+.B STY
+marks a screen session, which always wins. Separately, the graphics
+capability query is skipped when
+.B TMUX
+is set (even empty) or
+.B TERM
+is screen- or tmux-prefixed, so under a multiplexer
+.B \-\-graphics auto
+falls back to half-blocks and forcing a pixel backend is an error,
+regardless of color mode.
+.TP
+.B STY
+A non-empty value is GNU screen's own session marker and applies the
+256-color floor whatever
+.B TERM
+and
+.B TMUX
+say.
+.PP
 .B \-\-color
 overrides the detected mode.
 .SH EXAMPLES

@@ -187,15 +187,17 @@ namespace platform
         shm_unlink(name);
     }
 
-    inline long process_id()
+    inline unsigned long process_id()
     {
-        return static_cast<long>(getpid());
+        // Unsigned: PIDs are nonnegative on POSIX, and Windows' DWORD id would
+        // be implementation-defined narrowed by a signed 32-bit long (LLP64).
+        return static_cast<unsigned long>(getpid());
     }
 #else
     // Windows stubs so the shm call sites compile without #ifdef blocks of their
-    // own (platform.h owns all platform conditionals). The kitty backend is
-    // never selected on Windows, and even a stray call degrades cleanly: a null
-    // create reads as "shm frame unavailable" and the caller falls back.
+    // own (platform.h owns all platform conditionals). No Windows terminal
+    // answers the kitty query today; if one ever does, the null create reads
+    // as "shm frame unavailable" and the transport falls back to t=d.
     inline void *shm_frame_create(const char * /*name*/, size_t /*size*/)
     {
         return nullptr;
@@ -205,63 +207,177 @@ namespace platform
 
     inline void shm_frame_remove(const char * /*name*/) {}
 
-    inline long process_id()
+    inline unsigned long process_id()
     {
-        return static_cast<long>(GetCurrentProcessId());
+        return GetCurrentProcessId();
     }
 #endif
+
+    // Lets the console translate the terminal's escape sequences (query replies,
+    // mouse reports) into readable input bytes on Windows; without it they never
+    // arrive. Idempotent (a flag OR) and a POSIX no-op. Called by the graphics
+    // query itself, since enable_mouse (the other caller) only runs after the
+    // query window closes. Never cleared, like init_console_output's output
+    // flags and codepage: persistent console-state mutation on the render path
+    // (post-load) is the accepted pattern on Windows.
+    inline void enable_vt_input()
+    {
+#ifdef _WIN32
+        HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD mode = 0;
+        // Probe-guarded like init_console_output: OR-ing into a mode the probe
+        // never filled would clear every other input flag.
+        if (GetConsoleMode(hin, &mode) != 0)
+        {
+            SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
+        }
+#endif
+    }
 
     namespace detail
     {
         // Ceiling on the graphics-detection read. The replies total well under a
         // hundred bytes; the headroom absorbs keystrokes typed into the window.
         constexpr int GRAPHICS_REPLY_BUF = 512;
+        // The two re-requestable query escapes, shared by the startup batch and
+        // the request_* functions below so the two forms cannot diverge (the
+        // reply validators are written against these exact parameters).
+        inline constexpr char QUERY_CELL_SIZE[] = "\033[16t";
+        inline constexpr char QUERY_SIXEL_GEOMETRY[] = "\033[?2;1;0S";
         // Outer bound on waiting for the DSR sentinel. Terminals answer queries
         // ahead of other processing, so the normal case is one round trip;
         // the bound only matters for a terminal that never answers DSR at all.
         constexpr int GRAPHICS_QUERY_TIMEOUT_MS = 1000;
-    } // namespace detail
 
-    // GRAPHICS_QUERY_SUPPORTED lets main.cpp say "not supported on Windows"
-    // instead of blaming a query that was never sent.
+        // One bounded wait-and-read of query-reply bytes, the platform-split
+        // read primitive of the query loop. Returns the byte count read; 0
+        // means "nothing decodable this round, keep waiting" (the caller's
+        // deadline loop re-checks its quit flag and the deadline); negative
+        // means stop (closed stream, error, or on POSIX a quit signal caught
+        // at an EINTR retry).
 #ifdef _WIN32
-    inline constexpr bool GRAPHICS_QUERY_SUPPORTED = false;
+        inline int
+        read_query_bytes(char *out, int cap, int timeout_ms, const volatile std::sig_atomic_t * /*interrupted*/)
+        {
+            HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+            // The wait is capped at one slice so a quit signal is noticed
+            // within it (on Windows the Ctrl+C handler runs on another thread,
+            // so unlike POSIX's EINTR nothing interrupts a blocking wait): a
+            // timed-out slice returns 0 and the caller's deadline loop
+            // re-enters, re-checking the quit flag at its own top.
+            constexpr DWORD SLICE_MS = 50;
+            const auto want = static_cast<DWORD>(timeout_ms);
+            const DWORD rc = WaitForSingleObject(hin, std::min(want, SLICE_MS));
+            if (rc == WAIT_TIMEOUT)
+            {
+                return 0;
+            }
+            if (rc != WAIT_OBJECT_0)
+            {
+                return -1;
+            }
+            int n = 0;
+            while (n < cap && _kbhit())
+            {
+                out[n++] = static_cast<char>(_getch());
+            }
+            if (n == 0)
+            {
+                // The wait signals on ANY input record, including the focus and
+                // window events _kbhit rejects; discard one such record or the
+                // signaled-but-empty wait repeats until the deadline. A discard
+                // that cannot even read one record is a dead console (redirected
+                // handle, closed conhost): stop, or the still-signaled wait plus
+                // the failing read busy-spin the loop to the deadline.
+                INPUT_RECORD rec;
+                DWORD got = 0;
+                if (ReadConsoleInput(hin, &rec, 1, &got) == 0 || got == 0)
+                {
+                    return -1;
+                }
+            }
+            return n;
+        }
 #else
-    inline constexpr bool GRAPHICS_QUERY_SUPPORTED = true;
+        inline int read_query_bytes(char *out, int cap, int timeout_ms, const volatile std::sig_atomic_t *interrupted)
+        {
+            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
+            const int pr = poll(&pfd, 1, timeout_ms);
+            if (pr < 0 && errno == EINTR)
+            {
+                if (interrupted != nullptr && *interrupted != 0)
+                {
+                    return -1; // a quit signal ends the wait
+                }
+                // Not a quit: let the caller recompute the deadline and retry. No
+                // non-quit handler is installed (resize is polled, so no SIGWINCH
+                // handler exists to interrupt anything); the real case is Linux's
+                // stop-and-SIGCONT, which fails poll with EINTR even with no
+                // handler (man 7 signal).
+                return 0;
+            }
+            if (pr < 0)
+            {
+                return -1;
+            }
+            if (pr == 0)
+            {
+                return 0; // the caller's deadline check turns this into the timeout
+            }
+            const auto got = read(STDIN_FILENO, out, static_cast<size_t>(cap));
+            if (got < 0 && errno == EINTR)
+            {
+                if (interrupted != nullptr && *interrupted != 0)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+            return (got <= 0) ? -1 : static_cast<int>(got);
+        }
 #endif
+    } // namespace detail
 
     // Leaves the alternate screen that query_term_graphics entered. INVARIANT:
     // once the query has run, only this call or the Framebuffer dtor ever gets
     // the terminal off the alternate screen, so EVERY path that returns between
-    // the query and the Framebuffer ctor (today: the quit-signal and
-    // forced-kitty bails) must call this first, or it strands the user there
-    // with the shell invisible. On the normal path the ctor adopts the screen
-    // (adopt_alt_screen) and its dtor leaves it.
+    // the query and the Framebuffer ctor (today: the quit-signal bail, the
+    // forced pixel-backend bail, and the ctor-throw handler) must call this
+    // first, or it strands the user there with the shell invisible. On the
+    // normal path the ctor adopts the screen (adopt_alt_screen) and its dtor
+    // leaves it.
     inline void exit_alt_screen()
     {
         std::fputs("\033[?1049l", stdout);
         std::fflush(stdout);
     }
 
-    // Writes the graphics capability batch (kitty query + cell-size report + DSR
-    // sentinel) and reads the replies synchronously. Preconditions: raw mode is on
+    // Writes the graphics capability batch (kitty query + cell-size report +
+    // DA1 for sixel + XTSMGRAPHICS sixel geometry + DSR sentinel) and reads
+    // the replies synchronously, on every platform (the platform-split pieces
+    // it drives are detail::read_query_bytes, enable_vt_input, and the
+    // shm_frame_* probe helpers). Preconditions: raw mode is on
     // and the interactive input loop does not own stdin yet, so the replies never
     // reach the input state machine. The DSR is what bounds the wait: every
     // terminal answers it, and replies arrive in request order, so its arrival
     // means everything the terminal will say has been said. Bytes the scanner
     // does not recognize are dropped, which loses keystrokes typed inside the
-    // window (about one round trip; accepted). Windows: no terminal there speaks
-    // the kitty protocol, so nothing is queried; revisit when sixel lands.
-    // POSIX postcondition: the terminal is left ON the alternate screen (see the
+    // window (about one round trip; accepted).
+    // Postcondition: the terminal is left ON the alternate screen (see the
     // comment at the enter escape); the caller either constructs the Framebuffer
     // with adopt_alt_screen or calls exit_alt_screen() before bailing.
     // `interrupted` is the caller's signal flag (main.cpp's SIGINT/SIGTERM
-    // handler target): an EINTR retry consults it so a quit signal ends the
-    // wait instead of being retried into the deadline.
+    // handler target), consulted at the top of every deadline-loop iteration
+    // (so at least once per 50 ms Windows wait slice) and at every POSIX
+    // EINTR retry, so a quit signal ends the wait instead of being retried
+    // into the deadline.
     inline TermGraphics query_term_graphics(const volatile std::sig_atomic_t *interrupted = nullptr)
     {
         TermGraphics tg;
-#ifndef _WIN32
+        // Windows: without VT input the console never surfaces the replies as
+        // bytes, and enable_mouse (the other place the flag is set) runs only
+        // after the query window closes.
+        enable_vt_input();
         // The whole exchange happens on the ALTERNATE screen: a terminal that
         // does not consume APC would otherwise print the query bytes into the
         // user's scrollback. Deliberately NOT left on return: the Framebuffer
@@ -273,14 +389,20 @@ namespace platform
         std::fputs("\033[?1049h", stdout);
 
         // Probe object for the t=s query: one white RGB pixel. If it cannot be
-        // created the query is simply not sent and the transport stays
+        // created (always the case on Windows, whose shm_frame_create stub
+        // returns nullptr) the query is simply not sent and the transport stays
         // unverified, which reads as unavailable, the correct answer on a host
         // without working shm. The probe verifies the MEDIUM, not capacity (the
         // frame size is not even known yet): a /dev/shm too small for real
         // frames degrades to the per-frame direct fallback, silent by design.
         char shm_name[64];
-        std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%ld-q", static_cast<long>(getpid()));
+        std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%lu-q", process_id());
         bool shm_probe = false;
+        // cppcheck suppressions (here and at the shm_probe test below):
+        // shm_frame_create is the nullptr stub in the _WIN32 configuration, so
+        // the multi-config scan reads the probe as constantly false. Same FP
+        // class as framebuffer.cpp's transmit_shm/present_kitty suppressions.
+        // cppcheck-suppress knownConditionTrueFalse
         if (void *probe = shm_frame_create(shm_name, 3))
         {
             std::memset(probe, 0xFF, 3);
@@ -289,13 +411,17 @@ namespace platform
         }
 
         std::fputs(kitty::QUERY, stdout);
+        // cppcheck-suppress knownConditionTrueFalse
         if (shm_probe)
         {
             std::string shm_query;
             kitty::append_query_shm(shm_query, shm_name);
             std::fputs(shm_query.c_str(), stdout);
         }
-        std::fputs("\033[16t\033[5n", stdout);
+        std::fputs(detail::QUERY_CELL_SIZE, stdout);
+        std::fputs("\033[c", stdout);
+        std::fputs(detail::QUERY_SIXEL_GEOMETRY, stdout);
+        std::fputs("\033[5n", stdout);
         std::fflush(stdout);
 
         char buf[detail::GRAPHICS_REPLY_BUF];
@@ -304,44 +430,39 @@ namespace platform
             std::chrono::steady_clock::now() + std::chrono::milliseconds(detail::GRAPHICS_QUERY_TIMEOUT_MS);
         for (;;)
         {
+            // One shared quit check for both platforms, at the loop top so a
+            // signal that landed between waits is seen before the next wait
+            // starts. On Windows the slice wait is not signal-interruptible,
+            // so this check IS the quit mechanism (~50 ms latency); on POSIX
+            // it covers a flag raised outside a wait, which the EINTR arms
+            // alone cannot see. Quitting mid-query can abandon replies still
+            // in flight, which then print in the shell; accepted (the EINTR
+            // quit path always had this), quit latency wins.
+            if (interrupted != nullptr && *interrupted != 0)
+            {
+                break;
+            }
             const auto now = std::chrono::steady_clock::now();
             if (now >= deadline)
             {
                 break;
             }
-            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
-            const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-            const int pr = poll(&pfd, 1, static_cast<int>(remaining));
-            if (pr < 0 && errno == EINTR)
+            // ceil, not duration_cast: truncation makes the last fraction of a
+            // millisecond before the deadline a zero-timeout spin (poll returns
+            // instantly, the loop re-enters); rounding up waits it out instead.
+            const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count();
+            const int got = detail::read_query_bytes(
+                buf + len, detail::GRAPHICS_REPLY_BUF - len, static_cast<int>(remaining), interrupted
+            );
+            if (got < 0)
             {
-                if (interrupted != nullptr && *interrupted != 0)
-                {
-                    break; // a quit signal ends the wait
-                }
-                // Not a quit: retry. No non-quit handler is installed (resize is
-                // polled, so no SIGWINCH handler exists to interrupt anything);
-                // the real case is Linux's stop-and-SIGCONT, which fails poll
-                // with EINTR even with no handler (man 7 signal).
-                continue;
+                break; // quit signal, closed stream, or failure: nothing more will arrive
             }
-            if (pr <= 0)
+            if (got == 0)
             {
-                break; // timed out or failed: whatever was going to arrive has
+                continue; // spurious wakeup or EINTR retry; the deadline re-check bounds it
             }
-            const auto got = read(STDIN_FILENO, buf + len, sizeof(buf) - static_cast<size_t>(len));
-            if (got < 0 && errno == EINTR)
-            {
-                if (interrupted != nullptr && *interrupted != 0)
-                {
-                    break;
-                }
-                continue;
-            }
-            if (got <= 0)
-            {
-                break;
-            }
-            len += static_cast<int>(got);
+            len += got;
             const ReplyScan r = parse_graphics_replies(buf, len, tg);
             if (r.done)
             {
@@ -367,13 +488,13 @@ namespace platform
         // spin startup here); 16 KB covers any realistic buffered backlog.
         for (int i = 0; i < 64; i++)
         {
-            struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
-            if (poll(&pfd, 1, 0) <= 0)
-            {
-                break;
-            }
             char junk[256];
-            if (read(STDIN_FILENO, junk, sizeof junk) <= 0)
+            // 0 must NOT end the drain: on Windows it is the common timed-out
+            // slice, or one non-key record discarded with byte input possibly
+            // still queued behind it. The cost of continuing is the cap's
+            // worth of zero-timeout polls on POSIX (microseconds); only a
+            // dead stream (< 0) stops early.
+            if (detail::read_query_bytes(junk, sizeof junk, 0, nullptr) < 0)
             {
                 break;
             }
@@ -385,9 +506,6 @@ namespace platform
         }
         // A t=s OK without the base query's OK names no usable backend.
         tg.kitty_shm = tg.kitty_shm && tg.kitty;
-#else
-        (void)interrupted; // nothing is queried on Windows
-#endif
         return tg;
     }
 
@@ -399,7 +517,19 @@ namespace platform
     // touching the input machinery's rules.
     inline void request_cell_size()
     {
-        std::fputs("\033[16t", stdout);
+        std::fputs(detail::QUERY_CELL_SIZE, stdout);
+        std::fflush(stdout);
+    }
+
+    // Asks the terminal for its maximum sixel image size (XTSMGRAPHICS item 2,
+    // read). Fired by the resize path on a grid change under the sixel backend
+    // when the startup query got an answer: the reported max is window-tied on
+    // xterm and foot, so it must be refreshed as the window moves. Same
+    // fire-and-forget contract as request_cell_size above; the reply arrives
+    // as a SixelGeometry event.
+    inline void request_sixel_geometry()
+    {
+        std::fputs(detail::QUERY_SIXEL_GEOMETRY, stdout);
         std::fflush(stdout);
     }
 
@@ -479,6 +609,21 @@ namespace platform
             }
         }
 
+        // Case-insensitive prefix match, the anchored sibling of icontains. Used
+        // where the signal is the entry FAMILY (screen, screen-256color,
+        // screen.xterm-256color all lead with it), not an embedded component.
+        constexpr bool istarts_with(const char *hay, const char *prefix) noexcept
+        {
+            for (; *prefix != '\0'; ++hay, ++prefix)
+            {
+                if (*hay == '\0' || ascii_lower(*hay) != ascii_lower(*prefix))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         // The most common terminals whose TERM name is set exclusively by a truecolor
         // terminal, matched as substrings so variants hit too (xterm-kitty, xterm-ghostty).
         // Exists for the ssh case: COLORTERM is not forwarded but TERM is, so without this
@@ -492,28 +637,65 @@ namespace platform
         };
     } // namespace detail
 
-    // Pure classifier over the COLORTERM/TERM env values (either may be null). All
-    // comparisons are ASCII case-insensitive. Decision order:
+    // Pure classifier over the COLORTERM/TERM env values (either may be null) plus
+    // the two multiplexer signals (under_tmux from a non-empty TMUX, in_screen
+    // from a non-empty STY; the wrapper below reads them). All comparisons are
+    // ASCII case-insensitive. Decision order:
     //   1. TERM=dumb wins over everything, even a contradictory COLORTERM: a dumb
     //      terminal cannot render escape sequences regardless of what claims color.
     //      Only the literal "dumb" is fatal, by choice: terminfo's wider non-addressable
     //      family (unknown = use=dumb+gn, etc.) is left on the 256 floor rather than
     //      fatal, since in practice such a TERM is usually a misconfig inside a real
     //      terminal that renders fine, and the policy is "never fatal except dumb".
-    //   2. COLORTERM in {truecolor, 24bit} is the canonical truecolor signal.
-    //   3. TERM unset/empty: platform default (unset_default), parameterized so
+    //   2. Real GNU screen is floored to 256 before COLORTERM is even consulted,
+    //      detected by screen's own STY session variable (exported to every
+    //      child; catches a .screenrc/`screen -T` TERM rewrite and screen nested
+    //      inside tmux) OR a screen-family TERM without tmux (covers the ssh
+    //      hop out of screen, which forwards TERM but not STY). Rationale:
+    //      COLORTERM inside screen is inherited from the OUTER terminal and
+    //      describes it, not screen, and screen 4.x (every distro's default)
+    //      misparses 24-bit SGR by applying the channel bytes as INDEPENDENT
+    //      SGR codes (measured: cells come out faint, black, or arbitrarily
+    //      colored per cell, and truecolor backgrounds are dropped outright),
+    //      while 38;5;n palette output passes through verbatim, which is the
+    //      fact the floor rests on. tmux is exempt (it always sets TMUX, even
+    //      under its older TERM=screen-256color configs) because it resolves
+    //      output depth from the OUTER terminal's terminfo, translating or
+    //      quantizing 24-bit SGR; that is also why tmux nested inside screen
+    //      floors correctly here via STY. A screen 5 session configured for
+    //      truecolor opts back up with --color truecolor. Accepted residuals,
+    //      depth-only and --color-recoverable, never garbled: ssh out of tmux
+    //      with a legacy screen-family TERM and an explicitly forwarded
+    //      COLORTERM floors needlessly (default ssh does not forward COLORTERM
+    //      at all), and a GUI terminal launched from inside screen inherits
+    //      STY and floors needlessly. This supersedes the screen half of a
+    //      2026-07-10 review decline that trusted COLORTERM here on tmux-only
+    //      evidence. negotiate_graphics' multiplexer gate deliberately answers
+    //      a different question (escape passthrough, where tmux blocks too)
+    //      with its own predicate.
+    //   3. COLORTERM in {truecolor, 24bit} is the canonical truecolor signal.
+    //   4. TERM unset/empty: platform default (unset_default), parameterized so
     //      both platform branches are unit-testable everywhere.
-    //   4. TERM hints (the -direct terminfo family, truecolor, 24bit) and the
+    //   5. TERM hints (the -direct terminfo family, truecolor, 24bit) and the
     //      TRUECOLOR_TERMS known-terminal names cover terminals whose sessions carry
-    //      no COLORTERM (not exported, or stripped by ssh).
-    //   5. Everything else gets the conservative 256-color floor; never fatal even
+    //      no COLORTERM (not exported, or stripped by ssh). No screen.* terminfo
+    //      entry embeds a hint or a TRUECOLOR_TERMS name (swept repeatedly in
+    //      review), which matters for the under-tmux case, where a screen-family
+    //      TERM does reach this step.
+    //   6. Everything else gets the conservative 256-color floor; never fatal even
     //      for sub-256-color terminfo entries (16-color output is not supported).
-    constexpr TermColor classify_term_color(const char *colorterm, const char *term, TermColor unset_default) noexcept
+    constexpr TermColor classify_term_color(
+        const char *colorterm, const char *term, TermColor unset_default, bool under_tmux, bool in_screen
+    ) noexcept
     {
         const bool has_term = term != nullptr && *term != '\0';
         if (has_term && detail::ieq(term, "dumb"))
         {
             return TermColor::Dumb;
+        }
+        if (in_screen || (has_term && !under_tmux && detail::istarts_with(term, "screen")))
+        {
+            return TermColor::Palette256;
         }
         if (colorterm != nullptr && (detail::ieq(colorterm, "truecolor") || detail::ieq(colorterm, "24bit")))
         {
@@ -552,12 +734,19 @@ namespace platform
         // Single-threaded startup; nothing in the program calls setenv.
         const char *colorterm = std::getenv("COLORTERM"); // NOLINT(concurrency-mt-unsafe)
         const char *term = std::getenv("TERM");           // NOLINT(concurrency-mt-unsafe)
+        // Non-empty, not mere presence: tmux itself treats an empty TMUX as
+        // "not under tmux" (the documented nesting workaround); STY gets the
+        // same reading for symmetry.
+        const char *tmux = std::getenv("TMUX"); // NOLINT(concurrency-mt-unsafe)
+        const char *sty = std::getenv("STY");   // NOLINT(concurrency-mt-unsafe)
+        const bool under_tmux = tmux != nullptr && *tmux != '\0';
+        const bool in_screen = sty != nullptr && *sty != '\0';
 #ifdef _WIN32
         constexpr TermColor unset_default = TermColor::TrueColor;
 #else
         constexpr TermColor unset_default = TermColor::Palette256;
 #endif
-        return classify_term_color(colorterm, term, unset_default);
+        return classify_term_color(colorterm, term, unset_default, under_tmux, in_screen);
     }
 
     // raw mode
@@ -652,13 +841,9 @@ namespace platform
 
     inline void enable_mouse()
     {
-#ifdef _WIN32
-        // Allow VT input sequences (including mouse) on the input handle.
-        HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
-        DWORD mode = 0;
-        GetConsoleMode(hin, &mode);
-        SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
-#endif
+        // VT input covers mouse sequences too; the graphics query normally set
+        // it already, but a --graphics blocks session skips the query.
+        enable_vt_input();
         // \033[?1006h — SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
         // \033[?1002h — button-events mode: reports motion only while a button is held
         std::fputs("\033[?1006h\033[?1002h", stdout);

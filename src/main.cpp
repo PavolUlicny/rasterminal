@@ -164,30 +164,104 @@ namespace
         return v >= 1 && v <= platform::detail::MAX_CELL_REPORT_PX;
     }
 
-    // The kitty framebuffer covers the cell grid at --graphics-scale times
-    // native resolution, bounded to MAX_FB_DIM_PX (8K-display size) on the
-    // longest axis: valid_cell_px bounds each cell axis, but the grid x cell
-    // product can still reach gigapixels on a garbage report. Both axes scale
-    // by the same factor, because the c=/r= placement stretches the frame to
-    // the grid rectangle: a lone clamped axis would render with the wrong
-    // aspect ratio, while a uniform scale only costs sampling resolution. The
-    // clamp bounds a hostile report rather than removing it: the worst case is
-    // 8192 on the longest axis and grid-proportional on the other, a few
-    // hundred MB, survivable by design.
+    // A pixel-backend framebuffer covers the cell grid at native resolution
+    // (kitty: times --graphics-scale), bounded to MAX_FB_DIM_PX (8K-display
+    // size) on the longest axis: valid_cell_px bounds each cell axis, but the
+    // grid x cell product can still reach gigapixels on a garbage report. Both
+    // axes scale by the same factor. Kitty stretches the frame to the grid
+    // rectangle (see pixel_fb_size), so a lone clamped axis would render
+    // with the wrong aspect ratio while a uniform scale only costs sampling
+    // resolution; sixel has no such stretch, so there a clamped frame simply
+    // displays smaller than the window (accepted: it takes an ~8200 px wide
+    // terminal to reach). The clamp bounds a hostile report rather than
+    // removing it: the worst case is 8192 on the longest axis and
+    // grid-proportional on the other, a few hundred MB, survivable by design.
     constexpr int MAX_FB_DIM_PX = 8192;
 
     struct FbSize
     {
-        int w;
-        int h;
+        int w = 0;
+        int h = 0;
+        // 1-based cursor cell where a sixel frame is homed: (1, 1) whenever
+        // the image spans the full grid, the centered cell when a size limit
+        // leaves it smaller (see pixel_fb_size). Kitty and blocks never move
+        // off (1, 1).
+        int origin_col = 1;
+        int origin_row = 1;
     };
 
-    // scale is --graphics-scale, applied before the clamp so both bounds compose.
-    FbSize kitty_fb_size(int cols, int image_rows, int cell_w, int cell_h, float scale) noexcept
+    // Terminal rows the image may cover. Sixel always leaves the last row out,
+    // HUD or not: in sixel scrolling mode the cursor advances past the image
+    // after each frame, and an image touching the bottom row would scroll the
+    // screen every present (kitty's C=1 has no sixel analog, and DECSDM's
+    // set/reset polarity is not portable enough to rely on). With the HUD
+    // shown the reserved row is the HUD row, so this costs nothing there. On
+    // a one-row terminal sixel therefore draws nothing even under --no-hud,
+    // deliberately: the alternative is a frame that scrolls itself away on
+    // every present.
+    int image_rows_for(GraphicsBackend backend, int rows, int hud_rows) noexcept
     {
+        const int reserved = (backend == GraphicsBackend::Sixel) ? 1 : hud_rows;
+        return rows - reserved;
+    }
+
+    // The terminal-imposed sixel bounds, every field "0/false = not known";
+    // kitty and blocks ignore all of them. max_cell_w/h bound the cell size
+    // for containment (sixel paints 1:1, so a cell size above what the
+    // terminal's pixel report allows would run the image past the window edge
+    // and scroll, while floor(px/cells) * cells <= px guarantees fit; kitty
+    // deliberately stays unbounded, its c=/r= placement scales and the exact
+    // query answer beats the floored ioctl value). max_img_w/h cap the image
+    // by the terminal's own XTSMGRAPHICS maximum: xterm DISCARDS, not clips,
+    // an image past it (default min(window, 1000x1000)), so an uncapped frame
+    // on a large window is a black screen. The axes are enforced
+    // INDEPENDENTLY, not as an area budget (probed 2026-08-13: xterm discards
+    // a 1200x100 image for its width alone), so the per-axis min is the
+    // terminal's own rule, not a conservative approximation. cell_trusted
+    // gates the centering (see the block in pixel_fb_size).
+    struct SixelBounds
+    {
+        int max_cell_w = 0;
+        int max_cell_h = 0;
+        int max_img_w = 0;
+        int max_img_h = 0;
+        bool cell_trusted = false;
+    };
+
+    // scale is --graphics-scale, applied before the clamp so both bounds
+    // compose; kitty-only (sixel cannot stretch a smaller frame back over the
+    // cells, so it always renders native; args.cpp rejects the flag with an
+    // EXPLICIT --graphics sixel, but auto can still land on sixel with a
+    // scale set, which is why the Kitty guard below is not redundant). Two
+    // accepted containment residuals, both requiring a sixel terminal that
+    // never answers the cell-size query (none known): with no pixel report
+    // either (always the case on Windows, where get_terminal_pixel_size is
+    // POSIX-only), the 8x16 guess runs unbounded and a smaller real cell can
+    // overflow and scroll; and with a pixel report inflated by window padding
+    // of `rows` px or more, the floored derivation exceeds the real cell
+    // size, so the pixel bound holds while the terminal, which accounts
+    // scrolling in ITS cell rows, can still overflow. On terminals that DO
+    // answer, the adoption re-request in the resize poll recovers the exact
+    // cell a frame later, so a padded derivation only ever stands in briefly.
+    // No aspect scaling on the sixel caps: sixel paints 1:1 and the camera
+    // fits the fb aspect, so a capped axis letterboxes rather than distorts.
+    FbSize pixel_fb_size(
+        GraphicsBackend backend, int cols, int image_rows, int cell_w, int cell_h, float scale, const SixelBounds &lim
+    ) noexcept
+    {
+        if (backend == GraphicsBackend::Sixel)
+        {
+            cell_w = (lim.max_cell_w > 0) ? std::min(cell_w, lim.max_cell_w) : cell_w;
+            cell_h = (lim.max_cell_h > 0) ? std::min(cell_h, lim.max_cell_h) : cell_h;
+        }
         int w = cols * cell_w;
         int h = image_rows * cell_h;
-        if (scale != 1.0f)
+        if (backend == GraphicsBackend::Sixel)
+        {
+            w = (lim.max_img_w > 0) ? std::min(w, lim.max_img_w) : w;
+            h = (lim.max_img_h > 0) ? std::min(h, lim.max_img_h) : h;
+        }
+        if (backend == GraphicsBackend::Kitty && scale != 1.0f)
         {
             // A nonzero axis stays nonzero, same rule as the clamp below. Accepted
             // aspect exception shared with that clamp: the 1 px floor can raise one
@@ -206,6 +280,36 @@ namespace
             // zero axis (one-row terminal, HUD shown) stays zero.
             w = (w > 0) ? std::max(1, sw) : 0;
             h = (h > 0) ? std::max(1, sh) : 0;
+        }
+        if (backend == GraphicsBackend::Sixel)
+        {
+            // Floor to whole 6-pixel sixel bands: with a partial last band some
+            // terminals account the image at the rounded-up height, which under
+            // --no-hud (image bottom = screen bottom) can scroll the frame. Up
+            // to 5 unpainted pixel rows sit on the cleared alternate screen; a
+            // height under one band becomes zero and presents nothing.
+            h -= h % 6;
+            if (lim.cell_trusted && w > 0 && h > 0)
+            {
+                // Center a letterboxed image (a size limit left it smaller
+                // than the grid) by homing the cursor to the middle of the
+                // unused cells. Gated on a trusted cell size: the terminal
+                // applies the offset in REAL cells, and under the bare 8x16
+                // guess used_* can under-estimate the real span so far that
+                // the centered image reaches the reserved last row or the
+                // right edge, which the fixed 1;1 home never did. A queried
+                // or derived cell can exceed the real one only through the
+                // padding-inflated report (floor(px/cells) = real +
+                // pad/cells) or a lying reply, the same accepted residuals
+                // as containment's, bounded and rare where the guess is
+                // unbounded. A full-grid image yields used == avail, both
+                // origins stay 1, and the output is byte-identical; the
+                // floor-to-6 slack (under one cell) can also center by one
+                // cell, which is intended, not a cap artifact.
+                const int used_cols = (w + cell_w - 1) / cell_w;
+                const int used_rows = (h + cell_h - 1) / cell_h;
+                return { w, h, 1 + ((cols - used_cols) / 2), 1 + ((image_rows - used_rows) / 2) };
+            }
         }
         return { w, h };
     }
@@ -235,20 +339,23 @@ namespace
     }
 
     // Result of the startup graphics negotiation. exit_code >= 0 means main must
-    // return it immediately (quit signal during the query, or a forced
-    // --graphics kitty the terminal did not answer); those bail paths have
-    // already restored the terminal themselves.
+    // return it immediately (quit signal during the query, or a forced pixel
+    // backend the terminal did not answer for); those bail paths have already
+    // restored the terminal themselves.
     struct GraphicsSetup
     {
-        bool use_kitty = false;
+        GraphicsBackend backend = GraphicsBackend::Blocks;
         bool shm_ok = false;
-        // True when the query actually ran: on POSIX it leaves the terminal on
-        // the alternate screen (see query_term_graphics), which the Framebuffer
+        // True when the query actually ran: it leaves the terminal on the
+        // alternate screen (see query_term_graphics), which the Framebuffer
         // ctor adopts; until that adoption every exit path owes an explicit
         // platform::exit_alt_screen().
         bool query_ran = false;
         int cell_w = 0;
         int cell_h = 0;
+        // The terminal's max sixel image size (0 = unreported); see TermGraphics.
+        int sixel_max_w = 0;
+        int sixel_max_h = 0;
         int exit_code = -1;
     };
 
@@ -256,7 +363,8 @@ namespace
     // BEFORE mouse tracking and the input loop, so its replies can neither be
     // interleaved with mouse reports nor reach the input state machine. tmux does
     // not pass the kitty query through (and kitty-under-tmux needs passthrough
-    // wrapping this build does not do), so graphics are off there.
+    // wrapping this build does not do; sixel-under-tmux would need a sixel-built
+    // tmux and its own verification), so graphics are off there.
     GraphicsSetup negotiate_graphics(GraphicsChoice choice, const char *prog)
     {
         GraphicsSetup gfx;
@@ -271,19 +379,31 @@ namespace
                                  (std::strncmp(term_env, "screen", 6) == 0 || std::strncmp(term_env, "tmux", 4) == 0));
         if (!under_tmux)
         {
-            gfx.query_ran = platform::GRAPHICS_QUERY_SUPPORTED;
+            gfx.query_ran = true;
             const TermGraphics tg = platform::query_term_graphics(&g_interrupted);
-            if (tg.kitty)
+            // Outside the backend selection: a sixel-only terminal's cell-size
+            // reply must not be thrown away with the kitty verdict.
+            gfx.cell_w = tg.cell_w;
+            gfx.cell_h = tg.cell_h;
+            gfx.sixel_max_w = tg.sixel_max_w;
+            gfx.sixel_max_h = tg.sixel_max_h;
+            // Auto precedence is kitty over sixel (compressed or shared-memory
+            // transport against a full-frame escape repaint). A forced choice
+            // masks the other pixel backend, so --graphics sixel on a terminal
+            // with both really exercises sixel.
+            if (tg.kitty && choice != GraphicsChoice::Sixel)
             {
-                gfx.use_kitty = true;
+                gfx.backend = GraphicsBackend::Kitty;
                 gfx.shm_ok = tg.kitty_shm;
-                gfx.cell_w = tg.cell_w;
-                gfx.cell_h = tg.cell_h;
+            }
+            else if (tg.sixel && choice != GraphicsChoice::Kitty)
+            {
+                gfx.backend = GraphicsBackend::Sixel;
             }
         }
         // A quit signal during the query is a quit, not a detection verdict:
-        // the same clean exit as the main loop's interrupt path, never the
-        // forced-kitty "does not answer" misdiagnosis below.
+        // the same clean exit as the main loop's interrupt path, never a
+        // forced pixel backend's "does not answer" misdiagnosis below.
         if (g_interrupted)
         {
             if (gfx.query_ran)
@@ -295,26 +415,26 @@ namespace
             return gfx;
         }
         // Forcing does not skip the query: a terminal without the protocol
-        // swallows kitty escapes silently, so the failure mode of trusting the
+        // swallows its escapes silently, so the failure mode of trusting the
         // user here is a blank screen with no diagnostic. Fail loud instead
         // (the TERM=dumb precedent); auto quietly falls back to blocks.
-        if (!gfx.use_kitty && choice == GraphicsChoice::Kitty)
+        if (gfx.backend == GraphicsBackend::Blocks &&
+            (choice == GraphicsChoice::Kitty || choice == GraphicsChoice::Sixel))
         {
             if (gfx.query_ran)
             {
                 platform::exit_alt_screen();
             }
             platform::disable_raw_mode();
-            const char *reason = "terminal does not answer the kitty graphics query";
+            const bool kitty_choice = choice == GraphicsChoice::Kitty;
+            const char *reason = kitty_choice ? "terminal does not answer the kitty graphics query"
+                                              : "terminal does not report sixel support";
             if (under_tmux)
             {
                 // The gate covers both multiplexers (TMUX env, TERM screen*/tmux*),
                 // so the message must not blame tmux for a GNU screen session.
-                reason = "kitty graphics is not supported under tmux or GNU screen";
-            }
-            else if (!platform::GRAPHICS_QUERY_SUPPORTED)
-            {
-                reason = "kitty graphics is not supported on Windows";
+                reason = kitty_choice ? "kitty graphics is not supported under tmux or GNU screen"
+                                      : "sixel graphics is not supported under tmux or GNU screen";
             }
             std::fprintf(stderr, "%s: %s\n", prog, reason);
             gfx.exit_code = 1;
@@ -651,7 +771,8 @@ int main(int argc, char *argv[])
     {
         return gfx.exit_code;
     }
-    const bool use_kitty = gfx.use_kitty;
+    const GraphicsBackend backend = gfx.backend;
+    const bool pixel_backend = backend != GraphicsBackend::Blocks;
     // Mutable copies: the cell-size tiers below and the resize poll refine them.
     int cell_w = gfx.cell_w;
     int cell_h = gfx.cell_h;
@@ -662,10 +783,11 @@ int main(int argc, char *argv[])
     int rows = 0;
     platform::get_terminal_size(cols, rows);
 
-    // Cell pixel size for the kitty backend: the query's answer, else derived
-    // from the TIOCGWINSZ pixel fields, else the classic 8x16 assumption (the
-    // image still fills the window either way, via the placement's c=/r= cell
-    // rectangle; a wrong cell size only costs native-resolution sampling).
+    // Cell pixel size for the pixel backends: the query's answer, else derived
+    // from the TIOCGWINSZ pixel fields, else the classic 8x16 assumption. On
+    // kitty a wrong cell size only costs native-resolution sampling (the
+    // placement stretches, see pixel_fb_size); on sixel it renders the image
+    // at the wrong pixel size, with no terminal-side stretch to hide it.
     // The TIOCGWINSZ-derived cell size is remembered separately from the adopted
     // one: the per-frame resize poll adopts a new ioctl-derived value only when
     // the DERIVED value itself moves (font zoom, sub-cell resize). floor(px/cells)
@@ -674,44 +796,69 @@ int main(int argc, char *argv[])
     // with a full framebuffer realloc, on the second frame of every session.
     int ioctl_cell_w = 0;
     int ioctl_cell_h = 0;
-    if (use_kitty)
+    bool have_pixel_report = false;
+    if (pixel_backend)
     {
-        derive_cell_from_pixels(cols, rows, ioctl_cell_w, ioctl_cell_h);
+        have_pixel_report = derive_cell_from_pixels(cols, rows, ioctl_cell_w, ioctl_cell_h);
         if (cell_w <= 0 || cell_h <= 0)
         {
             cell_w = ioctl_cell_w;
             cell_h = ioctl_cell_h;
         }
     }
-    if (use_kitty && (cell_w <= 0 || cell_h <= 0))
+    // True while cell_w/cell_h is the bare 8x16 guess (no query reply, no
+    // pixel report): pixel_fb_size then declines to center a letterboxed
+    // image (see the gate there). Any real source clears it, including the
+    // per-frame ioctl adoption and CellSize replies below.
+    bool cell_guessed = false;
+    if (pixel_backend && (cell_w <= 0 || cell_h <= 0))
     {
         cell_w = 8;
         cell_h = 16;
+        cell_guessed = true;
     }
+    // The terminal's max sixel image size, refreshed mid-session (the value is
+    // window-tied on xterm and foot): the resize path re-requests it on a grid
+    // change and the SixelGeometry drain arm updates these.
+    int sixel_geom_w = gfx.sixel_max_w;
+    int sixel_geom_h = gfx.sixel_max_h;
 
-    // Blocks: each cell covers 2 vertical pixels via ▀ half-block. Kitty: the
-    // image spans every cell above the HUD, rendered at --graphics-scale of the
-    // grid's pixel size. With the HUD enabled, the last terminal row is reserved
-    // for it; --no-hud reclaims that row for rendering.
+    // Blocks: each cell covers 2 vertical pixels via ▀ half-block. Pixel
+    // backends: the image covers the cells above the HUD at the grid's pixel
+    // size (kitty: times --graphics-scale), or a smaller centered letterbox
+    // where the terminal's sixel limits cap it (see pixel_fb_size). The last
+    // terminal row is reserved for the HUD when shown; --no-hud reclaims it
+    // except on sixel, which always leaves the last row out (see
+    // image_rows_for).
     const int hud_rows = args.hud ? 1 : 0;
-    KittyConfig kitty_cfg;
+    GraphicsConfig gfx_cfg;
     int fb_w = cols;
     int fb_h = (rows - hud_rows) * 2;
-    if (use_kitty)
+    if (pixel_backend)
     {
-        kitty_cfg.enabled = true;
-        // The shared-memory transport only when the startup query verified it
-        // end to end: the probe named a real shm object, so a terminal that
-        // cannot open this machine's objects (the far end of an ssh session, a
-        // sandboxed terminal with its own /dev/shm) answered with an error and
-        // takes the direct transport instead. No env heuristic: the probe is
-        // authoritative, and even ssh-to-localhost resolves correctly.
-        kitty_cfg.shm = gfx.shm_ok;
-        kitty_cfg.cols = cols;
-        kitty_cfg.rows = rows - hud_rows;
-        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h, args.graphics_scale);
+        gfx_cfg.backend = backend;
+        // The shared-memory transport (kitty) only when the startup query
+        // verified it end to end: the probe named a real shm object, so a
+        // terminal that cannot open this machine's objects (the far end of an
+        // ssh session, a sandboxed terminal with its own /dev/shm) answered
+        // with an error and takes the direct transport instead. No env
+        // heuristic: the probe is authoritative, and even ssh-to-localhost
+        // resolves correctly.
+        gfx_cfg.shm = gfx.shm_ok;
+        gfx_cfg.cols = cols;
+        const int image_rows = image_rows_for(backend, rows, hud_rows);
+        gfx_cfg.rows = image_rows;
+        // The same gated bound spelling as the resize poll, so the two sites
+        // read identically (ioctl_cell_* is 0 on a failed derive either way).
+        const FbSize fbs = pixel_fb_size(
+            backend, cols, image_rows, cell_w, cell_h, args.graphics_scale,
+            { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w, sixel_geom_h,
+              !cell_guessed }
+        );
         fb_w = fbs.w;
         fb_h = fbs.h;
+        gfx_cfg.origin_col = fbs.origin_col;
+        gfx_cfg.origin_row = fbs.origin_row;
     }
     // One handler for any exception the session throws (in practice bad_alloc
     // from a framebuffer allocation): reaching std::terminate instead would
@@ -727,7 +874,7 @@ int main(int argc, char *argv[])
     bool fb_constructed = false;
     try
     {
-        Framebuffer fb(fb_w, fb_h, /*headless=*/false, color_mode, kitty_cfg, /*adopt_alt_screen=*/gfx.query_ran);
+        Framebuffer fb(fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/gfx.query_ran);
         fb_constructed = true;
 
         // Key light: warm white from upper-right-front.
@@ -758,9 +905,9 @@ int main(int argc, char *argv[])
         // row and costs one jump, cheaper than a timeout that would break every slow drag.
         bool mouse_dragging = false;
         // Whether anything that shapes the rendered image changed since the last frame.
-        // An unchanged frame skips the render on either backend, and the retransmission
-        // too under kitty, so an idle viewer costs no render CPU: no bytes at all under
-        // kitty, and under blocks the trailing SGR reset present_impl always emits.
+        // An unchanged frame skips the render on every backend and the image emission on
+        // the pixel backends, so an idle viewer costs no render CPU and writes no bytes
+        // at all (present composes nothing and end_frame skips the write).
         // Backend-independent by construction: the image is a function of mesh, camera and
         // renderer state, none of which knows what is presenting it. Set conservatively on
         // every input event rather than per binding: a spurious render costs one frame, a
@@ -872,7 +1019,6 @@ int main(int argc, char *argv[])
             // reaches the render, and the quit check sits outside it, so even Ctrl+C would not get
             // the viewer back. Far above a real burst; a leftover is picked up next frame.
             constexpr int MAX_EVENTS_PER_FRAME = 4096;
-            bool cell_size_changed = false;
             for (int handled = 0; handled < MAX_EVENTS_PER_FRAME; handled++)
             {
                 const platform::InputEvent ev = platform::poll_event();
@@ -889,7 +1035,7 @@ int main(int argc, char *argv[])
                 }
 
                 // The cell-size reply to the resize path's request. Machinery, not a
-                // binding, so like Q it sits above the --no-input gate. Only the kitty
+                // binding, so like Q it sits above the --no-input gate. Only a pixel
                 // backend asked and only it consumes the answer; a stray report on the
                 // blocks backend is dropped here rather than fed to the key chain.
                 if (ev.type == platform::InputEvent::Type::CellSize)
@@ -897,13 +1043,28 @@ int main(int argc, char *argv[])
                     // Recorded here, applied by the resize block below the drain: a
                     // resize is a full framebuffer reallocation, and the drain's event
                     // budget assumes every event is O(1), so a flood of reports must
-                    // not pay one reallocation each; folding into the resize block
-                    // also merges with a same-frame grid change into one reallocation.
-                    if (use_kitty && (ev.x != cell_w || ev.y != cell_h))
+                    // not pay one reallocation each. The resize block recomputes the
+                    // pixel target size every frame from these trackers, so the reply
+                    // needs no flag and merges with a same-frame grid change into one
+                    // reallocation.
+                    if (pixel_backend)
                     {
                         cell_w = ev.x;
                         cell_h = ev.y;
-                        cell_size_changed = true;
+                        cell_guessed = false;
+                    }
+                    continue;
+                }
+
+                // The sixel-geometry reply to the resize path's re-request; same
+                // machinery shape as CellSize, applied by the resize block's
+                // every-frame recomputation.
+                if (ev.type == platform::InputEvent::Type::SixelGeometry)
+                {
+                    if (backend == GraphicsBackend::Sixel)
+                    {
+                        sixel_geom_w = ev.x;
+                        sixel_geom_h = ev.y;
                     }
                     continue;
                 }
@@ -913,8 +1074,8 @@ int main(int argc, char *argv[])
                 // terminal's input queue), and the terminal stays in mouse-tracking mode,
                 // so a drag neither orbits nor paints a text selection over the render.
                 // Gated-off events do not mark the scene dirty: nothing they could
-                // change is reachable, and in kitty mode a dirty is a full render
-                // plus retransmission per keystroke.
+                // change is reachable, and on a pixel backend a dirty is a full
+                // render plus retransmission per keystroke.
                 if (!input_enabled)
                 {
                     continue;
@@ -1121,7 +1282,7 @@ int main(int argc, char *argv[])
                 int new_cols = 0;
                 int new_rows = 0;
                 platform::get_terminal_size(new_cols, new_rows);
-                // Kitty: re-derive the cell size alongside the grid, from the same
+                // Pixel backends: re-derive the cell size alongside the grid, from the same
                 // TIOCGWINSZ that reported the resize. A font zoom changes the cell
                 // size and fires the same grid change, so on terminals that fill the
                 // pixel fields (kitty, ghostty, foot, wezterm) the render size keeps
@@ -1132,8 +1293,8 @@ int main(int argc, char *argv[])
                 // resize, which moves the pixel fields without moving cols/rows.
                 int new_cell_w = cell_w;
                 int new_cell_h = cell_h;
-                bool have_pixel_report = false;
-                if (use_kitty)
+                have_pixel_report = false; // re-derived every frame; the startup derive seeded it
+                if (pixel_backend)
                 {
                     int derived_w = 0;
                     int derived_h = 0;
@@ -1149,33 +1310,99 @@ int main(int argc, char *argv[])
                             ioctl_cell_h = derived_h;
                             new_cell_w = derived_w;
                             new_cell_h = derived_h;
+                            cell_guessed = false;
+                            // The derivation is floor(px/cells) = real + pad/cells,
+                            // so adopting can replace an exact queried cell with a
+                            // padding-inflated one; on a padded sixel terminal that
+                            // overruns the screen in the terminal's own cell rows
+                            // (measured). Re-ask, and the exact reply overwrites
+                            // the stand-in a frame later; the derived value stays
+                            // stable so this cannot ping-pong, and a terminal that
+                            // never answers just keeps the derivation.
+                            platform::request_cell_size();
                         }
                     }
                 }
-                // cell_size_changed folds the drain's recorded CellSize reply into
-                // this same branch, so a reply and a grid change landing in one
-                // frame cost one framebuffer reallocation, not two.
-                if (new_cols != cols || new_rows != rows || new_cell_w != cell_w || new_cell_h != cell_h ||
-                    cell_size_changed)
+                // The target size is computed every frame, not only when a trigger
+                // fires: effective inputs can move while the grid and the adopted
+                // cell values stay put (the pixel report appearing or vanishing
+                // flips the containment bound between 0 and the ioctl floor; a
+                // geometry reply moves the cap), and comparing the result against
+                // the live framebuffer catches exactly the moves that change it,
+                // without a resize flash for the ones that do not.
+                FbSize fbs{};
+                int image_rows = 0;
+                bool fb_size_changed = false;
+                if (pixel_backend)
                 {
-                    const bool grid_changed = new_cols != cols || new_rows != rows;
-                    cols = new_cols;
-                    rows = new_rows;
-                    cell_w = new_cell_w;
-                    cell_h = new_cell_h;
-                    if (use_kitty)
+                    image_rows = image_rows_for(backend, new_rows, hud_rows);
+                    // The containment bound only when THIS poll produced a pixel
+                    // report: a report that vanished mid-session would otherwise
+                    // leave a stale bound clamping a fresh cell-size reply. The
+                    // asymmetry with ioctl_cell_w/h, which a failed derive keeps,
+                    // is deliberate: those are the adoption tracker, the bound is
+                    // live geometry, and losing containment until a report
+                    // returns beats clamping to geometry that no longer exists.
+                    fbs = pixel_fb_size(
+                        backend, new_cols, image_rows, new_cell_w, new_cell_h, args.graphics_scale,
+                        { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w,
+                          sixel_geom_h, !cell_guessed }
+                    );
+                    // The origin terms are load-bearing, not belt-and-braces:
+                    // with BOTH axes geometry-capped, a font zoom moves the
+                    // effective cell size while the capped dims stay
+                    // identical, so only the origins change and the image
+                    // must still re-home (the resize's deferred erase wipes
+                    // the old position).
+                    fb_size_changed = fbs.w != fb.width() || fbs.h != fb.height() ||
+                                      fbs.origin_col != fb.origin_col() || fbs.origin_row != fb.origin_row();
+                }
+                const bool grid_changed = new_cols != cols || new_rows != rows;
+                // Assigned unconditionally: a cell-size move that leaves the
+                // computed dims unchanged fires no resize, and a tracker left
+                // stale there would feed the wrong cell into the sizing at the
+                // next grid change (the decline itself is stable: recomputing
+                // from the stale value yields the same dims again).
+                cols = new_cols;
+                rows = new_rows;
+                cell_w = new_cell_w;
+                cell_h = new_cell_h;
+                // grid_changed stays a trigger beside the size comparison:
+                // fb.resize also records the cell grid, which can move while
+                // the pixel dims stay put (the kitty placement spans it, and
+                // sixel's HUD row is m_gfx.rows + 1), and blocks has no
+                // computed pixel size at all. A drained CellSize reply needs
+                // no term of its own: it updated cell_w/cell_h before this
+                // block, so it lands in the same single comparison (and
+                // reallocation) as a same-frame grid change.
+                if (grid_changed || fb_size_changed)
+                {
+                    if (pixel_backend)
                     {
-                        const FbSize fbs = kitty_fb_size(cols, rows - hud_rows, cell_w, cell_h, args.graphics_scale);
-                        fb.resize(fbs.w, fbs.h, cols, rows - hud_rows);
+                        fb.resize(fbs.w, fbs.h, cols, image_rows, fbs.origin_col, fbs.origin_row);
                         // No pixel fields to re-derive the cell size from (a font zoom
                         // fires this same grid change), so ask the terminal directly:
                         // the reply arrives through the input drain as a CellSize
                         // event a frame later. Nothing waits on it, and a terminal
                         // that answers neither TIOCGWINSZ nor XTWINOPS keeps the
-                        // startup value (the image still fills the window via c=/r=).
+                        // startup value (kitty only loses sampling resolution;
+                        // sixel renders at the stale size until the reply lands).
                         if (grid_changed && !have_pixel_report)
                         {
                             platform::request_cell_size();
+                        }
+                        // The reported sixel max is window-tied (xterm: min of
+                        // the window and its 1000x1000 default; foot: the
+                        // window), so a grid change refreshes it. Only when the
+                        // startup query was answered: a terminal that ignored
+                        // it once will again. A sub-cell window resize moves
+                        // the max without a grid change and is not chased
+                        // (bounded by under one cell of pixels; the TIOCGWINSZ
+                        // containment bound covers it where pixel reports
+                        // exist).
+                        if (grid_changed && backend == GraphicsBackend::Sixel && sixel_geom_w > 0)
+                        {
+                            platform::request_sixel_geometry();
                         }
                     }
                     else
@@ -1217,8 +1444,8 @@ int main(int argc, char *argv[])
                 fb.set_hud(compose_hud(info, cols, color_mode));
             }
 
-            // Render. A clean frame skips it (see scene_dirty), and in kitty mode the
-            // retransmission with it; present() still runs for the HUD row.
+            // Render. A clean frame skips it (see scene_dirty), and on the pixel
+            // backends the retransmission with it; present() still runs for the HUD row.
             const bool rendered = scene_dirty;
             if (rendered)
             {

@@ -226,3 +226,208 @@ TEST(graphics, st_split_across_reads)
     ASSERT_TRUE(done);
     ASSERT_TRUE(tg.kitty);
 }
+
+TEST(graphics, da1_with_param_4_means_sixel)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62;4;22c") + DSR, tg).done);
+    ASSERT_TRUE(tg.sixel);
+    ASSERT_FALSE(tg.kitty); // DA1 says nothing about kitty
+}
+
+TEST(graphics, da1_without_param_4_means_no_sixel)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62;22c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, da1_single_param_4_means_sixel)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?4c") + DSR, tg).done);
+    ASSERT_TRUE(tg.sixel);
+}
+
+TEST(graphics, da1_param_match_is_whole_token)
+{
+    // 44 and 40 both contain a '4'; neither is the sixel parameter.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62;44;40c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, da1_oversized_param_is_bounded_and_ignored)
+{
+    // A digit run past the accumulation cap must neither overflow nor match.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?9999999999999999999c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, da1_non_digit_taints_only_its_own_token)
+{
+    // A ':' sub-parameter or a stray intermediate byte must not discard the
+    // whole reply; only the token carrying it stops counting as plain 4.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62:1;4;22c") + DSR, tg).done);
+    ASSERT_TRUE(tg.sixel);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[?1;4;62 c") + DSR, tg2).done);
+    ASSERT_TRUE(tg2.sixel);
+}
+
+TEST(graphics, da1_subparametered_4_is_not_the_plain_capability)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?4:1c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[?62;4:2;22c") + DSR, tg2).done);
+    ASSERT_FALSE(tg2.sixel);
+}
+
+TEST(graphics, csi_c_without_private_marker_is_not_da1)
+{
+    // A plain 4 token behind no '?': only the private-marker guard rejects it,
+    // so this fails if the guard goes. Bare \033[c beside it is the one input
+    // where that guard reads the final byte itself (a bounds tripwire).
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[62;4c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[c") + DSR, tg2).done);
+    ASSERT_FALSE(tg2.sixel);
+}
+
+TEST(graphics, da1_intermediate_before_the_final_drops_the_last_token)
+{
+    // The taint rule's accepted conservative direction: an intermediate walked
+    // past by the final-scan lands in the trailing token, so its 4 stops
+    // counting as plain.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62;4 c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, da1_capped_token_does_not_poison_the_next)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?9999999999;4c") + DSR, tg).done);
+    ASSERT_TRUE(tg.sixel);
+}
+
+TEST(graphics, da1_empty_params_mean_no_sixel)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?c") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, truncated_da1_is_dropped_at_the_boundary)
+{
+    // The chasing reply's ESC ends the unterminated DA1 (the boundary rule);
+    // nothing from it is honoured and the rest of the batch still lands.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?62;4") + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[?4") + KITTY_OK + DSR, tg2).done);
+    ASSERT_TRUE(tg2.kitty);
+    ASSERT_FALSE(tg2.sixel);
+}
+
+TEST(graphics, da2_style_reply_is_not_da1)
+{
+    // '>'-led (DA2) and '='-led (DA3) c-final replies are located and skipped.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[>1;4;0c") + "\033[=4c" + DSR, tg).done);
+    ASSERT_FALSE(tg.sixel);
+}
+
+TEST(graphics, da1_split_across_reads)
+{
+    bool done = false;
+    const TermGraphics tg = drip_feed(std::string("\033[?62;4c") + DSR, done);
+    ASSERT_TRUE(done);
+    ASSERT_TRUE(tg.sixel);
+}
+
+TEST(graphics, sixel_geometry_reply_records_the_max)
+{
+    // XTSMGRAPHICS item-2 read reply: width;height in px, status 0 = success.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?2;0;1000;1000S") + DSR, tg).done);
+    ASSERT_EQ(tg.sixel_max_w, 1000);
+    ASSERT_EQ(tg.sixel_max_h, 1000);
+}
+
+TEST(graphics, sixel_geometry_failure_or_other_item_is_ignored)
+{
+    // A failure status and the colour-registers item (1) are located and
+    // skipped; neither may write the max. The four-parameter forms pin the
+    // item and status guards themselves, which the short forms cannot reach
+    // (arity rejects them first).
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?2;3;0S") + "\033[?1;0;1024S" + DSR, tg).done);
+    ASSERT_EQ(tg.sixel_max_w, 0);
+    ASSERT_EQ(tg.sixel_max_h, 0);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[?1;0;100;100S") + "\033[?2;3;10;10S" + DSR, tg2).done);
+    ASSERT_EQ(tg2.sixel_max_w, 0);
+    ASSERT_EQ(tg2.sixel_max_h, 0);
+}
+
+TEST(graphics, sixel_geometry_empty_status_is_ignored)
+{
+    // An empty status token accumulates to 0, which must not read as the
+    // success status (the given[] arity guard is what rejects it).
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?2;;480;312S") + DSR, tg).done);
+    ASSERT_EQ(tg.sixel_max_w, 0);
+    ASSERT_EQ(tg.sixel_max_h, 0);
+}
+
+TEST(graphics, private_dsr_reply_is_not_the_sentinel)
+{
+    // A stale '?'-led DECDSR reply in the queue must not end detection before
+    // the capability replies arrive; only the plain DSR form is the sentinel.
+    TermGraphics tg;
+    const ReplyScan r = scan(std::string("\033[?13n") + KITTY_OK + DSR, tg);
+    ASSERT_TRUE(r.done);
+    ASSERT_TRUE(tg.kitty);
+}
+
+TEST(graphics, sixel_geometry_invalid_values_are_ignored)
+{
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?2;0;0;100S") + DSR, tg).done);
+    ASSERT_EQ(tg.sixel_max_w, 0);
+    TermGraphics tg2;
+    ASSERT_TRUE(scan(std::string("\033[?2;0;1000001;10S") + DSR, tg2).done);
+    ASSERT_EQ(tg2.sixel_max_w, 0);
+}
+
+TEST(graphics, sixel_geometry_split_across_reads)
+{
+    bool done = false;
+    const TermGraphics tg = drip_feed(std::string("\033[?2;0;480;312S") + DSR, done);
+    ASSERT_TRUE(done);
+    ASSERT_EQ(tg.sixel_max_w, 480);
+    ASSERT_EQ(tg.sixel_max_h, 312);
+}
+
+TEST(graphics, full_batch_with_da1)
+{
+    // The real reply order of the full query batch: kitty OK, cell size, DA1,
+    // sixel geometry, DSR.
+    TermGraphics tg;
+    const ReplyScan r = scan(std::string(KITTY_OK) + CELL_SIZE + "\033[?62;4;22c" + "\033[?2;0;1000;1000S" + DSR, tg);
+    ASSERT_TRUE(r.done);
+    ASSERT_TRUE(tg.kitty);
+    ASSERT_TRUE(tg.sixel);
+    ASSERT_EQ(tg.cell_w, 15);
+    ASSERT_EQ(tg.cell_h, 33);
+    ASSERT_EQ(tg.sixel_max_w, 1000);
+    ASSERT_EQ(tg.sixel_max_h, 1000);
+}

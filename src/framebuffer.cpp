@@ -1,8 +1,10 @@
 #include "framebuffer.h"
 
 #include "color.h"    // Color, ColorMode
+#include "graphics.h" // GraphicsBackend
 #include "kitty.h"    // escape composition for the kitty backend
 #include "platform.h" // shm frame helpers (POSIX)
+#include "sixel.h"    // escape composition for the sixel backend
 
 #include "miniz.h" // zlib deflate for the kitty direct transport; config macros come from the build systems
 
@@ -105,7 +107,7 @@ namespace
 
     void shm_ring_name(char *buf, size_t cap, unsigned slot)
     {
-        std::snprintf(buf, cap, "/rasterminal-%ld-%u", platform::process_id(), slot);
+        std::snprintf(buf, cap, "/rasterminal-%lu-%u", platform::process_id(), slot);
     }
 
     // Grow-only capacity for the staging arrays; the fresh allocation is left
@@ -120,16 +122,26 @@ namespace
             cap = need;
         }
     }
+
+    // Synchronized-output open bracket (mode 2026); end_frame keys its empty-frame
+    // check on this literal's length.
+    constexpr char SYNC_BEGIN[] = "\033[?2026h";
 } // namespace
 
 Framebuffer::Framebuffer(
-    int pixel_width, int pixel_height, bool headless, ColorMode mode, KittyConfig kitty, bool adopt_alt_screen
+    int pixel_width, int pixel_height, bool headless, ColorMode mode, const GraphicsConfig &gfx, bool adopt_alt_screen
 )
     : m_width(pixel_width), m_height(pixel_height),
-      m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)),
-      m_prev_color(kitty.enabled ? 0u : static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height), 0u),
-      m_headless(headless), m_mode(mode), m_kitty(kitty)
+      m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)), m_headless(headless), m_mode(mode),
+      m_gfx(gfx)
 {
+    // Sized here rather than in the init list so the predicate has one
+    // spelling (is_pixel_backend needs m_gfx, which member order initializes
+    // after m_prev_color).
+    if (!is_pixel_backend())
+    {
+        m_prev_color.assign(m_pixel.size(), 0u);
+    }
     fill_cleared(0u);
     if (!m_headless)
     {
@@ -150,7 +162,7 @@ Framebuffer::~Framebuffer()
 {
     if (!m_headless)
     {
-        if (m_kitty.enabled)
+        if (m_gfx.backend == GraphicsBackend::Kitty)
         {
             // Free the resident image terminal-side before leaving; without this
             // the last frame's data stays in the terminal for the session.
@@ -166,7 +178,7 @@ Framebuffer::~Framebuffer()
     // Outside the headless guard on purpose: headless only suppresses terminal
     // escapes, but a headless kitty framebuffer that called present() (tests)
     // still created ring objects, and unlinking is not terminal output.
-    if (m_kitty.enabled)
+    if (m_gfx.backend == GraphicsBackend::Kitty)
     {
         // The terminal unlinks what it reads, but frames it never read (and
         // anything left by an earlier crash of this pid) are ours to reclaim.
@@ -185,7 +197,7 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_height = pixel_height;
     const size_t npx = static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height);
     m_pixel = std::vector<std::atomic<uint64_t>>(npx);
-    m_prev_color = std::vector<uint32_t>(m_kitty.enabled ? 0u : npx, 0u);
+    m_prev_color = std::vector<uint32_t>(is_pixel_backend() ? 0u : npx, 0u);
     fill_cleared(0u);
     // The output and staging buffers are sized to the frame; a resize is where
     // releasing them is free (everything reallocates to the new size either
@@ -201,18 +213,24 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_rgb_cap = 0;
     m_z.reset();
     m_z_cap = 0;
+    m_idx.reset();
+    m_idx_cap = 0;
+    m_sixel_scratch = {};
     m_force_redraw = true;
     m_image_dirty = true;
-
-    // Wipe any leftover content from the previous (possibly larger) terminal.
-    std::fputs("\033[2J", stdout);
-    std::fflush(stdout);
+    // Leftover content from the previous (possibly larger) terminal is wiped
+    // by the next present, inside its synchronized bracket (see the member).
+    m_pending_clear = true;
 }
 
-void Framebuffer::resize(int pixel_width, int pixel_height, int kitty_cols, int kitty_rows)
+void Framebuffer::resize(
+    int pixel_width, int pixel_height, int image_cols, int image_rows, int origin_col, int origin_row
+)
 {
-    m_kitty.cols = kitty_cols;
-    m_kitty.rows = kitty_rows;
+    m_gfx.cols = image_cols;
+    m_gfx.rows = image_rows;
+    m_gfx.origin_col = origin_col;
+    m_gfx.origin_row = origin_row;
     resize(pixel_width, pixel_height);
 }
 
@@ -222,11 +240,46 @@ void Framebuffer::clear(Color bg)
     m_image_dirty = true;
 }
 
+void Framebuffer::begin_frame()
+{
+    m_buf.clear();
+    m_buf += SYNC_BEGIN;
+    if (m_pending_clear)
+    {
+        m_buf += "\033[2J"; // the erase a resize deferred here (see the member)
+        m_pending_clear = false;
+    }
+}
+
+void Framebuffer::end_frame()
+{
+    // Nothing composed past the opening bracket: write zero bytes, so an idle
+    // present on any backend stays literally silent (no bare 2026 pairs at the
+    // idle pacing rate; blocks composes nothing when every cell is clean).
+    // Compared against the bare bracket, NOT a base captured after
+    // begin_frame(): that base would include a deferred \033[2J, and an
+    // erase-only frame (sixel shrunk to zero rows) must still be written.
+    if (m_buf.size() == sizeof(SYNC_BEGIN) - 1)
+    {
+        return;
+    }
+    m_buf += "\033[?2026l";
+    // Return values intentionally ignored: a write failure to a terminal means
+    // the session is already broken; there is no meaningful recovery path here.
+    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
+    (void)std::fflush(stdout);
+}
+
 void Framebuffer::present()
 {
-    if (m_kitty.enabled)
+    if (m_gfx.backend == GraphicsBackend::Kitty)
     {
         present_kitty();
+        return;
+    }
+    if (m_gfx.backend == GraphicsBackend::Sixel)
+    {
+        present_sixel();
         return;
     }
     if (m_mode == ColorMode::TrueColor)
@@ -259,7 +312,8 @@ void Framebuffer::write_rgb(unsigned char *out) const
 bool Framebuffer::transmit_shm()
 {
     // On Windows platform.h's shm stubs make the create fail, so this reads as
-    // a per-frame fallback to direct; the backend is never selected there anyway.
+    // a per-frame fallback to direct; m_gfx.shm can never be true there anyway
+    // (the startup probe can never verify a transport whose create always fails).
     const size_t size = m_pixel.size() * 3u;
     char name[64];
     shm_ring_name(name, sizeof name, m_shm_seq % SHM_RING);
@@ -267,7 +321,7 @@ bool Framebuffer::transmit_shm()
     void *ptr = platform::shm_frame_create(name, size);
     // cppcheck suppression: in the _WIN32 configuration the create is the stub
     // that always returns nullptr, so the multi-config scan reads this condition
-    // as always true. Same false-positive class as the pair in present_kitty.
+    // as always true. Same false-positive class as present_kitty's suppression.
     // cppcheck-suppress knownConditionTrueFalse
     if (ptr == nullptr)
     {
@@ -277,7 +331,7 @@ bool Framebuffer::transmit_shm()
     // pty then carries only the ~60-byte escape naming the object.
     write_rgb(static_cast<unsigned char *>(ptr));
     platform::shm_frame_finish(ptr, size);
-    kitty::append_transmit_shm(m_buf, name, m_width, m_height, m_kitty.cols, m_kitty.rows);
+    kitty::append_transmit_shm(m_buf, name, m_width, m_height, m_gfx.cols, m_gfx.rows);
     return true;
 }
 
@@ -304,15 +358,15 @@ void Framebuffer::transmit_direct()
     ensure_capacity(m_z, m_z_cap, z_len);
     if (mz_compress2(m_z.get(), &z_len, m_rgb.get(), src_len, 1) == MZ_OK)
     {
-        kitty::append_transmit_direct(m_buf, m_z.get(), z_len, m_width, m_height, m_kitty.cols, m_kitty.rows, true);
+        kitty::append_transmit_direct(m_buf, m_z.get(), z_len, m_width, m_height, m_gfx.cols, m_gfx.rows, true);
         return;
     }
-    kitty::append_transmit_direct(m_buf, m_rgb.get(), rgb_len, m_width, m_height, m_kitty.cols, m_kitty.rows, false);
+    kitty::append_transmit_direct(m_buf, m_rgb.get(), rgb_len, m_width, m_height, m_gfx.cols, m_gfx.rows, false);
 }
 
 void Framebuffer::present_kitty()
 {
-    m_buf.clear();
+    begin_frame();
     const bool full_redraw = m_force_redraw;
     m_force_redraw = false;
 
@@ -342,11 +396,11 @@ void Framebuffer::present_kitty()
         // that is about to spend milliseconds rendering.
         //
         // cppcheck suppression: transmit_shm() is constantly false in the _WIN32
-        // configuration (the backend is never selected there), so the
+        // configuration (its shm create is the nullptr stub there), so the
         // multi-config scan reads !sent as always true. Same class of false
         // positive as main.cpp's VT-gate suppression.
         bool sent = false;
-        if (m_kitty.shm)
+        if (m_gfx.shm)
         {
             sent = transmit_shm();
         }
@@ -360,16 +414,54 @@ void Framebuffer::present_kitty()
     }
 
     append_hud_line(full_redraw);
+    end_frame();
+}
 
-    // Return values intentionally ignored, as in present_impl: no recovery path
-    // exists for a broken terminal write.
-    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
-    (void)std::fflush(stdout);
+void Framebuffer::present_sixel()
+{
+    begin_frame();
+    const bool full_redraw = m_force_redraw;
+    m_force_redraw = false;
+
+    // Zero image rows (a one-row terminal; sixel reserves the last row even
+    // without the HUD): nothing to paint, and unlike kitty nothing resident
+    // terminal-side to delete; the erase the shrinking resize deferred into
+    // this frame wipes the painted cells (\033[2J in begin_frame).
+    if (!m_pixel.empty() && (m_image_dirty || full_redraw))
+    {
+        // Sixel paints at the cursor; position it first ((1, 1) unless a
+        // geometry-capped image is being centered, see GraphicsConfig). Where
+        // the terminal leaves the cursor afterwards varies, which is fine:
+        // the HUD block positions absolutely.
+        append_cursor_pos(m_gfx.origin_row, m_gfx.origin_col);
+        const size_t npx = m_pixel.size();
+        ensure_capacity(m_idx, m_idx_cap, npx);
+        // Serial on the presenting thread by choice, the write_rgb precedent:
+        // one hoisted-LUT load per pixel, measured 2.5 ms for a 1080p frame.
+        // Parallelizing would drag the renderer's worker pool into the present
+        // path (the framebuffer deliberately owns no threads) for a few ms.
+        const uint8_t *lut = quant256_lut().data();
+        unsigned char *idx = m_idx.get();
+        for (size_t i = 0; i < npx; i++)
+        {
+            // Packed-word indexing: quant256_idx_packed ignores bits 24+, so
+            // neither COLOR_MASK nor the Color round trip is needed.
+            idx[i] = lut[quant256_idx_packed(static_cast<uint32_t>(m_pixel[i].load(std::memory_order_relaxed)))];
+        }
+        sixel::append_frame(m_buf, idx, m_width, m_height, m_sixel_scratch);
+        m_image_dirty = false;
+    }
+
+    append_hud_line(full_redraw);
+    end_frame();
 }
 
 template <bool TC> void Framebuffer::present_impl()
 {
-    m_buf.clear();
+    begin_frame();
+    // Everything past this point in m_buf is the pixel section's own output;
+    // the trailing SGR reset below keys on it.
+    const size_t pixel_base = m_buf.size();
 
     // Captured before the pixel section consumes the flag: the HUD must also be re-emitted on
     // any frame that repaints every cell (first frame, resize), since \033[2J wiped its row.
@@ -603,14 +695,17 @@ template <bool TC> void Framebuffer::present_impl()
 
     // Reset SGR once at the end of the pixel section — keeps the terminal clean
     // when the HUD is empty and prevents bleed into HUD's own colour escapes.
-    m_buf += "\033[0m";
+    // Only when the section emitted anything: an entirely-clean frame must
+    // compose nothing, so end_frame's zero-byte skip covers blocks idle frames
+    // too (the terminal's SGR state is already reset from the last frame that
+    // did emit, and the HUD block sets its own colours in full).
+    if (m_buf.size() > pixel_base)
+    {
+        m_buf += "\033[0m";
+    }
 
     append_hud_line(full_redraw);
-
-    // Return values intentionally ignored: a write failure to a terminal means
-    // the session is already broken; there is no meaningful recovery path here.
-    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
-    (void)std::fflush(stdout);
+    end_frame();
 }
 
 void Framebuffer::append_cursor_pos(int row, int col)
@@ -650,9 +745,9 @@ void Framebuffer::append_hud_line(bool full_redraw)
         return;
     }
 
-    // The row just below the pixel/image rows: half the pixel height in cell
-    // rows for the block backend, the placement's cell rows for kitty.
-    const int hud_row = (m_kitty.enabled ? m_kitty.rows : m_height / 2) + 1;
+    // The row just below the pixel/image rows: the image's cell rows for the
+    // pixel backends, half the pixel height in cell rows for blocks.
+    const int hud_row = (is_pixel_backend() ? m_gfx.rows : m_height / 2) + 1;
     append_cursor_pos(hud_row, 1);
 
     // Disable auto-wrap so a long HUD string clips at the terminal edge

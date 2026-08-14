@@ -44,19 +44,6 @@ namespace
         return { (116.0f * fy) - 16.0f, 500.0f * (fx - fy), 200.0f * (fy - fz) };
     }
 
-    // The 240 addressable xterm-256 palette RGB values by entry number 0..239 (palette index is
-    // 16 + j): the 6x6x6 colour cube on levels {0,95,135,175,215,255}, then the 24-step grey ramp.
-    Color quant256_palette_entry(int j)
-    {
-        if (j < 216)
-        {
-            const auto val = [](int l) { return static_cast<uint8_t>(l == 0 ? 0 : 55 + (40 * l)); };
-            return { val(j / 36), val((j / 6) % 6), val(j % 6) };
-        }
-        const auto v = static_cast<uint8_t>(8 + (10 * (j - 216)));
-        return { v, v, v };
-    }
-
     // Builds the 64^3 quantization table documented at quant256_idx (color.h): per cell the
     // deltaE76-nearest of the 240 addressable palette entries for the cell centre, then an exact
     // overwrite so any cell containing a palette colour maps to it.

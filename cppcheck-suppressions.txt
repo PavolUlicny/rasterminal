@@ -15,11 +15,19 @@ unusedFunction:src/linalg.h
 // file, which holds no other suppression, so this masks nothing else.
 unmatchedSuppression:src/main.cpp
 
-// framebuffer.cpp carries one inline knownConditionTrueFalse suppression in
-// present_kitty (transmit_shm is constantly false in the _WIN32 configuration,
-// where the kitty backend is never selected). Same aging-out rationale as the
-// main.cpp entry above.
+// framebuffer.cpp carries two inline knownConditionTrueFalse suppressions,
+// in transmit_shm and present_kitty: under _WIN32 the shm create is the
+// nullptr stub, so their shm-failure conditions read as constant to the
+// multi-config scan. Same aging-out rationale as the main.cpp entry above.
 unmatchedSuppression:src/framebuffer.cpp
+
+// platform.h's two inline knownConditionTrueFalse suppressions (both in the
+// graphics query's shm-probe block, whose create is the nullptr stub in the
+// _WIN32 configuration) need no unmatchedSuppression pairing: cppcheck
+// reports unmatched suppressions for
+// primary inputs only, and a header is never one (verified empirically on
+// 2.13.0 with the CI-verbatim command; an earlier claim here that the
+// unmatched half silently set the exit code did not reproduce).
 
 // Raw loops kept where an STL-algorithm rewrite would need a lambda and read worse. The
 // platform.h entry is a separate case (a constexpr context); its reason lives at the code site.

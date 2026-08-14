@@ -151,6 +151,7 @@ SRCS = src/main.cpp \
        src/hud.cpp \
        src/graphics.cpp \
        src/kitty.cpp \
+       src/sixel.cpp \
        src/mesh.cpp \
        src/mesh_obj.cpp \
        src/mesh_ply.cpp \
@@ -269,6 +270,7 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/test_hud.cpp \
               tests/test_graphics.cpp \
               tests/test_kitty.cpp \
+              tests/test_sixel.cpp \
               tests/loaders/test_obj.cpp \
               tests/loaders/test_ply.cpp \
               tests/loaders/test_stl.cpp \
@@ -323,6 +325,7 @@ TEST_SRCS   = tests/test_main.cpp \
               src/hud.cpp \
               src/graphics.cpp \
               src/kitty.cpp \
+              src/sixel.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
               vendor/draco/draco_impl.cpp \
               vendor/basisu/basisu_impl.cpp

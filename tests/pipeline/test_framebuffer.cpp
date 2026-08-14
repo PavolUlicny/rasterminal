@@ -1,6 +1,7 @@
 #include "tests/test.h"
 #include "tests/b64_test_util.h"
 #include "tests/rasterize_test_util.h"
+#include "tests/sixel_test_util.h"
 #include "src/framebuffer.h"
 
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
@@ -391,8 +392,8 @@ TEST(framebuffer, hud_skip_latch_survives_an_empty_frame_on_a_full_redraw)
 
 TEST(framebuffer, hud_reemitted_after_resize)
 {
-    // resize's \033[2J wiped the HUD row, so the following present must re-emit even though the
-    // string itself did not change.
+    // A resize wipes the HUD row (the \033[2J its next present carries), so that present must
+    // re-emit the line even though the string itself did not change.
     Framebuffer fb(10, 4, /*headless=*/true);
     CaptureStdout cap;
     fb.set_hud("PERSIST");
@@ -862,6 +863,40 @@ TEST(framebuffer, quantize_256_palette_exact_idempotent)
     }
 }
 
+TEST(framebuffer, quant256_idx_packed_matches_color_form)
+{
+    // The packed form must agree with the Color form, exhaustively over the
+    // full RGB cube, and ignore the reserved top byte.
+    for (uint32_t r = 0; r < 256; r++)
+    {
+        for (uint32_t g = 0; g < 256; g++)
+        {
+            for (uint32_t b = 0; b < 256; b++)
+            {
+                const uint32_t packed = r | (g << 8u) | (b << 16u);
+                const Color c{ static_cast<uint8_t>(r), static_cast<uint8_t>(g), static_cast<uint8_t>(b) };
+                ASSERT_EQ(quant256_idx_packed(packed), quant256_idx(c));
+                ASSERT_EQ(quant256_idx_packed(packed | 0xFF000000u), quant256_idx(c));
+            }
+        }
+    }
+}
+
+TEST(framebuffer, quant256_palette_entry_matches_reference)
+{
+    // The exported table (color.h) against this file's independent copy of the xterm formulas:
+    // the sixel emitter derives its colour registers from the export, so a drift here would
+    // repaint every sixel frame in wrong colours while the quantizer tests stay green.
+    ASSERT_TRUE(quant256_palette_entry(0) == Color(0, 0, 0));
+    ASSERT_TRUE(quant256_palette_entry(215) == Color(255, 255, 255));
+    ASSERT_TRUE(quant256_palette_entry(216) == Color(8, 8, 8));
+    ASSERT_TRUE(quant256_palette_entry(239) == Color(238, 238, 238));
+    for (int j = 0; j < 240; ++j)
+    {
+        ASSERT_TRUE(quant256_palette_entry(j) == palette_entry(j));
+    }
+}
+
 TEST(framebuffer, quantize_256_never_system_color)
 {
     // The result must always be an addressable, theme-independent palette entry (16..255), never
@@ -1071,10 +1106,10 @@ TEST(framebuffer, construct_explicit_truecolor_matches_default)
 
 namespace
 {
-    KittyConfig direct_kitty_config(int cols, int rows)
+    GraphicsConfig direct_kitty_config(int cols, int rows)
     {
-        KittyConfig kc;
-        kc.enabled = true;
+        GraphicsConfig kc;
+        kc.backend = GraphicsBackend::Kitty;
         kc.shm = false; // the direct transport is capturable; shm needs a live reader
         kc.cols = cols;
         kc.rows = rows;
@@ -1173,7 +1208,7 @@ TEST(framebuffer, kitty_zero_rows_deletes_resident_image)
     }
     {
         CaptureStdout cap;
-        fb.resize(4, 0, 2, 0);
+        fb.resize(4, 0, 2, 0, 1, 1);
         fb.present();
         const std::string out = cap.read();
         ASSERT_TRUE(out.find("a=d,d=I") != std::string::npos);
@@ -1183,5 +1218,287 @@ TEST(framebuffer, kitty_zero_rows_deletes_resident_image)
         CaptureStdout cap;
         fb.present();
         ASSERT_TRUE(cap.read().find("\033_G") == std::string::npos);
+    }
+}
+
+// sixel backend
+
+namespace
+{
+    GraphicsConfig sixel_config(int cols, int rows)
+    {
+        GraphicsConfig sc;
+        sc.backend = GraphicsBackend::Sixel;
+        sc.cols = cols;
+        sc.rows = rows;
+        return sc;
+    }
+} // namespace
+
+TEST(framebuffer, sixel_present_pixel_roundtrip)
+{
+    // The full path from the pixel slots to the wire: quantization into the
+    // index plane and the emitter, decoded back with the independent decoder.
+    Framebuffer fb(8, 12, /*headless=*/true, ColorMode::TrueColor, sixel_config(4, 4));
+    fb.clear({ 10, 20, 30 });
+    (void)fb.commit_pixel(3, 2, 0.5f, { 200, 100, 50 });
+    CaptureStdout cap;
+    fb.present();
+    const std::string out = cap.read();
+
+    ASSERT_TRUE(out.rfind("\033[?2026h\033[1;1H", 0) == 0); // sync open, image painted from home
+    const size_t dcs = out.find("\033P");
+    ASSERT_TRUE(dcs != std::string::npos);
+    const size_t st = out.find("\033\\", dcs);
+    ASSERT_TRUE(st != std::string::npos);
+    const SixelFrame f = sixel_decode(out.substr(dcs, (st + 2) - dcs));
+    ASSERT_EQ(f.w, 8);
+    ASSERT_EQ(f.h, 12);
+    const int bg_reg = quantize_256({ 10, 20, 30 }) - 16;
+    const int px_reg = quantize_256({ 200, 100, 50 }) - 16;
+    for (int y = 0; y < 12; y++)
+    {
+        for (int x = 0; x < 8; x++)
+        {
+            const int want = (x == 3 && y == 2) ? px_reg : bg_reg;
+            ASSERT_EQ(f.plane[(static_cast<size_t>(y) * 8u) + static_cast<size_t>(x)], want);
+        }
+    }
+}
+
+TEST(framebuffer, sixel_idle_present_emits_no_frame)
+{
+    // Only a clear() (a rewritten pixel buffer) re-arms the emission; a present
+    // with nothing new emits no image bytes at all.
+    Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033P") != std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().empty());
+    }
+    {
+        CaptureStdout cap;
+        fb.clear({ 1, 2, 3 });
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033P") != std::string::npos);
+    }
+}
+
+TEST(framebuffer, sixel_zero_rows_emits_no_image)
+{
+    // A shrink to zero image rows: nothing to paint and, unlike kitty, nothing
+    // resident terminal-side to delete (the erase the resize defers into the
+    // next present wipes the cells).
+    Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033P") != std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.resize(4, 0, 2, 0, 1, 1);
+        fb.present();
+        // The deferred erase is the frame's whole content, inside the bracket;
+        // no image bytes follow it.
+        ASSERT_TRUE(cap.read() == "\033[?2026h\033[2J\033[?2026l");
+    }
+}
+
+TEST(framebuffer, sixel_frame_homes_at_the_configured_origin)
+{
+    // A geometry-capped image is centered by homing at the config's origin
+    // cell instead of 1;1 (CUP is row;col); a resize carries new origins.
+    GraphicsConfig cfg = sixel_config(4, 4);
+    cfg.origin_col = 26;
+    cfg.origin_row = 6;
+    Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, cfg);
+    fb.clear({ 1, 2, 3 });
+    {
+        // Exact prefix: the CUP must precede the image bytes.
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().rfind("\033[?2026h\033[6;26H", 0) == 0);
+    }
+    fb.resize(4, 6, 4, 4, 2, 3);
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().rfind("\033[?2026h\033[2J\033[3;2H", 0) == 0);
+    }
+}
+
+TEST(framebuffer, sixel_hud_row_sits_below_the_image_rows)
+{
+    Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(4, 4));
+    fb.clear({ 1, 2, 3 });
+    fb.set_hud("HUDMARK");
+    CaptureStdout cap;
+    fb.present();
+    const std::string out = cap.read();
+    ASSERT_TRUE(out.find("\033[5;1H") != std::string::npos); // cfg rows + 1
+    ASSERT_TRUE(out.find("HUDMARK") != std::string::npos);
+}
+
+// synchronized output (mode 2026)
+
+TEST(framebuffer, sync_output_wraps_every_backend_frame)
+{
+    const auto wrapped = [](const std::string &out)
+    {
+        ASSERT_TRUE(out.rfind("\033[?2026h", 0) == 0);
+        ASSERT_TRUE(out.size() >= 8 && out.compare(out.size() - 8, 8, "\033[?2026l") == 0);
+    };
+    {
+        Framebuffer blocks(4, 4, /*headless=*/true);
+        blocks.clear({ 1, 2, 3 });
+        CaptureStdout cap;
+        blocks.present();
+        wrapped(cap.read());
+    }
+    {
+        Framebuffer kitty_fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
+        kitty_fb.clear({ 1, 2, 3 });
+        CaptureStdout cap;
+        kitty_fb.present();
+        wrapped(cap.read());
+    }
+    {
+        Framebuffer sixel_fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(2, 2));
+        sixel_fb.clear({ 1, 2, 3 });
+        CaptureStdout cap;
+        sixel_fb.present();
+        wrapped(cap.read());
+    }
+}
+
+TEST(framebuffer, sync_output_idle_blocks_frame_stays_zero_bytes)
+{
+    // A fully clean incremental frame with an unchanged HUD composes nothing:
+    // the trailing SGR reset is skipped along with the cells, so blocks idle
+    // frames take end_frame's zero-byte path like the pixel backends.
+    Framebuffer fb(4, 4, /*headless=*/true);
+    fb.clear({ 1, 2, 3 });
+    fb.set_hud("HUD");
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(!cap.read().empty());
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().empty());
+    }
+}
+
+TEST(framebuffer, resize_erase_is_deferred_into_the_next_frame_bracket)
+{
+    // resize() itself writes nothing; the whole-screen erase it owes travels
+    // inside the next present's synchronized bracket, so a resize swaps
+    // atomically to the new frame instead of blanking the window while the
+    // first re-render runs.
+    Framebuffer fb(4, 4, /*headless=*/true);
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(!cap.read().empty());
+    }
+    {
+        CaptureStdout cap;
+        fb.resize(6, 4);
+        ASSERT_TRUE(cap.read().empty());
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        const std::string out = cap.read();
+        ASSERT_TRUE(out.rfind("\033[?2026h\033[2J", 0) == 0);
+    }
+    {
+        // The deferred erase is consumed by exactly one frame: the next clean
+        // present composes nothing (a leaked flag would re-erase every frame).
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().empty());
+    }
+}
+
+TEST(framebuffer, resize_erase_precedes_the_image_in_the_same_bracket)
+{
+    // The deferred \033[2J must land BEFORE the frame's image bytes: erased
+    // after the transmit it would wipe what the frame just painted (and on
+    // kitty can drop the placement terminal-side).
+    {
+        Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(2, 2));
+        fb.clear({ 1, 2, 3 });
+        {
+            CaptureStdout cap;
+            fb.present();
+        }
+        CaptureStdout cap;
+        fb.resize(4, 6, 2, 2, 1, 1);
+        fb.present();
+        ASSERT_TRUE(cap.read().rfind("\033[?2026h\033[2J\033[1;1H", 0) == 0);
+    }
+    {
+        Framebuffer fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
+        fb.clear({ 1, 2, 3 });
+        {
+            CaptureStdout cap;
+            fb.present();
+        }
+        CaptureStdout cap;
+        fb.resize(4, 4, 2, 2, 1, 1);
+        fb.present();
+        ASSERT_TRUE(cap.read().rfind("\033[?2026h\033[2J\033[1;1H", 0) == 0);
+    }
+}
+
+TEST(framebuffer, sync_output_idle_pixel_frame_stays_zero_bytes)
+{
+    // An idle pixel-backend present must not emit a bare 2026 pair at the idle
+    // pacing rate: nothing composed means nothing written.
+    Framebuffer fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(!cap.read().empty());
+    }
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().empty());
+    }
+}
+
+TEST(framebuffer, sixel_hud_only_change_emits_no_frame)
+{
+    // An unchanged scene with a changed HUD line repaints the HUD alone.
+    Framebuffer fb(4, 6, /*headless=*/true, ColorMode::TrueColor, sixel_config(2, 2));
+    fb.clear({ 1, 2, 3 });
+    fb.set_hud("first");
+    {
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read().find("\033P") != std::string::npos);
+    }
+    {
+        CaptureStdout cap;
+        fb.set_hud("second");
+        fb.present();
+        const std::string out = cap.read();
+        ASSERT_TRUE(out.find("\033P") == std::string::npos);
+        ASSERT_TRUE(out.find("second") != std::string::npos);
     }
 }
