@@ -6,7 +6,7 @@
 #include "src/terminal/kitty.h"    // escape composition for the kitty backend
 #include "src/terminal/sixel.h"    // escape composition for the sixel backend
 
-#include "miniz.h" // zlib deflate for the kitty direct transport; config macros come from the build systems
+#include "miniz.h" // zlib deflate for the kitty direct transport; config macros come from the build
 
 #include <algorithm>
 #include <atomic>

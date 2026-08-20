@@ -283,8 +283,8 @@ set(RASTERMINAL_RELEASE_OPTS
   # Tier 2: machine-specific, omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>
-  # Debug's -O0 is what CMake's bare -g config flags already imply; spelled out so a reader
-  # comparing the two build systems does not have to know that.
+  # Debug's -O0 is what CMake's bare -g config flags already imply; spelled out so the
+  # intent is on the page rather than resting on a default.
   $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-O0>)
 
 add_library(rasterminal_release_opts INTERFACE)
@@ -485,7 +485,9 @@ if(RASTERMINAL_BUILD_TESTS)
   endif()
 
   enable_testing()
-  # Run from the repo root so relative model paths (models/…) resolve correctly.
+  # Pin the cwd rather than letting it default to the build directory: nearly every test
+  # writes through tests/loader_util.h's tmp_path() into the system temp dir, but a couple
+  # create relative-path files, and those should land in the same place for every build tree.
   add_test(NAME rasterminal_tests
            COMMAND rasterminal_tests
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
