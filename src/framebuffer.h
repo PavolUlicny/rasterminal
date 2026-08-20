@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -185,6 +186,14 @@ class Framebuffer
         slot.store(pack_pixel(unpack_depth(cur), pack_color(color)), std::memory_order_relaxed);
     }
 
+    // Unconditional (depth, colour) store for the tiled opaque path, whose visibility pass has
+    // already resolved the nearest fragment per pixel and whose tiles are each owned by one
+    // worker, so no CAS is needed. Never mix with concurrent commit_pixel on the same slot.
+    void set_pixel_at(size_t idx, float depth, Color color) noexcept
+    {
+        m_pixel[idx].store(pack_pixel(depth, pack_color(color)), std::memory_order_relaxed);
+    }
+
     // Atomically replaces (depth, color) iff our depth still wins against whatever's
     // in the slot now. Returns false if a concurrent thread became shallower between
     // our depth_test_relaxed() and this call — our fragment is then dropped.
@@ -208,6 +217,21 @@ class Framebuffer
     {
         return commit_pixel(pixel_idx(x, y), depth, color);
     }
+
+    // A worker pool the present path may borrow. The framebuffer owns no threads and
+    // must not: this is the renderer's pool, idle between frames, wired in by main.cpp.
+    // `run` invokes its argument once per worker as (worker_id, n_workers) and returns
+    // when all have finished. Left unset (n_workers 1) everything stays serial, which is
+    // what the tests and --bench get.
+    struct ParallelRunner
+    {
+        std::function<void(const std::function<void(int, int)> &)> run;
+        int n_workers = 1;
+
+        [[nodiscard]] bool usable() const noexcept { return n_workers > 1 && static_cast<bool>(run); }
+    };
+
+    void set_parallel_runner(ParallelRunner runner) { m_par = std::move(runner); }
 
     // Set a one-line status string rendered below the pixel rows each frame; call before
     // present(), empty clears, by value so the composed line moves in. The text may carry its
@@ -252,14 +276,34 @@ class Framebuffer
     void append_cursor_pos(int row, int col);
 
     // Serializes the pixel buffer's colour halves as packed RGB bytes into out
-    // (3 bytes per pixel, row-major), the wire layout of kitty f=24.
-    void write_rgb(unsigned char *out) const;
+    // (3 bytes per pixel, row-major), the wire layout of kitty f=24. Non-const because
+    // the parallel split records which workers covered their range (see the definition).
+    void write_rgb(unsigned char *out);
+
+    // write_rgb over the pixel range [first, first + count), so the shm transport
+    // can convert and hand over one cache-sized chunk at a time instead of
+    // materializing a frame-sized buffer.
+    void write_rgb_range(unsigned char *out, size_t first, size_t count) const;
 
     // The two kitty transports. transmit_shm returns false when the shm object
     // cannot be created (present_kitty then falls back to direct for that frame
     // only; shm is retried next frame).
     bool transmit_shm();
     void transmit_direct();
+
+    // Deflate m_rgb[0, len) into m_z as one zlib stream, returning its length, or 0 to
+    // mean "compression did not happen" (the caller then sends the frame raw). Splits
+    // the work across the borrowed pool when one is set and the frame is worth
+    // splitting; otherwise it is the plain one-shot deflate.
+    size_t deflate_frame(size_t len);
+    size_t deflate_frame_parallel(size_t len, int chunks);
+
+    // Quantize the frame's colours into m_idx, the sixel encoder's input plane.
+    void quantize_to_palette(size_t npx);
+    [[nodiscard]] const unsigned char *idx_plane() const noexcept { return m_idx.get(); }
+
+    // Append one sixel frame to m_buf, split across the borrowed pool when there is one.
+    void encode_sixel_frame();
 
     // Packed slot layout: high 32 bits = float depth bit pattern,
     // low 24 bits = packed RGB (0x00BBGGRR), top byte of low half reserved (zero).
@@ -359,6 +403,17 @@ class Framebuffer
     size_t m_rgb_cap = 0;
     std::unique_ptr<unsigned char[]> m_z;
     size_t m_z_cap = 0;
+    // Parallel-deflate scratch: one output block per chunk, and the byte count each
+    // chunk produced. Capacity persists across frames like the buffers above.
+    std::unique_ptr<unsigned char[]> m_zchunk;
+    size_t m_zchunk_cap = 0; // total bytes across all chunk blocks
+    std::vector<size_t> m_zchunk_len;
+    // Per-chunk adler32, folded into the stream's. uint32_t rather than miniz's mz_ulong
+    // so the vendored header stays out of this one: the value is two 16-bit sums.
+    std::vector<uint32_t> m_zchunk_adler;
+    // Which workers actually ran their share of the split just dispatched. Shared by the three
+    // splits (staging fill, palette quantize, sixel encode), which never overlap.
+    std::vector<uint8_t> m_par_covered;
     // Sixel staging: the frame quantized to xterm-256 palette indices, the
     // emitter's input plane. Same raw-array rationale as m_rgb/m_z above.
     std::unique_ptr<unsigned char[]> m_idx;
@@ -366,6 +421,11 @@ class Framebuffer
     // The sixel encoder's caller-owned band masks (grow-only, dirty between
     // frames by contract; see sixel::Scratch).
     sixel::Scratch m_sixel_scratch;
+    // Parallel sixel encode: one output buffer and one Scratch per worker, since the
+    // staging is not shareable. Allocated only when the split actually runs, and the
+    // capacity persists like every other staging buffer here.
+    std::vector<std::string> m_sixel_parts;
+    std::vector<sixel::Scratch> m_sixel_par_scratch;
     std::string m_buf;      // reused output buffer, avoids per-frame allocation
     std::string m_hud;      // status line written below pixel rows
     std::string m_prev_hud; // last HUD actually emitted; present() skips an unchanged one
@@ -394,4 +454,5 @@ class Framebuffer
     // object only after reading it, so reusing one name could overwrite a frame
     // it has not read yet.
     unsigned m_shm_seq = 0;
+    ParallelRunner m_par;
 };
