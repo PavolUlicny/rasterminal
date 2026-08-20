@@ -95,7 +95,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
         // Reject non-finite vertex positions and UVs before any post-load work. No format loader
         // validates finiteness, and a NaN/Inf position would otherwise poison normals, the
-        // bounding box, and the camera auto-fit (which frames to the bbox sphere) — a single
+        // bounding box, and the camera auto-fit (which frames to the bbox sphere): a single
         // junk vertex blows up the whole view. One scan here covers every format uniformly.
         //
         // The UV terms are a memory-safety guard, not just a cosmetic one: a non-finite UV
@@ -143,7 +143,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
         // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
         // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
-        // Mesh-level flag drops materials whose factor is zero — emissive_map without a non-zero
+        // Mesh-level flag drops materials whose factor is zero: emissive_map without a non-zero
         // factor cannot contribute and would only waste per-frame setup work.
         has_emissive = std::any_of(
             materials.begin(), materials.end(),
@@ -153,7 +153,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         // Per-vertex alpha only matters when some vertex is actually translucent. An all-opaque
         // alpha array is very common (vec4 COLOR_0 with every w == 1) and would otherwise be dragged
         // through compute_normals' welding split and optimize_vertex_cache's remap for nothing, and
-        // read per-fragment in the transparent pass — all to multiply by 1. Drop it so opaque models
+        // read per-fragment in the transparent pass, all to multiply by 1. Drop it so opaque models
         // (and opaque vertices of blend models) pay zero; the transparent path treats a missing array
         // as alpha 1. The loader has already finished its normal-split, so the array is length-matched
         // here; clearing keeps the parallel-array invariant (size 0) consistent for the passes below.
@@ -165,7 +165,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         }
 
         // Per-vertex alpha that survived the clear guard carries at least one translucent vertex, so it
-        // makes the mesh transparent even when no material declares blend — this is how PLY (which has
+        // makes the mesh transparent even when no material declares blend: this is how PLY (which has
         // no per-material opacity mode) routes its translucent triangles to the transparent pass.
         has_transparent = has_transparent || has_vertex_alpha;
 
@@ -379,7 +379,7 @@ void Mesh::compute_normals(
         // Group corners by shared endpoint, then union those whose dihedral stays
         // below the crease threshold. Each run is one edge through the group;
         // runs are size ~2 on manifold meshes, so this is O(deg log deg) (sort)
-        // rather than the O(deg^2) of comparing all corner pairs — which spikes
+        // rather than the O(deg^2) of comparing all corner pairs, which spikes
         // on high-valence fan apices (cone tips, UV-sphere poles). A run only
         // grows large for a non-manifold edge shared by many faces, where the
         // pairwise work matches what the all-pairs scan did anyway.
@@ -519,7 +519,7 @@ void Mesh::compute_tangents()
     // Tangents must be built from the UV set the normal map samples (glTF spec). This is
     // well-defined per vertex even with mixed UV sets: glTF primitives never share vertices
     // across our merged array and glTF passes no weld to compute_normals, so every triangle
-    // incident to a vertex carries one material — hence one normal-map set — and the
+    // incident to a vertex carries one material (hence one normal-map set) and the
     // accumulation never mixes sets at a vertex. uv1 is null for every non-glTF format.
     const vec2 *p_uv1 = has_uv1 ? uv1.data() : nullptr;
 
@@ -534,7 +534,7 @@ void Mesh::compute_tangents()
 
         // Tangents are built from the raw normal-map UV set; a KHR_texture_transform on that
         // binding is deliberately NOT folded in here. The transform is applied only at sample
-        // time (rasterize_phong), matching three.js / the glTF Sample Viewer — the spec is
+        // time (rasterize_phong), matching three.js / the glTF Sample Viewer: the spec is
         // silent on rotating the tangent frame. A rotated/sheared normal-map transform thus
         // leaves the TBN basis un-rotated relative to the sampled normal (mis-lit bumps in
         // that edge case); pure translation / uniform scale is unaffected.
@@ -572,7 +572,7 @@ void Mesh::compute_tangents()
 
         if (t.length_sq() < 1e-12f)
         {
-            // No UV contribution — pick an arbitrary vector perpendicular to n.
+            // No UV contribution: pick an arbitrary vector perpendicular to n.
             const vec3 up = (std::abs(n.z) < 0.9f) ? vec3{ 0.0f, 0.0f, 1.0f } : vec3{ 1.0f, 0.0f, 0.0f };
             t = normalize(cross(n, up));
         }
@@ -596,7 +596,7 @@ void Mesh::compute_ao(int n_threads)
     const size_t n = vertices.size();
 
     // Build CSR edge-adjacency: for each vertex, collect all vertices it shares a
-    // triangle edge with (duplicates are harmless — they just weight denser areas).
+    // triangle edge with (duplicates are harmless; they just weight denser areas).
     // CSR avoids N separate heap allocations and keeps neighbor indices contiguous.
     std::vector<int> adj_count(n, 0);
     for (const auto &tri : triangles)
@@ -629,7 +629,7 @@ void Mesh::compute_ao(int n_threads)
         }
     }
 
-    // Per-vertex AO is independent — each vertex only writes to its own ao field.
+    // Per-vertex AO is independent: each vertex only writes to its own ao field.
     constexpr size_t AO_PARALLEL_THRESHOLD = 1024;
     const int eff_threads = (n_threads <= 1 || n < AO_PARALLEL_THRESHOLD)
                                 ? 1
@@ -663,7 +663,7 @@ void Mesh::compute_ao(int n_threads)
             centroid = centroid * inv_deg;
 
             // RMS edge length: one sqrt per vertex. Zero means all neighbors coincide with the
-            // vertex (degenerate fan) — no curvature is defined, so leave it fully lit.
+            // vertex (degenerate fan): no curvature is defined, so leave it fully lit.
             const float mean_edge = std::sqrt(edge_sq_sum * inv_deg);
             if (mean_edge < 1e-12f)
             {
@@ -714,7 +714,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
     // meshopt's vertex-cache and overdraw passes reorder triangles within the
     // index range we hand them but expose no permutation, so per-triangle
     // metadata (here material_idx) gets stranded. Group triangles by material
-    // so each occupies a contiguous range, then call meshopt per range —
+    // so each occupies a contiguous range, then call meshopt per range;
     // reordering within a single-material range is safe. Single-material
     // meshes skip grouping entirely. Loaders never write material_idx >=
     // materials.size(), so that's a safe bucket count.
@@ -774,7 +774,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
     if (multi_material)
     {
         // Per-group calls touch disjoint idx slices and read vertices[] only,
-        // so they parallelize cleanly — claws back the per-call allocator
+        // so they parallelize cleanly, which claws back the per-call allocator
         // overhead meshopt pays on every entry.
         const auto run_group = [&](size_t m)
         {
@@ -839,7 +839,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
         vertex_alpha.resize(nv, 1.0f);
     }
     // uv1 has no constant fill (its degrade value is each vertex's own uv0), so pad the
-    // loop form rather than resize(); defensive — the loader/compute_normals keep it matched.
+    // loop form rather than resize(); defensive: the loader/compute_normals keep it matched.
     if (has_uv1 && uv1.size() < nv)
     {
         for (size_t v = uv1.size(); v < nv; v++)

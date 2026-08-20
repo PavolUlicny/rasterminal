@@ -4,17 +4,17 @@
 #include <cmath>
 #include <vector>
 
-// Tests for Mesh::optimize_vertex_cache() — the function is private, so all
+// Tests for Mesh::optimize_vertex_cache(): the function is private, so all
 // tests exercise it indirectly through load_model().
 //
 // Code paths covered:
-//   n_tris < 2 early exit     — early_exit_single_triangle
-//   fully unshared (STL)      — fully_unshared_stl_optimises_correctly
-//   unreferenced vertex drop  — early_exit_max_adj_lt_2
-//   Pass 1 vertex cache       — geometry_* / vcache_order_*
-//   Pass 2 overdraw           — geometry_* (exercised by 3-pass pipeline)
-//   Pass 3 without vcol       — geometry_* (OBJ, no vcol)
-//   Pass 3 with vcol          — vertex_colors_remapped_correctly (PLY with vcol)
+//   n_tris < 2 early exit     -> early_exit_single_triangle
+//   fully unshared (STL)      -> fully_unshared_stl_optimises_correctly
+//   unreferenced vertex drop  -> early_exit_max_adj_lt_2
+//   Pass 1 vertex cache       -> geometry_* / vcache_order_*
+//   Pass 2 overdraw           -> geometry_* (exercised by 3-pass pipeline)
+//   Pass 3 without vcol       -> geometry_* (OBJ, no vcol)
+//   Pass 3 with vcol          -> vertex_colors_remapped_correctly (PLY with vcol)
 
 // Group A: Early exits
 
@@ -40,7 +40,7 @@ TEST(vcache, fully_unshared_stl_optimises_correctly)
     // all-distinct positions, so nothing welds and the mesh is genuinely unshared (nv == nt*3).
     // This pins that all three vcache passes still run on that layout: overdraw reorders
     // triangles, vertex fetch remaps to first-use order. (nv == nt*3 is a property of THIS
-    // all-distinct input, not STL in general — a shared-position STL would dedup to fewer verts.)
+    // all-distinct input, not STL in general: a shared-position STL would dedup to fewer verts.)
     TmpFile f(
         tmp_path("rast_vc_stl.stl"), "solid s\n"
                                      "facet normal 0 0 1\n outer loop\n"
@@ -69,7 +69,7 @@ TEST(vcache, fully_unshared_stl_optimises_correctly)
 
 TEST(vcache, early_exit_max_adj_lt_2)
 {
-    // PLY: 7 vertices, 2 disconnected triangles (using vertices 0–1–2 and 3–4–5),
+    // PLY: 7 vertices, 2 disconnected triangles (using vertices 0-1-2 and 3-4-5),
     // vertex 6 is unreferenced (pos 99,99,99).
     // meshoptimizer drops unreferenced vertices from the remapped output,
     // so the final vertex count is 6 (not 7) and all indices remain in range.
@@ -259,7 +259,7 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
 {
     // 3-triangle OBJ with one shared vertex (v0) and two disconnected pairs.
     // Verifies that all geometry is preserved regardless of the optimizer's output order.
-    // Explicit normals so compute_normals is skipped — v0 is a point-share (bowtie)
+    // Explicit normals so compute_normals is skipped; v0 is a point-share (bowtie)
     // that crease smoothing would otherwise split, which is irrelevant to vcache.
     const std::string obj = "v  0 0 0\n" // shared by tri0 and tri2
                             "v  1 0 0\n" // only tri0
@@ -298,7 +298,7 @@ TEST(vcache, cache_update_cur_zero)
     // 5-vertex mesh with one shared vertex at (0,0,0) referenced by both triangles.
     // After any correct optimizer, both triangles must reference the same index
     // for the shared vertex regardless of which triangle is emitted first.
-    // Explicit normals so compute_normals is skipped — v0 is a point-share (bowtie)
+    // Explicit normals so compute_normals is skipped; v0 is a point-share (bowtie)
     // that crease smoothing would otherwise split into two vertices.
     const std::string obj = "v 0 0 0\n" // shared
                             "v 1 0 0\n"
@@ -403,7 +403,7 @@ TEST(vcache, cache_eviction_large_mesh)
 TEST(vcache, material_idx_stays_aligned_with_geometry)
 {
     // Two materials interleaved across usemtl directives so triangles arrive
-    // out of material order — forces the scatter path in optimize_vertex_cache.
+    // out of material order: forces the scatter path in optimize_vertex_cache.
     // After meshopt's per-group reorder, each triangle's material_idx must
     // still match the half its centroid sits in (left → red, right → blue).
     // Pre-fix this failed: meshopt reordered triangles globally while

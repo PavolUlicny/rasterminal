@@ -68,8 +68,8 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     bool is_ascii = n_read - pos >= 5 && lower(header[pos]) == 's' && lower(header[pos + 1]) == 'o' &&
                     lower(header[pos + 2]) == 'l' && lower(header[pos + 3]) == 'i' && lower(header[pos + 4]) == 'd';
 
-    // Read tri_count (bytes 80–83). Explicit fseek resets the stream to a
-    // defined position — the prior fread accepts partial reads (5–79 bytes),
+    // Read tri_count (bytes 80-83). Explicit fseek resets the stream to a
+    // defined position: the prior fread accepts partial reads (5-79 bytes),
     // after which the C standard says the position is indeterminate.
     uint8_t tcb[4];
     const bool have_tri_count = (std::fseek(f.get(), 80, SEEK_SET) == 0 && std::fread(tcb, 1, 4, f.get()) == 4);
@@ -210,7 +210,7 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     // Consume stl_reader's deduplicated output directly: coords holds one entry per unique
     // position and tris indexes into it, so shared corners become shared vertex indices.
     // This is what lets compute_normals smooth across sub-crease edges (OBJ/PLY parity);
-    // re-expanding to unshared corners — as this loader once did — discarded the weld and
+    // re-expanding to unshared corners, as this loader once did, discarded the weld and
     // forced STL to render permanently faceted, with --smooth-angle a silent no-op.
     const size_t n_verts = coords.size() / 3;
     vertices.reserve(n_verts);

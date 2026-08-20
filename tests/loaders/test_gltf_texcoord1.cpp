@@ -42,7 +42,7 @@ TEST(gltf_valid, texcoord1_referenced_populates_uv1)
     ASSERT_EQ(static_cast<int>(m.materials[1].diffuse_map.uv_set), 1);
     // The single triangle is not reordered (optimize_vertex_cache skips <2 tris, no creasing),
     // so vertex 0 keeps its input attributes. uv1 input (0.2,0.3) is stored v-flipped → (0.2,0.7),
-    // distinct from uv0 (0.0, flipped 1.0) — proving the real second set was read, not a uv0 copy.
+    // distinct from uv0 (0.0, flipped 1.0), proving the real second set was read, not a uv0 copy.
     ASSERT_TRUE(std::fabs(m.uv1[0].x - 0.2f) < 0.01f);
     ASSERT_TRUE(std::fabs(m.uv1[0].y - 0.7f) < 0.01f);
 }
@@ -184,7 +184,7 @@ TEST(gltf_valid, texcoord1_survives_vertex_cache_remap)
         emit_f32_le(bin, t[0]);
         emit_f32_le(bin, t[1]);
     }
-    // indices: two tris (0,1,2)(0,2,3) — 6 × uint16 = 12 bytes @ 112
+    // indices: two tris (0,1,2)(0,2,3), 6 × uint16 = 12 bytes @ 112
     for (int i : { 0, 1, 2, 0, 2, 3 })
     {
         emit_u16_le(bin, static_cast<uint16_t>(i));
@@ -233,7 +233,7 @@ TEST(gltf_valid, texcoord1_survives_vertex_cache_remap)
 // Partial coverage across primitives: prim0 (no TEXCOORD_1), prim1 (TEXCOORD_1), prim2 (no
 // TEXCOORD_1), all referencing one material whose baseColorTexture is on texCoord:1. The lazy
 // builder must back-fill prim0's vertices (from their uv0) when prim1 first provides a second
-// set, push prim1's real values, and pad prim2 — keeping uv1 length-matched. Verts lacking a
+// set, push prim1's real values, and pad prim2, keeping uv1 length-matched. Verts lacking a
 // real second set degrade to uv0; the one primitive that has it keeps distinct values.
 TEST(gltf_valid, texcoord1_partial_coverage_backfills_and_pads)
 {
@@ -307,7 +307,7 @@ TEST(gltf_valid, normal_map_texcoord1_drives_tangents)
 {
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
     std::string bin;
-    // POSITION (0,0,0)(1,0,0)(0,1,0) — 36 @ 0
+    // POSITION (0,0,0)(1,0,0)(0,1,0), 36 @ 0
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 0.0f);
@@ -317,15 +317,15 @@ TEST(gltf_valid, normal_map_texcoord1_drives_tangents)
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
-    // NORMAL (0,0,1)×3 — 36 @ 36
+    // NORMAL (0,0,1)×3, 36 @ 36
     for (int i = 0; i < 3; i++)
     {
         emit_f32_le(bin, 0.0f);
         emit_f32_le(bin, 0.0f);
         emit_f32_le(bin, 1.0f);
     }
-    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);                  // uv0: U along +X — 24 @ 72
-    emit_uvs(bin, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);                  // uv1: U along +Y — 24 @ 96
+    emit_uvs(bin, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f);                  // uv0: U along +X, 24 @ 72
+    emit_uvs(bin, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f);                  // uv1: U along +Y, 24 @ 96
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // BMP 58 @ 120
 
     const std::string json =

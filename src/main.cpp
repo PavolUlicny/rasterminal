@@ -33,7 +33,7 @@ namespace
 {
 
     volatile sig_atomic_t
-        g_interrupted = // NOLINT(cppcoreguidelines-avoid-non-const-global-variables) — written by signal handler
+        g_interrupted = // NOLINT(cppcoreguidelines-avoid-non-const-global-variables): written by signal handler
         0;
     void signal_handler(int /*signum*/)
     {
@@ -467,7 +467,7 @@ namespace
         float radius = (hi - lo).length() * 0.5f;
         if (radius < 1e-4f)
         {
-            radius = 1.0f; // degenerate (all coincident vertices) — use sane defaults
+            radius = 1.0f; // degenerate (all coincident vertices): use sane defaults
         }
 
         Camera camera;
@@ -591,7 +591,7 @@ namespace
         }
         const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
 
-        // Compute stats via nth_element (linear) — no full sort needed.
+        // Compute stats via nth_element (linear): no full sort needed.
         auto ms = [](int64_t ns) { return static_cast<double>(ns) * 1e-6; };
 
         auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
@@ -606,7 +606,7 @@ namespace
         std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
         const int64_t p95 = frame_ns[p95i];
 
-        // Welford's online algorithm — single pass, numerically stable.
+        // Welford's online algorithm: single pass, numerically stable.
         double welford_mean = 0.0;
         double welford_m2 = 0.0;
         for (int k = 0; k < n_measure; k++)

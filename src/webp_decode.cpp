@@ -58,7 +58,7 @@ bool decode_webp_rgba(const void *data, size_t size, std::vector<uint8_t> &out_r
 
     // Decode runs on worker threads (decode_textures) with no exception boundary, so an unguarded
     // allocation would terminate the process on OOM. Fail loud instead, and decode straight into
-    // our own buffer — there is no libwebp-owned allocation to free.
+    // our own buffer: there is no libwebp-owned allocation to free.
     std::vector<uint8_t> rgba;
     try
     {

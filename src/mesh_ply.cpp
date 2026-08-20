@@ -133,7 +133,7 @@ namespace
     // Vertex-dedup key for the PLY split-by-UV path: source position index plus
     // bit-exact U and V. Stored as the map key (not just its hash) so that on a
     // hash collision unordered_map falls back to operator== and the distinct
-    // tuples stay separate — silent merging on collision would be a one-vertex
+    // tuples stay separate: silent merging on collision would be a one-vertex
     // texturing artifact at 1/2^64 probability per pair, which we don't accept.
     struct UVKey
     {
@@ -157,8 +157,8 @@ namespace
     // Returns the filename from the first `TextureFile <name>` PLY header comment
     // (tinyply strips the leading "comment "), or "" if none. The whole remainder
     // after the token is taken verbatim so names with spaces survive; only
-    // surrounding whitespace is trimmed. Match is case-sensitive — MeshLab's exact
-    // spelling — to avoid false hits on unrelated comments.
+    // surrounding whitespace is trimmed. Match is case-sensitive (MeshLab's exact
+    // spelling) to avoid false hits on unrelated comments.
     std::string ply_texture_file(const std::vector<std::string> &comments)
     {
         auto is_ws = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
@@ -364,7 +364,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     // Face-list texcoords (per-corner UVs). Photogrammetry / scanner PLYs put
     // UVs here, not on vertices, because face-list UVs can represent UV seams
     // (one position with distinct UVs on different faces) and per-vertex UVs
-    // cannot. When present, they win over any per-vertex UV aliases — matches
+    // cannot. When present, they win over any per-vertex UV aliases, matching
     // MeshLab. `texcoord` is the canonical name; `texture_uv` is an older alias.
     std::shared_ptr<tinyply::PlyData> tc;
     try
@@ -418,7 +418,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 
     // Every color/alpha property below is decoded with rd_col, which only handles
     // UINT8/FLOAT32/FLOAT64. A different declared type would make rd_col read past
-    // the buffer (its 4-byte stride exceeds a 1- or 2-byte element) — the file-size
+    // the buffer (its 4-byte stride exceeds a 1- or 2-byte element): the file-size
     // guard above checks counts, not rd_col's stride assumption. Reject up front.
     if ((vcolors && !rd_col_supported(vcolors->t)) || (valpha && !rd_col_supported(valpha->t)) ||
         (fcolors && !rd_col_supported(fcolors->t)))
@@ -434,7 +434,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     }
 
     // Mixed n-gon faces (tinyply populates list_sizes only when per-face index
-    // counts differ) leave ipf undefined — total_idx / n_faces rounds and every
+    // counts differ) leave ipf undefined: total_idx / n_faces rounds and every
     // per-face stride below is then wrong. Reject rather than silently mis-index,
     // consistent with the loader's fail-loud strictness.
     if (!faces->list_sizes.empty())
@@ -454,7 +454,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     // Validate face-list texcoord against the uniform-ipf assumption the index
     // path also relies on. Mixed n-gon counts (non-empty list_sizes), wrong
     // float count per face, or a non-float element type make per-corner indexing
-    // ambiguous — hard-reject the file, consistent with the loader's strictness.
+    // ambiguous: hard-reject the file, consistent with the loader's strictness.
     if (tc)
     {
         const bool float_type = (tc->t == tinyply::Type::FLOAT32 || tc->t == tinyply::Type::FLOAT64);
@@ -719,10 +719,10 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         // When face-list texcoord is bundled with face colors, the path stays
         // fully-unshared (3 verts per triangle) but every emitted vertex still
         // has a source position id (`pi`). Threading a weld map keeps seam-shared
-        // positions smoothing across the seam in compute_normals — without it,
+        // positions smoothing across the seam in compute_normals: without it,
         // every corner would be its own group and the surface would render
         // faceted. Plain face-color PLYs (no `tc`) keep their previous faceted
-        // behavior — `tcb == nullptr` skips the weld.
+        // behavior: `tcb == nullptr` skips the weld.
         if (tcb)
         {
             ply_weld.reserve(n_faces * (ipf - 2) * 3);

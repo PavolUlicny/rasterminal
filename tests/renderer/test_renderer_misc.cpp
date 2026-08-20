@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <climits>
 
-// Group N — renderer edge cases not covered elsewhere
+// Group N: renderer edge cases not covered elsewhere
 
 // Renderer dispatches all workers regardless of framebuffer height. With 4
 // workers and height=4, all workers participate (no fast-exit path). The CAS
@@ -12,7 +12,7 @@
 //
 // make_large_triangle() (v0=(-4,-4,0), v1=(4,-4,0), v2=(0,4,0)) projects to
 // x=[18.4..21.6], y=[0.4..3.6] on a 40x4 buffer (aspect=10, fov=pi/2), so it
-// spans all four rows and several columns — enough for the rasterizer to hit.
+// spans all four rows and several columns, enough for the rasterizer to hit.
 
 TEST(renderer, n_active_capped_to_half_framebuffer_height)
 {
@@ -53,7 +53,7 @@ TEST(renderer, band_tris_resize_across_frames)
         ASSERT_FAIL("band_tris resize: frame 1 (40x20) drew nothing");
     }
 
-    // Second render with smaller height — m_tri_cursor resets, all workers re-run.
+    // Second render with smaller height: m_tri_cursor resets, all workers re-run.
     Framebuffer fb2(40, 4, /*headless=*/true);
     fb2.clear();
     r.render(mesh, cam, &light, 1, ambient, fb2);

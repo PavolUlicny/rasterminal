@@ -14,7 +14,7 @@
 // A clip-space vertex bundled with the world-space attributes needed for
 // lighting and near-plane clipping.
 
-struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — ao is always set from vertex.ao
+struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): ao is always set from vertex.ao
                 // before use
 {
     vec4 c;       // clip-space position (w = -z_view; > 0 means in front of camera)
@@ -28,7 +28,7 @@ struct ClipVert // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
     float color_a = 1.0f;      // per-vertex opacity (COLOR_0/PLY alpha); 1 = opaque; only read by the transparent pass
     vec2 uv1 = { 0.0f, 0.0f }; // second texture coordinates (glTF TEXCOORD_1); appended last (like color/color_a)
                                // so inserting it does NOT shift the offsets of the hot fields (pos/normal/color/ao)
-                               // that the per-vertex lit paths read repeatedly — keeping their codegen baseline-
+                               // that the per-vertex lit paths read repeatedly, keeping their codegen baseline-
                                // identical. Only read when the material binds a uv_set==1 texture; == {} otherwise.
 };
 
@@ -63,7 +63,7 @@ struct TileVis
 // One shaded transparent fragment. Float color (not 8-bit) so deep stacks composite
 // without per-layer banding; clamped once at resolve. `next` links within a worker's
 // arena, encoded as (worker_id << 32) | node_index; ABuffer::SENTINEL ends the chain.
-struct Fragment // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — always aggregate-initialized
+struct Fragment // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): always aggregate-initialized
                 // (ABuffer::push); never default-constructed
 {
     float depth;
@@ -79,7 +79,7 @@ struct Fragment // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-in
 struct TouchBox
 {
     // Default = empty; every use is a freshly constructed box (per-worker local or the merge
-    // accumulator), so the inverted-init NSDMI is the only state setter — no reset() needed.
+    // accumulator), so the inverted-init NSDMI is the only state setter: no reset() needed.
     int x0 = INT_MAX, y0 = INT_MAX, x1 = INT_MIN, y1 = INT_MIN;
 
     [[nodiscard]] bool empty() const noexcept { return x1 < x0; }

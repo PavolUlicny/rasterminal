@@ -52,7 +52,7 @@ TEST(ktx2_decode, uastc_zstd_quad_decodes_with_correct_layout)
     int w = 0;
     int h = 0;
     // A successful decode of this fixture proves BASISD_SUPPORT_KTX2_ZSTD is wired and
-    // the zstd amalgam linked — the payload is Zstd-supercompressed.
+    // the zstd amalgam linked: the payload is Zstd-supercompressed.
     ASSERT_TRUE(decode_ktx2_rgba(k_ktx2_uastc_zstd_quad, k_ktx2_uastc_zstd_quad_len, rgba, w, h));
     ASSERT_EQ(w, 4);
     ASSERT_EQ(h, 4);

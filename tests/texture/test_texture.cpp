@@ -256,7 +256,7 @@ TEST(texture, sample_rgba_wraps_positive_coords)
 
 TEST(texture, sample_rgba_wraps_negative_coords)
 {
-    // u=−0.75 → floor(−0.75)=−1 → −0.75−(−1)=0.25 — same as u=0.25.
+    // u=−0.75 → floor(−0.75)=−1 → −0.75−(−1)=0.25, same as u=0.25.
     Texture t = make_tex(2, 1, { 255, 0, 0, 200, 0, 0, 255, 100 });
     vec4 a = t.sample_rgba(0.25f, 0.5f);
     vec4 b = t.sample_rgba(-0.75f, 0.5f);
@@ -549,7 +549,7 @@ TEST(texture_load, load_empty_path_returns_false)
 }
 
 // very large negative UV precision
-// floor(-1000.75f) = -1001.0f exactly in float32; frac = 0.25f — wrapping must
+// floor(-1000.75f) = -1001.0f exactly in float32; frac = 0.25f; wrapping must
 // produce the same result as u = 0.25f.
 
 TEST(texture, uv_wraps_very_large_negative_rgb)

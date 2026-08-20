@@ -76,11 +76,11 @@ TEST(stl_valid, binary_header_starts_with_solid_disambiguates_via_size)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// REJECTIONS — malformed/corrupt STL must not crash
+// REJECTIONS: malformed/corrupt STL must not crash
 
 TEST(reject, stl_too_small_for_header)
 {
-    // Less than 80 bytes — can't even read the header.
+    // Less than 80 bytes: can't even read the header.
     TmpFile t(tmp_path("rasterminal_test_tiny.stl"), "solid\n"); // 6 bytes
     assert_rejects(t.path);
 }
@@ -143,7 +143,7 @@ TEST(reject, stl_binary_truncated_mid_triangle)
     }
     s.push_back(0);
     s.push_back(0); // attr
-    // Second triangle (truncated — only first 20 bytes).
+    // Second triangle (truncated, only first 20 bytes).
     for (int i = 0; i < 5; i++)
     {
         emit_f32_le(s, 0);
@@ -199,7 +199,7 @@ TEST(reject, stl_ascii_no_facets)
 
 TEST(reject, stl_ascii_missing_third_vertex)
 {
-    // outer loop with only two vertex lines — stl_reader fails to parse the facet.
+    // outer loop with only two vertex lines: stl_reader fails to parse the facet.
     TmpFile t(
         tmp_path("rasterminal_test_2v.stl"), "solid test\n"
                                              "facet normal 0 0 1\n"
@@ -213,12 +213,12 @@ TEST(reject, stl_ascii_missing_third_vertex)
     assert_rejects(t.path);
 }
 
-// CORRECTNESS — verify loaded geometry values
+// CORRECTNESS: verify loaded geometry values
 
 TEST(stl_valid, ascii_vertex_positions_and_defaults)
 {
     // Verify actual coordinate values, per-vertex ao, material index, and mesh
-    // defaults — the count-only tests above don't exercise any of this.
+    // defaults: the count-only tests above don't exercise any of this.
     TmpFile t(
         tmp_path("rasterminal_test_pos.stl"), "solid test\n"
                                               "facet normal 0 0 1\n"
@@ -240,7 +240,7 @@ TEST(stl_valid, ascii_vertex_positions_and_defaults)
 
     // Positions. NOTE: stl_reader deduplicates by sorting coords lexicographically
     // (RemoveDoubles), so the output order is sorted-by-position, NOT declaration order.
-    // These coords are intentionally already ascending — (1,2,3)<(4,5,6)<(7,8,9) — so
+    // These coords are intentionally already ascending, (1,2,3)<(4,5,6)<(7,8,9), so
     // index order matches; do not change them to non-sorted values without reordering the asserts.
     // The loader remaps STL's Z-up to the renderer's Y-up, (x,y,z) -> (x,z,-y), so file
     // vertex (1,2,3) loads as (1,3,-2).
@@ -314,7 +314,7 @@ TEST(stl_valid, binary_two_triangles_dedup_shared_edge)
 {
     // The loader consumes stl_reader's deduplicated output directly: two triangles sharing an
     // edge must collapse the two shared corners into single vertex indices, NOT re-expand to
-    // 6 unshared verts. This pins the dedup — a re-introduced expansion would make the count 6.
+    // 6 unshared verts. This pins the dedup: a re-introduced expansion would make the count 6.
     //
     // Two coplanar triangles tile a unit square in the XY plane (both wound CCW from +Z, so the
     // dihedral is 0 deg and compute_normals never crease-splits the shared verts at any angle):
@@ -417,7 +417,7 @@ TEST(stl_valid, crease_threshold_brackets_split_stl)
 
 TEST(reject, stl_header_read_under_5_bytes)
 {
-    // fread(header, 1, 80, ...) returns 3 < 5 — the early-exit guard fires before
+    // fread(header, 1, 80, ...) returns 3 < 5: the early-exit guard fires before
     // any ASCII/binary detection.  stl_too_small_for_header uses 6 bytes (returns
     // 6 ≥ 5) so that test exercises stl_reader failure, not this guard.
     TmpFile t(tmp_path("rasterminal_test_3b.stl"), "abc");

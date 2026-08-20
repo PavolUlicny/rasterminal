@@ -387,7 +387,7 @@ void rasterize_flat(
         y_min = vis->y_min;
         y_max = vis->y_max;
     }
-    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): setup_tri writes all fields before
                 // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, x_min, x_max, y_min, y_max, s))
     {
@@ -428,7 +428,7 @@ void rasterize_flat(
     // and non-glTF). need_uv1 gates the second perspective-correct interpolation, so when false
     // the per-pixel uv1v compute is skipped entirely; the residue on the no-uv1 path is one
     // loop-invariant-conditioned select (`set ? uv1v : uv`) per sampled texture, which benches in
-    // the noise (full-PBR Phong is ~0%). Loop-invariant flags — hoisted above the y-loop.
+    // the noise (full-PBR Phong is ~0%). Loop-invariant flags, hoisted above the y-loop.
     const uint8_t diffuse_set = mat ? mat->diffuse_map.uv_set : uint8_t{ 0 };
     const uint8_t emissive_set = mat ? mat->emissive_map.uv_set : uint8_t{ 0 };
     const bool need_uv1 =
@@ -568,7 +568,7 @@ void rasterize_flat(
             }
 
             // z_ndc is linear in screen space (projection makes it A + B/z_view,
-            // which is linear in NDC x/y), so plain barycentric is correct here —
+            // which is linear in NDC x/y), so plain barycentric is correct here;
             // perspective correction would distort it and break depth ordering.
             const float depth = (ba * sa.z) + (bb * sb.z) + (bc * sc.z);
 
@@ -629,7 +629,7 @@ void rasterize_flat(
                 }
             }
 
-            // Perspective-correct weights — computed once, reused for all attributes.
+            // Perspective-correct weights, computed once, reused for all attributes.
             if (!has_cutout)
             {
                 pwa = ba * inv_wa;
@@ -701,7 +701,7 @@ void rasterize_flat(
                 {
                     vec2 d_uv = diffuse_set ? uv1v : uv;
                     // When has_cutout the colour reuses cutout_rgb (already transformed in the
-                    // pre-pass), so an affine here would be computed and discarded — skip it.
+                    // pre-pass), so an affine here would be computed and discarded: skip it.
                     if (diffuse_xf && !has_cutout)
                     {
                         d_uv = apply_tex_transform(mat->diffuse_map, d_uv);
@@ -757,7 +757,7 @@ namespace
 
     constexpr int BATCH = Texture::BATCH_MAX; // pixels shaded per batch; the SoA arrays stay L1-resident
 
-    struct PhongBatch // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — scratch arrays, each
+    struct PhongBatch // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): scratch arrays, each
                       // stage writes the entries [0, n) it needs before any reads them; zeroing 10 KB per batch would
                       // cost more than the shading of a small one
     {
@@ -809,7 +809,7 @@ namespace
     };
 
     // Everything shade_batch needs beyond the batch: the per-triangle constants of rasterize_phong.
-    struct PhongCtx // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — rasterize_phong assigns every
+    struct PhongCtx // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): rasterize_phong assigns every
                     // field before the first shade_batch call
     {
         Framebuffer *fb;
@@ -918,7 +918,7 @@ namespace
             const float ndh = (b.nx[i] * hx) + (b.ny[i] * hy) + (b.nz[i] * hz);
             const float hh = (hx * hx) + (hy * hy) + (hz * hz);
             const float q = (ndh * ndh) / hh;
-            float spec; // NOLINT(cppcoreguidelines-init-variables) — every constexpr branch assigns
+            float spec; // NOLINT(cppcoreguidelines-init-variables): every constexpr branch assigns
             if constexpr (SPEC == SpecPow::Chain32)
             {
                 const float x4 = q * q;
@@ -1470,7 +1470,7 @@ void rasterize_phong(
         y_min = vis->y_min;
         y_max = vis->y_max;
     }
-    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): setup_tri writes all fields before
                 // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, x_min, x_max, y_min, y_max, s))
     {
@@ -1526,7 +1526,7 @@ void rasterize_phong(
     // Off (false) for every dielectric and non-glTF material, so they run unchanged.
     const bool is_metallic = (mat.metallic > 0.0f);
     // ORM packing (glTF): when occlusion and metallic-roughness reference the same image, load_tex
-    // dedups them to one Texture* — sample once and reuse the AO read for metalness. The
+    // dedups them to one Texture*: sample once and reuse the AO read for metalness. The
     // addressing must also match: the cache key is image-only (ignores texCoord and
     // KHR_texture_transform), so two bindings can dedup to one Texture* yet differ in UV set or
     // transform, in which case the samples land at different texels and can't be shared.
@@ -1565,11 +1565,11 @@ void rasterize_phong(
             // barycentrics it already has in registers. Both are worth batching because a tile, or a
             // large transparent surface, hands whole runs of pixels to one triangle (measured 39 per
             // batch on a full-screen model), which is what a small triangle cannot do.
-            PhongBatch batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — filled before use
+            PhongBatch batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): filled before use
             batch.n = 0;
 
             // Filled on the first flush, not here: nothing reads it until a pixel is gathered.
-            PhongCtx c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — build_ctx sets every field
+            PhongCtx c; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): build_ctx sets every field
             bool ctx_ready = false;
             const auto build_ctx = [&]
             {
@@ -1909,7 +1909,7 @@ void rasterize_phong(
                 const vec3 pos = (pa * pwa + pb * pwb + pc * pwc) * w_corr;
                 vec3 normal = (na * pwa + nb * pwb + nc * pwc) * w_corr;
 
-                // Compute UV once — needed by diffuse, normal, specular, MR, and emissive samplers.
+                // Compute UV once: needed by diffuse, normal, specular, MR, and emissive samplers.
                 // Skip when has_cutout: uv was already computed in the pre-pass above. Emissive
                 // sample is gated on do_emissive, so a bound etex with a zero factor stays free.
                 if (!has_cutout && (tex || nmap || stex || mrtex || octex || (do_emissive && etex)))
@@ -1953,7 +1953,7 @@ void rasterize_phong(
                     // normal will be normalized inside compute_lighting.
                 }
 
-                // Authored occlusion (glTF) overrides the baked vertex AO per-pixel — both target the
+                // Authored occlusion (glTF) overrides the baked vertex AO per-pixel: both target the
                 // same scale, so multiplying would double-darken. octex is loop-invariant: free when null.
                 float ao = ((aoa * pwa) + (aob * pwb) + (aoc * pwc)) * w_corr;
                 vec3 occ_sample{}; // valid only when octex != nullptr; reused as the MR sample when occ_is_mr
@@ -2044,7 +2044,7 @@ void rasterize_phong(
                     {
                         // G=roughness, B=metallic. Reuse the occlusion sample when ORM-packed (same image);
                         // occ_is_mr implies an identical transform (same_uv_mapping), so skip m_uv's affine
-                        // when reusing — it would be discarded.
+                        // when reusing: it would be discarded.
                         vec2 m_uv = mr_set ? uv1v : uv;
                         if (mr_xf && !occ_is_mr)
                         {
@@ -2131,7 +2131,7 @@ void raster_visibility(
     vec2 uv1c
 )
 {
-    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — setup_tri writes all fields before
+    TriSetup s; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): setup_tri writes all fields before
                 // they are read
     if (!setup_tri(sa, sb, sc, wa, wb, wc, vis.x_min, vis.x_max, vis.y_min, vis.y_max, s))
     {

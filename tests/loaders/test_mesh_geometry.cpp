@@ -41,8 +41,8 @@ TEST(normals, all_normals_have_unit_length)
 TEST(normals, two_coplanar_triangles_normal_consistent)
 {
     // Two CCW triangles in the XY plane sharing an edge.
-    // All face normals point along +Z, so every vertex normal — regardless of
-    // whether the loader deduplicates — should also point along +Z.
+    // All face normals point along +Z, so every vertex normal, regardless of
+    // whether the loader deduplicates, should also point along +Z.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\n"
                             "f 1 2 3\n"
                             "f 1 3 4\n";
@@ -247,7 +247,7 @@ TEST(mesh_clear, idempotent)
 
 TEST(normals, degenerate_zero_area_triangle_no_nan)
 {
-    // All three vertices coincident — cross product is (0,0,0).
+    // All three vertices coincident: cross product is (0,0,0).
     // Normals should stay at (0,0,0) after normalization, never NaN.
     const std::string obj = "v 1 2 3\nv 1 2 3\nv 1 2 3\nf 1 2 3\n";
     TmpFile f(tmp_path("rast_degen.obj"), obj);
@@ -395,7 +395,7 @@ TEST(normals, crease_boundary_brackets_threshold)
 {
     // Same 90 deg fold, but the crease angle now sits one degree on either side of the
     // dihedral to pin the comparison (cos_a >= crease_cos, mesh.cpp) right at the
-    // boundary — earlier tests only bracket far away (45/180). The exact-90 case is left
+    // boundary: earlier tests only bracket far away (45/180). The exact-90 case is left
     // unasserted: std::cos(to_radians(90)) is not exactly 0 in float, so equality there
     // is too fragile to depend on.
     const std::string obj = "v 0 0 0\n"
@@ -586,7 +586,7 @@ TEST(normals, smoothing_group_differs_across_uv_seam_no_weld)
     // Same geometry as smoothing_group_smooths_across_uv_seam (90 deg fold, UV seam
     // splitting the origin), but the two faces are in DIFFERENT groups. The seam already
     // splits the origin by UV; the open question is whether the group machinery welds the
-    // two halves' normals back together. Different groups must NOT unite — each half keeps
+    // two halves' normals back together. Different groups must NOT unite: each half keeps
     // its own axis-aligned face normal, the opposite of the same-group welded case above.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
                             "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
@@ -622,7 +622,7 @@ TEST(normals, smoothing_group_smooths_across_object_boundary)
 {
     // The same group 1 spans two `g` shapes. OBJ smoothing-group ids are file-global
     // (tinyobj keeps the active id across `g`/`o`), and the loader builds the
-    // per-triangle id array across all shapes — so two same-group faces in different
+    // per-triangle id array across all shapes, so two same-group faces in different
     // shapes sharing an edge must merge at a 90 deg fold (where the angle would
     // split). Guards both the cross-shape semantics and the multi-shape build loop.
     const std::string obj = "v 0 0 0\n"
@@ -879,7 +879,7 @@ TEST(ao, stl_load_runs_compute_ao)
     // crease_angle 180 = full smoothing so the pit faces stay merged at the center (see above).
     ASSERT_TRUE(m.load_model(f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
 
-    // stl_reader sorts coords, so the center isn't vertices[0] — find it by position.
+    // stl_reader sorts coords, so the center isn't vertices[0]; find it by position.
     int center = -1;
     for (size_t i = 0; i < m.vertices.size(); i++)
     {
@@ -947,7 +947,7 @@ TEST(ao, shallow_concavity_darkens_less_than_deep)
 {
     // The point of the magnitude-aware curvature: depth matters relative to spacing, so a shallow
     // dip darkens far less than a deep one of the same width. The old normalized formula discarded
-    // depth and gave both the SAME 0.85 — reverting to dot(normalize(d), N) fails this test.
+    // depth and gave both the SAME 0.85; reverting to dot(normalize(d), N) fails this test.
     //
     // Same 4-facet pyramid pit as ao/concave_vertex_darkened, parameterized by rim height z.
     auto pit = [](const char *z)
@@ -1028,7 +1028,7 @@ TEST(ao, mt_matches_single_threaded)
     // 33×33 grid OBJ: 1089 vertices (≥ AO_PARALLEL_THRESHOLD=1024) so the
     // parallel AO path fires for n_threads=4.  optimize_vertex_cache always runs
     // sequentially (no MT path), so vertex ordering after Pass 2 is identical for
-    // both thread counts — allowing direct index comparison of ao values.
+    // both thread counts, allowing direct index comparison of ao values.
     constexpr int N = 33;
     std::string obj;
     obj.reserve(65536);

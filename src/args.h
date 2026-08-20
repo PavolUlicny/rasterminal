@@ -68,8 +68,8 @@ enum class SpinDirection : std::uint8_t
     Right
 };
 
-// Parsed command-line arguments.  All values are plain types — no renderer
-// dependencies — so this header can be included by the test binary cheaply.
+// Parsed command-line arguments.  All values are plain types with no renderer
+// dependencies, so this header can be included by the test binary cheaply.
 struct ParsedArgs
 {
     std::string model_path; // required positional
@@ -122,7 +122,7 @@ struct ParseResult
 
 [[nodiscard]] ParseResult parse_args(int argc, char *argv[]);
 
-// Basename of argv[0] — the name the program was invoked as — for use as the
+// Basename of argv[0], the name the program was invoked as, for use as the
 // diagnostic prefix ("progname: message", the standard Unix convention).
 // Splits on '/' or '\\' (Windows paths); falls back to "rasterminal" when
 // argv0 is null, empty, or ends in a separator.

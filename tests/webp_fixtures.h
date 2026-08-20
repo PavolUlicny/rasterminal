@@ -37,7 +37,7 @@
 //   PY
 //
 // k_webp_corrupt_body is quad.webp with four bytes near the end of the compressed stream XORed
-// by 0xFF (the RIFF + VP8L header stays intact) — WebPGetFeatures succeeds but the decode fails.
+// by 0xFF (the RIFF + VP8L header stays intact): WebPGetFeatures succeeds but the decode fails.
 //
 // Reference RGBA decode of each (used by the test expectations):
 //   lossy solid  -> ~(201, 90, 41, 255) everywhere (VP8 is lossy; loose tolerance)
@@ -75,7 +75,7 @@ inline constexpr unsigned char k_webp_alpha[] = {
 };
 inline constexpr unsigned long k_webp_alpha_len = sizeof(k_webp_alpha);
 
-// VP8L lossless, 1x1 solid (123,45,67) — minimum dimensions.
+// VP8L lossless, 1x1 solid (123,45,67), minimum dimensions.
 // k_webp_one_pixel: 38 bytes
 inline constexpr unsigned char k_webp_one_pixel[] = {
     0x52, 0x49, 0x46, 0x46, 0x1e, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x4c, 0x11, 0x00, 0x00,
@@ -83,7 +83,7 @@ inline constexpr unsigned char k_webp_one_pixel[] = {
 };
 inline constexpr unsigned long k_webp_one_pixel_len = sizeof(k_webp_one_pixel);
 
-// VP8L lossless, 6x2 non-square (row0 = red ramp, row1 = green ramp) — catches a transposed
+// VP8L lossless, 6x2 non-square (row0 = red ramp, row1 = green ramp): catches a transposed
 // or wrong-pitch decode that a square fixture cannot.
 // k_webp_rect: 62 bytes
 inline constexpr unsigned char k_webp_rect[] = {
@@ -94,7 +94,7 @@ inline constexpr unsigned char k_webp_rect[] = {
 };
 inline constexpr unsigned long k_webp_rect_len = sizeof(k_webp_rect);
 
-// VP8 lossy colour + ALPH chunk, 4x4 RGB (200,100,50) with alpha = (x+y)*30 — exercises the
+// VP8 lossy colour + ALPH chunk, 4x4 RGB (200,100,50) with alpha = (x+y)*30: exercises the
 // lossy decode path combined with a (losslessly stored) alpha plane.
 // k_webp_lossy_alpha: 114 bytes
 inline constexpr unsigned char k_webp_lossy_alpha[] = {
@@ -107,7 +107,7 @@ inline constexpr unsigned char k_webp_lossy_alpha[] = {
 };
 inline constexpr unsigned long k_webp_lossy_alpha_len = sizeof(k_webp_lossy_alpha);
 
-// VP8X + ANIM, 4x4 two-frame animation — must be rejected (EXT_texture_webp is still-image only;
+// VP8X + ANIM, 4x4 two-frame animation: must be rejected (EXT_texture_webp is still-image only;
 // the simple decode API cannot demux frames).
 // k_webp_animated: 140 bytes
 inline constexpr unsigned char k_webp_animated[] = {

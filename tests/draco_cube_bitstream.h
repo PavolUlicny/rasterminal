@@ -4,8 +4,8 @@
 //
 // Encoded once from a unit cube OBJ (8 positions / 4 UVs / 6 normals
 // expanded to 24 unshared verts + 12 tris) with draco_encoder at the
-// default settings. Vendoring the bytes — rather than a .drc/.glb model
-// file — keeps the repo literally model-file-free; we vendor only the
+// default settings. Vendoring the bytes, rather than a .drc/.glb model
+// file, keeps the repo literally model-file-free; we vendor only the
 // Draco decoder, so this can't be regenerated inline. To regenerate,
 // follow vendor/README.md's Draco refresh recipe (build draco_encoder
 // in scratch, encode any small mesh, paste the xxd -i output here).

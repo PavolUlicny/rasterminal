@@ -96,7 +96,7 @@ namespace
     }
 } // namespace
 
-// Embedded KHR_texture_basisu decodes — the headline "untextured -> textured".
+// Embedded KHR_texture_basisu decodes: the headline "untextured -> textured".
 // The 6x6 fixture is non-block-aligned (physical 8x8), so this also covers the
 // transcoder's crop / row-pitch path that the 4x4 unit fixtures cannot.
 
@@ -197,7 +197,7 @@ TEST(gltf_ktx2, falls_back_to_ordinary_source_when_ktx2_fails)
 
     ASSERT_TRUE(m.materials.size() >= 2);
     const int idx = m.materials[1].diffuse_map.tex;
-    ASSERT_TRUE(idx >= 0); // not dropped — fell back to the PNG
+    ASSERT_TRUE(idx >= 0); // not dropped: fell back to the PNG
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 2); // the 2x2 PNG fallback, since the KTX2 transcode failed
     ASSERT_EQ(t.height, 2);
@@ -267,7 +267,7 @@ TEST(gltf_ktx2, external_uri_percent_encoded_filename_decodes)
 
     ASSERT_TRUE(m.materials.size() >= 2);
     const int idx = m.materials[1].diffuse_map.tex;
-    ASSERT_TRUE(idx >= 0); // decoded — the %20 was decoded to a space and the file opened
+    ASSERT_TRUE(idx >= 0); // decoded: the %20 was decoded to a space and the file opened
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 6);
     ASSERT_EQ(t.height, 6);
@@ -289,7 +289,7 @@ TEST(gltf_ktx2, corrupt_basisu_drops_texture_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// A KTX2 carried by an inline base64 data: URI decodes — proves the data-URI
+// A KTX2 carried by an inline base64 data: URI decodes, proving the data-URI
 // path routes through decode_bytes to the KTX2 transcoder, not just stb.
 
 TEST(gltf_ktx2, data_uri_basisu_decodes)

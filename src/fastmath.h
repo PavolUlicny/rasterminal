@@ -45,20 +45,20 @@ inline float fast_exp2(float x) noexcept
     p = (p * f) + 1.0f;
     // n is in [-126, 126] after the clamp, so the biased exponent is a small positive integer.
     const uint32_t bits = static_cast<uint32_t>(static_cast<int32_t>(n) + 127) << 23u;
-    float scale; // NOLINT(cppcoreguidelines-init-variables) — memcpy fills it
+    float scale; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it
     std::memcpy(&scale, &bits, sizeof scale);
     return p * scale;
 }
 
 inline float fast_log2(float x) noexcept
 {
-    uint32_t bits; // NOLINT(cppcoreguidelines-init-variables) — memcpy fills it
+    uint32_t bits; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it
     std::memcpy(&bits, &x, sizeof bits);
     // Split into 2^e * m with m in [1, 2), then fold m above sqrt(2) down so the series argument
     // t = (m - 1) / (m + 1) stays within +-0.172.
     int32_t e = static_cast<int32_t>(bits >> 23u) - 127;
     const uint32_t mbits = (bits & 0x7FFFFFu) | 0x3F800000u;
-    float m; // NOLINT(cppcoreguidelines-init-variables) — memcpy fills it
+    float m; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it
     std::memcpy(&m, &mbits, sizeof m);
     const bool fold = m > 1.41421356f;
     m = fold ? m * 0.5f : m;

@@ -278,11 +278,11 @@ TEST(webp_decode, concurrent_decode_is_thread_safe)
     // decode_textures() decodes in parallel. libwebp DOES have global init to guard: it lazily
     // populates its SIMD dispatch tables on the first decode. WEBP_USE_THREAD (set for the
     // libwebp TUs in both build systems) makes that init mutex-guarded; without it, the first
-    // concurrent decodes race on those tables. That race is what enforces the invariant — not
+    // concurrent decodes race on those tables. That race is what enforces the invariant, not
     // this test: the init writes are idempotent (same impl pointers), so output matches with or
     // without the mutex and only the CI tsan job actually observes the difference. This test is
     // therefore a reentrancy smoke check (every worker succeeds and yields identical bytes); do
-    // not read a green run here as proof the guard is present — keep WEBP_USE_THREAD.
+    // not read a green run here as proof the guard is present; keep WEBP_USE_THREAD.
     constexpr int kThreads = 8;
     std::vector<std::vector<uint8_t>> results(kThreads);
     std::vector<int> oks(kThreads, 0);

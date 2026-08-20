@@ -90,7 +90,7 @@ namespace
     // Per-vertex accessor stubs for the standard glTF attributes. cgltf doesn't
     // require these to point anywhere meaningful for a Draco-only primitive (the
     // decoder reads from the buffer view, not the accessors), but cgltf_validate
-    // still walks the accessor list — every accessor needs a valid componentType /
+    // still walks the accessor list: every accessor needs a valid componentType /
     // count / type and either a buffer view or none (none is fine for Draco).
     constexpr const char *acc_pos_24 =
         R"({"componentType":5126,"count":24,"type":"VEC3","min":[-1,-1,-1],"max":[1,1,1]})";
@@ -142,7 +142,7 @@ TEST(gltf_draco, position_only_runs_compute_normals)
 {
     // Same bitstream, but the glTF only advertises POSITION. The decoder still
     // gets the normal data (it's in the bitstream), but the loader ignores it
-    // because no glTF NORMAL attribute is declared — has_normals stays false,
+    // because no glTF NORMAL attribute is declared, has_normals stays false,
     // so compute_normals(crease_cos) runs at end-of-load and fills the field.
     const std::string glb = make_draco_glb(
         draco_cube_drc, draco_cube_drc_len, R"({"POSITION":0})", R"({"POSITION":0})", /*index_acc_slot=*/1, 36,
@@ -162,7 +162,7 @@ TEST(gltf_draco, position_only_runs_compute_normals)
 
 TEST(gltf_draco, corrupt_bitstream_fails_load)
 {
-    // Truncate the bitstream to ~half its size — Draco's decoder must reject;
+    // Truncate the bitstream to ~half its size: Draco's decoder must reject;
     // the loader must propagate that as load failure (per the "fail loud, don't
     // degrade" rule), not silently produce an empty/partial mesh.
     constexpr size_t truncated_len = draco_cube_drc_len / 2;
@@ -258,7 +258,7 @@ namespace
 TEST(gltf_draco, color0_alpha_under_blend)
 {
     // draco_cube_alpha: POSITION uid 0 + COLOR_0 uid 1 (4-component RGBA, varied alpha).
-    // The BLEND material means the per-vertex alpha must reach Mesh::vertex_alpha — the Draco
+    // The BLEND material means the per-vertex alpha must reach Mesh::vertex_alpha: the Draco
     // analogue of the accessor-path vec4-COLOR_0-under-BLEND rule (this is the regression the
     // RGB-only decoder used to drop, forcing every alpha to 1.0). Anchors located by position
     // (split/vcache reorder, but vertex_alpha is synced in lockstep): measured at fixture mint.
@@ -363,7 +363,7 @@ TEST(gltf_draco, mixed_draco_and_accessor_primitives)
 {
     // prim0: Draco (fixture A, position-only → 24 verts / 12 tris). prim1: a plain
     // non-indexed accessor triangle (3 verts / 1 tri) backed by bufferView 1. Both
-    // must contribute — exercises the `continue` after the Draco branch and the
+    // must contribute: exercises the `continue` after the Draco branch and the
     // accessor path running in the same mesh.
     const size_t draco_len = draco_cube_drc_len;
     const size_t bv1_off = (draco_len + 3u) & ~size_t{ 3 }; // 4-byte align
@@ -471,16 +471,16 @@ TEST(gltf_draco, missing_accessors_array_fails)
 }
 
 // Paths deliberately NOT unit-tested (documented rather than faked):
-//   • !dc.buffer_view — reachability through cgltf's CGLTF_PTRFIXUP_REQ is uncertain;
+//   • !dc.buffer_view: reachability through cgltf's CGLTF_PTRFIXUP_REQ is uncertain;
 //     a defensive guard.
-//   • !cbytes (cgltf_buffer_view_data returns null) — unreachable for inputs that get
+//   • !cbytes (cgltf_buffer_view_data returns null): unreachable for inputs that get
 //     this far: a GLB's BIN chunk is always populated, and a missing external .bin
 //     fails earlier at cgltf_load_buffers.
-//   • MAX_EXPANSION bound — needs a bitstream that decodes successfully yet reports
+//   • MAX_EXPANSION bound: needs a bitstream that decodes successfully yet reports
 //     implausible counts; not constructible without an adversarial/pathologically-
 //     compressible input, and the size==0 sub-branch is unreachable (an empty buffer
 //     fails the decode first). Covered by reasoning, not a unit test.
-//   • COLOR_0 with >4 components — decode_draco_mesh clamps the ConvertValue out-count
+//   • COLOR_0 with >4 components: decode_draco_mesh clamps the ConvertValue out-count
 //     to the 4-float buffer, so a malformed attribute declaring up to 255 components
 //     can't overflow it. draco_encoder won't emit a >4-component COLOR attribute from
 //     standard input (it'd require a hand-crafted generic attribute), so the guard is

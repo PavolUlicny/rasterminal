@@ -141,7 +141,7 @@ TEST(gltf_valid, normal_scale_default_one_no_has_flag)
 TEST(gltf_valid, normal_scale_with_failed_decode_no_has_flag)
 {
     // scale=0.5 is parsed (assignment lives inside if(normal_texture.texture),
-    // which is truthy whenever the JSON binds a texture — independent of decode),
+    // which is truthy whenever the JSON binds a texture, independent of decode),
     // but the 4 garbage image bytes make load_tex return -1. The has_normal_scale
     // predicate's normal_tex>=0 guard must keep the gate disarmed despite the
     // non-unit scale, so a failed normal-map decode never costs the per-pixel path.
@@ -179,7 +179,7 @@ TEST(gltf_valid, occlusion_strength_read_and_sets_has_flag)
 {
     // occlusionTexture.strength=0.5 with a valid embedded BMP → occlusion_tex >= 0,
     // strength read into mat.occlusion_strength, and Mesh::has_occlusion armed
-    // (the gate is occlusion_tex>=0 only — strength does not factor in).
+    // (the gate is occlusion_tex>=0 only; strength does not factor in).
     std::string bin;
     emit_tri_verts(bin);
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));
@@ -482,7 +482,7 @@ TEST(gltf_valid, parallel_decode_failure_compacts_and_remaps)
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), bmp_size); // 58 at offset 36
     // 4 zero bytes at offset 94: too short for any stb_image format probe to
     // accept (PNG needs 8-byte sig, BMP/PSD/GIF need magic, TGA needs ≥18-byte
-    // header). Decode reliably fails — exercises the failure-compaction path.
+    // header). Decode reliably fails: exercises the failure-compaction path.
     bin.push_back(0);
     bin.push_back(0);
     bin.push_back(0);
@@ -547,7 +547,7 @@ static std::string sampler_glb(const std::string &textures, const std::string &s
 
 TEST(gltf_sampler, wrap_clamp_repeat_per_axis)
 {
-    // wrapS=33071 (CLAMP_TO_EDGE), wrapT=10497 (REPEAT) — carried independently per axis.
+    // wrapS=33071 (CLAMP_TO_EDGE), wrapT=10497 (REPEAT), carried independently per axis.
     TmpFile f(
         tmp_path("rast_wrap_cr.glb"),
         sampler_glb(R"([{"source":0,"sampler":0}])", R"("samplers":[{"wrapS":33071,"wrapT":10497}],)")
@@ -594,7 +594,7 @@ TEST(gltf_sampler, omitted_wrap_fields_default_to_repeat)
 TEST(gltf_sampler, dedup_splits_on_differing_sampler)
 {
     // Two textures share image 0 but reference different samplers (CLAMP vs REPEAT). Wrap
-    // belongs to the (image, sampler) pair, so they must NOT collapse — two distinct slots.
+    // belongs to the (image, sampler) pair, so they must NOT collapse: two distinct slots.
     std::string bin;
     emit_tri_verts(bin);
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));

@@ -97,7 +97,7 @@ namespace
     }
 } // namespace
 
-// Embedded EXT_texture_webp decodes — the headline "untextured -> textured".
+// Embedded EXT_texture_webp decodes: the headline "untextured -> textured".
 // The 6x2 non-square fixture also proves the loader keeps width vs height and
 // row pitch straight end-to-end (a square fixture could not).
 
@@ -216,7 +216,7 @@ TEST(gltf_webp, falls_back_to_ordinary_source_when_webp_fails)
 
     ASSERT_TRUE(m.materials.size() >= 2);
     const int idx = m.materials[1].diffuse_map.tex;
-    ASSERT_TRUE(idx >= 0); // not dropped — fell back to the PNG
+    ASSERT_TRUE(idx >= 0); // not dropped: fell back to the PNG
     const Texture &t = m.textures[static_cast<size_t>(idx)];
     ASSERT_EQ(t.width, 2); // the 2x2 PNG fallback, since the WebP decode failed
     ASSERT_EQ(t.height, 2);
@@ -322,7 +322,7 @@ TEST(gltf_webp, animated_webp_dropped_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// A WebP carried by an inline base64 data: URI decodes — proves the data-URI
+// A WebP carried by an inline base64 data: URI decodes, proving the data-URI
 // path routes through decode_bytes to libwebp (the is_webp sniff branch), the
 // third decode_bytes branch the data-URI tests cover (KTX2 and stb are covered
 // in test_gltf_ktx2.cpp and test_gltf.cpp).

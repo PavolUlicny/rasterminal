@@ -6,7 +6,7 @@
 
 // Decoded geometry from a KHR_draco_mesh_compression bitstream, flattened into
 // plain arrays. This keeps the Draco headers confined to draco_decode.cpp (the
-// glTF loader includes only this header) — Draco's templated decoder trips the
+// glTF loader includes only this header): Draco's templated decoder trips the
 // project's strict -Werror set, so it must not be compiled into src/ TUs, the
 // same isolation the meshoptimizer unity shim gets. Optional attributes are
 // left empty when the source lacks them.
@@ -18,7 +18,7 @@ struct DracoMesh
     std::vector<float> uvs1;      // 2 * num_points (TEXCOORD_1), or empty
     // RGB only: matches Mesh::vertex_colors (std::vector<vec3>). When a Draco asset
     // authors RGBA COLOR_0, the 4th component is surfaced separately in colors_alpha
-    // (below) rather than dropped — colors itself stays RGB to keep the common path
+    // (below) rather than dropped; colors itself stays RGB to keep the common path
     // off the per-vertex-opacity machinery.
     std::vector<float> colors; // 3 * num_points (RGB), or empty
     // Per-vertex opacity, kept parallel rather than widening colors to RGBA (mirrors

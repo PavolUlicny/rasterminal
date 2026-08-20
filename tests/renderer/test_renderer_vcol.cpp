@@ -10,11 +10,11 @@
 //   • Wireframe: vcol must have no effect (and must not crash)
 //
 // All tests use Renderer(1) for deterministic single-thread ordering.
-// Camera: make_test_camera() — pixel (20,10) on a 40×20 framebuffer = world (0,0,0).
-// Material: white diffuse=ambient=(1,1,1), specular=(0,0,0) — vcol tint is the
+// Camera: make_test_camera(); pixel (20,10) on a 40×20 framebuffer = world (0,0,0).
+// Material: white diffuse=ambient=(1,1,1), specular=(0,0,0); vcol tint is the
 //   only colour source so per-channel assertions are clean.
-// Light: white key from +z — dot(n=(0,0,1), L=(0,0,1))=1 → full diffuse.
-// Ambient: (0.1,0.1,0.1) — small white baseline for all channels.
+// Light: white key from +z; dot(n=(0,0,1), L=(0,0,1))=1 → full diffuse.
+// Ambient: (0.1,0.1,0.1), small white baseline for all channels.
 //
 // Expected with red vcol (1,0,0) and the material above:
 //   effective diffuse = ambient = (1,0,0)
@@ -189,7 +189,7 @@ TEST(renderer, phong_vcol_white_matches_no_vcol)
     }
 }
 
-// Phong: mixed white (v0) + red (v1, v2) vcol — Phong is the per-vertex
+// Phong: mixed white (v0) + red (v1, v2) vcol; Phong is the per-vertex
 // interpolating path, so this guards correct independent per-vertex tinting with
 // no stale state leaking between vertices. v0 stays white,
 // v1/v2 are red → R must dominate at the red-weighted centre pixel.
@@ -243,7 +243,7 @@ TEST(renderer, flat_vcol_uniform_tints_pixel)
 }
 
 // Flat: white vcol (all 1s) with flag=true must match the no-vcol baseline.
-// The renderer takes an early-skip when face_vcol==(1,1,1) — this tests that
+// The renderer takes an early-skip when face_vcol==(1,1,1); this tests that
 // the skip produces the same result as flag=false.
 // Catches: the if(face_vcol != white) optimisation diverging from the no-vcol path.
 TEST(renderer, flat_vcol_white_skip_matches_no_vcol)

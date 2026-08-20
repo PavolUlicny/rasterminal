@@ -89,7 +89,7 @@ struct TmpFile
     {
         ASSERT_FAIL("load_model(\"" + path + "\") should have rejected but returned true");
     }
-    // After a failed load, load_model clears the mesh — verify.
+    // After a failed load, load_model clears the mesh; verify.
     if (!m.vertices.empty() || !m.triangles.empty())
     {
         ASSERT_FAIL("rejected load left residual mesh state");

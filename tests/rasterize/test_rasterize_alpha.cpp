@@ -304,7 +304,7 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
 
 // Group F: has_cutout + nmap/stex combined
 
-// has_cutout=true + nmap active — the UV from the cutout pre-pass must be reused
+// has_cutout=true + nmap active: the UV from the cutout pre-pass must be reused
 // for nmap sampling (the `if (!has_cutout && ...)` UV recompute is skipped).
 // nmap texel (255,128,128) → nm≈(1,0,0) → normal redirected to +x in world space.
 // Light dir=(1,0,0): without nmap dot((0,0,1),(1,0,0))=0 → R≈0; with nmap dot≈1 → R≈255.
@@ -359,7 +359,7 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
 
 // Group G: has_vcol + alpha_cutoff combined
 
-// has_vcol=true + alpha_cutoff active — both compose correctly: pixel passes
+// has_vcol=true + alpha_cutoff active, both compose correctly: pixel passes
 // alpha test AND is tinted red by vcol.
 // ambient=(1,1,1), mat.ambient=(1,1,1), red vcol → R≈255, G≈B≈0.
 TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
@@ -399,11 +399,11 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
     }
 }
 
-// Group H: cutout-only path (no nmap, no stex) — UV lifecycle
+// Group H: cutout-only path (no nmap, no stex), UV lifecycle
 
 // has_cutout=true, nmap=nullptr, stex=nullptr.
 // The block `if (!has_cutout && (tex || nmap || stex))` evaluates false on both
-// halves — UV recompute is entirely skipped.  The `if (tex)` branch uses cutout_rgb
+// halves: UV recompute is entirely skipped.  The `if (tex)` branch uses cutout_rgb
 // (RGB from the pre-pass RGBA sample fetched at the pre-pass UV).
 //
 // Discriminating setup: 2×1 texture (left=red, right=blue) with all vertex UVs at
@@ -422,7 +422,7 @@ TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
     mat.alpha_cutoff = 0.5f;
     // 2×1: left=red, right=blue; both fully opaque.
     // Sampler: fx = u*(width-1) = u*1.  At u=0.99: tx=0.99 → R≈3, B≈252.
-    // If UV defaulted to zero: tx=0 → pure red (R=255) — distinguishes the paths.
+    // If UV defaulted to zero: tx=0 → pure red (R=255), which distinguishes the paths.
     Texture tex = make_tex(2, 1, { 255, 0, 0, 255, 0, 0, 255, 255 });
     vec2 uv{ 0.99f, 0.5f }; // deep in the blue half; opaque alpha passes cutout
 

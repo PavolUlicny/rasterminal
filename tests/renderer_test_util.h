@@ -76,7 +76,7 @@ inline Mesh make_unit_triangle(bool flip_winding = false, bool double_sided = fa
 }
 
 // Large screen-filling triangle: z=0, v0=(-4,-4,0), v1=(4,-4,0), v2=(0,4,0).
-// With the test camera, projects to sa≈(12,18), sb≈(28,18), sc≈(20,2) on 40×20 —
+// With the test camera, projects to sa≈(12,18), sb≈(28,18), sc≈(20,2) on 40×20,
 // spanning all 4 worker bands.  Face normal = +Z (front-facing from +Z camera).
 inline Mesh make_large_triangle()
 {
@@ -130,7 +130,7 @@ inline int count_drawn_pixels(Framebuffer &fb)
     return n;
 }
 
-// Build an in-memory RGBA texture — same helper pattern as test_rasterize_texture.cpp.
+// Build an in-memory RGBA texture, same helper pattern as test_rasterize_texture.cpp.
 inline Texture make_solid_tex_rgba(int w, int h, uint8_t r, uint8_t g, uint8_t b)
 {
     Texture t;

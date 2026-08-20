@@ -255,7 +255,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     // rather than m_touch_box[worker_id] directly: the per-worker boxes are cache-line
     // adjacent, so per-push writes there would false-share catastrophically under the
     // millions of pushes a high-overdraw transparent mesh generates. Merged out once below.
-    // NOLINTNEXTLINE(misc-const-correctness) — not const: mutated through abuf.box in push()
+    // NOLINTNEXTLINE(misc-const-correctness), not const: mutated through abuf.box in push()
     [[maybe_unused]] TouchBox local_box; // default-empty (NSDMI)
     const ABuffer abuf = [&]
     {
@@ -274,7 +274,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     // surfaces, and load_model groups them by material, so a fixed 256-triangle claim hands one
     // worker nearly the whole frame (see retune_trans_chunk()).
     const int chunk = (S == Sink::Transparent) ? m_trans_chunk : choose_phase1_chunk(work, m_n_workers);
-    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): hoisted;
                             // clip_near overwrites before read
     uint32_t drawn = 0;     // post-clip on-screen triangles this worker rasterized (paces the area sampling)
     double area = 0.0;      // summed on-screen triangle area (feeds the path choice)
@@ -355,7 +355,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         else
         {
             // Flat shading: one compute_lighting() at the centroid, constant across
-            // the triangle (M is always Flat here — Phong and unlit are handled above).
+            // the triangle (M is always Flat here: Phong and unlit are handled above).
             vec3 face_n = normalize(cross(b.pos - a.pos, c.pos - a.pos));
             if (flip_normals)
             {
@@ -572,7 +572,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         {
             // Best-effort: stop pushing this worker's fragments. The chain stays consistent
             // (push_back runs before the head swap), the worker still signals completion, and
-            // resolve still composites + self-cleans — so the frame loses a few fragments
+            // resolve still composites + self-cleans, so the frame loses a few fragments
             // under extreme overdraw rather than crashing or corrupting the next frame.
         }
         // Publish the accumulated extent once. On the bad_alloc path local_box still bounds
@@ -661,7 +661,7 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
     m_area_span[static_cast<size_t>(worker_id)] = 0.0;
 
     const int chunk = choose_phase1_chunk(total, m_n_workers);
-    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): hoisted;
                             // clip_near overwrites before read
     double area = 0.0;      // summed on-screen triangle area (feeds the path choice)
     double area2 = 0.0;     // summed squared on-screen triangle area (feeds the path choice)
@@ -688,7 +688,7 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
         {
             return;
         }
-        RasterTri r; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — every field set below
+        RasterTri r; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): every field set below
         r.sx[0] = sa.x;
         r.sx[1] = sb.x;
         r.sx[2] = sc.x;
@@ -903,7 +903,7 @@ template <ShadingMode M> void Renderer::shade_tiles(int worker_id)
     wb.tile_ids.resize(static_cast<size_t>(tile) * static_cast<size_t>(tile));
     float *depth = wb.tile_depth.data();
     uint32_t *ids = wb.tile_ids.data();
-    ClipVert cv[3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — filled per triangle before use
+    ClipVert cv[3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): filled per triangle before use
 
     while (true)
     {
@@ -1246,7 +1246,7 @@ void Renderer::raster_wireframe()
 
     const int total = static_cast<int>(mesh->triangles.size());
     const int chunk = choose_phase1_chunk(total, m_n_workers);
-    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) — hoisted;
+    ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): hoisted;
                             // clip_near overwrites before read
 
     while (true)
@@ -1281,7 +1281,7 @@ void Renderer::raster_wireframe()
             // Fast path: skip clip_near and its copy when no vertex is behind the near
             // plane. clip_near runs only for the rare straddle cases.
             const ClipVert *tris[2][3];
-            int n_tris; // NOLINT(cppcoreguidelines-init-variables) — assigned in both branches before read
+            int n_tris; // NOLINT(cppcoreguidelines-init-variables): assigned in both branches before read
             if (cva.c.w > near_plane && cvb.c.w > near_plane && cvc.c.w > near_plane)
             {
                 n_tris = 1;
@@ -1571,7 +1571,7 @@ void Renderer::worker_func(int worker_id)
     int my_gen = 0;
     while (true)
     {
-        Pass pass; // NOLINT(cppcoreguidelines-init-variables) — assigned under the lock below before use
+        Pass pass; // NOLINT(cppcoreguidelines-init-variables): assigned under the lock below before use
         {
             std::unique_lock<std::mutex> lk(m_mutex);
             m_cv_work.wait(lk, [this, my_gen] { return m_generation != my_gen || m_stop; });
@@ -1789,7 +1789,7 @@ void Renderer::render(
     }
 
     // Wireframe: a single edge-drawing pass over every triangle [0, total). No opaque /
-    // transparent split — wireframe ignores materials and draws all edges in one colour.
+    // transparent split: wireframe ignores materials and draws all edges in one colour.
     if (mode == ShadingMode::Wireframe)
     {
         m_tri_cursor.store(0, std::memory_order_relaxed);
@@ -1952,7 +1952,7 @@ void Renderer::render(
     // fragments into the per-pixel A-buffer, then resolve (sort + composite) over the opaque
     // framebuffer. The opaque_count < total guard skips both barrier round-trips (and the
     // O(pixels) resolve sweep) when has_transparent is set by a declared-but-unused blend
-    // material — no triangle reached the tail, so there is nothing to accumulate or resolve.
+    // material: no triangle reached the tail, so there is nothing to accumulate or resolve.
     if (mesh.has_transparent && m_opaque_count < static_cast<uint32_t>(mesh.triangles.size()))
     {
         ensure_abuffer(width, height);

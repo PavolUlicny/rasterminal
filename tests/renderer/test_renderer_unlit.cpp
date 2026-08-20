@@ -117,7 +117,7 @@ TEST(renderer_unlit, independent_of_light)
     assert_pixel_near(fb1, 20, 10, Color{ 51, 102, 153 }, 1);
     assert_pixel_near(fb2, 20, 10, Color{ 51, 102, 153 }, 1);
 
-    // Control: the same base colour, lit, must NOT equal the unlit base colour —
+    // Control: the same base colour, lit, must NOT equal the unlit base colour;
     // otherwise the assertions above would pass trivially.
     Mesh lit = make_unit_triangle();
     lit.materials[0].diffuse = { 0.2f, 0.4f, 0.6f };

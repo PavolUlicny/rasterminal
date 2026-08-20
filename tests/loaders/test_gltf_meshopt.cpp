@@ -56,7 +56,7 @@ namespace
         const size_t n = meshopt_encodeIndexSequence(buf.data(), buf.size(), idx, count);
         return { reinterpret_cast<char *>(buf.data()), n };
     }
-    // Raw little-endian uint16 index bytes — used to author a *plain* (uncompressed)
+    // Raw little-endian uint16 index bytes, used to author a *plain* (uncompressed)
     // index buffer view alongside a meshopt-compressed one.
     std::string raw_indices_u16(const unsigned int *idx, size_t count)
     {
@@ -477,7 +477,7 @@ TEST(gltf_meshopt, mixed_compressed_and_plain_views)
 {
     // POSITION is meshopt-compressed (bufferView 0); the index buffer is a plain
     // uncompressed view (bufferView 1). Exercises the loader's `continue` skip for
-    // non-meshopt views — both must coexist and read correctly.
+    // non-meshopt views: both must coexist and read correctly.
     Desc d;
     d.vtx_comp = encode_vertices(quad_pos, 4, 12);
     d.vtx_stride = 12;
@@ -525,7 +525,7 @@ TEST(gltf_meshopt, truncated_stream_fails_load)
 {
     Desc d;
     const std::string full = encode_vertices(quad_pos, 4, 12);
-    // Drop the back half of the compressed stream — declared byteLength shrinks with
+    // Drop the back half of the compressed stream: declared byteLength shrinks with
     // it so cgltf's bounds pass, but the codec runs out of input → nonzero rc.
     d.vtx_comp = full.substr(0, full.size() / 2);
     d.vtx_stride = 12;

@@ -317,7 +317,7 @@ static std::string strip_attr_glb(bool normal, bool uv, int color_dim, int mat)
 
 TEST(reject, gltf_points_only_mesh)
 {
-    // mode:0 = POINTS — skipped by the loader, no triangles emitted → reject.
+    // mode:0 = POINTS, skipped by the loader, no triangles emitted → reject.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"mode\":0}]}],"
@@ -333,7 +333,7 @@ TEST(reject, gltf_points_only_mesh)
 
 TEST(reject, gltf_lines_only_mesh)
 {
-    // mode:1 = LINES — skipped by the loader → reject.
+    // mode:1 = LINES, skipped by the loader → reject.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"mode\":1}]}],"
@@ -373,7 +373,7 @@ TEST(gltf_valid, gltf_triangle_fan_min)
 TEST(gltf_strip, non_indexed_4verts)
 {
     // 4 verts → 2 tris. Spec winding: even (0,1,2), odd (2,1,3). Uniform winding
-    // is the key check — a missing odd-triangle swap flips tri1's winding.
+    // is the key check: a missing odd-triangle swap flips tri1's winding.
     TmpFile f(tmp_path("rast_strip4.glb"), prim_glb(5, 4, {}));
     Mesh m = load_ok(f.path);
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(2));
@@ -471,7 +471,7 @@ TEST(gltf_fan, indexed_count4_boundary)
 TEST(gltf_strip, mirror_preserves_consistent_winding)
 {
     // A scale:[-1,1,1] node flips winding; the de-stripify must compose its odd-parity
-    // swap with flip_winding so all triangles stay consistently — and identically — wound.
+    // swap with flip_winding so all triangles stay consistently and identically wound.
     TmpFile fi(tmp_path("rast_strip_id.glb"), prim_glb(5, 4, {}));
     TmpFile fm(tmp_path("rast_strip_mir.glb"), prim_glb(5, 4, {}, /*wide=*/false, /*mirror=*/true));
     Mesh mi = load_ok(fi.path);

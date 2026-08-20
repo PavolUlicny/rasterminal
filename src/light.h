@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
-// ndh^shininess given ndh² as input — lets the caller skip a sqrt in the
+// ndh^shininess given ndh² as input: lets the caller skip a sqrt in the
 // half-vector normalize. For the squaring-chain cases (32/16/8) ndh^N = (ndh²)^(N/2),
 // so we start one step further along the chain with no precision loss.
 inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
@@ -62,7 +62,7 @@ inline vec2 apply_tex_transform(const TexSlot &s, vec2 uv) noexcept
     return { (s.t[0] * uv.x) + (s.t[1] * uv.y) + s.t[2], (s.t[3] * uv.x) + (s.t[4] * uv.y) + s.t[5] };
 }
 
-// Two slots address the texture identically — same UV set and same KHR_texture_transform — so a
+// Two slots address the texture identically (same UV set and same KHR_texture_transform), so a
 // sample taken for one can be reused for the other. Used by the ORM fast path: the texture cache
 // dedups by image only (not texCoord/transform), so two bindings sharing a Texture* may still
 // differ in either. The baked t[] is bit-identical for equal authored transforms (same arithmetic
@@ -88,7 +88,7 @@ inline bool same_uv_mapping(const TexSlot &a, const TexSlot &b) noexcept
 
 // Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
 // NOTE: when adding a new *_map TexSlot, also update the remap loop in
-// decode_textures() (mesh_loader.h) — it enumerates each one explicitly.
+// decode_textures() (mesh_loader.h): it enumerates each one explicitly.
 struct Material
 {
     vec3 diffuse = { 1.0f, 1.0f, 1.0f };
@@ -111,12 +111,12 @@ struct Material
     // per-pixel multiply so the common case (scale==1 or no normal map) pays zero.
     float normal_scale = 1.0f;
     // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
-    // per-pixel metallic work — non-glTF loaders leave these untouched).
+    // per-pixel metallic work; non-glTF loaders leave these untouched).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
     TexSlot mr_map;         // metallic-roughness (G=roughness, B=metallic)
     // glTF occlusionTexture (Phong path only). The R channel is authored ambient occlusion; it
-    // REPLACES the baked per-vertex AO per-pixel (both target the same scale — multiplying would
+    // REPLACES the baked per-vertex AO per-pixel (both target the same scale; multiplying would
     // double-darken). occlusion_strength is occlusionTexture.strength: ao = 1 + strength*(R-1).
     // Mesh::has_occlusion gates the per-pixel sample; non-glTF loaders leave these untouched.
     TexSlot occlusion_map;
@@ -142,7 +142,7 @@ struct Light
 };
 
 // Tag for callers that guarantee the normal is already unit-length.
-// Skips the internal normalize() — saves one sqrt per call.
+// Skips the internal normalize(): saves one sqrt per call.
 struct assume_unit_t
 {
 };
@@ -197,7 +197,7 @@ inline void apply_light(
 
 // Blinn-Phong illumination summed over an array of directional lights, taking the four
 // shading-params fields lighting consumes (diffuse/ambient/specular/shininess) rather than a
-// Material — this lets rasterize_phong skip the per-pixel Material copy. ambient_scene is added
+// Material; this lets rasterize_phong skip the per-pixel Material copy. ambient_scene is added
 // once (not per light). v must be the unit view vector (normalize(eye - pos)), precomputed by the
 // caller; normal is normalized internally. Returns RGB in [0, ~1+]; caller clamps before display.
 inline vec3 compute_lighting(

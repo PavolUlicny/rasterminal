@@ -1,7 +1,7 @@
 # Regenerate the three shading-mode stills:  vhs assets/stills.tape
 #
 # Produces assets/shading-{wireframe,flat,phong}.png.
-# vhs handles these fine (a still is one static frame — only the live spin
+# vhs handles these fine (a still is one static frame, only the live spin
 # overwhelmed it, which is why the demo GIF uses asciinema + agg instead; see
 # this directory's README). rasterminal auto-fits the camera per model, so with
 # no orbit every mode below shares the exact same angle.

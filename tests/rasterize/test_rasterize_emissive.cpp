@@ -74,7 +74,7 @@ TEST(rasterize_emissive, texture_modulates_factor)
     assert_pixel_near(fb, 20, 10, Color{ 0, 226, 0 }, 2);
 }
 
-// Zero factor + no texture: nothing added — pixel stays as the lit colour (zero here).
+// Zero factor + no texture: nothing added, so the pixel stays as the lit colour (zero here).
 TEST(rasterize_emissive, zero_factor_no_texture_is_noop)
 {
     Framebuffer fb(40, 20, /*headless=*/true);

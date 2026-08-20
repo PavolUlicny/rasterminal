@@ -82,7 +82,7 @@ TEST(mat4, default_constructor_is_zero)
 
 TEST(mat4, multiplication_is_associative)
 {
-    // (A*B)*C == A*(B*C) for any matrices — use three well-conditioned view matrices.
+    // (A*B)*C == A*(B*C) for any matrices: use three well-conditioned view matrices.
     mat4 A = look_at(vec3{ 1.0f, 2.0f, 3.0f }, vec3{ 0.0f, 0.0f, 0.0f }, vec3{ 0.0f, 1.0f, 0.0f });
     mat4 B = look_at(vec3{ 0.0f, 0.0f, 5.0f }, vec3{ 1.0f, 0.0f, 0.0f }, vec3{ 0.0f, 1.0f, 0.0f });
     mat4 C = look_at(vec3{ -2.0f, 1.0f, 4.0f }, vec3{ 1.0f, 1.0f, 1.0f }, vec3{ 0.0f, 1.0f, 0.0f });

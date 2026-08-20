@@ -97,7 +97,7 @@ TEST(clip_reject, all_in_front_of_near_plane_rejects)
 }
 
 // must NOT reject borderline cases
-// Dropping these would lose visible pixels — the whole point of "conservative".
+// Dropping these would lose visible pixels, the whole point of "conservative".
 
 TEST(clip_reject, straddling_right_plane_is_accepted)
 {
@@ -110,7 +110,7 @@ TEST(clip_reject, straddling_right_plane_is_accepted)
 
 TEST(clip_reject, mixed_sides_not_rejected)
 {
-    // Vertices outside different half-spaces (one left, one right, one top) —
+    // Vertices outside different half-spaces (one left, one right, one top):
     // no single plane has all three on its outside, so the triangle still
     // intersects the frustum somewhere.
     vec4 a = clip_v(-2.0f, 0, 0, 1);
@@ -121,7 +121,7 @@ TEST(clip_reject, mixed_sides_not_rejected)
 
 TEST(clip_reject, vertex_exactly_on_boundary_is_accepted)
 {
-    // x == w is on the boundary, inside the closed half-space — the strict
+    // x == w is on the boundary, inside the closed half-space: the strict
     // > test means a vertex with x==w is treated as inside.
     vec4 a = clip_v(1.0f, 0, 0, 1); // on right boundary
     vec4 b = clip_v(0, 0, 0, 1);

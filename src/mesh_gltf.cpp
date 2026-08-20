@@ -87,7 +87,7 @@ namespace
     }
 
     // The 12-byte KTX2 file identifier. KHR_texture_basisu images are KTX2 containers,
-    // which stb_image cannot decode — they are routed to the basisu transcoder instead.
+    // which stb_image cannot decode; they are routed to the basisu transcoder instead.
     bool is_ktx2(const uint8_t *data, size_t size)
     {
         static const uint8_t magic[12] = { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
@@ -95,7 +95,7 @@ namespace
     }
 
     // The WebP RIFF container signature: "RIFF" at byte 0 and "WEBP" at byte 8. EXT_texture_webp
-    // images are WebP, which stb_image cannot decode — they are routed to libwebp instead.
+    // images are WebP, which stb_image cannot decode; they are routed to libwebp instead.
     bool is_webp(const uint8_t *data, size_t size)
     {
         return data && size >= 12 && std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WEBP", 4) == 0;
@@ -199,7 +199,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         return false;
     }
 
-    // RAII guard — ensures cgltf_free on every exit path.
+    // RAII guard: ensures cgltf_free on every exit path.
     const auto guard = std::unique_ptr<cgltf_data, decltype(&cgltf_free)>(data, cgltf_free);
 
     if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success)
@@ -229,7 +229,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         }
         const cgltf_meshopt_compression &mc = bv.meshopt_compression;
         // Defensive: cgltf checked bv.size == stride*count, but if that product
-        // overflowed size_t and wrapped to a small bv.size the check still passes —
+        // overflowed size_t and wrapped to a small bv.size the check still passes;
         // then meshopt would write count*stride (huge) into our small buffer. Reject
         // the overflow before allocating. Not reachable via a well-formed file
         // (cgltf_validate covers the normal file-size bound); this guards the wrap.
@@ -271,12 +271,12 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         }
         if (rc != 0)
         {
-            return false; // corrupt / truncated stream — fail loud
+            return false; // corrupt / truncated stream, fail loud
         }
         // Filters are applied in place after the vertex decode. cgltf maps any
         // unrecognized filter string to filter_none (zero-init default), so the
         // none/default arm also covers a hypothetical future filter parsed by an
-        // older cgltf — it would skip filtering rather than fail. Harmless today:
+        // older cgltf: it would skip filtering rather than fail. Harmless today:
         // the KHR_meshopt_compression spec defines exactly these four filters and
         // cgltf knows all of them.
         switch (mc.filter)
@@ -305,7 +305,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // A deferred texture decode: the preferred image, plus an optional fallback tried
     // if the preferred one fails to decode. For KHR_texture_basisu / EXT_texture_webp the
     // preferred image is the extension source and the fallback is the texture's ordinary
-    // source — the extension provides it precisely so a renderer that can't decode a given
+    // source: the extension provides it precisely so a renderer that can't decode a given
     // extension image can degrade to the plain image instead of rendering untextured.
     struct TexRequest
     {
@@ -416,7 +416,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     };
 
     // Resolve a binding's UV set and KHR_texture_transform. glTF caps meaningfully at two
-    // sets here: texCoord 1 selects TEXCOORD_1; 0 — or an unsupported texCoord >= 2 —
+    // sets here: texCoord 1 selects TEXCOORD_1; 0 (or an unsupported texCoord >= 2)
     // degrades to TEXCOORD_0. KHR_texture_transform's own texcoord (when present) overrides
     // textureInfo.texCoord per spec. A reference to an absent set is reconciled after the
     // walk (see the finalize block), not here.
@@ -429,7 +429,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
         }
         // Only TEXCOORD_0 and _1 are stored; texCoord >= 2 deliberately degrades to set 0.
         // The spec asks clients to support at least two UV sets (SHOULD, not MUST), and >2
-        // sets are vanishingly rare — supporting them means parallel uv2/uv3… arrays through
+        // sets are vanishingly rare: supporting them means parallel uv2/uv3… arrays through
         // the whole pipeline, out of proportion to the gain.
         slot.uv_set = (tc == 1) ? uint8_t{ 1 } : uint8_t{ 0 };
         if (tc == 1)
@@ -498,13 +498,13 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             // per-frame intensity multiply real-time engines do in their shader. Clamp the
             // strength to [0, 1e6] for the same reason as the factor above (kill +Inf at the
             // source). Each input is bounded; the baked product can exceed 1e6 (up to ~1e12),
-            // which is fine — the point is staying finite, and vec3_to_color saturates it.
+            // which is fine: the point is staying finite, and vec3_to_color saturates it.
             const float s = std::clamp(m->emissive_strength.emissive_strength, 0.0f, 1e6f);
             mat.emissive = mat.emissive * s;
         }
         // Spec-literal: emissive = factor × texture. A zero factor means the texture cannot
         // contribute (do_emissive in the rasterizer is gated on factor>0), so skip the decode
-        // entirely — saves a stb_image_load (often multi-MB) and the permanent RAM footprint
+        // entirely: saves a stb_image_load (often multi-MB) and the permanent RAM footprint
         // for a texture no fragment will ever sample. dedup is unaffected: if the same image
         // is also bound as e.g. diffuse, that call still registers and decodes it.
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
@@ -540,7 +540,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             // through both the near and far interface), but glass is commonly authored
             // single-sided because a real transmission renderer traces through the volume. In our
             // alpha-blend approximation, culling the back faces would drop the far shell of a
-            // closed glass mesh and make it look thin — so both shells must enter the A-buffer and
+            // closed glass mesh and make it look thin, so both shells must enter the A-buffer and
             // composite back-to-front. Scoped to the transmission approximation; genuine
             // alphaMode=BLEND still honours the authored doubleSided flag.
             mat.double_sided = true;
@@ -615,7 +615,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // Maintain the parallel uv1 array (glTF TEXCOORD_1) for one primitive's vertex range
     // [vert_base, vert_base + n). On the first TEXCOORD_1-bearing primitive, back-fill every
     // earlier vertex with its own uv0 (so a uv_set==1 sample on a vertex that lacks a real
-    // second set degrades to TEXCOORD_0); thereafter every primitive contributes n entries —
+    // second set degrades to TEXCOORD_0); thereafter every primitive contributes n entries:
     // the real flipped uv1 when has_real, else a copy of that vertex's uv0. This keeps
     // uv1.size() == vertices.size() once building, so compute_normals/optimize carry it like
     // vertex_colors. read(i) is only invoked when has_real. Shared by the accessor and Draco paths.
@@ -626,7 +626,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             building_uv1 = true;
             // Sized for the spike this absorbs: the back-fill loop + this primitive together push
             // exactly vertices.size() entries, so one alloc covers both. Later primitives grow it
-            // again (amortized O(1)) — deliberately matching the per-primitive growth of the sibling
+            // again (amortized O(1)), deliberately matching the per-primitive growth of the sibling
             // vertex_colors/vertex_alpha arrays rather than pre-walking the scene for a global total.
             uv1.reserve(vertices.size());
             for (size_t k = 0; k < vert_base; k++)
@@ -676,7 +676,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
             const float tol = 1e-5f * std::max({ l0sq, l1sq, l2sq });
             const bool orthogonal = std::fabs(d01) <= tol && std::fabs(d02) <= tol && std::fabs(d12) <= tol;
             const bool equal_scale = std::fabs(l0sq - l1sq) <= tol && std::fabs(l1sq - l2sq) <= tol;
-            // Degenerate (|det| ~ 0): no usable inverse — fall back to the
+            // Degenerate (|det| ~ 0): no usable inverse, so fall back to the
             // upper-3x3 path so we don't divide by zero. Asset is broken; no
             // shading is right, but we don't crash.
             const bool uniform_scale = (orthogonal && equal_scale) || std::fabs(det3) <= 1e-12f;
@@ -738,7 +738,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     }
                     // The unique-id recovery below subtracts attr.data (an accessor
                     // pointer) from data->accessors. Pointer subtraction with a null
-                    // base is UB — a malformed glTF can omit the top-level "accessors"
+                    // base is UB: a malformed glTF can omit the top-level "accessors"
                     // array (legal JSON, cgltf accepts it) which leaves data->accessors
                     // null. Fail-loud rather than risk UB.
                     if (!data->accessors)
@@ -810,7 +810,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     const bool has_du1 = !dm.uvs1.empty();
                     const bool has_dc = !dm.colors.empty();
                     // dm.colors_alpha is non-empty only when COLOR_0 was 4-component. Honour that
-                    // opacity only under alphaMode=BLEND — the same vec4-under-BLEND gate the accessor
+                    // opacity only under alphaMode=BLEND, the same vec4-under-BLEND gate the accessor
                     // path uses (see the COLOR_0 block below), so Draco and uncompressed primitives
                     // behave identically. Without BLEND, vertex_alpha stays empty (zero-cost, and no
                     // mis-classification in the per-triangle blend partition).
@@ -868,7 +868,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
 
                     // Connectivity comes from the Draco bitstream itself
                     // (dm.indices), so prim.indices and the accessor-path's
-                    // non-indexed branch are both intentionally bypassed — a Draco
+                    // non-indexed branch are both intentionally bypassed: a Draco
                     // primitive's glTF-level indices accessor is metadata only per
                     // the KHR_draco_mesh_compression spec.
                     const size_t n_tris = dm.indices.size() / 3;
@@ -1008,7 +1008,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 // Push triangles. Strips/fans are de-stripified here into the triangle list; the rest
                 // of the pipeline only ever sees independent triangles. count-2 triangles, winding per
                 // glTF/GL spec (odd strip triangles swap the first two verts so all share one winding).
-                // Degenerate stitch triangles (repeated index) are kept — render-time backface/zero-area
+                // Degenerate stitch triangles (repeated index) are kept: render-time backface/zero-area
                 // drop handles them. cgltf_validate bounds every index < n_verts but allows count<3 and
                 // non-multiples of 3, so the loop bound and the count>=3 reserve guard are load-bearing.
                 if (prim.type == cgltf_primitive_type_triangle_strip || prim.type == cgltf_primitive_type_triangle_fan)
@@ -1140,7 +1140,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // Reconcile TEXCOORD_1 (run before compute_normals so the split carries uv1, and before
     // tangents/optimize). uv1 is worth keeping only when the geometry actually provided a second
     // set (building_uv1) AND some texture binding references it (any_uv1_referenced). Otherwise
-    // drop it and force every binding back to set 0 — this covers both "referenced but absent"
+    // drop it and force every binding back to set 0: this covers both "referenced but absent"
     // (degrade per runtime-loader convention, like a missing texture) and "present but unused"
     // (read-then-drop). When kept, append_uv1 already holds uv1.size() == vertices.size(); the
     // defensive pad mirrors the vertex_colors block above for any future partial-fill path.
@@ -1248,7 +1248,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 }
                 // cgltf_load_buffer_base64 reads ceil(out_size*8/6) <= nchars chars, so it
                 // never reads a pad byte or past the valid run. It allocates via opts'
-                // allocator and returns a result code instead of throwing — safe at this
+                // allocator and returns a result code instead of throwing, safe at this
                 // no-exception-boundary worker site.
                 void *raw = nullptr;
                 if (cgltf_load_buffer_base64(&opts, out_size, payload, &raw) != cgltf_result_success)

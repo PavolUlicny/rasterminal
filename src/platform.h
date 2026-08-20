@@ -853,7 +853,7 @@ namespace platform
 #endif
 
     // Output-side console setup (UTF-8 + ANSI). Idempotent. Split out of enable_raw_mode
-    // so it can run before any output — incl. the UTF-8 in --version — which on Windows
+    // so it can run before any output, incl. the UTF-8 in --version, which on Windows
     // happens before the main loop and thus before raw mode would otherwise set the CP.
     // Returns whether the console accepts VT escape sequences: a legacy Windows console
     // can lack ENABLE_VIRTUAL_TERMINAL_PROCESSING, making ANSI output impossible, and
@@ -925,7 +925,7 @@ namespace platform
     }
 
     // mouse support
-    // Uses SGR extended mouse mode (\033[?1006h) — supported by all modern terminals
+    // Uses SGR extended mouse mode (\033[?1006h), supported by all modern terminals
     // including Windows Terminal. Reports: scroll wheel, and button drags (the
     // button number is not decoded, so any button drags).
 
@@ -934,8 +934,8 @@ namespace platform
         // VT input covers mouse sequences too; the graphics query normally set
         // it already, but a --graphics blocks session skips the query.
         enable_vt_input();
-        // \033[?1006h — SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
-        // \033[?1002h — button-events mode: reports motion only while a button is held
+        // \033[?1006h: SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
+        // \033[?1002h: button-events mode: reports motion only while a button is held
         std::fputs("\033[?1006h\033[?1002h", stdout);
         std::fflush(stdout);
     }

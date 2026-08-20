@@ -11,7 +11,7 @@ IS_CLANG := $(findstring clang,$(shell $(CXX) --version 2>&1))
 #    -msse2 -mfpmath=sse restores IEEE parity (SSE2 is universal on x86 since 2001; pre-SSE2
 #    is a non-target). ARM ILP32 already uses IEEE VFP and would reject -msse2, so this is
 #    gated on __i386__, not on pointer size.
-#  - Drop -Wuseless-cast, any ILP32: "useless" is word-size-dependent — casts that
+#  - Drop -Wuseless-cast, any ILP32: "useless" is word-size-dependent; casts that
 #    legitimately widen/narrow at LP64 become no-ops where size_t is 32-bit. Kept on 64-bit.
 IS_X86_32 := $(filter 1,$(shell printf '__i386__\n' | $(CXX) -P -E -x c++ - 2>/dev/null | tail -1))
 IS_ILP32  := $(filter 4,$(shell printf '__SIZEOF_POINTER__\n' | $(CXX) -P -E -x c++ - 2>/dev/null | tail -1))
@@ -33,7 +33,7 @@ LIBRT := $(if $(filter librt,$(NEEDS_LIBRT)),-lrt)
 # ─── Linker dead-code GC (drops unreferenced sections from the final binary) ──
 # Paired with -ffunction-sections/-fdata-sections below. LTO + -fvisibility=hidden
 # already strip unused C++; this mainly reaps the non-LTO C decode TUs (libwebp/zstd).
-# macOS ld64 doesn't understand --gc-sections — it spells the same thing -dead_strip.
+# macOS ld64 doesn't understand --gc-sections; it spells the same thing -dead_strip.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 GC_LINK   = -Wl,-dead_strip
@@ -42,8 +42,8 @@ DIST_LINK =
 else
 GC_LINK   = -Wl,--gc-sections
 # `dist` link-only flags: drop the build host's libstdc++/libgcc ABI dependency so a release
-# binary doesn't fail on older distros with "GLIBCXX_… not found". (glibc itself stays dynamic
-# — full distro-portability still needs an old-glibc/-static build; out of scope here.)
+# binary doesn't fail on older distros with "GLIBCXX_… not found". (glibc itself stays dynamic;
+# full distro-portability still needs an old-glibc/-static build; out of scope here.)
 DIST_LINK = -static-libstdc++ -static-libgcc
 endif
 
@@ -86,14 +86,14 @@ LTO      = -flto=thin
 GCC_OPTS =
 else
 WARNINGS = $(WARN_COMMON) -Wduplicated-cond -Wduplicated-branches -Wlogical-op -Wuseless-cast
-# -fno-fat-lto-objects: emit thin (bytecode-only) LTO objects — faster LTO, smaller .o, no
+# -fno-fat-lto-objects: emit thin (bytecode-only) LTO objects; faster LTO, smaller .o, no
 # runtime/binary change. GCC-only here (Clang's -flto=thin has no fat-object concept).
 LTO      = -flto=auto -fno-fat-lto-objects
 GCC_OPTS = -fno-plt -fno-semantic-interposition -fno-stack-clash-protection \
            -fgcse-sm -fgcse-las -fipa-pta -Wno-alloc-size-larger-than
 endif
 
-# -Wuseless-cast (GCC-only, added above) is word-size-dependent — relax it on any ILP32 target.
+# -Wuseless-cast (GCC-only, added above) is word-size-dependent: relax it on any ILP32 target.
 ifeq ($(IS_ILP32),4)
 WARNINGS := $(filter-out -Wuseless-cast,$(WARNINGS))
 endif
@@ -125,7 +125,7 @@ VENDOR_HDRS := $(shell find vendor -type f \( -name '*.h' -o -name '*.hpp' -o -n
 
 # Tier 1: fast flags safe for any CPU (both release and portable).
 # -DNDEBUG strips assert()/library DCHECKs (in src + every vendored C/C++ lib) from all
-# optimized builds — never set for debug, which keeps asserts live.
+# optimized builds, never set for debug, which keeps asserts live.
 OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBUG \
              -ffunction-sections -fdata-sections \
              -fno-rtti -fomit-frame-pointer -fstrict-aliasing \
@@ -168,7 +168,7 @@ SRCS = src/main.cpp \
        vendor/draco/draco_impl.cpp \
        vendor/basisu/basisu_impl.cpp
 
-# C sources, compiled as C with $(CC) — must not go through the C++ flags.
+# C sources, compiled as C with $(CC): must not go through the C++ flags.
 #  - miniz amalgam: zlib deflate for the kitty graphics direct transport; configured
 #    by the uniform $(MINIZ) define set above.
 #  - zstd decode amalgam: used by the basisu transcoder for KTX2 Zstd supercompression.
@@ -178,7 +178,7 @@ SRCS = src/main.cpp \
 #    flags: release (-march=native) activates all of them; portable activates only the
 #    x86-64 SSE2 baseline (sse41/avx2 compile to empty stubs). libwebp ships CPUID runtime
 #    dispatch that COULD safely carry sse41/avx2 in a portable binary via per-file
-#    -msse4.1/-mavx2 (it picks kernels by actual CPU, so no SIGILL risk) — we deliberately
+#    -msse4.1/-mavx2 (it picks kernels by actual CPU, so no SIGILL risk): we deliberately
 #    forgo that to keep "portable = no arch-specific codegen" uniform across every TU.
 #    Portable WebP decode is correct, just SSE2-only (decode is load-time, not hot-path).
 #    The C flags' blanket -w covers their warnings, so no per-TU suppression needed here.
@@ -253,7 +253,7 @@ TEST_HDRS := $(shell find tests -name '*.h' 2>/dev/null)
 #    -fno-finite-math-only) to a link-only clang++ invocation; under ThinLTO AppleClang
 #    intermittently reports those as -Wunused-command-line-argument, which -Werror makes
 #    fatal. Suppress that one warning at link time only.
-# Applied only at link — compile-time warnings stay active for every TU so real bugs
+# Applied only at link: compile-time warnings stay active for every TU so real bugs
 # are still caught by -Werror.
 ifeq ($(IS_CLANG),clang)
 LTO_SUPPRESS = -Wno-unused-command-line-argument
@@ -333,11 +333,11 @@ TEST_SRCS   = tests/test_main.cpp \
               vendor/basisu/basisu_impl.cpp
 
 # Per-build-type object caches. Mtime alone can't tell which variant produced
-# $(TARGET), so each variant has its own subdir of objects and is phony — the
+# $(TARGET), so each variant has its own subdir of objects and is phony: the
 # resulting $(TARGET) always matches the variant just invoked. Without this,
 # `make` after `make portable` (or any flag-changing variant) silently mixes a
 # portable/debug binary with stale release objects. Trade-off: the link runs on
-# every `make` invocation (not cheap under -flto=auto + -fipa-pta — typically a
+# every `make` invocation (not cheap under -flto=auto + -fipa-pta, typically a
 # few seconds on no-change rebuilds); the per-variant .o cache still avoids
 # unnecessary recompiles, so source edits stay incremental.
 OBJDIR             = obj

@@ -261,8 +261,8 @@ Framebuffer::~Framebuffer()
             kitty::append_delete(cleanup);
             std::fputs(cleanup.c_str(), stdout);
         }
-        // Restore cursor, reset colours, then leave the alternate screen buffer —
-        // this restores the terminal to exactly the state it was in before launch.
+        // Restore cursor, reset colours, then leave the alternate screen buffer.
+        // This restores the terminal to exactly the state it was in before launch.
         std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
         std::fflush(stdout);
     }
@@ -904,7 +904,7 @@ template <bool TC> void Framebuffer::present_impl()
     bool fg_known = false;
     bool bg_known = false;
 
-    // \033[NC — advance the cursor N columns; the bare form is 1 byte shorter for N == 1.
+    // \033[NC: advance the cursor N columns; the bare form is 1 byte shorter for N == 1.
     auto append_cursor_advance = [&](int cols)
     {
         if (cols == 1)
@@ -1107,7 +1107,7 @@ template <bool TC> void Framebuffer::present_impl()
         }
     }
 
-    // Reset SGR once at the end of the pixel section — keeps the terminal clean
+    // Reset SGR once at the end of the pixel section: keeps the terminal clean
     // when the HUD is empty and prevents bleed into HUD's own colour escapes.
     // Only when the section emitted anything: an entirely-clean frame must
     // compose nothing, so end_frame's zero-byte skip covers blocks idle frames

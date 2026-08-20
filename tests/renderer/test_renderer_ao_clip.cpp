@@ -99,7 +99,7 @@ static Mesh make_fully_behind_triangle()
     return m;
 }
 
-// Group G — near-plane clip integration
+// Group G: near-plane clip integration
 //
 // Camera: eye=(0,0,5), near_plane=0.1. Clip w = 5 − world_z.
 // Vertices at z=4.95 have w=0.05 → behind near plane (w < 0.1).
@@ -267,7 +267,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     return m;
 }
 
-// Group H — multiple triangles / work-stealing at scale
+// Group H: multiple triangles / work-stealing at scale
 //
 // 16×16 grid = 512 triangles. With 4 workers, choose_phase1_chunk=64
 // → 8 chunks → ~2 iterations per worker in the Phase 1 steal loop.
@@ -380,7 +380,7 @@ TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
     {
         ASSERT_FAIL(
             "empty mesh after grid: " + std::to_string(n) +
-            " stale pixels remain — fb.clear() or tri-cursor reset may be broken"
+            " stale pixels remain; fb.clear() or tri-cursor reset may be broken"
         );
     }
 }
@@ -450,7 +450,7 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
     return m;
 }
 
-// Group I — AO end-to-end
+// Group I: AO end-to-end
 //
 // Strategy: n_lights=0 so compute_lighting output = ambient * mat.ambient * ao.
 // With ambient=(0.8,0,0) and default mat.ambient=(1,1,1):
@@ -458,7 +458,7 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
 //   ao=0.0  → R = 0
 //   ao=1/3  → R ≈ 68  (Flat average of 1+0+0)
 
-// Flat — all ao=0 → ambient term zero → pixel is essentially black.
+// Flat: all ao=0 → ambient term zero → pixel is essentially black.
 // Catches: ao dropped from ClipVert construction or Flat face_ao path.
 TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
 {
@@ -478,7 +478,7 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
     }
 }
 
-// Flat — all ao=1 → full ambient → bright baseline.
+// Flat: all ao=1 → full ambient → bright baseline.
 // Counterpart to the all-ao=0 test above: ensures the n_lights=0 + ambient setup actually produces
 // a bright pixel when ao=1, making the uniform-zero tests falsifiable.
 TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
@@ -499,7 +499,7 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
     }
 }
 
-// Flat — ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
+// Flat: ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
 // Catches: Flat picking a single vertex's ao instead of averaging.
 TEST(renderer, flat_ao_averaged_across_vertices)
 {
@@ -520,7 +520,7 @@ TEST(renderer, flat_ao_averaged_across_vertices)
     }
 }
 
-// Phong — all ao=0 → rasterize_phong produces 0 ambient → black.
+// Phong: all ao=0 → rasterize_phong produces 0 ambient → black.
 // Catches: ao not copied into rt.ph.aoa/b/c or not forwarded to rasterize_phong.
 TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 {
@@ -540,7 +540,7 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
     }
 }
 
-// Phong — ao=(1,0,0) → per-pixel AO gradient across triangle.
+// Phong: ao=(1,0,0) → per-pixel AO gradient across triangle.
 // Catches: Phong using a uniform ao or hardcoding ao=1 per pixel.
 TEST(renderer, phong_ao_interpolates_per_pixel)
 {

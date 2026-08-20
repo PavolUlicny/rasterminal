@@ -4,7 +4,7 @@
 // tests/test_gltf_draco.cpp to exercise the Draco per-vertex-opacity path: a 4-component
 // COLOR_0 under alphaMode=BLEND must reach Mesh::vertex_alpha (the existing draco_cube_color
 // fixture has all alpha = 1.0, so it cannot distinguish "alpha survived" from "alpha dropped
-// to 1.0" — this one varies it). Like the other Draco fixtures, the bytes are vendored rather
+// to 1.0", this one varies it). Like the other Draco fixtures, the bytes are vendored rather
 // than a model file so the repo stays model-file-free; we vendor only the decoder, so this
 // can't be produced inline.
 //

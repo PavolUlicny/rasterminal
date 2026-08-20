@@ -175,7 +175,7 @@ TEST(framebuffer, odd_height_present_does_not_crash)
     Framebuffer fb(2, 3, /*headless=*/true);
     ASSERT_EQ(fb.width(), 2);
     ASSERT_EQ(fb.height(), 3);
-    (void)fb.commit_pixel(0, 2, 0.5f, { 100, 150, 200 }); // row 2 — the lone odd row
+    (void)fb.commit_pixel(0, 2, 0.5f, { 100, 150, 200 }); // row 2, the lone odd row
     fb.present();                                         // must not crash
 }
 
@@ -183,7 +183,7 @@ TEST(framebuffer, odd_height_present_does_not_crash)
 
 TEST(framebuffer, headless_dimensions_correct)
 {
-    // No FdRedirect needed — headless suppresses all terminal I/O.
+    // No FdRedirect needed: headless suppresses all terminal I/O.
     Framebuffer fb(10, 8, /*headless=*/true);
     ASSERT_EQ(fb.width(), 10);
     ASSERT_EQ(fb.height(), 8);
@@ -250,7 +250,7 @@ TEST(framebuffer, present_dirty_then_present_again_no_crash)
     ASSERT_EQ(static_cast<int>(c.g), 255);
     ASSERT_EQ(static_cast<int>(c.b), 0);
 
-    fb.present(); // dirty-tracking path — must not crash
+    fb.present(); // dirty-tracking path, must not crash
 }
 
 // HUD
@@ -327,7 +327,7 @@ TEST(framebuffer, hud_text_appears_in_present_output)
 
 TEST(framebuffer, hud_empty_emits_no_hud_escape)
 {
-    // HUD is empty by default — the !m_hud.empty() block must be skipped,
+    // HUD is empty by default, so the !m_hud.empty() block must be skipped,
     // so \033[?7l (disable-autowrap, unique to the HUD block) must not appear.
     Framebuffer fb(10, 4, /*headless=*/true);
     CaptureStdout cap;
@@ -558,8 +558,8 @@ TEST(framebuffer, present_incremental_entirely_clean_row_emits_no_cursor_pos)
     // not twice, proving the clean incremental frame added none.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
-    fb.present(); // frame 1: full-redraw — emits \033[1;1H once
-    fb.present(); // frame 2: entirely clean row — must not emit another \033[1;1H
+    fb.present(); // frame 1: full-redraw, emits \033[1;1H once
+    fb.present(); // frame 2: entirely clean row, must not emit another \033[1;1H
 
     const std::string out = cap.read();
     const size_t first = out.find("\033[1;1H");
@@ -570,7 +570,7 @@ TEST(framebuffer, present_incremental_entirely_clean_row_emits_no_cursor_pos)
 TEST(framebuffer, present_incremental_dirty_at_last_column)
 {
     // Dirty cell at col m_width-1: after emitting it col==m_width, the outer
-    // while exits immediately — the skip branch is never entered.
+    // while exits immediately: the skip branch is never entered.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
     fb.present();     // full-redraw
@@ -601,10 +601,10 @@ TEST(framebuffer, present_after_resize_forces_full_redraw)
     // full-redraw path and emit cursor positioning for every term row.
     // Start with a 2-pixel-high FB (1 term row); frames 1-2 only emit \033[1;1H.
     // Resize to 4-pixel-high (2 term rows); frame 3's full-redraw must emit
-    // \033[2;1H — something frames 1-2 never produced.
+    // \033[2;1H, something frames 1-2 never produced.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
-    fb.present(); // frame 1: full-redraw (1 term row — only \033[1;1H)
+    fb.present(); // frame 1: full-redraw (1 term row, only \033[1;1H)
     fb.present(); // frame 2: incremental, clean (no cursor pos)
 
     fb.resize(4, 4); // sets m_force_redraw=true; now 2 term rows
@@ -645,7 +645,7 @@ TEST(framebuffer, write_byte_lut_boundary_values)
         fb.present();
         const std::string out = cap.read();
         // When fg and bg both change, the code emits a combined sequence
-        // \033[38;2;R;G;B;48;2;...m — match the fg prefix up to the separator.
+        // \033[38;2;R;G;B;48;2;...m: match the fg prefix up to the separator.
         char expected[32];
         std::snprintf(expected, sizeof(expected), "\033[38;2;%d;1;2;", static_cast<int>(v));
         ASSERT_TRUE(out.find(expected) != std::string::npos);

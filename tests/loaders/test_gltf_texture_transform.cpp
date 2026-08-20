@@ -8,7 +8,7 @@
 
 // baseColorTexture with KHR_texture_transform (offset + scale, no rotation) → the slot bakes
 // the flip-folded 2x3 affine. With rotation 0: c=1,s=0, so for offset (ox,oy) and scale
-// (sx,sy) the coefficients are {sx,0,ox, 0,sy,1-oy-sy} — exercising the v-flip terms (a02 has
+// (sx,sy) the coefficients are {sx,0,ox, 0,sy,1-oy-sy}, exercising the v-flip terms (a02 has
 // no rotation contribution here, a12 = 1 - oy - sy carries the fold).
 TEST(gltf_valid, texture_transform_bakes_affine)
 {
@@ -134,12 +134,12 @@ TEST(gltf_valid, texture_transform_absent_is_identity)
 
 // Keystone correctness test for the v-flip handling, independent of bake_transform's own
 // derivation. Author a non-trivial offset+rotation+scale, load it (running the real bake), then
-// for several UV points assert that our full pipeline — store v-flip (uv.y = 1 - v_gltf) → baked
-// affine → the sampler's internal v-flip — lands on the EXACT image pixel the glTF transform with
+// for several UV points assert that our full pipeline, store v-flip (uv.y = 1 - v_gltf) → baked
+// affine → the sampler's internal v-flip, lands on the EXACT image pixel the glTF transform with
 // NEGATED rotation (Tr·R(-θ)·S, the flipY convention for v-flipped textures) intends. The expected
 // value encodes that spec-with-negated-rotation directly; the implementation reaches it by a
 // different route, so a wrong rotation sign (or any sign slip in the affine) makes expected !=
-// actual. This is the check that catches a bad derivation — the exact-coefficient test above only
+// actual. This is the check that catches a bad derivation: the exact-coefficient test above only
 // pins the formula against itself, and would happily accept the un-negated (red-marker) bake.
 TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
 {
@@ -184,7 +184,7 @@ TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
         // NEGATED: Tr · R(-θ) · S · g. That -θ is the flipY convention every glTF reference renderer
         // uses for v-flipped textures; the naive +θ (R(+θ)) points the TextureTransformTest arrow at
         // the red "opposite direction" marker. Only the sin terms flip sign, so offset and
-        // axis-aligned scale are identical either way — this isolates the rotation handedness.
+        // axis-aligned scale are identical either way; this isolates the rotation handedness.
         const float u_exp = (c * sx * u_g) + (s * sy * v_g) + ox;
         const float v_exp = (-s * sx * u_g) + (c * sy * v_g) + oy;
         const vec2 feed = apply_tex_transform(d, vec2{ u_g, 1.0f - v_g });
@@ -203,7 +203,7 @@ TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
 // affine → sample a real multi-texel texture through the REAL Texture::sample, and assert the
 // rotated brightness gradient runs the direction the official Khronos TextureTransformTest render
 // shows. A regression that drops the v-flip rotation negation flips the cross term (t[3]) sign and
-// reverses this inequality — the exact failure that pointed the arrow at the "opposite direction"
+// reverses this inequality, the exact failure that pointed the arrow at the "opposite direction"
 // marker. Robust by construction: a vertical gradient + an inequality assertion (no bilinear/wrap
 // edge fragility), and the sampled colours come from this test's own texture, not the loaded glTF's.
 TEST(gltf_valid, texture_transform_rotation_handedness_end_to_end)
@@ -260,7 +260,7 @@ TEST(gltf_valid, texture_transform_rotation_handedness_end_to_end)
     if (hi_u >= lo_u - 0.15f)
     {
         ASSERT_FAIL("rotation handedness reversed: +rotation must darken with increasing u "
-                    "(v-flip rotation negation dropped — see bake_transform)");
+                    "(v-flip rotation negation dropped, see bake_transform)");
     }
 }
 

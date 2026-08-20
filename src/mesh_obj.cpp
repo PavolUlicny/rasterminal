@@ -137,7 +137,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
     }
 
-    // Default white material at index 0 — always present.
+    // Default white material at index 0, always present.
     materials.push_back(Material{});
 
     // Register a texture by name (relative to obj_dir), returning its slot index.
@@ -198,7 +198,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         mat.specular_map.tex = load_tex(m.specular_texname, m.specular_texopt.clamp);
         bake_obj_transform(mat.specular_map, m.specular_texopt);
         // A real normal map (`norm` → normal_texname) wins and is bound directly. The
-        // map_Bump/bump fallback is, per the MTL spec, a grayscale *height* map — but many
+        // map_Bump/bump fallback is, per the MTL spec, a grayscale *height* map, but many
         // exporters (notably Blender's legacy OBJ exporter) ship an actual RGB normal map
         // there. Bind it as a normal map now and record the binding; after decode we classify
         // each bump texture and convert only the true grayscale ones (see the pass below).
@@ -231,7 +231,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         mat.emissive = { std::clamp(m.emission[0], 0.0f, 1e6f), std::clamp(m.emission[1], 0.0f, 1e6f),
                          std::clamp(m.emission[2], 0.0f, 1e6f) };
         // Spec-literal: emissive = Ke × map_Ke. A zero Ke means map_Ke cannot contribute
-        // (do_emissive gated on factor>0), so skip the decode — saves a stb_image_load (often
+        // (do_emissive gated on factor>0), so skip the decode: saves a stb_image_load (often
         // multi-MB) and permanent RAM. Dedup unaffected: if the same image is bound as e.g.
         // map_Kd, that call still registers and decodes it.
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
@@ -241,7 +241,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
             bake_obj_transform(mat.emissive_map, m.emissive_texopt);
         }
         // map_d present: treat map_Kd's alpha channel as an opacity mask.
-        // map_d is not loaded as a separate texture — map_Kd's RGBA is used.
+        // map_d is not loaded as a separate texture: map_Kd's RGBA is used.
         // Otherwise a sub-1 dissolve (MTL `d` / `Tr`, parsed into m.dissolve by
         // tinyobjloader) routes the material to the transparent blend pass. The two are
         // mutually exclusive: a cutout mask takes precedence over scalar opacity.
@@ -264,7 +264,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     }
 
     // Vertex deduplication: identical (vertex_index, normal_index, texcoord_index)
-    // tuples share one Vertex — same semantics as the previous hand-rolled loader.
+    // tuples share one Vertex, same semantics as the previous hand-rolled loader.
     std::unordered_map<size_t, uint32_t> vert_cache;
     vert_cache.reserve(attrib.vertices.size() / 3);
 
@@ -491,7 +491,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
             // Append the converted normal map rather than overwriting textures[src] in place: the
             // same source can need several distinct conversions (e.g. two materials, one height
-            // map, different -bm), each of which must read the original height data — so the source
+            // map, different -bm), each of which must read the original height data, so the source
             // slot has to survive the whole pass. The consequence is that a bump-only grayscale
             // source (not also bound as map_Kd/etc.) is left orphaned in textures[] once repointed,
             // retaining its decoded RGBA buffer unused for the mesh lifetime. Accepted: reclaiming

@@ -13,7 +13,7 @@ namespace
 {
     // basisu_transcoder_init() builds global lookup tables and must run once before any
     // transcode. Texture decode runs on worker threads (decode_textures), so the call
-    // must be one-time and thread-safe — std::call_once guarantees both.
+    // must be one-time and thread-safe: std::call_once guarantees both.
     void ensure_basisu_init()
     {
         static std::once_flag init_flag;
@@ -69,7 +69,7 @@ bool decode_ktx2_rgba(const void *data, size_t size, std::vector<uint8_t> &out_r
     // a small (super)compressed KTX2 legitimately decodes to a large image (the ETC1S /
     // UASTC compressed-to-pixel ratio is unbounded). The transcoder's dimension cap
     // bounds the worst case (<=16384^2, i.e. <=1 GiB here); this guard only makes an
-    // oversized allocation fail loud — returning false — instead of letting std::bad_alloc
+    // oversized allocation fail loud (returning false) instead of letting std::bad_alloc
     // propagate and terminate, since nothing at the load boundary catches it.
     std::vector<uint8_t> rgba;
     try

@@ -181,7 +181,7 @@ TEST(gltf_valid, emissive_strength_multiplies_factor)
 TEST(gltf_valid, emissive_strength_negative_clamped_to_zero)
 {
     // Spec sets `minimum: 0.0` but cgltf doesn't validate; a negative would subtract from lit
-    // colour before vec3_to_color. Loader clamps strength to ≥0 — assert the multiply zeros.
+    // colour before vec3_to_color. Loader clamps strength to ≥0: assert the multiply zeros.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
@@ -206,7 +206,7 @@ TEST(gltf_valid, emissive_factor_infinity_clamped)
 {
     // Hostile asset: emissiveFactor=1e400 parses as +Inf via cgltf. Without an upper clamp,
     // +Inf reaches mat.emissive and a per-pixel `Inf * 0` from a zero texel channel produces
-    // NaN — vec3_to_color's clamp is not NaN-safe and the uint8_t cast on NaN is UB. Symmetric
+    // NaN: vec3_to_color's clamp is not NaN-safe and the uint8_t cast on NaN is UB. Symmetric
     // with the emissive_strength clamp.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
@@ -230,7 +230,7 @@ TEST(gltf_valid, emissive_strength_infinity_clamped)
 {
     // Hostile asset: emissiveStrength=1e400 parses as +Inf via cgltf. Without an upper
     // clamp, +Inf reaches mat.emissive, and a per-pixel `Inf * 0` from a zero texel channel
-    // produces NaN — vec3_to_color's clamp is not NaN-safe and the uint8_t cast is UB.
+    // produces NaN: vec3_to_color's clamp is not NaN-safe and the uint8_t cast is UB.
     // Upper clamp at 1e6 keeps the result finite (and post-saturation in vec3_to_color it
     // looks identical to any other very-high LDR strength).
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
@@ -247,7 +247,7 @@ TEST(gltf_valid, emissive_strength_infinity_clamped)
     Mesh m = load_ok(f.path);
     ASSERT_TRUE(m.materials.size() >= 2);
     const Material &mat = m.materials[1];
-    // Each channel = 1.0 * clamp(1e400 → +Inf, 0, 1e6) = 1e6 — finite, no NaN downstream.
+    // Each channel = 1.0 * clamp(1e400 → +Inf, 0, 1e6) = 1e6, finite, no NaN downstream.
     ASSERT_TRUE(std::isfinite(mat.emissive.x));
     ASSERT_TRUE(std::isfinite(mat.emissive.y));
     ASSERT_TRUE(std::isfinite(mat.emissive.z));
@@ -258,7 +258,7 @@ TEST(gltf_valid, emissive_factor_negative_clamped_to_zero)
 {
     // Spec sets emissiveFactor `minimum: 0.0` per channel but cgltf doesn't enforce; a
     // negative would subtract from lit colour before vec3_to_color. Loader clamps per
-    // channel — mirrors the OBJ Ke clamp and the emissive_strength clamp.
+    // channel: mirrors the OBJ Ke clamp and the emissive_strength clamp.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"material\":0}]}],"
@@ -499,7 +499,7 @@ TEST(reject, empty_file_glb)
 TEST(gltf_valid, non_indexed_triangles_loaded)
 {
     // 6 vertices, no indices accessor → non-indexed branch → 2 triangles.
-    // Triangle 0: verts 0,1,2 — triangle 1: verts 3,4,5.
+    // Triangle 0: verts 0,1,2; triangle 1: verts 3,4,5.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0}}]}],"
@@ -1071,7 +1071,7 @@ TEST(gltf_valid, non_uniform_scale_uses_inverse_transpose_for_normals)
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
-    // NORMAL (accessor 1, bufferView 1, 36 bytes) — all three vertices = (1,0,1)/sqrt(2)
+    // NORMAL (accessor 1, bufferView 1, 36 bytes): all three vertices = (1,0,1)/sqrt(2)
     for (int i = 0; i < 3; i++)
     {
         emit_f32_le(bin, s);
@@ -1149,7 +1149,7 @@ TEST(gltf_valid, negative_determinant_flips_triangle_winding)
 
 TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
 {
-    // Same setup as the non-indexed mirror test, but with an indices accessor —
+    // Same setup as the non-indexed mirror test, but with an indices accessor;
     // covers the indexed branch in load_gltf (the flip is duplicated in both
     // branches, so the non-indexed test alone wouldn't catch a regression here).
     std::string bin;

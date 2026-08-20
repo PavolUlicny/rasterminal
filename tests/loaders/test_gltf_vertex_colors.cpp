@@ -105,7 +105,7 @@ TEST(gltf_valid, partial_color0_split_inherits_color)
     emit_f32_le(bin, 1.0f);
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 1.0f);
-    // P0 indices: tri A (0,1,2), tri B (1,0,3) — both contain the origin vertex 0
+    // P0 indices: tri A (0,1,2), tri B (1,0,3), both contain the origin vertex 0
     emit_u16_le(bin, 0);
     emit_u16_le(bin, 1);
     emit_u16_le(bin, 2);
@@ -146,7 +146,7 @@ TEST(gltf_valid, partial_color0_uncolored_primitive_first)
     // Reverse of the above: the UNCOLORED primitive (P0) comes FIRST, the colored
     // one (P1) second. The colored primitive's resize(vert_base + n_verts, white)
     // is absolute-indexed by vert_base, so it back-fills P0's leading gap with white
-    // and writes P1's colors at the correct indices — colors must NOT shift. No
+    // and writes P1's colors at the correct indices: colors must NOT shift. No
     // normals anywhere so compute_normals runs; the two triangles share nothing so
     // there is no split. Proves the leading/middle-gap ordering, not just tail-gap.
     const std::string json =

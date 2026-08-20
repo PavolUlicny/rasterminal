@@ -137,7 +137,7 @@ class Framebuffer
         return unpack_color(unpack_color_bits(m_pixel[pixel_idx(x, y)].load(std::memory_order_relaxed)));
     }
 
-    // Bounds-checked, read-only (x,y) depth probe — the get_pixel analog for depth. Returns
+    // Bounds-checked, read-only (x,y) depth probe, the get_pixel analog for depth. Returns
     // +inf for out-of-bounds (mirroring get_pixel's default Color{}). Writes go through
     // commit_pixel(); this never mutates.
     [[nodiscard]] float depth_at(int x, int y) const
@@ -151,7 +151,7 @@ class Framebuffer
 
     // Keeps the rejection path free of writes so reject-heavy meshes don't generate
     // coherency traffic. Inner-loop callers pass a precomputed `idx` to avoid recomputing
-    // y*width+x across the shading work — register pressure spills it otherwise.
+    // y*width+x across the shading work; register pressure spills it otherwise.
     [[nodiscard]] bool depth_test_relaxed(size_t idx, float depth) const noexcept
     {
         const uint64_t cur = m_pixel[idx].load(std::memory_order_relaxed);
@@ -161,7 +161,7 @@ class Framebuffer
     // Read the depth half of a slot without touching colour. Used by the transparent
     // pass to cull fragments behind opaque geometry with a <= test (it never writes
     // depth). INVARIANT: across the transparent accumulate + resolve passes the depth
-    // half is immutable — the opaque pass set it and nothing after writes it — so this
+    // half is immutable (the opaque pass set it and nothing after writes it), so this
     // read and commit_pixel/get_pixel stay consistent. Do not add a depth write to the
     // resolve path without revisiting this.
     [[nodiscard]] float depth_at(size_t idx) const noexcept
@@ -171,7 +171,7 @@ class Framebuffer
 
     // idx-based colour read/write for the transparent resolve, peers to depth_at(idx):
     // the linear index is already in hand there, so these skip the (x,y) pixel_idx
-    // recompute and bounds branch that get_pixel pays. Single-threaded contract — safe in
+    // recompute and bounds branch that get_pixel pays. Single-threaded contract: safe in
     // resolve because workers own disjoint pixels and run post-barrier, and the colour-only
     // store preserves the (immutable, see depth_at) depth.
     [[nodiscard]] Color color_at(size_t idx) const noexcept
@@ -196,7 +196,7 @@ class Framebuffer
 
     // Atomically replaces (depth, color) iff our depth still wins against whatever's
     // in the slot now. Returns false if a concurrent thread became shallower between
-    // our depth_test_relaxed() and this call — our fragment is then dropped.
+    // our depth_test_relaxed() and this call: our fragment is then dropped.
     bool commit_pixel(size_t idx, float depth, Color color) noexcept
     {
         const uint64_t want = pack_pixel(depth, pack_color(color));
@@ -337,7 +337,7 @@ class Framebuffer
     static uint32_t unpack_color_bits(uint64_t p) noexcept { return static_cast<uint32_t>(p) & COLOR_MASK; }
 
     // Fills every slot with (+inf depth, bg) using relaxed atomic stores.
-    // Must be a loop — std::fill doesn't work on non-copyable atomic<uint64_t>.
+    // Must be a loop: std::fill doesn't work on non-copyable atomic<uint64_t>.
     void fill_cleared(uint32_t bg_bits) noexcept
     {
         const uint64_t v = pack_pixel(std::numeric_limits<float>::infinity(), bg_bits);

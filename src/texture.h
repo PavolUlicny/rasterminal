@@ -133,7 +133,7 @@ struct Texture
         const __m128i zero = _mm_setzero_si128();
         const auto texel = [&zero](const uint8_t *p) noexcept -> __m128
         {
-            uint32_t v; // NOLINT(cppcoreguidelines-init-variables) — memcpy fills it
+            uint32_t v; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it
             std::memcpy(&v, p, sizeof v);
             const __m128i b = _mm_cvtsi32_si128(static_cast<int>(v));
             return _mm_cvtepi32_ps(_mm_unpacklo_epi16(_mm_unpacklo_epi8(b, zero), zero));

@@ -181,7 +181,7 @@ TEST(rasterize, texture_uv_wrap)
 // affine carrying a +0.5 u offset (MTL `-o 0.5 0`) advances the sampled coordinate to u=0.5, mid
 // red↔blue, so blue must appear. Pins the OBJ -o/-s sign convention (positive offset advances the
 // sampled coordinate) through the real sample path. The material pointer (not the bare tex arg)
-// is what carries the transform — see apply_tex_transform gating in rasterize.cpp.
+// is what carries the transform; see apply_tex_transform gating in rasterize.cpp.
 TEST(rasterize, diffuse_transform_offset_advances_sampled_coord)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -607,12 +607,12 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
     }
 }
 
-// Group D3: degenerate tangent — colour value validation
+// Group D3: degenerate tangent, colour value validation
 
 // Validates the pixel VALUE when tangent is degenerate (the test above checks no-crash only).
 // tan=(0,0,1) ∥ N=(0,0,1) → Gram-Schmidt yields T=B={0,0,0}.
 // nmap texel (128,128,255): nm≈(0,0,1) → normal_mapped = N*nm.z ≈ N.
-// Baseline: valid tangent (1,0,0) + nmap=nullptr — vertex normal used directly.
+// Baseline: valid tangent (1,0,0) + nmap=nullptr, vertex normal used directly.
 // Both paths resolve to the same effective normal → pixel colours must match.
 TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
 {
@@ -787,7 +787,7 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
 
 // a metal keeps its diffuse-lit surface. Grazing view (eye on +x, light/normal
 // on +z) gives full N·L (diffuse) but tiny N·H (no specular peak), so brightness can
-// only come from diffuse. Both metal and dielectric stay lit — guards against
+// only come from diffuse. Both metal and dielectric stay lit, which guards against
 // re-introducing the diffuse-kill, which would render the metal near-black here.
 TEST(rasterize_phong, metallic_keeps_diffuse)
 {
@@ -837,7 +837,7 @@ TEST(rasterize_phong, metallic_keeps_diffuse)
 }
 
 // metallic=1 tints F0 by the base colour. Peak specular (H=N) with a blue base
-// must stay blue — a regression to the old white specular={metallic} would light up
+// must stay blue: a regression to the old white specular={metallic} would light up
 // R/G. An MR texture with B=0 (dielectric texel) overrides metallic back to 0.
 TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
 {
@@ -883,7 +883,7 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
     }
 
     // MR texel B=0 forces m=0 → dielectric: F0 = lerp(0.04, base, 0) ≈ 0.04 (a faint
-    // highlight, R≈10), with the blue base diffuse dominating — not a blue metal F0.
+    // highlight, R≈10), with the blue base diffuse dominating, not a blue metal F0.
     Color mr = fb_mr.get_pixel(20, 10);
     // Full blue diffuse (~1.04 with the faint dielectric highlight) rolls off through the tonemap to ~230.
     if (mr.b < 220)
@@ -971,7 +971,7 @@ TEST(rasterize_phong, occlusion_replaces_not_multiplies_baked_ao)
 // ORM packing: when the occlusion and metallic-roughness textures are the SAME image,
 // rasterize_phong samples it once and reuses the read for both AO (R) and metalness/
 // roughness (B/G). The shared-pointer path (occ_is_mr) must match passing two distinct
-// but identical textures (two separate samples) — a wrong-channel or wrong-variable
+// but identical textures (two separate samples): a wrong-channel or wrong-variable
 // reuse would diverge. Channels are distinct (R≠G≠B) so a misroute is visible.
 TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
 {
@@ -1014,7 +1014,7 @@ TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
 //
 // 2×1 texture (left red, right blue). uv0 samples the red half, uv1 the blue half.
 // rasterize_flat() reads the diffuse binding's uv_set from the Material*, so flipping
-// mat.diffuse_map.uv_set must switch which set the diffuse sample uses — proving the
+// mat.diffuse_map.uv_set must switch which set the diffuse sample uses, proving the
 // second-set plumbing reaches the sampler.
 TEST(rasterize, diffuse_uv_set_selects_texcoord1)
 {
@@ -1197,7 +1197,7 @@ TEST(rasterize_phong, diffuse_texture_transform_shifts_sample)
 
 // Per-slot routing of the transform beyond diffuse: the occlusion slot carries a +0.5 u-offset
 // while diffuse is untransformed. The occlusion R channel scales ambient, so shifting the
-// occlusion sample from the bright texel to the dark one darkens the result — proving each slot
+// occlusion sample from the bright texel to the dark one darkens the result, proving each slot
 // applies its own transform (and that the non-diffuse Phong sample sites are wired).
 TEST(rasterize_phong, occlusion_texture_transform_independent_of_diffuse)
 {
@@ -1293,7 +1293,7 @@ TEST(rasterize, cutout_pre_pass_honours_diffuse_transform)
 
 // Per-slot independence in the Phong path: the occlusion texture sits on TEXCOORD_1 while the
 // (untextured) diffuse stays on set 0. The occlusion R channel scales the ambient term, so
-// flipping ONLY occlusion_map.uv_set changes brightness — proving each slot resolves its own
+// flipping ONLY occlusion_map.uv_set changes brightness, proving each slot resolves its own
 // set rather than one global choice. 2×1 occlusion: texel0 bright (ao≈1), texel1 dark (ao≈0).
 TEST(rasterize_phong, occlusion_uv_set_independent_of_diffuse)
 {
@@ -1340,7 +1340,7 @@ TEST(rasterize_phong, occlusion_uv_set_independent_of_diffuse)
 
 // ORM dedup + different UV sets: two glTF bindings can collapse to one Texture* (the dedup key
 // ignores texCoord) yet select different sets. The occ_is_mr fast path (sample once, reuse the
-// AO read for metalness) is then INVALID — it must be gated on the sets matching, not just the
+// AO read for metalness) is then INVALID: it must be gated on the sets matching, not just the
 // pointer. Here occlusion is on set 0 and metallic-roughness on set 1 of the SAME texture; the
 // MR sample must come from set 1, not reuse the set-0 occlusion read.
 //
@@ -1401,7 +1401,7 @@ TEST(rasterize_phong, orm_dedup_different_uv_sets_samples_mr_independently)
 // Symmetric to the uv_set case above, for KHR_texture_transform: occlusion and MR dedup to one
 // Texture* on the SAME uv set, but MR carries a +1.0 u-offset transform while occlusion has none.
 // The transforms differ, so occ_is_mr must be false and MR must sample its own (transformed)
-// texel — not reuse the occlusion sample. Guards the same_uv_mapping transform check.
+// texel, not reuse the occlusion sample. Guards the same_uv_mapping transform check.
 TEST(rasterize_phong, orm_dedup_different_transforms_samples_mr_independently)
 {
     Texture tex = make_tex_rgba(2, 1, { 64, 128, 0, 255, 64, 128, 255, 255 }); // B: texel0=0, texel1=255

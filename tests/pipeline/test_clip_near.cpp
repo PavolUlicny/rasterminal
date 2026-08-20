@@ -158,7 +158,7 @@ TEST(clip_near, rotation_puts_c_as_inside_vertex_first)
 
 TEST(clip_near, two_inside_a_outside_correct_output)
 {
-    // a outside, b and c inside — the !ia rotation puts b/c into aa/bb slots.
+    // a outside, b and c inside: the !ia rotation puts b/c into aa/bb slots.
     // out[0][0]=b(w=1.0), out[0][1]=c(w=2.0); both clipped edges land at NEAR.
     ClipVert a = make_cv(0.05f), b = make_cv(1.0f), c = make_cv(2.0f);
     ClipVert out[2][3];
@@ -171,7 +171,7 @@ TEST(clip_near, two_inside_a_outside_correct_output)
 
 TEST(clip_near, two_inside_b_outside_correct_output)
 {
-    // a and c inside, b outside — the else rotation puts c/a into aa/bb slots.
+    // a and c inside, b outside: the else rotation puts c/a into aa/bb slots.
     // out[0][0]=c(w=2.0), out[0][1]=a(w=1.0); both clipped edges land at NEAR.
     ClipVert a = make_cv(1.0f), b = make_cv(0.05f), c = make_cv(2.0f);
     ClipVert out[2][3];
@@ -184,7 +184,7 @@ TEST(clip_near, two_inside_b_outside_correct_output)
 
 TEST(clip_near, two_inside_c_outside_correct_output)
 {
-    // a and b inside, c outside — the !ic case performs no rotation.
+    // a and b inside, c outside: the !ic case performs no rotation.
     // out[0] = {a, b, cross(b,c)};  out[1] = {a, cross(b,c), cross(a,c)}.
     // Mirrors the !ia and !ib tests to ensure all three rotation branches are verified.
     ClipVert a = make_cv(1.0f), b = make_cv(2.0f), c = make_cv(0.05f);
@@ -233,7 +233,7 @@ TEST(clip_near, alternate_near_w_clips_correctly)
 TEST(clip_near, grazing_clip_t_near_zero)
 {
     // Inside vertex w = NEAR + 0.001 (just barely inside).
-    // t = (NEAR - w_in) / (0 - w_in) ≈ 0.0099 — very close to 0.
+    // t = (NEAR - w_in) / (0 - w_in) ≈ 0.0099, very close to 0.
     // Clipped vertices must still land at NEAR.
     const float w_in = NEAR + 0.001f;
     ClipVert a = make_cv(w_in), b = make_cv(0.0f), c = make_cv(0.0f);
@@ -246,7 +246,7 @@ TEST(clip_near, grazing_clip_t_near_zero)
 TEST(clip_near, grazing_clip_t_near_one)
 {
     // Outside vertex w = NEAR - 0.001 (just barely outside).
-    // t = (NEAR - 2.0) / (w_out - 2.0) ≈ 0.9995 — very close to 1.
+    // t = (NEAR - 2.0) / (w_out - 2.0) ≈ 0.9995, very close to 1.
     // Clipped vertices must still land at NEAR.
     const float w_out = NEAR - 0.001f;
     ClipVert a = make_cv(2.0f), b = make_cv(w_out), c = make_cv(w_out);

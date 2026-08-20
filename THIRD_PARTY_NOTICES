@@ -425,7 +425,7 @@ exercised, and the GPLv2 text is not distributed.)
 The LICENSE text below is reproduced as it ships in basis_universal and names
 "Facebook, Inc."; the current upstream copyright line (in `zstddeclib.c` itself) reads
 "Copyright (c) Meta Platforms, Inc. and affiliates" / "Yann Collet - Meta Platforms,
-Inc." — the same entity (Facebook was renamed Meta).
+Inc.", the same entity (Facebook was renamed Meta).
 
 BSD License
 

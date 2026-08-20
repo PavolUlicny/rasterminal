@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-// Group A — constructor / lifecycle
+// Group A: constructor / lifecycle
 
 // default construction and clean destruction (no hang or deadlock).
 TEST(renderer, constructor_default_threads)
@@ -38,7 +38,7 @@ TEST(renderer, constructor_thread_count_clamping)
     ASSERT_TRUE(true);
 }
 
-// Group B — wireframe path
+// Group B: wireframe path
 
 // front-facing triangle draws pixels in wireframe mode.
 TEST(renderer, wireframe_visible_triangle_drawn)
@@ -81,7 +81,7 @@ TEST(renderer, wireframe_culling_disabled_renders_backface)
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
 }
 
-// wireframe_color is honoured — every drawn pixel must match.
+// wireframe_color is honoured: every drawn pixel must match.
 TEST(renderer, wireframe_uses_wireframe_color)
 {
     Renderer r(1);
@@ -120,7 +120,7 @@ TEST(renderer, wireframe_uses_wireframe_color)
     }
 }
 
-// Group B2 — wireframe parallelization (multi-worker)
+// Group B2: wireframe parallelization (multi-worker)
 //
 // The wireframe pass now runs on the worker pool. Because every edge pixel is written
 // with one uniform colour and depth resolves via draw_line's atomic CAS min, the output
@@ -275,7 +275,7 @@ TEST(renderer, wireframe_multiworker_color_uniform)
 
     // Detect "drawn" via depth (was_drawn), not via non-black colour: a torn/interleaved
     // write that corrupted a pixel to {0,0,0} must still be caught here, not filtered out as
-    // "not drawn" — corruption detection is the whole point of this test.
+    // "not drawn"; corruption detection is the whole point of this test.
     int drawn = 0;
     for (int y = 0; y < fb.height(); y++)
     {
@@ -309,7 +309,7 @@ TEST(renderer, wireframe_multiworker_empty_mesh_no_crash)
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
-// Group C — shading dispatch
+// Group C: shading dispatch
 //
 // Scene: front-facing unit triangle, red light from +Z, tiny ambient.
 // Normal (0,0,1) · light (0,0,1) = 1 → full diffuse → R≥150 at centre pixel.
@@ -402,9 +402,9 @@ TEST(renderer, untextured_overbright_phong_rolls_off_below_white)
     }
 }
 
-// Group D — backface culling in MT path
+// Group D: backface culling in MT path
 
-// backface triangle is culled — no pixels drawn in Phong mode.
+// backface triangle is culled: no pixels drawn in Phong mode.
 TEST(renderer, mt_backface_culled)
 {
     Renderer r(1);
@@ -420,7 +420,7 @@ TEST(renderer, mt_backface_culled)
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
-// double-sided material bypasses culling — pixels drawn even for a backface.
+// double-sided material bypasses culling: pixels drawn even for a backface.
 TEST(renderer, mt_double_sided_renders_backface)
 {
     Renderer r(1);
@@ -440,7 +440,7 @@ TEST(renderer, mt_double_sided_renders_backface)
     }
 }
 
-// Group E — MT correctness / multi-frame
+// Group E: MT correctness / multi-frame
 
 // empty mesh completes without hanging; framebuffer stays undrawn.
 TEST(renderer, empty_mesh_completes)
@@ -478,7 +478,7 @@ TEST(renderer, repeated_render_deterministic)
     assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
 }
 
-// large triangle spanning all 4 worker bands — pixels drawn in every band.
+// large triangle spanning all 4 worker bands: pixels drawn in every band.
 // Triangle sa≈(12,18), sb≈(28,18), sc≈(20,2) → covers y=2..18.
 // With 4 workers on 40×20: bands are y=[0..4],[5..9],[10..14],[15..19].
 // Checks: y=3 (band 0), y=7 (band 1), y=10 (band 2), y=17 (band 3).
@@ -512,7 +512,7 @@ TEST(renderer, large_triangle_spans_all_bands)
     }
 }
 
-// Group F — lights, texture toggle
+// Group F: lights, texture toggle
 
 // n_lights=0 → ambient-only output.
 TEST(renderer, zero_lights_renders_ambient_only)
@@ -603,7 +603,7 @@ TEST(renderer, show_texture_toggle_changes_pixel)
     }
 }
 
-// spec-literal emissive — a zero emissiveFactor + bound emissive texture must render
+// spec-literal emissive: a zero emissiveFactor + bound emissive texture must render
 // dark (emissive = factor × texture = 0), matching three.js / Khronos Sample Viewer. This
 // pins the rasterizer's do_emissive gate end-to-end: has_emissive is forced true so the
 // renderer DOES forward the bright texture to the rasterizer, isolating do_emissive as the
@@ -621,7 +621,7 @@ TEST(renderer, zero_factor_with_emissive_texture_renders_dark)
     mesh.materials[0].diffuse = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].ambient = { 0.0f, 0.0f, 0.0f };
     mesh.materials[0].specular = { 0.0f, 0.0f, 0.0f };
-    // Force the flag true so the renderer forwards the emissive texture — load_model would
+    // Force the flag true so the renderer forwards the emissive texture; load_model would
     // derive false for a zero factor, but here we want the texture to reach the rasterizer so
     // do_emissive (factor-only) is the gate under test, not the mesh-level has_emissive prune.
     mesh.has_emissive = true;
@@ -685,7 +685,7 @@ TEST(renderer, flat_zero_factor_with_emissive_texture_renders_dark)
 
 // show_texture=false must NOT suppress the authored emissive factor. By analogy with
 // mat.diffuse (which stays in effect when diffuse_tex is hidden by the toggle), the
-// authored emissive factor must survive — a model with `Ke 1 0 0` should keep its red glow
+// authored emissive factor must survive: a model with `Ke 1 0 0` should keep its red glow
 // even with textures off.
 TEST(renderer, show_texture_toggle_preserves_authored_emissive_factor)
 {
@@ -811,7 +811,7 @@ TEST(renderer, flat_show_texture_toggle_preserves_authored_factor_with_texture)
 
 // show_texture=false must null-out stex and nmap even when specular_tex and
 // normal_tex are set on the material.  A black specular texture would zero out all
-// specular if stex were incorrectly forwarded — that mismatch catches the bug.
+// specular if stex were incorrectly forwarded; that mismatch catches the bug.
 // Camera at +Z, light at +Z → H=(0,0,1), n·h=1 → specular fires strongly.
 TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
 {
@@ -855,7 +855,7 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
     if (diff(cw.r, cb.r) > 2 || diff(cw.g, cb.g) > 2 || diff(cw.b, cb.b) > 2)
     {
         ASSERT_FAIL(
-            "show_tex=false: stex/nmap not suppressed — output differs from baseline (" +
+            "show_tex=false: stex/nmap not suppressed, output differs from baseline (" +
             std::to_string(static_cast<int>(cw.r)) + "," + std::to_string(static_cast<int>(cw.g)) + "," +
             std::to_string(static_cast<int>(cw.b)) + ") vs (" + std::to_string(static_cast<int>(cb.r)) + "," +
             std::to_string(static_cast<int>(cb.g)) + "," + std::to_string(static_cast<int>(cb.b)) + ")"
@@ -962,7 +962,7 @@ static Mesh make_two_back_face_mixed_mesh()
     return m;
 }
 
-// Phong — back-face double-sided triangle lit by a +z light.
+// Phong: back-face double-sided triangle lit by a +z light.
 // Vertex normals are (0,0,-1); the flip must turn them to (0,0,1) so diffuse fires.
 TEST(renderer, phong_double_sided_back_face_lit_correctly)
 {
@@ -984,12 +984,12 @@ TEST(renderer, phong_double_sided_back_face_lit_correctly)
     {
         ASSERT_FAIL(
             "Phong double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
-            ") — normal flip not applied"
+            "), normal flip not applied"
         );
     }
 }
 
-// Flat — same scene; covers the separate face-normal negation branch.
+// Flat: same scene; covers the separate face-normal negation branch.
 TEST(renderer, flat_double_sided_back_face_lit_correctly)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
@@ -1010,7 +1010,7 @@ TEST(renderer, flat_double_sided_back_face_lit_correctly)
     {
         ASSERT_FAIL(
             "Flat double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
-            ") — face normal flip not applied"
+            "), face normal flip not applied"
         );
     }
 }
@@ -1038,7 +1038,7 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
     {
         ASSERT_FAIL(
             "cull-off single-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
-            ") — flip applied when it should not be"
+            "), flip applied when it should not be"
         );
     }
 }
@@ -1065,12 +1065,12 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
     {
         ASSERT_FAIL(
             "cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
-            ") — flip applied when cull is off"
+            "), flip applied when cull is off"
         );
     }
 }
 
-// front-facing double-sided triangle — flip must NOT fire.
+// front-facing double-sided triangle: flip must NOT fire.
 // make_unit_triangle(false, true): normals (0,0,1), CCW → front-face cull passes,
 // flip_normals stays false, dot(n=(0,0,1), light=(0,0,1))=1 → full diffuse.
 TEST(renderer, double_sided_front_face_lit_normally)
@@ -1093,12 +1093,12 @@ TEST(renderer, double_sided_front_face_lit_normally)
     {
         ASSERT_FAIL(
             "front-facing double-sided R too low (" + std::to_string(static_cast<int>(c.r)) +
-            ") — flip incorrectly applied to front face"
+            "), flip incorrectly applied to front face"
         );
     }
 }
 
-// mixed mesh — only the double-sided back-face triangle is drawn.
+// mixed mesh: only the double-sided back-face triangle is drawn.
 // Tri 0 (double-sided) centre → screen (16,10); tri 1 (single-sided) centre → screen (24,10).
 // Uses ambient (0.5,0,0) and no light so drawn = ambient red; not-drawn = depth=inf.
 TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
@@ -1120,18 +1120,18 @@ TEST(renderer, mixed_mesh_only_double_sided_back_face_drawn)
     if (c_ds.r < 80)
     {
         ASSERT_FAIL(
-            "double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + ") — may have been culled"
+            "double-sided back-face not lit (R=" + std::to_string(static_cast<int>(c_ds.r)) + "), may have been culled"
         );
     }
 
-    // Single-sided triangle must be culled — pixel stays undrawn.
+    // Single-sided triangle must be culled: pixel stays undrawn.
     if (was_drawn(fb, 24, 10))
     {
-        ASSERT_FAIL("single-sided back-face was drawn — per-material check bypassed");
+        ASSERT_FAIL("single-sided back-face was drawn: per-material check bypassed");
     }
 }
 
-// wireframe double-sided back-face — covers the wireframe path's separate cull bypass.
+// wireframe double-sided back-face: covers the wireframe path's separate cull bypass.
 TEST(renderer, wireframe_double_sided_back_face_drawn)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
@@ -1147,7 +1147,7 @@ TEST(renderer, wireframe_double_sided_back_face_drawn)
 
     if (count_drawn_pixels(fb) == 0)
     {
-        ASSERT_FAIL("wireframe double-sided back-face drew no pixels — cull bypass missing");
+        ASSERT_FAIL("wireframe double-sided back-face drew no pixels: cull bypass missing");
     }
 }
 

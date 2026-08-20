@@ -11,7 +11,7 @@ TabWidth: 4
 UseTab: Never
 NamespaceIndentation: All
 
-# Column limit — code regularly reaches ~115 chars
+# Column limit: code regularly reaches ~115 chars
 ColumnLimit: 120
 
 # Pointer/reference attached to the variable name (const vec3 &o, not const vec3& o);
@@ -45,10 +45,10 @@ AlignTrailingComments: true
 # Wrapped ternaries break before ? and :
 BreakBeforeTernaryOperators: true
 
-# Preprocessor directives stay flush left (flat) — matches existing style and the LLVM default
+# Preprocessor directives stay flush left (flat): matches existing style and the LLVM default
 IndentPPDirectives: None
 
-# No space after C-style casts: (int)x — matches existing style and the LLVM/Google default
+# No space after C-style casts: (int)x; matches existing style and the LLVM/Google default
 SpaceAfterCStyleCast: false
 
 # Pin the parser to the project's actual standard (C++17), not Latest
@@ -64,5 +64,5 @@ FixNamespaceComments: true
 # When a call/decl wraps, put each parameter on its own line (no bin-packing)
 BinPackParameters: false
 
-# Mandatory braces on all control statements — no single-statement if/for/while bodies
+# Mandatory braces on all control statements: no single-statement if/for/while bodies
 InsertBraces: true

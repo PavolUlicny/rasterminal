@@ -6,7 +6,7 @@
 // All tests use unit-length directions. compute_lighting normalizes its normal
 // argument internally but expects light directions to already be unit. The lit
 // math is driven through the production shading-params overload
-// compute_lighting(normal, v, …, diffuse, ambient, specular, shininess, ao) — the
+// compute_lighting(normal, v, …, diffuse, ambient, specular, shininess, ao): the
 // same one rasterize_phong uses; a Material's fields are passed out explicitly.
 
 static constexpr float EPS = 1e-5f;
@@ -181,7 +181,7 @@ TEST(light, specular_is_strictly_smaller_off_peak)
 
     vec3 peak =
         compute_lighting(n, vec3{ 0, 1, 0 }, &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess);
-    // View rotated 45° away from the light — half-vector no longer aligns
+    // View rotated 45° away from the light: half-vector no longer aligns
     // with the normal, so specular contribution drops.
     vec3 off = compute_lighting(
         n, normalize(vec3{ 1, 1, 0 }), &l, 1, ambient, mat.diffuse, mat.ambient, mat.specular, mat.shininess

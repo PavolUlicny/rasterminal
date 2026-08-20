@@ -74,14 +74,14 @@ TEST(draw_line, single_pixel)
 
 TEST(draw_line, depth_closer_wins)
 {
-    // Far line (z=0.7) drawn first; near line (z=0.3) second — near must win.
+    // Far line (z=0.7) drawn first; near line (z=0.3) second; near must win.
     {
         Framebuffer fb(20, 10, /*headless=*/true);
         draw_line(fb, { 2.0f, 5.0f, 0.7f }, { 8.0f, 5.0f, 0.7f }, Color{ 255, 0, 0 });
         draw_line(fb, { 2.0f, 5.0f, 0.3f }, { 8.0f, 5.0f, 0.3f }, Color{ 0, 0, 255 });
         assert_depth_near(fb, 5, 5, 0.3f, 0.05f);
     }
-    // Near line (z=0.3) drawn first; far (z=0.7) drawn second — near must still win.
+    // Near line (z=0.3) drawn first; far (z=0.7) drawn second; near must still win.
     {
         Framebuffer fb(20, 10, /*headless=*/true);
         draw_line(fb, { 2.0f, 5.0f, 0.3f }, { 8.0f, 5.0f, 0.3f }, Color{ 0, 0, 255 });
@@ -129,7 +129,7 @@ TEST(draw_line, fully_offscreen_draws_nothing)
 // rasterize
 // Triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40x20 framebuffer.
 // Verified: pixel center (20.5,10.5) is inside; (0.5,10.5) and (39.5,10.5) outside.
-// Pixel center (20.5,4.5) is inside geometrically — used for band-clipping test.
+// Pixel center (20.5,4.5) is inside geometrically, used for band-clipping test.
 
 TEST(rasterize, triangle_fill_covers_interior)
 {
@@ -146,8 +146,8 @@ TEST(rasterize, respects_y_band)
     // y_min=6, y_max=12: pixel (20,4) is inside the triangle but below the band.
     rast(fb, { 4.0f, 2.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, 6, 12);
 
-    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min — must not be drawn
-    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
+    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min, must not be drawn
+    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band, must be drawn
 }
 
 TEST(rasterize, depth_closer_wins)
@@ -156,14 +156,14 @@ TEST(rasterize, depth_closer_wins)
     vec3 sa_far{ 4.0f, 2.0f, 0.7f }, sb_far{ 36.0f, 2.0f, 0.7f }, sc_far{ 20.0f, 18.0f, 0.7f };
     vec3 sa_near{ 4.0f, 2.0f, 0.2f }, sb_near{ 36.0f, 2.0f, 0.2f }, sc_near{ 20.0f, 18.0f, 0.2f };
 
-    // Far drawn first, near second — near must win (depth test passes for second).
+    // Far drawn first, near second; near must win (depth test passes for second).
     {
         Framebuffer fb(40, 20, /*headless=*/true);
         rast(fb, sa_far, sb_far, sc_far, 0, fb.height() - 1);
         rast(fb, sa_near, sb_near, sc_near, 0, fb.height() - 1);
         assert_depth_near(fb, 20, 10, 0.2f, 0.05f);
     }
-    // Near drawn first, far second — near must still win (depth test rejects far).
+    // Near drawn first, far second; near must still win (depth test rejects far).
     {
         Framebuffer fb(40, 20, /*headless=*/true);
         rast(fb, sa_near, sb_near, sc_near, 0, fb.height() - 1);
@@ -175,7 +175,7 @@ TEST(rasterize, depth_closer_wins)
 TEST(rasterize, degenerate_collinear_skipped)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    // All three vertices on the same horizontal line — denom=0, setup_tri returns false.
+    // All three vertices on the same horizontal line: denom=0, setup_tri returns false.
     rast(fb, { 5.0f, 5.0f, 0.5f }, { 15.0f, 5.0f, 0.5f }, { 10.0f, 5.0f, 0.5f }, 0, fb.height() - 1);
 
     for (int x = 4; x <= 16; ++x)
@@ -202,7 +202,7 @@ TEST(rasterize, entirely_off_screen_no_crash)
 TEST(rasterize, subpixel_degenerate_no_crash)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
-    // Vertices spaced much less than one pixel — must not crash.
+    // Vertices spaced much less than one pixel, must not crash.
     rast(fb, { 10.0f, 10.0f, 0.5f }, { 10.3f, 10.0f, 0.5f }, { 10.15f, 10.3f, 0.5f }, 0, fb.height() - 1);
 }
 
@@ -247,8 +247,8 @@ TEST(rasterize_phong, respects_y_band)
         false, vec3{ 20.0f, 10.0f, -10.0f }, &light, 1, vec3{ 0.2f, 0.2f, 0.2f }, mat, nullptr, nullptr, nullptr, 6, 12
     );
 
-    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
-    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
+    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6, must not be drawn
+    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band, must be drawn
 }
 
 // Framebuffer
@@ -267,7 +267,7 @@ TEST(framebuffer, resize_resets_depth_and_dimensions)
 }
 
 // Two threads race writing different (depth, color) at the same pixel.
-// The shallower fragment's color must always be the one observed — depth and
+// The shallower fragment's color must always be the one observed: depth and
 // color update atomically together, regardless of which thread's CAS landed last.
 TEST(framebuffer, multithread_depth_color_race)
 {
@@ -295,7 +295,7 @@ TEST(framebuffer, multithread_depth_color_race)
                 }
             }
         );
-        // Thread B writes the deeper fragment (depth 0.8, blue) — must lose.
+        // Thread B writes the deeper fragment (depth 0.8, blue): must lose.
         std::thread tb(
             [&]
             {
@@ -329,9 +329,9 @@ TEST(framebuffer, multithread_depth_color_race)
 // Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on a 40×20 framebuffer.
 // Key pixel centres and their pre-computed screen-space barycentric weights:
 //
-//   Pixel (12,10) — centre (12.5,10.5): ba=0.46875, bb=0,       bc=0.53125
-//   Pixel (27,10) — centre (27.5,10.5): ba=0,       bb=0.46875, bc=0.53125
-//   Pixel (20,10) — centre (20.5,10.5): ba=0.21875, bb=0.25,    bc=0.53125
+//   Pixel (12,10), centre (12.5,10.5): ba=0.46875, bb=0,       bc=0.53125
+//   Pixel (27,10), centre (27.5,10.5): ba=0,       bb=0.46875, bc=0.53125
+//   Pixel (20,10), centre (20.5,10.5): ba=0.21875, bb=0.25,    bc=0.53125
 //
 // All values derived analytically from setup_tri's formulas and verified below.
 
@@ -411,7 +411,7 @@ TEST(rasterize_phong, equal_w_nontrivial_matches_w1)
 }
 
 // Depth must not be affected by w values (depth is linearly interpolated).
-// Using uniform wa=wb=wc=10 with constant depth 0.5 — depth must still be 0.5.
+// Using uniform wa=wb=wc=10 with constant depth 0.5: depth must still be 0.5.
 TEST(rasterize, equal_w_does_not_change_depth)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -556,7 +556,7 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
 
 // z_ndc varies: sa.z=0.2, sc.z=0.8; wa=wb=10, wc=1.
 // At pixel (12,10): linear depth = 0.46875*0.2 + 0*0.2 + 0.53125*0.8 = 0.51875.
-// Perspective-correct depth would be ≈0.751 — far outside the tolerance window.
+// Perspective-correct depth would be ≈0.751, far outside the tolerance window.
 TEST(rasterize, unequal_w_depth_still_linear)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -600,8 +600,8 @@ TEST(rasterize, unequal_w_y_band_unaffected)
         white, 6, 12
     );
 
-    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6 — must not be drawn
-    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band — must be drawn
+    ASSERT_FALSE(was_drawn(fb, 20, 4)); // in triangle, below y_min=6, must not be drawn
+    ASSERT_TRUE(was_drawn(fb, 20, 10)); // in triangle, in band, must be drawn
 }
 
 // setup_tri bounding-box & band clamping
@@ -667,7 +667,7 @@ TEST(rasterize, band_disjoint_from_triangle_draws_nothing)
 
 TEST(rasterize, three_identical_vertices_no_draw)
 {
-    // All three vertices coincide — single-point zero-area; denom=0 < DEGEN_AREA_EPS.
+    // All three vertices coincide: single-point zero-area; denom=0 < DEGEN_AREA_EPS.
     // Distinct from degenerate_collinear_skipped (three different points on a line).
     Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, { 10.0f, 10.0f, 0.5f }, { 10.0f, 10.0f, 0.5f }, { 10.0f, 10.0f, 0.5f }, 0, fb.height() - 1);
@@ -684,7 +684,7 @@ TEST(rasterize, winding_agnostic_cw_also_draws)
 {
     // rasterize_flat() is winding-agnostic: CW triangles fill the same interior pixels
     // as their CCW mirror. Backface culling is the renderer's responsibility, not
-    // rasterize_flat()'s — it must work correctly for both winding orders.
+    // rasterize_flat()'s; it must work correctly for both winding orders.
     Framebuffer fb1(40, 20, /*headless=*/true), fb2(40, 20, /*headless=*/true);
     rast(fb1, { 4.0f, 2.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, 0, 19); // CCW
     rast(fb2, { 4.0f, 2.0f, 0.5f }, { 20.0f, 18.0f, 0.5f }, { 36.0f, 2.0f, 0.5f }, 0, 19); // CW (b,c swapped)
@@ -709,7 +709,7 @@ TEST(rasterize, color_above_one_rolls_off_below_255)
 
 TEST(rasterize, color_below_zero_clamps_to_0)
 {
-    // Colour (-1,-1,-1) — underflow — must yield (0,0,0).
+    // Colour (-1,-1,-1), underflow, must yield (0,0,0).
     Framebuffer fb(40, 20, /*headless=*/true);
     vec3 dark{ -1.0f, -1.0f, -1.0f };
     rast_colored(
@@ -724,7 +724,7 @@ TEST(rasterize, color_below_zero_clamps_to_0)
 TEST(draw_line, depth_interpolates_along_line)
 {
     // Endpoints z=0.2 and z=0.8; 8 steps → sz=0.075; midpoint (x=6) has z≈0.5.
-    // Existing tests use constant depth — this verifies the sz accumulation.
+    // Existing tests use constant depth; this verifies the sz accumulation.
     Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, { 2.0f, 5.0f, 0.2f }, { 10.0f, 5.0f, 0.8f }, Color{ 255, 255, 255 });
     assert_depth_near(fb, 6, 5, 0.5f, 0.02f);
@@ -745,7 +745,7 @@ TEST(draw_line, negative_slope)
 {
     // From (1,7) to (7,1): dx=+6, dy=−6, steps=6, sx=+1.0, sy=−1.0.
     // Anti-diagonal: (1,7),(2,6),(3,5),(4,4),(5,3),(6,2),(7,1).
-    // First test with negative sy — all prior tests have sy ≥ 0.
+    // First test with negative sy; all prior tests have sy ≥ 0.
     Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, { 1.0f, 7.0f, 0.5f }, { 7.0f, 1.0f, 0.5f }, Color{ 255, 255, 255 });
     for (int i = 0; i <= 6; ++i)
@@ -813,7 +813,7 @@ TEST(rasterize, bbox_clamps_all_four_edges)
     //   x: ⌊-5⌋=−5 → clamps x0=0; ⌈25⌉=25 → clamps x1=19
     //   y: ⌊-5⌋=−5 → clamps y0=0; ⌈25⌉=25 → clamps y1=19
     // Pixel (10,5) lies inside the triangle (at y=5 the span is x≈[0,20]) and
-    // within the framebuffer — must be drawn without OOB write.
+    // within the framebuffer, must be drawn without OOB write.
     Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, { -5.0f, -5.0f, 0.5f }, { 25.0f, -5.0f, 0.5f }, { 10.0f, 25.0f, 0.5f }, 0, fb.height() - 1);
     ASSERT_TRUE(was_drawn(fb, 10, 5));

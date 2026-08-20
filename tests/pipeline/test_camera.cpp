@@ -126,7 +126,7 @@ TEST(camera, projection_wider_aspect_scales_x_less)
 TEST(camera, projection_degenerate_size_does_not_divide_by_zero)
 {
     // Guard clause in Camera::projection falls back to aspect=1 when either
-    // dimension is non-positive — must not produce NaN/inf.
+    // dimension is non-positive: must not produce NaN/inf.
     Camera c;
     mat4 P = c.projection(0, 100);
     ASSERT_TRUE(std::isfinite(P.m[0][0]));
@@ -283,7 +283,7 @@ TEST(camera, process_key_unknown_does_not_change_state)
     ASSERT_NEAR(e_after.z, e_before.z, EPS);
 }
 
-// orbit() — turntable-specific
+// orbit(): turntable-specific
 
 TEST(camera, orbit_keeps_eye_on_sphere)
 {
@@ -367,7 +367,7 @@ TEST(camera, orbit_yaw_follows_drag_when_upside_down)
 TEST(camera, orbit_pitch_not_flipped_when_upside_down)
 {
     // Pitch is around local right, which follows the screen in every
-    // orientation — the upside-down inversion must not touch dy. Upside down,
+    // orientation: the upside-down inversion must not touch dy. Upside down,
     // a positive dy rotates the -Z eye toward +Y.
     Camera c;
     c.target = { 0.0f, 0.0f, 0.0f };
@@ -1136,7 +1136,7 @@ TEST(camera, projection_both_zero_fallback)
 TEST(camera, view_explicit_eye_pos_maps_to_origin)
 {
     // The two-arg overload must use the supplied position, not recompute eye().
-    // We pass a position offset from the normal eye() — it must still map to origin.
+    // We pass a position offset from the normal eye(); it must still map to origin.
     Camera c;
     c.target = { 2.0f, 3.0f, 4.0f };
     c.distance = 5.0f;

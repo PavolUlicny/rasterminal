@@ -191,7 +191,7 @@ struct Renderer
     std::condition_variable m_cv_work; // workers block here between frames
     std::condition_variable m_cv_done; // render() blocks here until all done
 
-    // Frame inputs — written once under m_mutex before workers are woken,
+    // Frame inputs, written once under m_mutex before workers are woken,
     // then read-only for the duration of the frame.
     const Mesh *m_mesh = nullptr;
     mat4 m_vp;

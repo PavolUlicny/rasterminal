@@ -12,7 +12,7 @@ option(RASTERMINAL_PORTABLE
        OFF)
 option(RASTERMINAL_BUILD_TESTS "Build the test suite" ON)
 # Release-artifact link: statically link libstdc++/libgcc so the binary drops the build host's
-# libstdc++ ABI dependency (no "GLIBCXX_… not found" on older distros). glibc stays dynamic —
+# libstdc++ ABI dependency (no "GLIBCXX_… not found" on older distros). glibc stays dynamic;
 # full distro-portability still needs an old-glibc/-static build. Linux GNU/Clang only (macOS
 # links the ABI-stable system libc++). Pair with RASTERMINAL_PORTABLE=ON for the `dist` preset.
 option(RASTERMINAL_STATIC_LIBSTDCXX
@@ -54,7 +54,7 @@ endif()
 
 # ─── 32-bit (ILP32) target adjustments ────────────────────────────────────────
 # CMAKE_SIZEOF_VOID_P reflects the effective target: a -m32 flag (Linux i686), -A Win32
-# (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling — applied
+# (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling, applied
 # at directory scope so both targets, all configs (incl. Debug), and C *and* C++ sources
 # (the vendored zstd/libwebp decode TUs) inherit it.
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
@@ -95,7 +95,7 @@ endforeach()
 set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
   PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-# zstd is a C TU — use C_COMPILER_ID so the right flag is chosen on mixed-compiler
+# zstd is a C TU: use C_COMPILER_ID so the right flag is chosen on mixed-compiler
 # builds (e.g. Clang CXX + MSVC cl.exe C, a valid CMake configuration on Windows).
 set_source_files_properties(
   vendor/basisu/zstd/zstddeclib.c
@@ -114,12 +114,12 @@ set_source_files_properties(
 # x86 Linux, the cross32 CI target). Inflate stays: tests round-trip via mz_uncompress.
 add_compile_definitions(MINIZ_NO_ZLIB_COMPATIBLE_NAMES MINIZ_NO_STDIO MINIZ_NO_ARCHIVE_APIS)
 
-# libwebp decode subset (EXT_texture_webp). Listed individually — a unity #include shim
+# libwebp decode subset (EXT_texture_webp). Listed individually: a unity #include shim
 # fails on duplicate file-local statics (e.g. clip_8b). The dsp SIMD variants self-gate on
 # arch macros and carry no per-file SIMD flags: release (-march=native / /arch:AVX2) activates
 # all of them; portable activates only the SSE2 baseline (sse41/avx2 become empty stubs).
 # libwebp ships CPUID runtime dispatch that COULD safely carry sse41/avx2 in a portable binary
-# via per-file -msse4.1/-mavx2 (kernels are selected by actual CPU, so no SIGILL risk) — we
+# via per-file -msse4.1/-mavx2 (kernels are selected by actual CPU, so no SIGILL risk): we
 # deliberately forgo that to keep "portable = no arch-specific codegen" uniform; portable WebP
 # decode stays correct, just SSE2-only (decode is load-time, not hot-path). These are C TUs;
 # suppress warnings per-source like zstd (GNU/Clang C already gets no -W via the
@@ -177,7 +177,7 @@ set(WEBP_DEC_SRCS
 # WEBP_USE_THREAD mutex-guards libwebp's lazy SIMD function-pointer init (cpu.h): texture
 # decode runs on worker threads, so without it the first concurrent WebP decode races on the
 # global DSP tables. cpu.h gates the mutex on `WEBP_USE_THREAD && !_WIN32`, so it engages
-# everywhere except MSVC/_WIN32 — there the unsynchronized path (and thus the race) remains,
+# everywhere except MSVC/_WIN32: there the unsynchronized path (and thus the race) remains,
 # matching upstream's own posture. That residual race is benign: idempotent writes of the same
 # SIMD impl, and aligned-pointer stores are atomic on the targeted ISAs.
 set_source_files_properties(
@@ -225,7 +225,7 @@ target_compile_options(rasterminal_warnings INTERFACE
   $<$<CXX_COMPILER_ID:MSVC>:/D_CRT_SECURE_NO_WARNINGS>)
 
 # ─── Release optimisation flags ───────────────────────────────────────────────
-# Tier 1: CPU-agnostic speed flags — applied in all non-Debug configs (Release, Portable,
+# Tier 1: CPU-agnostic speed flags, applied in all non-Debug configs (Release, Portable,
 # RelWithDebInfo, MinSizeRel via the NOT:Debug gate). The appended -O3 overrides the
 # config default for RelWithDebInfo (-O2) and MinSizeRel (-Os): both end up at -O3, by
 # design (RelWithDebInfo is then -O3 -g, the accurate target for opt-dependent bug repro).
@@ -242,11 +242,11 @@ target_compile_options(rasterminal_release_opts INTERFACE
     -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR-;/GS-;/Gy>
-  # Tier 2: machine-specific — omitted when RASTERMINAL_PORTABLE=ON.
+  # Tier 2: machine-specific, omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
-# Linker dead-code GC — drops the sections emitted by -ffunction-sections/-fdata-sections
+# Linker dead-code GC: drops the sections emitted by -ffunction-sections/-fdata-sections
 # (and /Gy) that nothing references. LTO + -fvisibility=hidden already strip unused C++;
 # this mainly reaps the non-LTO C decode TUs (libwebp/zstd). macOS ld64 spells --gc-sections
 # as -dead_strip; MSVC's /OPT:REF removes unreferenced, /OPT:ICF folds identical functions.
@@ -257,7 +257,7 @@ set(RASTERMINAL_GC_LINK_OPTS
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/OPT:REF;/OPT:ICF>)
 target_link_options(rasterminal_release_opts INTERFACE ${RASTERMINAL_GC_LINK_OPTS})
 
-# LTO — CMake picks the right form per compiler (-flto=auto / -flto=thin / /GL+/LTCG).
+# LTO: CMake picks the right form per compiler (-flto=auto / -flto=thin / /GL+/LTCG).
 include(CheckIPOSupported)
 check_ipo_supported(RESULT ipo_ok OUTPUT ipo_msg)
 if(NOT ipo_ok)

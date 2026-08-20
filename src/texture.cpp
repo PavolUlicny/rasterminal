@@ -192,7 +192,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
 {
     // Bitangent sign for the green channel. The TBN path samples the v-flipped texture
     // (sample_rgb: v = 1 - v) and builds B = cross(N, T) over the raw +v tangent, which
-    // matches the OpenGL +Y normal-map convention — so the texture-space slope n.y is +dy
+    // matches the OpenGL +Y normal-map convention, so the texture-space slope n.y is +dy
     // of the image-space central difference. Empirically validated against a reference
     // render; flip this one constant if relief inverts.
     constexpr float dy_sign = 1.0f;
@@ -204,7 +204,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
 
     // Bound -bm before it scales the gradient: a hostile finite-but-absurd multiplier (e.g.
     // `-bm 1e38`) would otherwise overflow bm*kHeightScale*dx to +inf, and normalize() would
-    // emit NaN texels — the Inf/NaN class -ffinite-math-only treats as UB (cf. the loader's Ke
+    // emit NaN texels, the Inf/NaN class -ffinite-math-only treats as UB (cf. the loader's Ke
     // [0,1e6] clamp). A finite-vs-finite clamp survives fast-math; literal inf/nan tokens are
     // already rejected by the MTL number parser upstream. Negative is preserved (it inverts relief).
     const float bm_s = clamp(bm, -1e6f, 1e6f);
@@ -234,7 +234,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
 
     const auto height_at = [&](int x, int y) -> float
     {
-        // (unsigned)c < (unsigned)n is true iff 0 ≤ c < n — one compare rules out both bounds, so
+        // (unsigned)c < (unsigned)n is true iff 0 ≤ c < n: one compare rules out both bounds, so
         // an in-range tap (every tap of an interior texel, i.e. nearly all of them) skips
         // wrap_index's modulo. For an in-range coordinate every wrap mode is the identity, so the
         // fast path is bit-identical; only the genuine edge taps pay the fold.

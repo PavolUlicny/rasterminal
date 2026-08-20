@@ -2,7 +2,7 @@
 
 // Draco's templated decoder trips the project's strict warnings in its own
 // headers (notably GCC -Wmaybe-uninitialized under LTO at template instantiation
-// points). We don't audit vendored code — refresh from upstream instead — so
+// points). We don't audit vendored code (refresh from upstream instead), so
 // suppress those here, where the Draco headers are confined. This file is the
 // Draco analogue of vendor/meshoptimizer/meshoptimizer_impl.cpp.
 #if defined(__GNUC__) && !defined(__clang__)
@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <memory> // IWYU pragma: keep — std::unique_ptr<draco::Mesh> below; clangd can't trace it through Draco's StatusOr::value()
+#include <memory> // IWYU pragma: keep, std::unique_ptr<draco::Mesh> below; clangd can't trace it through Draco's StatusOr::value()
 #include <utility>
 
 namespace
@@ -72,7 +72,7 @@ bool decode_draco_mesh(
         return false;
     }
     // A 4-component COLOR_0 carries per-vertex opacity in its 4th channel; surface it
-    // in colors_alpha. Mirrors the accessor path's strict vec4 test — a non-RGBA color
+    // in colors_alpha. Mirrors the accessor path's strict vec4 test: a non-RGBA color
     // attribute (3, or a malformed >4) is not treated as carrying alpha.
     const bool col_alpha = col && col->num_components() == 4;
 

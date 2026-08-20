@@ -136,7 +136,7 @@ TEST(transparency, order_independent_composite)
         assert_pixel_near(fb, 20, 10, expected, 3);
     }
     {
-        Mesh m; // reversed submission order — same result
+        Mesh m; // reversed submission order, same result
         add_flat_large(m, -1.0f, GREEN, 0.5f, true);
         add_flat_large(m, 0.0f, RED, 0.5f, true);
         finalize(m, 0);
@@ -173,8 +173,8 @@ TEST(transparency, interpenetration_per_pixel_order)
     ASSERT_TRUE(right.g > right.r);
 }
 
-// A quad split into two transparent triangles sharing a diagonal. Every covered pixel
-// — including those on the shared edge — must be composited exactly once: a missing
+// A quad split into two transparent triangles sharing a diagonal. Every covered pixel,
+// including those on the shared edge, must be composited exactly once: a missing
 // top-left fill rule double-blends the seam (darker/over-saturated), a wrong one drops
 // slivers (background shows through).
 TEST(transparency, shared_edge_no_double_blend)
@@ -185,7 +185,7 @@ TEST(transparency, shared_edge_no_double_blend)
     const vec3 br{ 2.0f, -2.0f, 0.0f };
     const vec3 tr{ 2.0f, 2.0f, 0.0f };
     const vec3 tl{ -2.0f, 2.0f, 0.0f };
-    add_unlit_tri(m, bl, br, tr, RED, 0.5f, true); // shares edge bl–tr
+    add_unlit_tri(m, bl, br, tr, RED, 0.5f, true); // shares edge bl-tr
     add_unlit_tri(m, bl, tr, tl, RED, 0.5f, true);
     finalize(m, 0);
 
@@ -211,7 +211,7 @@ TEST(transparency, shared_edge_no_double_blend)
 
 // The resolve pass sweeps only the transparent region (the merged per-worker touched-pixel
 // box), not the whole framebuffer. A single small blend triangle must composite inside its
-// projection while every pixel outside the box keeps the exact background — proving the box
+// projection while every pixel outside the box keeps the exact background, proving the box
 // neither under-covers (drops the composite) nor over-covers (touches the background).
 TEST(transparency, localized_blend_leaves_outside_untouched)
 {
@@ -263,8 +263,8 @@ TEST(transparency, two_disjoint_regions_both_resolved)
 // shared, cache-line-adjacent box array to avoid false sharing under heavy overdraw); render()
 // then merges the per-worker boxes. This stresses that merge: four high-overdraw clusters in
 // the screen corners, with enough stacked triangles (256 total > 4 work-stealing chunks) that
-// the clusters land on different workers. Every cluster must composite — dropping or mismerging
-// any worker's box would leave that corner at the background — while the central gap, touched by
+// the clusters land on different workers. Every cluster must composite: dropping or mismerging
+// any worker's box would leave that corner at the background, while the central gap, touched by
 // no worker, stays the exact background.
 TEST(transparency, multi_worker_box_merge_covers_all_regions)
 {
@@ -544,7 +544,7 @@ TEST(transparency, ply_vertex_alpha)
 }
 
 // Per-triangle partition: a PLY with one fully-opaque triangle (all vertex alpha == 255) and
-// one translucent triangle must keep the opaque one in [0, opaque_count) — only the translucent
+// one translucent triangle must keep the opaque one in [0, opaque_count): only the translucent
 // triangle is routed to the transparent pass, so the opaque region still takes the fast path.
 // (Per-material routing would have flipped the whole single-material mesh.)
 TEST(transparency, ply_vertex_alpha_per_triangle_partition)

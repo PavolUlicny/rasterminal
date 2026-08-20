@@ -292,7 +292,7 @@ TEST(ply_valid, float_vertex_colors)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
 }
 
-// REJECTIONS — malformed/corrupt PLY must not crash
+// REJECTIONS: malformed/corrupt PLY must not crash
 
 TEST(reject, ply_missing_magic)
 {
@@ -317,7 +317,7 @@ TEST(reject, ply_no_end_header)
 
 TEST(reject, ply_unknown_property_type)
 {
-    // "quadruple" is not a PLY type — ply_parse_ptype returns UNKNOWN and
+    // "quadruple" is not a PLY type: ply_parse_ptype returns UNKNOWN and
     // the header parser rejects immediately (would desync binary reads).
     TmpFile t(
         tmp_path("rasterminal_test_badtype.ply"), "ply\n"
@@ -354,7 +354,7 @@ TEST(reject, ply_vertex_color_unsupported_type)
 
 TEST(reject, ply_vertex_alpha_unsupported_type)
 {
-    // Valid uchar RGB but a ushort alpha property — alpha rides the same rd_col
+    // Valid uchar RGB but a ushort alpha property: alpha rides the same rd_col
     // decode path, so an unsupported alpha type must reject too.
     TmpFile t(
         tmp_path("rasterminal_test_valpha_ushort.ply"),
@@ -501,7 +501,7 @@ TEST(reject, ply_truncated_binary_data)
                     "element face 1\n"
                     "property list uchar int vertex_indices\n"
                     "end_header\n";
-    // Only 2 vertices of data (24 bytes) — far short of 10 × 12 = 120.
+    // Only 2 vertices of data (24 bytes), far short of 10 × 12 = 120.
     for (int i = 0; i < 6; i++)
     {
         emit_f32_le(s, 0);
@@ -512,7 +512,7 @@ TEST(reject, ply_truncated_binary_data)
 
 TEST(reject, ply_zero_face_count_with_vertices)
 {
-    // element face 0 — n_faces==0 → rejected by the n_faces==0 guard.
+    // element face 0: n_faces==0 → rejected by the n_faces==0 guard.
     // Different from ply_no_face_element which omits the element entirely.
     TmpFile t(
         tmp_path("rasterminal_test_zeroface.ply"), "ply\n"
@@ -533,7 +533,7 @@ TEST(reject, ply_zero_face_count_with_vertices)
 
 TEST(reject, ply_missing_xyz_properties)
 {
-    // Vertex element present but no x/y/z — tinyply throws on
+    // Vertex element present but no x/y/z: tinyply throws on
     // request_properties_from_element, which load_ply catches and returns false.
     TmpFile t(
         tmp_path("rasterminal_test_noxyz.ply"), "ply\n"
@@ -689,7 +689,7 @@ static void emit_f64_le(std::string &s, double v)
 
 TEST(ply_valid, binary_le_float64_coordinates)
 {
-    // Vertices declared as "double" (FLOAT64) — loader must widen to float.
+    // Vertices declared as "double" (FLOAT64): loader must widen to float.
     std::string s = "ply\n"
                     "format binary_little_endian 1.0\n"
                     "element vertex 3\n"
@@ -743,7 +743,7 @@ TEST(ply_valid, ascii_vertex_index_singular_alias)
 
 TEST(ply_valid, ascii_uv_u_v_property_names)
 {
-    // "u"/"v" is the first alias tried — prior tests only exercise the fallback
+    // "u"/"v" is the first alias tried; prior tests only exercise the fallback
     // aliases ("s"/"t" and "texture_u"/"texture_v").
     TmpFile t(
         tmp_path("rast_uv_uv.ply"), "ply\nformat ascii 1.0\n"
@@ -828,7 +828,7 @@ TEST(ply_valid, binary_le_vertex_colors_float64)
 
 TEST(ply_valid, ascii_face_colors_r_g_b_alias)
 {
-    // Face element using "r"/"g"/"b" rather than "red"/"green"/"blue" — the
+    // Face element using "r"/"g"/"b" rather than "red"/"green"/"blue": the
     // second alias branch in load_ply was previously dead.
     TmpFile t(
         tmp_path("rast_fcol_rgb.ply"), "ply\nformat ascii 1.0\n"
@@ -939,7 +939,7 @@ TEST(reject, ply_all_faces_have_oob_indices_standard_path)
 
 TEST(reject, ply_all_faces_have_oob_indices_face_color_path)
 {
-    // Same but with face colors — exercises the separate OOB guard in the
+    // Same but with face colors: exercises the separate OOB guard in the
     // face-color expand path; all vertices skipped → empty → returns false.
     TmpFile t(
         tmp_path("rast_oob_fcol.ply"), "ply\nformat ascii 1.0\n"
@@ -1014,7 +1014,7 @@ TEST(ply_valid, binary_le_uint16_face_indices)
 TEST(ply_valid, binary_le_uint32_face_indices)
 {
     // "property list uchar uint" exercises the UINT32 default case in rd_idx.
-    // Prior tests all use "int" (INT32) — the default branch is different.
+    // Prior tests all use "int" (INT32); the default branch is different.
     std::string s = "ply\n"
                     "format binary_little_endian 1.0\n"
                     "element vertex 3\n"
@@ -1378,7 +1378,7 @@ TEST(ply_valid, ascii_face_texcoord_basic_triangle)
 TEST(ply_valid, ascii_face_texcoord_quad_fan_triangulates)
 {
     // Quad with 8 face-list UVs fan-triangulates into 2 triangles. Each corner's
-    // UV must survive (no dedup needed — corners have distinct UVs).
+    // UV must survive (no dedup needed: corners have distinct UVs).
     TmpFile t(
         tmp_path("rast_ftc_quad.ply"), "ply\nformat ascii 1.0\n"
                                        "element vertex 4\n"
@@ -1509,7 +1509,7 @@ TEST(ply_valid, ascii_face_texcoord_seam_above_crease_stays_split)
         }
     }
     ASSERT_EQ(found, 2);
-    // Normals must not be coincident — the 90 deg fold breaks weld smoothing.
+    // Normals must not be coincident: the 90 deg fold breaks weld smoothing.
     const float dot = (n0.x * n1.x) + (n0.y * n1.y) + (n0.z * n1.z);
     ASSERT_TRUE(dot < 0.5f);
 }
@@ -1740,7 +1740,7 @@ TEST(ply_valid, binary_be_face_texcoord)
 
 TEST(reject, ply_face_texcoord_wrong_corner_count)
 {
-    // Triangle face declares 5 UV floats — must be 2 * 3 = 6. Reject.
+    // Triangle face declares 5 UV floats: must be 2 * 3 = 6. Reject.
     TmpFile t(
         tmp_path("rast_ftc_bad_count.ply"), "ply\nformat ascii 1.0\n"
                                             "element vertex 3\n"
@@ -1779,7 +1779,7 @@ TEST(ply_valid, face_texcoord_with_face_colors_smooths_seam)
     // Combo: face-list texcoord + face colors. The face-color path stays fully
     // unshared, but a weld map (one source position id per emitted vertex) is
     // threaded into compute_normals so a UV-seam shared position smooths as
-    // one surface — without the weld, every corner would be its own group and
+    // one surface: without the weld, every corner would be its own group and
     // the surface would render faceted. Two coplanar triangles sharing v0 and
     // v2 with a UV seam at both shared corners → every vertex normal = (0,0,1).
     TmpFile t(
@@ -1829,7 +1829,7 @@ TEST(reject, ply_mixed_size_index_lists)
     // Mixed n-gon index lists (a triangle + a quad) leave ipf undefined:
     // total_idx/n_faces = 7/2 = 3 rounds, and the per-face stride is then wrong.
     // The texcoord lists are coincidentally uniform (6 floats each) so the
-    // texcoord gate alone would pass — only the faces->list_sizes guard rejects.
+    // texcoord gate alone would pass; only the faces->list_sizes guard rejects.
     TmpFile t(
         tmp_path("rast_mixed_idx.ply"), "ply\nformat ascii 1.0\n"
                                         "element vertex 4\n"
@@ -2032,7 +2032,7 @@ TEST(ply_valid, texturefile_first_wins)
 
 TEST(ply_valid, texturefile_name_with_spaces)
 {
-    // The whole remainder after the token is the filename — names with spaces
+    // The whole remainder after the token is the filename: names with spaces
     // must survive (no whitespace tokenizing).
     TmpFile bmp(tmp_path("rast tf spaced.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile t(
@@ -2077,7 +2077,7 @@ TEST(ply_valid, texturefile_no_comment_no_texture)
 
 TEST(ply_valid, texturefile_binary_le)
 {
-    // Comment parsing is independent of the data encoding — the header is ASCII
+    // Comment parsing is independent of the data encoding: the header is ASCII
     // either way. Binary-LE body with per-vertex UVs + a TextureFile comment.
     std::string s = "ply\nformat binary_little_endian 1.0\n"
                     "comment TextureFile rast_tf_bin.bmp\n"

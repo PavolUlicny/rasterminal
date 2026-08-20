@@ -28,7 +28,7 @@ static ParseResult run(std::initializer_list<const char *> tokens)
         test_close(devnull);
     }
 
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast) — parse_args takes char** (argv style)
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast): parse_args takes char** (argv style)
     ParseResult result = parse_args(static_cast<int>(argv.size()), const_cast<char **>(argv.data()));
 
     // Drain any buffered output while fds still point to /dev/null, then restore.
@@ -1118,7 +1118,7 @@ TEST(args, cluster_spin_bench_next_token)
 
 TEST(args, cluster_spin_bg_compact)
 {
-    // "white" contains 'w' and 'h' (themselves flags) — proof the value is taken
+    // "white" contains 'w' and 'h' (themselves flags): proof the value is taken
     // verbatim and its chars are not re-parsed as further cluster flags.
     ParseResult r = run({ "-Sbwhite", "m.obj" });
     ASSERT_TRUE(r.ok);
@@ -1902,7 +1902,7 @@ TEST(args, bench_size_overflowing_product_is_error)
 TEST(args, bench_size_missing_value_is_error)
 {
     ParseResult r = run({ "--bench", "50", "--bench-size", "m.obj" });
-    // "m.obj" consumed as value — then model_path is empty → error
+    // "m.obj" consumed as value, then model_path is empty → error
     ASSERT_FALSE(r.ok);
 }
 
@@ -1951,7 +1951,7 @@ TEST(args, bench_warmup_non_integer_is_error)
 TEST(args, bench_warmup_missing_value_is_error)
 {
     ParseResult r = run({ "--bench", "50", "--bench-warmup", "m.obj" });
-    // "m.obj" consumed as value — then model_path is empty → error
+    // "m.obj" consumed as value, then model_path is empty → error
     ASSERT_FALSE(r.ok);
 }
 
