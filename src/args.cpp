@@ -334,9 +334,6 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
-    auto parse_graphics_scale = [&parse_float](const char *flag, const char *val, float &out) -> bool
-    { return parse_float(flag, val, [](float v) { return v >= 0.05f && v <= 1.0f; }, "a number in [0.05, 1]", out); };
-
     auto parse_spin_direction = [prog](const char *flag, const char *val, SpinDirection &out) -> bool
     {
         return parse_enum(
@@ -437,10 +434,6 @@ ParseResult parse_args(int argc, char *argv[])
             "                                  kitty|sixel|blocks|auto\n"
             "                                  auto prefers kitty graphics, then sixel,\n"
             "                                  else half-block cells\n"
-            "          --graphics-scale F     Render scale for kitty in [0.05, 1] (default: 0.75)\n"
-            "                                  1 = native window resolution; the terminal\n"
-            "                                  upscales; error with an explicit --graphics\n"
-            "                                  blocks or sixel (neither can scale)\n"
             "          --spin-speed DEG/S     Auto-rotation speed in degrees/sec (default: 45)\n"
             "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
             "                                  left|right: the way the model's front face moves\n"
@@ -476,7 +469,6 @@ ParseResult parse_args(int argc, char *argv[])
     bool saw_bench_size = false;
     bool saw_fp_speed = false;
     bool saw_bench_warmup = false;
-    bool saw_graphics_scale = false;
     bool end_of_options = false;
 
     for (int i = 1; i < argc; i++)
@@ -599,15 +591,6 @@ ParseResult parse_args(int argc, char *argv[])
             {
                 return fail(1);
             }
-        }
-        else if (arg == "--graphics-scale")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_graphics_scale(flag, val, args.graphics_scale))
-            {
-                return fail(1);
-            }
-            saw_graphics_scale = true;
         }
         else if (arg == "--spin-speed")
         {
@@ -935,26 +918,6 @@ ParseResult parse_args(int argc, char *argv[])
     if (saw_bench_warmup && args.bench < 1)
     {
         std::fprintf(stderr, "%s: --bench-warmup requires --bench\n", prog);
-        return fail(1);
-    }
-    // Under an explicit --graphics blocks or sixel the scale can never come
-    // into play (blocks never scales; sixel has no terminal-side stretch, so
-    // it always renders 1:1): reject rather than accept a flag that would
-    // silently do nothing. Under auto it can (the query decides), so auto
-    // plus a scale stands alone.
-    if (saw_graphics_scale && args.graphics == GraphicsChoice::Blocks)
-    {
-        std::fprintf(
-            stderr, "%s: --graphics-scale applies to the kitty backend only (blocks renders per cell)\n", prog
-        );
-        return fail(1);
-    }
-    if (saw_graphics_scale && args.graphics == GraphicsChoice::Sixel)
-    {
-        std::fprintf(
-            stderr, "%s: --graphics-scale applies to the kitty backend only (sixel renders at native resolution)\n",
-            prog
-        );
         return fail(1);
     }
 

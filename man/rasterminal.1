@@ -262,23 +262,6 @@ would silently show nothing. Both are an error under tmux and GNU screen:
 kitty is not passed through there, and sixel support is build-dependent and
 not detected.
 .TP
-.BI \-\-graphics\-scale " factor"
-Render scale for the kitty graphics backend, in [0.05, 1]. The frame is
-rendered at this fraction of the window's pixel resolution and stretched
-back over the same cells by the terminal, trading sharpness for speed.
-.B 1
-renders at native resolution. Has no effect on the blocks or sixel backends
-(under
-.B \-\-graphics auto
-it is inert when either is selected), and is an error with an explicit
-.B \-\-graphics blocks
-or
-.B \-\-graphics sixel
-(neither scales: blocks by design, sixel because the protocol has no
-terminal-side stretch).
-Default
-.BR 0.75 .
-.TP
 .BI \-\-spin\-speed " DEG/S"
 Auto-rotation speed in degrees per second, used whenever spinning is active
 (via

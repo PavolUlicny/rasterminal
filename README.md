@@ -75,7 +75,7 @@ All of it is multi-threaded with a work-stealing scheduler. The opaque pass pick
 
 How the frame reaches the screen depends on what the terminal can do, which a capability query settles at startup. `--graphics` overrides the choice.
 
-- The kitty graphics protocol (kitty, Ghostty, WezTerm) carries real pixels at the window's resolution, scaled by `--graphics-scale` (default 0.75, `1` being native). Locally they travel through shared memory, so almost nothing crosses the terminal pipe per frame; over ssh they go inline, zlib-compressed.
+- The kitty graphics protocol (kitty, Ghostty, WezTerm) carries real pixels at the window's resolution. Locally they travel through shared memory, so almost nothing crosses the terminal pipe per frame; over ssh they go inline, zlib-compressed.
 - Sixel (xterm with sixel enabled, foot, mlterm, Windows Terminal 1.22+) draws real pixels at native resolution, quantized to the fixed 240-color xterm palette. The image is capped to the largest size the terminal advertises, since xterm discards anything bigger rather than clipping it, and it never paints the last terminal row, because an image touching it scrolls the screen every frame.
 - Half-blocks cover everything else. Each cell holds two vertically stacked pixels drawn as `▀`, foreground for the top and background for the bottom, in 24-bit color, or quantized to the xterm-256 palette where truecolor is missing.
 
@@ -191,7 +191,6 @@ rasterminal [options] <model>
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto`; with the kitty graphics backend the image is always 24-bit and with sixel always 240-color, so there this affects only the HUD line |
 | `--graphics` | none | `auto` | `kitty`, `sixel`, `blocks`, `auto`. `auto` draws real pixels through the kitty graphics protocol where the terminal supports it, then sixel where advertised, else half-blocks |
-| `--graphics-scale` | none | `0.75` | Render scale for the kitty backend in `[0.05, 1]`, `1` being native. The frame renders at this fraction of the window's pixel resolution and the terminal stretches it back over the same cells, trading sharpness for speed. Neither other backend scales, so an explicit `--graphics blocks` or `--graphics sixel` makes it an error; it is inert when `auto` falls back to either |
 | `--spin-speed` | none | `45` | Auto-rotation speed in degrees per second (positive number); applies whenever spinning is active |
 | `--spin-direction` | none | `left` | `left`, `right`, the way the model's front face moves on screen. Under `--first-person` nothing is being orbited, so it names the way the view itself turns |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
@@ -260,7 +259,7 @@ Any terminal with UTF-8 support, ANSI color, and mouse reporting for drag-to-orb
 
 Color is 24-bit where the terminal supports it and 256 colors elsewhere, decided from `COLORTERM`, `TERM`, `TMUX` and `STY`, with `--color` overriding. A `dumb` terminal, or a Windows console that cannot enable ANSI escape processing, is rejected outright. Inside GNU screen the 256-color fallback always applies, since screen 4.x garbles 24-bit color and the inherited `COLORTERM` describes the outer terminal. Under a pixel backend the setting reaches only the HUD line: kitty frames are always 24-bit and sixel frames always the 240-color palette.
 
-Pixel rendering is optional and detected by a startup query, kitty preferred over sixel, with `--graphics` overriding. kitty renders at 0.75 of the window resolution by default (`--graphics-scale 1` for native); sixel renders at native resolution, and stock xterm needs sixel switched on, for example `xterm -ti vt340`. Neither is available under tmux or GNU screen, where kitty is not passed through and sixel support is build-dependent and not detected.
+Pixel rendering is optional and detected by a startup query, kitty preferred over sixel, with `--graphics` overriding. Both render at the window's native resolution, and stock xterm needs sixel switched on, for example `xterm -ti vt340`. Neither is available under tmux or GNU screen, where kitty is not passed through and sixel support is build-dependent and not detected.
 
 Both standard input and standard output must be the terminal. If either is piped or redirected, rasterminal exits with an error rather than emitting escape sequences into the stream; the headless `--bench` mode is exempt.
 

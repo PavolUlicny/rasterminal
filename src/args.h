@@ -81,10 +81,6 @@ struct ParsedArgs
     WireframeColor wireframe_color = WireframeColor::White;
     ColorChoice color = ColorChoice::Auto;
     GraphicsChoice graphics = GraphicsChoice::Auto;
-    // Render scale for the kitty backend, [0.05, 1]; 1 = native window
-    // resolution. Blocks never scales, and sixel cannot (no terminal-side
-    // stretch), so both reject the flag when forced explicitly.
-    float graphics_scale = 0.75f;
     int fps = 30;               // 0 = uncapped (set by bare -f), >0 = cap at this value
     int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
     int bench_width = 200;      // headless framebuffer width in pixels

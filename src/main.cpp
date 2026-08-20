@@ -165,15 +165,15 @@ namespace
         return v >= 1 && v <= platform::detail::MAX_CELL_REPORT_PX;
     }
 
-    // A pixel-backend framebuffer covers the cell grid at native resolution
-    // (kitty: times --graphics-scale), bounded to MAX_FB_DIM_PX (8K-display
-    // size) on the longest axis: valid_cell_px bounds each cell axis, but the
-    // grid x cell product can still reach gigapixels on a garbage report. Both
-    // axes scale by the same factor. Kitty stretches the frame to the grid
-    // rectangle (see pixel_fb_size), so a lone clamped axis would render
-    // with the wrong aspect ratio while a uniform scale only costs sampling
-    // resolution; sixel has no such stretch, so there a clamped frame simply
-    // displays smaller than the window (accepted: it takes an ~8200 px wide
+    // A pixel-backend framebuffer covers the cell grid at native resolution,
+    // bounded to MAX_FB_DIM_PX (8K-display size) on the longest axis:
+    // valid_cell_px bounds each cell axis, but the grid x cell product can
+    // still reach gigapixels on a garbage report. Both axes scale by the same
+    // factor. Kitty stretches the frame to the grid rectangle (see
+    // pixel_fb_size), so a lone clamped axis would render with the wrong
+    // aspect ratio while a uniform scale only costs sampling resolution;
+    // sixel has no such stretch, so there a clamped frame simply displays
+    // smaller than the window (accepted: it takes an ~8200 px wide
     // terminal to reach). The clamp bounds a hostile report rather than
     // removing it: the worst case is 8192 on the longest axis and
     // grid-proportional on the other, a few hundred MB, survivable by design.
@@ -229,11 +229,7 @@ namespace
         bool cell_trusted = false;
     };
 
-    // scale is --graphics-scale, applied before the clamp so both bounds
-    // compose; kitty-only (sixel cannot stretch a smaller frame back over the
-    // cells, so it always renders native; args.cpp rejects the flag with an
-    // EXPLICIT --graphics sixel, but auto can still land on sixel with a
-    // scale set, which is why the Kitty guard below is not redundant). Two
+    // Both pixel backends render at the window's native resolution. Two
     // accepted containment residuals, both requiring a sixel terminal that
     // never answers the cell-size query (none known): with no pixel report
     // either (always the case on Windows, where get_terminal_pixel_size is
@@ -247,7 +243,7 @@ namespace
     // No aspect scaling on the sixel caps: sixel paints 1:1 and the camera
     // fits the fb aspect, so a capped axis letterboxes rather than distorts.
     FbSize pixel_fb_size(
-        GraphicsBackend backend, int cols, int image_rows, int cell_w, int cell_h, float scale, const SixelBounds &lim
+        GraphicsBackend backend, int cols, int image_rows, int cell_w, int cell_h, const SixelBounds &lim
     ) noexcept
     {
         if (backend == GraphicsBackend::Sixel)
@@ -261,15 +257,6 @@ namespace
         {
             w = (lim.max_img_w > 0) ? std::min(w, lim.max_img_w) : w;
             h = (lim.max_img_h > 0) ? std::min(h, lim.max_img_h) : h;
-        }
-        if (backend == GraphicsBackend::Kitty && scale != 1.0f)
-        {
-            // A nonzero axis stays nonzero, same rule as the clamp below. Accepted
-            // aspect exception shared with that clamp: the 1 px floor can raise one
-            // axis alone, but only when an axis scales below a pixel (a terminal a
-            // couple of cells wide), where a distorted sliver beats a blank image.
-            w = (w > 0) ? std::max(1, static_cast<int>(static_cast<float>(w) * scale)) : 0;
-            h = (h > 0) ? std::max(1, static_cast<int>(static_cast<float>(h) * scale)) : 0;
         }
         const int longest = std::max(w, h);
         if (longest > MAX_FB_DIM_PX)
@@ -828,11 +815,10 @@ int main(int argc, char *argv[])
 
     // Blocks: each cell covers 2 vertical pixels via ▀ half-block. Pixel
     // backends: the image covers the cells above the HUD at the grid's pixel
-    // size (kitty: times --graphics-scale), or a smaller centered letterbox
-    // where the terminal's sixel limits cap it (see pixel_fb_size). The last
-    // terminal row is reserved for the HUD when shown; --no-hud reclaims it
-    // except on sixel, which always leaves the last row out (see
-    // image_rows_for).
+    // size, or a smaller centered letterbox where the terminal's sixel limits
+    // cap it (see pixel_fb_size). The last terminal row is reserved for the
+    // HUD when shown; --no-hud reclaims it except on sixel, which always
+    // leaves the last row out (see image_rows_for).
     const int hud_rows = args.hud ? 1 : 0;
     GraphicsConfig gfx_cfg;
     int fb_w = cols;
@@ -854,7 +840,7 @@ int main(int argc, char *argv[])
         // The same gated bound spelling as the resize poll, so the two sites
         // read identically (ioctl_cell_* is 0 on a failed derive either way).
         const FbSize fbs = pixel_fb_size(
-            backend, cols, image_rows, cell_w, cell_h, args.graphics_scale,
+            backend, cols, image_rows, cell_w, cell_h,
             { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w, sixel_geom_h,
               !cell_guessed }
         );
@@ -1361,7 +1347,7 @@ int main(int argc, char *argv[])
                     // live geometry, and losing containment until a report
                     // returns beats clamping to geometry that no longer exists.
                     fbs = pixel_fb_size(
-                        backend, new_cols, image_rows, new_cell_w, new_cell_h, args.graphics_scale,
+                        backend, new_cols, image_rows, new_cell_w, new_cell_h,
                         { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w,
                           sixel_geom_h, !cell_guessed }
                     );
