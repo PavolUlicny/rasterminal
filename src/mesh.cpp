@@ -93,13 +93,35 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             return false;
         }
 
-        // Reject non-finite vertex positions before any post-load work. No format loader
+        // Reject non-finite vertex positions and UVs before any post-load work. No format loader
         // validates finiteness, and a NaN/Inf position would otherwise poison normals, the
         // bounding box, and the camera auto-fit (which frames to the bbox sphere) — a single
         // junk vertex blows up the whole view. One scan here covers every format uniformly.
+        //
+        // The UV terms are a memory-safety guard, not just a cosmetic one: a non-finite UV
+        // survives wrap_uv (floor(NaN) is NaN, and Mirror's inf - inf is too), so the sampler's
+        // `static_cast<int>(u * (width - 1))` converts a NaN, which is UB and yields INT_MIN on
+        // x86; the texel offset built from it then reads far outside the image. Rejecting the
+        // load is the fail-loud answer and costs two compares per vertex once, where a guard in
+        // the sampler would cost them per pixel. Reachable today only from a binary format that
+        // can carry raw float bits (a binary PLY does; tinyobjloader's parser rejects the text
+        // "nan"), which is why the check belongs here rather than in one loader.
         if (std::any_of(
-                vertices.begin(), vertices.end(), [](const Vertex &v)
-                { return !std::isfinite(v.pos.x) || !std::isfinite(v.pos.y) || !std::isfinite(v.pos.z); }
+                vertices.begin(), vertices.end(),
+                [](const Vertex &v)
+                {
+                    return !std::isfinite(v.pos.x) || !std::isfinite(v.pos.y) || !std::isfinite(v.pos.z) ||
+                           !std::isfinite(v.uv.x) || !std::isfinite(v.uv.y);
+                }
+            ))
+        {
+            clear();
+            return false;
+        }
+        // The second UV set reaches the same sampler, so it needs the same guard. Separate scan
+        // because it is a parallel array that only glTF populates.
+        if (std::any_of(
+                uv1.begin(), uv1.end(), [](const vec2 &t) { return !std::isfinite(t.x) || !std::isfinite(t.y); }
             ))
         {
             clear();
