@@ -133,53 +133,123 @@ namespace platform
     }
 
 #ifndef _WIN32
-    // Shared-memory frame helpers for the kitty t=s medium. Each frame is one
-    // fresh POSIX shm object: created and filled here, then named in the escape,
-    // then read AND UNLINKED by the terminal. shm_frame_create unlinks the name
-    // first (ENOENT is the normal case) so a stale object the terminal never got
-    // to read is reclaimed rather than leaked, and O_EXCL then cannot collide.
-    // Accepted residual: a same-named object this uid cannot unlink (a squatter
-    // from another uid) fails the unlink and then the O_EXCL create every time,
-    // so that name's frames permanently take the direct fallback; identical
-    // pixels, no diagnostic.
-    inline void *shm_frame_create(const char *name, size_t size)
+    // Shared-memory frame sink for the kitty t=s medium. Each frame is one fresh
+    // POSIX shm object: opened and filled here, then named in the escape, then read
+    // AND UNLINKED by the terminal. shm_frame_open unlinks the name first (ENOENT is
+    // the normal case) so a stale object the terminal never got to read is reclaimed
+    // rather than leaked, and O_EXCL then cannot collide. Accepted residual: a
+    // same-named object this uid cannot unlink (a squatter from another uid) fails
+    // the unlink and then the O_EXCL create every time, so that name's frames
+    // permanently take the direct fallback; identical pixels, no diagnostic.
+    //
+    // Filled by repeated append() rather than handed out as a pointer, so the two platform
+    // fills can differ without the caller branching. They must: a fresh object's pages are
+    // untouched, so filling it THROUGH A MAPPING takes a minor fault per 4 KB (1537 per 1080p
+    // frame, 3.03 of the 5.33 ms that present cost). Linux can write() to a shm fd (they are
+    // tmpfs files), which copies in-kernel with no mapping and no faults, 1.94x faster end to
+    // end at 1080p and 4K. POSIX guarantees only mmap/ftruncate/fstat on this fd, so every
+    // other platform keeps the mapping form.
+    // OWNS its fd (or mapping) but has no destructor, so exactly one shm_frame_close must run per
+    // successful open. It is an aggregate and therefore copyable, and a copy would close the same
+    // fd twice, which on a busy process closes an unrelated descriptor. Both call sites take it
+    // straight from shm_frame_open into a local that nothing copies, so the invariant holds by
+    // construction today. Keep it that way: never store one in a container or pass it by value.
+    // Making the type enforce this means a real RAII wrapper (destructor, plus a move that clears
+    // the source), which the open/append/close shape exists to avoid, since the two platform fills
+    // want different members.
+    struct ShmFrame
     {
+        int fd = -1;
+        unsigned char *map = nullptr; // non-null on the mapping fill only
+        size_t size = 0;
+        size_t at = 0; // bytes appended so far
+
+        [[nodiscard]] bool valid() const noexcept { return fd >= 0 || map != nullptr; }
+    };
+
+    inline ShmFrame shm_frame_open(const char *name, size_t size)
+    {
+        ShmFrame f;
         shm_unlink(name);
         const int fd = shm_open(name, O_CREAT | O_EXCL | O_RDWR, 0600);
         if (fd < 0)
         {
-            return nullptr;
+            return f;
         }
-        void *ptr = nullptr;
-        bool sized = ftruncate(fd, static_cast<off_t>(size)) == 0;
-#ifdef __linux__
-        // ftruncate sizes the object but tmpfs reserves no pages for it, so the
-        // first write into the mapping on an exhausted /dev/shm raises SIGBUS.
-        // posix_fallocate reserves up front and reports ENOSPC as a clean
-        // failure instead, which the caller turns into the direct fallback.
-        // Cost of the allocate-and-zero pass: noise at 1080p, +1.1-1.5 ms (+7-9%)
-        // per 4K frame (measured); accepted for the clean failure mode. Linux-only
-        // on purpose: the exhaustion mode is a full tmpfs mount, which macOS does
-        // not have (its shm objects are plain VM-backed memory, so pressure there
-        // fails like any allocation, not with a partition-quota SIGBUS).
-        sized = sized && posix_fallocate(fd, 0, static_cast<off_t>(size)) == 0;
-#endif
-        if (sized)
+        if (ftruncate(fd, static_cast<off_t>(size)) != 0)
         {
-            ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            close(fd);
+            shm_unlink(name);
+            return f;
         }
+        f.size = size;
+#ifdef __linux__
+        // Streamed with write(), so an exhausted /dev/shm reports ENOSPC from the write itself:
+        // the clean failure the old posix_fallocate reservation bought, without its zero-fill
+        // pass. That reservation was Linux-only anyway, since a mapped store into an unbacked
+        // page raises SIGBUS instead of returning an error, and macOS (which takes the mapping
+        // fill) puts shm objects in plain VM with no partition quota to exhaust.
+        f.fd = fd;
+        return f;
+#else
+        void *p = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         close(fd); // the mapping keeps the object alive; the fd is not needed
-        if (ptr == MAP_FAILED || ptr == nullptr)
+        if (p == MAP_FAILED || p == nullptr)
         {
             shm_unlink(name);
-            return nullptr;
+            // Empty, not `f`: its size is already set, and a frame carrying a size but no
+            // sink would send shm_frame_append down its write branch on fd -1.
+            return {};
         }
-        return ptr;
+        f.map = static_cast<unsigned char *>(p);
+        return f;
+#endif
     }
 
-    inline void shm_frame_finish(void *ptr, size_t size)
+    // Append one chunk. False means the object could not take it (a full tmpfs), and
+    // the caller abandons the frame for the direct transport.
+    inline bool shm_frame_append(ShmFrame &f, const unsigned char *data, size_t len)
     {
-        munmap(ptr, size);
+        if (len > f.size - f.at)
+        {
+            return false;
+        }
+        if (f.map != nullptr)
+        {
+            std::memcpy(f.map + f.at, data, len);
+            f.at += len;
+            return true;
+        }
+        while (len > 0)
+        {
+            const ssize_t w = write(f.fd, data, len);
+            if (w <= 0)
+            {
+                if (w < 0 && errno == EINTR)
+                {
+                    continue;
+                }
+                return false;
+            }
+            len -= static_cast<size_t>(w);
+            data += static_cast<size_t>(w);
+            f.at += static_cast<size_t>(w);
+        }
+        return true;
+    }
+
+    inline void shm_frame_close(ShmFrame &f)
+    {
+        if (f.map != nullptr)
+        {
+            munmap(f.map, f.size);
+            f.map = nullptr;
+        }
+        if (f.fd >= 0)
+        {
+            close(f.fd);
+            f.fd = -1;
+        }
     }
 
     inline void shm_frame_remove(const char *name)
@@ -196,14 +266,24 @@ namespace platform
 #else
     // Windows stubs so the shm call sites compile without #ifdef blocks of their
     // own (platform.h owns all platform conditionals). No Windows terminal
-    // answers the kitty query today; if one ever does, the null create reads
+    // answers the kitty query today; if one ever does, the invalid frame reads
     // as "shm frame unavailable" and the transport falls back to t=d.
-    inline void *shm_frame_create(const char * /*name*/, size_t /*size*/)
+    struct ShmFrame
     {
-        return nullptr;
+        [[nodiscard]] bool valid() const noexcept { return false; }
+    };
+
+    inline ShmFrame shm_frame_open(const char * /*name*/, size_t /*size*/)
+    {
+        return {};
     }
 
-    inline void shm_frame_finish(void * /*ptr*/, size_t /*size*/) {}
+    inline bool shm_frame_append(ShmFrame & /*f*/, const unsigned char * /*data*/, size_t /*len*/)
+    {
+        return false;
+    }
+
+    inline void shm_frame_close(ShmFrame & /*f*/) {}
 
     inline void shm_frame_remove(const char * /*name*/) {}
 
@@ -389,25 +469,35 @@ namespace platform
         std::fputs("\033[?1049h", stdout);
 
         // Probe object for the t=s query: one white RGB pixel. If it cannot be
-        // created (always the case on Windows, whose shm_frame_create stub
-        // returns nullptr) the query is simply not sent and the transport stays
+        // created (always the case on Windows, whose shm_frame_open stub returns
+        // an invalid frame) the query is simply not sent and the transport stays
         // unverified, which reads as unavailable, the correct answer on a host
         // without working shm. The probe verifies the MEDIUM, not capacity (the
         // frame size is not even known yet): a /dev/shm too small for real
         // frames degrades to the per-frame direct fallback, silent by design.
+        // It also exercises the same append path a real frame uses, so a host
+        // where the fill itself fails is caught here rather than per frame.
         char shm_name[64];
         std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%lu-q", process_id());
         bool shm_probe = false;
         // cppcheck suppressions (here and at the shm_probe test below):
-        // shm_frame_create is the nullptr stub in the _WIN32 configuration, so
+        // shm_frame_open returns the invalid stub in the _WIN32 configuration, so
         // the multi-config scan reads the probe as constantly false. Same FP
         // class as framebuffer.cpp's transmit_shm/present_kitty suppressions.
+        ShmFrame probe = shm_frame_open(shm_name, 3);
         // cppcheck-suppress knownConditionTrueFalse
-        if (void *probe = shm_frame_create(shm_name, 3))
+        if (probe.valid())
         {
-            std::memset(probe, 0xFF, 3);
-            shm_frame_finish(probe, 3);
-            shm_probe = true;
+            const unsigned char white[3] = { 0xFF, 0xFF, 0xFF };
+            shm_probe = shm_frame_append(probe, white, sizeof white);
+            shm_frame_close(probe);
+            // A probe object that could not be filled is ours to reclaim; a filled
+            // one is left for the terminal to read and unlink, which is the query.
+            // cppcheck-suppress knownConditionTrueFalse
+            if (!shm_probe)
+            {
+                shm_frame_remove(shm_name);
+            }
         }
 
         std::fputs(kitty::QUERY, stdout);
