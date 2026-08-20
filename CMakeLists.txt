@@ -487,15 +487,36 @@ if(RASTERMINAL_BUILD_TESTS)
   add_test(NAME rasterminal_tests
            COMMAND rasterminal_tests
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+  # `cmake --build <dir> --target check` is the one-command build-and-run, the equivalent
+  # of `make test`. $<CONFIG> rather than a fixed name so it also works under the
+  # multi-config generators, where ctest needs to be told which config to run.
+  add_custom_target(check
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    USES_TERMINAL)
+  add_dependencies(check rasterminal_tests)
 endif()
 
 # ─── Install ──────────────────────────────────────────────────────────────────
 # Parity with the Makefile's `install` target. GNUInstallDirs supplies the standard,
 # overridable CMAKE_INSTALL_* paths (DESTDIR-aware for fakeroot staging). The man page
 # and THIRD_PARTY_NOTICES ship per the vendored licenses; docs land in a package-specific
-# subdir (CMAKE_INSTALL_DOCDIR = share/doc/rasterminal). No uninstall target: CMake has
-# no native one (the Makefile keeps the convenience `make uninstall`).
+# subdir (CMAKE_INSTALL_DOCDIR = share/doc/rasterminal).
 include(GNUInstallDirs)
 install(TARGETS rasterminal RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES man/rasterminal.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 install(FILES THIRD_PARTY_NOTICES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
+
+# CMake ships no uninstall target, so this walks the install_manifest.txt the install step
+# writes. That removes exactly what THIS build directory installed, wherever it went, which
+# is stricter than a fixed list of paths: a prefix change between install and uninstall
+# cannot leave files behind or delete someone else's.
+# DESTDIR is read from the environment by the script, so a staged install is undone the way
+# it was made: DESTDIR=/tmp/pkg cmake --build <dir> --target uninstall.
+add_custom_target(uninstall
+  COMMAND ${CMAKE_COMMAND}
+          -DRASTERMINAL_DOCDIR=${CMAKE_INSTALL_FULL_DOCDIR}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/uninstall.cmake
+  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+  USES_TERMINAL)
