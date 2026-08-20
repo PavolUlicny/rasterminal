@@ -54,9 +54,9 @@
     }
   ],
   "buildPresets": [
-    { "name": "release", "configurePreset": "release" },
+    { "name": "release", "configurePreset": "release", "targets": ["rasterminal", "rasterminal_tests"] },
     { "name": "portable", "configurePreset": "portable" },
-    { "name": "dist", "configurePreset": "dist" },
+    { "name": "dist", "configurePreset": "dist", "targets": ["rasterminal", "rasterminal_tests"] },
     { "name": "debug", "configurePreset": "debug" },
     { "name": "reldbg", "configurePreset": "reldbg" },
     { "name": "clang", "configurePreset": "clang" }
