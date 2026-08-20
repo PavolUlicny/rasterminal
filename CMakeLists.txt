@@ -23,11 +23,20 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-# Prefer the -pthread flag (compile + link) over a bare -lpthread, so Threads::Threads
-# matches the Makefile's -pthread and stays correct where the compile-time flag matters
-# (e.g. BSD); on modern glibc it is effectively a no-op.
+# Prefer the -pthread flag over a bare -lpthread where Threads has to name a library at all.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
+# On modern glibc Threads finds pthread inside libc and then contributes NO flag, so the
+# preference above never fires and -pthread reaches neither the compile nor the link. The
+# Makefile carries it in every C++ flag set, so spell it out and let the two travel together.
+# Compile-side it is close to a no-op on glibc (it defines _REENTRANT), but not everywhere.
+# C++ only, matching the Makefile: the vendored C TUs are built without it.
+add_library(rasterminal_threads INTERFACE)
+target_link_libraries(rasterminal_threads INTERFACE Threads::Threads)
+target_compile_options(rasterminal_threads INTERFACE
+  $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-pthread>)
+target_link_options(rasterminal_threads INTERFACE
+  $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-pthread>)
 
 # shm_open (the kitty graphics shared-memory transport) lives in librt on glibc
 # older than 2.34 (it moved into libc proper there); macOS and musl never split it
@@ -261,8 +270,7 @@ target_compile_options(rasterminal_warnings INTERFACE
 # config default for RelWithDebInfo (-O2) and MinSizeRel (-Os): both end up at -O3, by
 # design (RelWithDebInfo is then -O3 -g, the accurate target for opt-dependent bug repro).
 # -DNDEBUG comes from the config's own *_FLAGS (every non-Debug config defines it).
-add_library(rasterminal_release_opts INTERFACE)
-target_compile_options(rasterminal_release_opts INTERFACE
+set(RASTERMINAL_RELEASE_OPTS
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
     -ffunction-sections;-fdata-sections;
@@ -275,7 +283,13 @@ target_compile_options(rasterminal_release_opts INTERFACE
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR-;/GS-;/Gy>
   # Tier 2: machine-specific, omitted when RASTERMINAL_PORTABLE=ON.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
-  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>
+  # Debug's -O0 is what CMake's bare -g config flags already imply; spelled out so a reader
+  # comparing the two build systems does not have to know that.
+  $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-O0>)
+
+add_library(rasterminal_release_opts INTERFACE)
+target_compile_options(rasterminal_release_opts INTERFACE ${RASTERMINAL_RELEASE_OPTS})
 
 # Linker dead-code GC: drops the sections emitted by -ffunction-sections/-fdata-sections
 # (and /Gy) that nothing references. LTO + -fvisibility=hidden already strip unused C++;
@@ -286,7 +300,18 @@ set(RASTERMINAL_GC_LINK_OPTS
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-Wl,--gc-sections>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<PLATFORM_ID:Darwin>>:-Wl,-dead_strip>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/OPT:REF;/OPT:ICF>)
-target_link_options(rasterminal_release_opts INTERFACE ${RASTERMINAL_GC_LINK_OPTS})
+
+# The optimisation flags go on the LINK line as well, because under LTO that is where code
+# generation happens: GCC's manual asks for the same options at link, and the Makefile has
+# always passed its whole $(CXXFLAGS) there. Without this the two build systems could emit
+# different machine code from identical sources, and every benchmark this project has
+# recorded was taken from a Makefile build.
+# Clang then reports the compile-only members of the set as unused command-line arguments,
+# harmless but noisy, so silence that one group at link. GCC does not warn.
+set(RASTERMINAL_LTO_LINK_OPTS
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:Clang,AppleClang>>:-Wno-unused-command-line-argument>)
+target_link_options(rasterminal_release_opts INTERFACE
+  ${RASTERMINAL_GC_LINK_OPTS} ${RASTERMINAL_RELEASE_OPTS} ${RASTERMINAL_LTO_LINK_OPTS})
 
 # LTO: CMake picks the right form per compiler (-flto=auto / -flto=thin / /GL+/LTCG).
 include(CheckIPOSupported)
@@ -331,14 +356,14 @@ target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
   rasterminal_release_opts
-  Threads::Threads
+  rasterminal_threads
   ${RASTERMINAL_SHM_LIB})
 # GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
 # the link-step recompile, where per-TU pragma context (src/loaders/draco_decode.cpp +
 # vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
 # TUs keep -Wmaybe-uninitialized active at compile.
 target_link_options(rasterminal PRIVATE
-  $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:-Wno-maybe-uninitialized>
   # Statically link libstdc++/libgcc for release artifacts (Linux GNU/Clang only).
   $<$<AND:$<BOOL:${RASTERMINAL_STATIC_LIBSTDCXX}>,$<CXX_COMPILER_ID:GNU,Clang>,$<NOT:$<PLATFORM_ID:Darwin>>>:-static-libstdc++;-static-libgcc>)
 if(ipo_ok)
@@ -351,8 +376,7 @@ endif()
 if(RASTERMINAL_BUILD_TESTS)
   # Tests drop -fno-rtti (test framework needs RTTI) and the aggressive
   # GCC-only opts, but keep safety flags (-fstack-protector-strong).
-  add_library(rasterminal_test_opts INTERFACE)
-  target_compile_options(rasterminal_test_opts INTERFACE
+  set(RASTERMINAL_TEST_OPTS
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
       -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
       -ffunction-sections;-fdata-sections;
@@ -360,8 +384,14 @@ if(RASTERMINAL_BUILD_TESTS)
       -fstack-protector-strong;-D_FORTIFY_SOURCE=2;-pipe>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS;/Gy>
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
-    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>)
-  target_link_options(rasterminal_test_opts INTERFACE ${RASTERMINAL_GC_LINK_OPTS})
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>
+    $<$<AND:$<CONFIG:Debug>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-O0>)
+
+  add_library(rasterminal_test_opts INTERFACE)
+  target_compile_options(rasterminal_test_opts INTERFACE ${RASTERMINAL_TEST_OPTS})
+  # Same at link as for rasterminal: LTO does codegen there.
+  target_link_options(rasterminal_test_opts INTERFACE
+    ${RASTERMINAL_GC_LINK_OPTS} ${RASTERMINAL_TEST_OPTS} ${RASTERMINAL_LTO_LINK_OPTS})
 
   add_executable(rasterminal_tests
     tests/test_main.cpp
@@ -442,10 +472,10 @@ if(RASTERMINAL_BUILD_TESTS)
     rasterminal_vendor
     rasterminal_warnings
     rasterminal_test_opts
-    Threads::Threads
+    rasterminal_threads
     ${RASTERMINAL_SHM_LIB})
   target_link_options(rasterminal_tests PRIVATE
-    $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>)
+    $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:-Wno-maybe-uninitialized>)
   if(ipo_ok)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)
