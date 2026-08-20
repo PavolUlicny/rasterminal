@@ -159,48 +159,6 @@ jobs:
           ldd build/rasterminal
           ! ldd build/rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
-  # ── Make: Linux + macOS, GCC + Clang, all four targets ──────────────────────
-  make:
-    name: make / ${{ matrix.os }} ${{ matrix.cxx }} ${{ matrix.target }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux, GCC
-          - { os: ubuntu-latest, cxx: g++, target: release }
-          - { os: ubuntu-latest, cxx: g++, target: portable }
-          - { os: ubuntu-latest, cxx: g++, target: dist }
-          - { os: ubuntu-latest, cxx: g++, target: debug }
-          - { os: ubuntu-latest, cxx: g++, target: test }
-          # Linux, Clang
-          - { os: ubuntu-latest, cxx: clang++, target: release }
-          - { os: ubuntu-latest, cxx: clang++, target: portable }
-          - { os: ubuntu-latest, cxx: clang++, target: dist }
-          - { os: ubuntu-latest, cxx: clang++, target: debug }
-          - { os: ubuntu-latest, cxx: clang++, target: test }
-          # macOS, AppleClang (explicit clang++ avoids the g++ to clang symlink ambiguity)
-          - { os: macos-latest, cxx: clang++, target: release }
-          - { os: macos-latest, cxx: clang++, target: portable }
-          - { os: macos-latest, cxx: clang++, target: debug }
-          - { os: macos-latest, cxx: clang++, target: test }
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Build${{ matrix.target == 'test' && ' and test' || '' }}
-        # -j bounded to the runner core count: bare `make -j` is unbounded and the
-        # heavy LTO vendor TUs (basisu/draco/libwebp) can OOM a 16 GB runner. getconf
-        # is portable across the Linux and macOS runners (nproc is Linux-only).
-        run: make -j"$(getconf _NPROCESSORS_ONLN)" CXX=${{ matrix.cxx }} ${{ matrix.target }}
-
-      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
-      - name: Verify static link (dist)
-        if: matrix.target == 'dist'
-        run: |
-          ldd rasterminal
-          ! ldd rasterminal | grep -E 'libstdc\+\+|libgcc_s'
-
   # ── 32-bit (ILP32) verification ──────────────────────────────────────────────
   # No 32-bit OS runner exists, but 32-bit binaries run natively on the 64-bit runners
   # (Linux multilib / Windows WOW64), so we build and test 32-bit in place. Linux i686 uses
@@ -215,7 +173,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, name: linux i686 make g++, kind: make }
           - { os: ubuntu-latest, name: linux i686 cmake gcc, kind: cmake, cc: gcc, cxx: g++ }
           - { os: ubuntu-latest, name: linux i686 cmake clang, kind: cmake, cc: clang, cxx: clang++ }
           - { os: windows-latest, name: windows Win32 msvc, kind: win32 }
@@ -226,13 +183,6 @@ jobs:
       - name: Install 32-bit toolchain
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
-
-      # make `test` builds and runs the suite at -m32. ARCH_NATIVE= drops -march=native (it
-      # conflicts with -m32 on a 64-bit host); the build system supplies -msse2 on x86-32.
-      # -j bounded to core count: the heavy LTO vendor TUs can OOM the runner otherwise.
-      - name: make test (i686)
-        if: matrix.kind == 'make'
-        run: make test CXX='g++ -m32' CC='gcc -m32' ARCH_NATIVE= -j"$(nproc)"
 
       # cmake at -m32 via env (mirrors the sanitizer jobs) + portable codegen (drops
       # -march=native). The build system adds -msse2 and drops -Wuseless-cast on ILP32.
