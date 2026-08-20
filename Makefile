@@ -300,11 +300,13 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/renderer/test_renderer_vcol.cpp \
               tests/renderer/test_renderer_misc.cpp \
               tests/renderer/test_renderer_unlit.cpp \
+              tests/renderer/test_renderer_tiled.cpp \
               tests/renderer/test_transparency.cpp \
               tests/pipeline/test_camera.cpp \
               tests/pipeline/test_clip.cpp \
               tests/pipeline/test_clip_near.cpp \
               tests/pipeline/test_framebuffer.cpp \
+              tests/math/test_fastmath.cpp \
               tests/math/test_linalg.cpp \
               tests/math/test_light.cpp \
               src/args.cpp \

@@ -35,4 +35,3 @@ useStlAlgorithm:src/mesh.cpp
 useStlAlgorithm:src/mesh_obj.cpp
 useStlAlgorithm:src/mesh_ply.cpp
 useStlAlgorithm:src/platform.h
-useStlAlgorithm:src/renderer.cpp
