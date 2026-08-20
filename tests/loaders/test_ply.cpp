@@ -583,6 +583,50 @@ TEST(reject, ply_non_finite_vertex)
     assert_rejects(t.path);
 }
 
+TEST(reject, ply_non_finite_uv)
+{
+    // A non-finite UV is rejected for a different reason than a non-finite position: it reaches
+    // the texture sampler, whose `static_cast<int>(u * (width - 1))` converts a NaN. That is UB,
+    // yields INT_MIN on x86, and the texel offset built from it reads far outside the image
+    // (caught by UBSan before the guard existed). Binary again, since tinyply's ASCII reader
+    // rejects a bare "nan" token on its own and so would not exercise the guard.
+    std::string s = "ply\n"
+                    "format binary_little_endian 1.0\n"
+                    "element vertex 3\n"
+                    "property float x\n"
+                    "property float y\n"
+                    "property float z\n"
+                    "property float s\n"
+                    "property float t\n"
+                    "element face 1\n"
+                    "property list uchar int vertex_indices\n"
+                    "end_header\n";
+    const float verts[3][3] = { { -1, -1, 0 }, { 1, -1, 0 }, { 0, 1, 0 } };
+    for (int i = 0; i < 3; i++)
+    {
+        for (const float c : verts[i])
+        {
+            emit_f32_le(s, c);
+        }
+        if (i == 0)
+        {
+            emit_u32_le(s, 0x7FC00000u); // v0.s = NaN
+            emit_f32_le(s, 0);
+        }
+        else
+        {
+            emit_f32_le(s, 0);
+            emit_f32_le(s, 0);
+        }
+    }
+    s.push_back(3);
+    emit_u32_le(s, 0);
+    emit_u32_le(s, 1);
+    emit_u32_le(s, 2);
+    TmpFile t(tmp_path("rasterminal_test_ply_nan_uv.ply"), s);
+    assert_rejects(t.path);
+}
+
 // UV PROPERTY NAME FALLBACKS
 
 TEST(ply_valid, ascii_uv_st_property_names)

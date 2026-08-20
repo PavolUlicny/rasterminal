@@ -1277,3 +1277,171 @@ TEST(gltf_valid, sparse_accessor_resolves_positions)
         ASSERT_TRUE(c);
     }
 }
+
+// Attribute accessors wider than their semantic prescribes. cgltf_validate constrains an
+// attribute's type only to "valid", never to the one the spec names for it, so these files
+// reach the loader; it must read each element's leading components, which means striding by
+// the ACCESSOR's component count and not by the count the caller wants.
+
+TEST(gltf_valid, position_declared_wider_than_vec3_reads_its_first_three_components)
+{
+    // POSITION as VEC4 (a w the loader has no use for), tightly packed. Striding the unpacked
+    // floats by 3 instead of 4 would interleave the components of neighbouring vertices.
+    std::string bin;
+    const float verts[3][4] = {
+        { -1.0f, -1.0f, 0.0f, 7.0f },
+        { 1.0f, -1.0f, 0.0f, 8.0f },
+        { 0.0f, 1.0f, 0.0f, 9.0f },
+    };
+    for (const auto &v : verts)
+    {
+        for (const float c : v)
+        {
+            emit_f32_le(bin, c);
+        }
+    }
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"mode\":4}]}],"
+                             "\"accessors\":[{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC4\"}],"
+                             "\"bufferViews\":[{\"buffer\":0,\"byteOffset\":0,\"byteLength\":48}],"
+                             "\"buffers\":[{\"byteLength\":48}]}";
+
+    TmpFile f(tmp_path("rast_wide_pos.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
+    for (size_t i = 0; i < 3; i++)
+    {
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.x - verts[i][0]) < 1e-5f);
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.y - verts[i][1]) < 1e-5f);
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.z - verts[i][2]) < 1e-5f);
+    }
+}
+
+TEST(gltf_valid, sparse_position_declared_wider_than_vec3_stays_in_bounds)
+{
+    // The same over-wide POSITION, now sparse. cgltf scatters a sparse override to
+    // `index * components_of_the_accessor`, over the accessor's whole count and not the
+    // element count the requested float budget implies, so a buffer sized for three
+    // components per vertex is written a quarter past its end (caught by the sanitizer
+    // jobs; the position checks below fail with or without one).
+    std::string bin;
+    for (int i = 0; i < 3; i++) // sparse indices, UNSIGNED_BYTE
+    {
+        bin.push_back(static_cast<char>(i));
+    }
+    bin.push_back(static_cast<char>(0)); // pad to the 4-byte alignment of the values view
+    const float verts[3][4] = {
+        { -1.0f, -1.0f, 0.0f, 7.0f },
+        { 1.0f, -1.0f, 0.0f, 8.0f },
+        { 0.0f, 1.0f, 0.0f, 9.0f },
+    };
+    for (const auto &v : verts)
+    {
+        for (const float c : v)
+        {
+            emit_f32_le(bin, c);
+        }
+    }
+
+    const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+                             "\"nodes\":[{\"mesh\":0}],"
+                             "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0},\"mode\":4}]}],"
+                             "\"accessors\":[{\"componentType\":5126,\"count\":3,\"type\":\"VEC4\","
+                             "\"sparse\":{\"count\":3,"
+                             "\"indices\":{\"bufferView\":0,\"componentType\":5121},"
+                             "\"values\":{\"bufferView\":1}}}],"
+                             "\"bufferViews\":["
+                             "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":3},"
+                             "{\"buffer\":0,\"byteOffset\":4,\"byteLength\":48}],"
+                             "\"buffers\":[{\"byteLength\":52}]}";
+
+    TmpFile f(tmp_path("rast_wide_sparse_pos.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
+    for (size_t i = 0; i < 3; i++)
+    {
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.x - verts[i][0]) < 1e-5f);
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.y - verts[i][1]) < 1e-5f);
+        ASSERT_TRUE(std::abs(m.vertices[i].pos.z - verts[i][2]) < 1e-5f);
+    }
+}
+
+TEST(gltf_valid, texcoord_declared_wider_than_vec2_reads_its_first_two_components)
+{
+    std::string bin;
+    emit_tri_verts(bin); // POSITION 36 @ 0
+    const float uvs[3][3] = {
+        { 0.25f, 0.75f, 5.0f },
+        { 0.50f, 0.25f, 6.0f },
+        { 0.75f, 0.50f, 7.0f },
+    };
+    for (const auto &uv : uvs) // TEXCOORD_0 as VEC3, 36 @ 36
+    {
+        for (const float c : uv)
+        {
+            emit_f32_le(bin, c);
+        }
+    }
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"TEXCOORD_0\":1},\"mode\":4}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":36}],"
+        "\"buffers\":[{\"byteLength\":72}]}";
+
+    TmpFile f(tmp_path("rast_wide_uv.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
+    for (size_t i = 0; i < 3; i++) // v is stored flipped
+    {
+        ASSERT_TRUE(std::abs(m.vertices[i].uv.x - uvs[i][0]) < 1e-5f);
+        ASSERT_TRUE(std::abs(m.vertices[i].uv.y - (1.0f - uvs[i][1])) < 1e-5f);
+    }
+}
+
+// An accessor NARROWER than its semantic prescribes is read as absent, which every caller
+// already handles, rather than leaving the components it does not carry uninitialized.
+
+TEST(gltf_valid, normal_declared_narrower_than_vec3_is_treated_as_absent)
+{
+    // NORMAL as VEC2. Reading it would leave z uninitialized, so the loader drops it; the flag
+    // that says "this file supplied normals" must drop with it, or compute_normals is skipped
+    // and every vertex keeps the zero normal it was default-constructed with.
+    std::string bin;
+    emit_tri_verts(bin);        // POSITION 36 @ 0
+    for (int i = 0; i < 3; i++) // NORMAL as VEC2, 24 @ 36
+    {
+        emit_f32_le(bin, 0.0f);
+        emit_f32_le(bin, 0.0f);
+    }
+
+    const std::string json =
+        "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
+        "\"nodes\":[{\"mesh\":0}],"
+        "\"meshes\":[{\"primitives\":[{\"attributes\":{\"POSITION\":0,\"NORMAL\":1},\"mode\":4}]}],"
+        "\"accessors\":["
+        "{\"bufferView\":0,\"componentType\":5126,\"count\":3,\"type\":\"VEC3\",\"min\":[-1,-1,0],\"max\":[1,1,0]},"
+        "{\"bufferView\":1,\"componentType\":5126,\"count\":3,\"type\":\"VEC2\"}],"
+        "\"bufferViews\":["
+        "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":36},"
+        "{\"buffer\":0,\"byteOffset\":36,\"byteLength\":24}],"
+        "\"buffers\":[{\"byteLength\":60}]}";
+
+    TmpFile f(tmp_path("rast_narrow_normal.glb"), make_glb(json, bin));
+    Mesh m = load_ok(f.path);
+    ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
+    for (const Vertex &v : m.vertices)
+    {
+        const float len = std::sqrt((v.normal.x * v.normal.x) + (v.normal.y * v.normal.y) + (v.normal.z * v.normal.z));
+        ASSERT_TRUE(std::abs(len - 1.0f) < 1e-4f); // computed, not the zero left by a dropped read
+        ASSERT_TRUE(std::abs(v.normal.z) > 0.99f); // the triangle lies in the XY plane
+    }
+}

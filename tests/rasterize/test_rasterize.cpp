@@ -2,7 +2,9 @@
 #include "tests/rasterize_test_util.h"
 #include "src/rasterize.h"
 
+#include <algorithm>
 #include <atomic>
+#include <string>
 #include <thread>
 
 // Call rasterize_flat() with white flat colour, no texture, on the given band.
@@ -829,4 +831,147 @@ TEST(rasterize_phong, no_lights_uses_ambient_only)
     );
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     assert_pixel_near(fb, 20, 10, Color{ 102, 102, 102 }, 5);
+}
+
+// pixel_span / tri_covers_no_pixel: the shared pixel-centre span both geometry front-ends
+// and bin_triangles' tile rectangle are built on. Its epsilon is load-bearing in BOTH
+// directions, so the tests below bracket it rather than only checking the ordinary cases.
+
+TEST(pixel_span, selects_the_centres_inside_the_interval)
+{
+    int p0 = -1;
+    int p1 = -1;
+    // Centres 2.5, 3.5, 4.5 lie in [2, 5]; 5.5 does not.
+    ASSERT_TRUE(pixel_span(2.0f, 5.0f, 10, p0, p1));
+    ASSERT_EQ(p0, 2);
+    ASSERT_EQ(p1, 4);
+}
+
+TEST(pixel_span, clamps_to_the_frame)
+{
+    int p0 = -1;
+    int p1 = -1;
+    ASSERT_TRUE(pixel_span(-500.0f, 3.0f, 10, p0, p1));
+    ASSERT_EQ(p0, 0);
+    ASSERT_EQ(p1, 2);
+    ASSERT_TRUE(pixel_span(2.0f, 500.0f, 10, p0, p1));
+    ASSERT_EQ(p0, 2);
+    ASSERT_EQ(p1, 9);
+}
+
+TEST(pixel_span, rejects_an_interval_that_holds_no_centre)
+{
+    int p0 = -1;
+    int p1 = -1;
+    ASSERT_FALSE(pixel_span(2.6f, 2.9f, 10, p0, p1));    // between the 2.5 and 3.5 centres
+    ASSERT_FALSE(pixel_span(-40.0f, -5.0f, 10, p0, p1)); // wholly left of the frame
+    ASSERT_FALSE(pixel_span(20.0f, 30.0f, 10, p0, p1));  // wholly right of it
+    ASSERT_FALSE(pixel_span(0.0f, 10.0f, 0, p0, p1));    // no frame at all
+}
+
+TEST(pixel_span, the_epsilon_is_small_but_not_zero)
+{
+    int p0 = -1;
+    int p1 = -1;
+    // Just under a centre by less than EPS: still that pixel. Raising EPS to a
+    // quarter pixel was measured to cost 85% of the rejection's win, and dropping it
+    // to zero lets a triangle the barycentric walk would cover fall out as a hole, so
+    // both bounds matter. 0.002 px is inside 1/256; 0.1 px is far outside it.
+    ASSERT_TRUE(pixel_span(2.498f, 2.498f, 10, p0, p1));
+    ASSERT_EQ(p0, 2);
+    ASSERT_EQ(p1, 2);
+    ASSERT_FALSE(pixel_span(2.6f, 2.6f, 10, p0, p1));
+}
+
+TEST(tri_covers_no_pixel, separates_a_covering_triangle_from_a_sub_pixel_one)
+{
+    const vec3 a{ 4.0f, 2.0f, 0.5f };
+    const vec3 b{ 36.0f, 2.0f, 0.5f };
+    const vec3 c{ 20.0f, 18.0f, 0.5f };
+    ASSERT_FALSE(tri_covers_no_pixel(a, b, c, 40, 20));
+
+    // Wholly inside one pixel's cell but missing its centre on x.
+    const vec3 sa{ 2.6f, 2.2f, 0.5f };
+    const vec3 sb{ 2.9f, 2.2f, 0.5f };
+    const vec3 sc{ 2.7f, 2.9f, 0.5f };
+    ASSERT_TRUE(tri_covers_no_pixel(sa, sb, sc, 40, 20));
+
+    // Missing it on y instead, so that a one-axis test could not pass this.
+    const vec3 ya{ 2.0f, 2.6f, 0.5f };
+    const vec3 yb{ 5.0f, 2.6f, 0.5f };
+    const vec3 yc{ 3.0f, 2.9f, 0.5f };
+    ASSERT_TRUE(tri_covers_no_pixel(ya, yb, yc, 40, 20));
+
+    // Entirely off screen on either side.
+    const vec3 oa{ -40.0f, -40.0f, 0.5f };
+    const vec3 ob{ -30.0f, -40.0f, 0.5f };
+    const vec3 oc{ -35.0f, -30.0f, 0.5f };
+    ASSERT_TRUE(tri_covers_no_pixel(oa, ob, oc, 40, 20));
+}
+
+// A pixel is lit if and only if its CENTRE is inside the triangle. Checked against
+// double-precision edge functions rather than against another rasterizer, so it pins the
+// property itself and not an agreement between two implementations that could drift together.
+//
+// This is the invariant behind evaluating each barycentric at the pixel (`row0 + ry*dy + rx*dx`)
+// instead of carrying it along the row by repeated addition. Accumulating drifts ~100 ulps over a
+// few hundred pixels, and on an edge nearly parallel to a scanline (|dx| ~ 3e-7 per pixel) that
+// moves the apparent edge by more than ten pixels: the triangle bled over whatever was behind it,
+// and coverage depended on where the row-span skip started the walk, which punched holes. The
+// triangle below is deliberately long (past the x = 271 where the drift was first measured) and
+// shallow, so a reintroduced accumulation shows up here.
+TEST(rasterize, coverage_follows_the_pixel_centre_on_a_near_horizontal_edge)
+{
+    constexpr int W = 320;
+    constexpr int H = 32;
+    Framebuffer fb(W, H, /*headless=*/true);
+    fb.clear(Color{ 0, 0, 0 });
+
+    const vec3 sa{ 2.0f, 10.2f, 0.5f };
+    const vec3 sb{ 310.0f, 10.6f, 0.5f }; // top edge: 0.4 px of rise over 308 px of run
+    const vec3 sc{ 150.0f, 24.4f, 0.5f };
+    const vec3 white{ 1.0f, 1.0f, 1.0f };
+    const vec2 uv{ 0.0f, 0.0f };
+    rasterize_flat(fb, sa, sb, sc, 1.0f, 1.0f, 1.0f, white, white, white, uv, uv, uv, nullptr, 0.0f, 0, H - 1);
+
+    const auto edge = [](const vec3 &p, const vec3 &q, double x, double y)
+    {
+        const auto px = static_cast<double>(p.x);
+        const auto py = static_cast<double>(p.y);
+        return ((static_cast<double>(q.x) - px) * (y - py)) - ((static_cast<double>(q.y) - py) * (x - px));
+    };
+    const double area = edge(sa, sb, static_cast<double>(sc.x), static_cast<double>(sc.y));
+    ASSERT_TRUE(area != 0.0);
+
+    // Pixels within TOL of an edge are the rasterizer's own rounding to make; everything
+    // outside that band has one right answer. TOL is ~1/1000 of the triangle's height here,
+    // four orders of magnitude below the drift this guards against.
+    constexpr double TOL = 1e-3;
+    int inside_lit = 0;
+    for (int y = 0; y < H; y++)
+    {
+        for (int x = 0; x < W; x++)
+        {
+            const double px = x + 0.5;
+            const double py = y + 0.5;
+            const double w0 = edge(sb, sc, px, py) / area;
+            const double w1 = edge(sc, sa, px, py) / area;
+            const double w2 = edge(sa, sb, px, py) / area;
+            const double m = std::min({ w0, w1, w2 });
+            const bool lit = was_drawn(fb, x, y);
+            if (m > TOL)
+            {
+                inside_lit++;
+                if (!lit)
+                {
+                    ASSERT_FAIL("hole at (" + std::to_string(x) + "," + std::to_string(y) + ")");
+                }
+            }
+            else if (m < -TOL && lit)
+            {
+                ASSERT_FAIL("bleed at (" + std::to_string(x) + "," + std::to_string(y) + ")");
+            }
+        }
+    }
+    ASSERT_TRUE(inside_lit > 1000); // the triangle really is being drawn
 }

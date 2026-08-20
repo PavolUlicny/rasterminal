@@ -385,3 +385,7 @@ jobs:
         run: |
           ./build/rasterminal --bench 500 --bench-warmup 50 bench/Duck.glb
           ./build/rasterminal --bench 500 --bench-warmup 50 bench/Stanford_Bunny.stl
+          # The runs above are small frames of small meshes, so they only ever take the immediate
+          # opaque pass. Duck at 1080p has the big triangles the predictor picks tiles for; the
+          # frame count is low because a sanitized 1080p frame costs ~100x a 200x120 one.
+          ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 1920x1080 bench/Duck.glb

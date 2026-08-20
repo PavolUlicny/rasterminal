@@ -193,7 +193,7 @@ rasterminal [options] <model>
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
-| `--threads [N]` | `-j [N]` | `min(cores, 4)` | Worker threads; bare `-j` uses all cores; `N` above the CPU thread count is clamped |
+| `--threads [N]` | `-j [N]` | per backend | Worker threads: all cores with the kitty and sixel backends, `min(cores, 4)` with half-blocks. Loading a model always uses all cores. Bare `-j` uses all cores; `N` above the CPU thread count is clamped |
 | `--fps [N]` | `-f [N]` | `30` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto`; with the kitty graphics backend the image is always 24-bit and with sixel always 240-color, so there this affects only the HUD line |
