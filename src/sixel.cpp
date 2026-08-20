@@ -137,7 +137,7 @@ namespace sixel
         return block;
     }
 
-    void append_frame(std::string &out, const unsigned char *indices, int width, int height, Scratch &scratch)
+    void append_header(std::string &out, int width, int height)
     {
         if (width <= 0 || height <= 0)
         {
@@ -163,6 +163,21 @@ namespace sixel
         out += ';';
         append_uint(out, static_cast<unsigned int>(height));
         out += palette_block();
+    }
+
+    void append_footer(std::string &out)
+    {
+        out += "\033\\";
+    }
+
+    void append_bands(
+        std::string &out, const unsigned char *indices, int width, int height, int band0, int band1, Scratch &scratch
+    )
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
 
         // Per-band staging: a column bitmask per register, cleared lazily on the
         // register's first touch in the band (stamp) so a band pays for the
@@ -186,8 +201,10 @@ namespace sixel
         std::array<int, REGISTERS> max_x{};
         std::array<int, REGISTERS> colors{};
 
-        const int bands = (height + 5) / 6;
-        for (int band = 0; band < bands; band++)
+        const int bands = band_count(height);
+        const int first_band = (band0 > 0) ? band0 : 0;
+        const int last_band = (band1 < bands) ? band1 : bands;
+        for (int band = first_band; band < last_band; band++)
         {
             int ncolors = 0;
             const int y0 = band * 6;
@@ -268,7 +285,17 @@ namespace sixel
                 out += '-'; // next band; none after the last (avoids an extra line advance)
             }
         }
-        out += "\033\\";
+    }
+
+    void append_frame(std::string &out, const unsigned char *indices, int width, int height, Scratch &scratch)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+        append_header(out, width, height);
+        append_bands(out, indices, width, height, 0, band_count(height), scratch);
+        append_footer(out);
     }
 
 } // namespace sixel
