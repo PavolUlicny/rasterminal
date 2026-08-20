@@ -153,9 +153,15 @@ uses all cores;
 .BI \-j " N"
 uses
 .IR N ,
-clamped to the CPU thread count.
-Default:
-.BR min(hw,4) .
+clamped to the CPU thread count. The default depends on the backend: all cores
+under
+.BR kitty " and " sixel ,
+and
+.B min(cores,4)
+under
+.BR blocks ,
+whose frames are roughly a hundredth the size and already finish inside the
+frame cap. Loading a model always uses all cores, whatever the backend.
 .TP
 .BR \-f ", " \-\-fps " " [\fIN\fR]
 Frame cap. Bare
@@ -221,36 +227,40 @@ with sixel as the fixed 240-color palette regardless; this option then affects
 only the HUD line.
 .TP
 .BI \-\-graphics " mode"
-Rendering backend:
+Rendering backend.
 .B kitty
-draws real pixels via the kitty graphics protocol,
+draws real pixels through the kitty graphics protocol,
 .B sixel
-draws real pixels via sixel graphics (always the 240-color xterm palette, at
-native resolution, capped to the maximum image size the terminal advertises,
-when it does, centered when a size limit leaves it smaller than the window
-and the cell size is known rather than guessed, kept to whole 6-pixel sixel
-bands, and never painting the last terminal row even under
-.B \-\-no\-hud
-since an image touching it would scroll every frame),
+draws real pixels through sixel graphics,
 .B blocks
 draws unicode half-block cells, and
 .B auto
 (the default) prefers kitty when the terminal answers the startup capability
 query, then sixel when its device attributes reply advertises it, and blocks
-otherwise. xterm defaults to a 1000x1000 pixel maximum and discards anything
-larger, and its
+otherwise.
+.IP
+A sixel image is always the 240-color xterm palette at native resolution. Its
+height is kept to whole 6-pixel sixel bands, and it never paints the last
+terminal row, even under
+.BR \-\-no\-hud ,
+since an image touching that row scrolls the screen every frame. It is capped
+to the maximum image size the terminal advertises, when it advertises one, and
+centered when a limit leaves it smaller than the window and the cell size is
+known rather than guessed. xterm defaults to a 1000x1000 pixel maximum and
+discards, rather than clips, anything larger. Its
 .B maxStringParse
-resource, default 600000, silently drops any frame whose sixel encoding is
-larger, which very busy scenes can exceed: raise it with
+resource (default 600000) silently drops any frame whose sixel encoding is
+larger, which very busy scenes can exceed; raise it with
 .BR "xterm \-xrm '*maxStringParse: 10000000'" .
+.IP
 Forcing
 .B kitty
 or
 .B sixel
-still requires the detection to succeed, since a terminal without the protocol
-would silently show nothing; both are an error under tmux and GNU screen
-(kitty is not passed through, and sixel support there is build-dependent and
-not detected).
+still requires detection to succeed, since a terminal without the protocol
+would silently show nothing. Both are an error under tmux and GNU screen:
+kitty is not passed through there, and sixel support is build-dependent and
+not detected.
 .TP
 .BI \-\-graphics\-scale " factor"
 Render scale for the kitty graphics backend, in [0.05, 1]. The frame is
@@ -454,24 +464,20 @@ backend is not detected (see
 .BR \-\-graphics ).
 .SH ENVIRONMENT
 .B rasterminal
-reads these variables to pick the color mode when rendering interactively
-(and, noted below, to gate the graphics backends under multiplexers); the
-headless
+reads these variables to pick the color mode when rendering interactively, and,
+as noted below, to gate the graphics backends under a multiplexer. The headless
 .B \-\-bench
 mode reads none of them.
-.B TERM=dumb
-is rejected regardless of
-.BR \-\-color ;
-the truecolor-versus-256 detection below applies only under
+.PP
+Detection runs in a fixed order and the first match wins. It applies only under
 .B \-\-color auto
-(the default), because any other
+(the default), since any other
 .B \-\-color
-value forces that choice. Detection runs in a fixed order and the first match
-wins:
+value forces the choice, but
 .B TERM=dumb
-is fatal even when
+is fatal either way, even when
 .B COLORTERM
-claims truecolor; real GNU screen (a non-empty
+claims truecolor. Real GNU screen (a non-empty
 .B STY
 variable, or a screen-family
 .B TERM
@@ -481,13 +487,13 @@ variable) is floored to 256-color next, before
 .B COLORTERM
 is consulted, since the inherited
 .B COLORTERM
-describes the outer terminal and screen 4.x renders 24-bit color as garbage
-(tmux is exempt: it sets
+describes the outer terminal and screen 4.x renders 24-bit color as garbage.
+tmux is exempt: it sets
 .B TMUX
 and resolves 24-bit output against the outer terminal itself; under screen 5
 configured for truecolor, force
-.BR "\-\-color truecolor" );
-and a
+.BR "\-\-color truecolor" .
+A
 .B COLORTERM
 truecolor signal in turn wins over a
 .B TERM
