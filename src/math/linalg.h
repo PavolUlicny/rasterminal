@@ -161,16 +161,19 @@ inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up) noexcep
     return m;
 }
 
-// fov_y in radians, near/far are positive distances
-inline mat4 perspective(float fov_y, float aspect, float near, float far) noexcept
+// fov_y in radians, the plane distances are positive.
+// NOT named `near`/`far`: <windows.h> defines both as empty macros (minwindef.h, and NOMINMAX
+// does not cover them), so those names compile here only while every Windows TU happens to
+// include this header before platform.h. An include reorder broke exactly that in CI.
+inline mat4 perspective(float fov_y, float aspect, float near_plane, float far_plane) noexcept
 {
     const float tan_half = std::tan(fov_y / 2.0f);
 
     mat4 m;
     m.m[0][0] = 1.0f / (aspect * tan_half);
     m.m[1][1] = 1.0f / tan_half;
-    m.m[2][2] = -(far + near) / (far - near);
-    m.m[3][2] = -(2.0f * far * near) / (far - near);
+    m.m[2][2] = -(far_plane + near_plane) / (far_plane - near_plane);
+    m.m[3][2] = -(2.0f * far_plane * near_plane) / (far_plane - near_plane);
     m.m[2][3] = -1.0f;
     return m;
 }

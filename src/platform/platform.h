@@ -17,6 +17,17 @@
 #include <conio.h>
 #include <io.h>
 #include <windows.h>
+// minwindef.h defines these two as EMPTY macros (16-bit segment leftovers) and, unlike
+// min/max, no NOMINMAX-style opt-out exists. Any header parsed after this one then loses
+// every `near`/`far` identifier, which is a syntax error wherever one is used. Undef here
+// rather than relying on include order: this is the only header that pulls in <windows.h>,
+// so anything it could poison is parsed after this point. A CI-only breakage, invisible to
+// every POSIX build.
+// The one thing this forecloses: under the MSVC SDK (not mingw-w64) FAR/NEAR are defined AS
+// these macros, so they break here too. Nothing uses them, but an SDK or zlib-style vendor
+// header included after this point in the same TU would need the undefs moved past it.
+#undef near
+#undef far
 #else
 #include <cerrno>
 #include <fcntl.h>
