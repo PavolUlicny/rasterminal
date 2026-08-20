@@ -24,6 +24,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -708,7 +709,9 @@ int main(int argc, char *argv[])
         }
     }
 
-    const int n_threads = Renderer::resolve_thread_count(args.n_threads);
+    // Loading takes every core by default: it is a one-shot burst with the user waiting on it
+    // (see resolve_thread_count). The render pool re-resolves below, once the backend is known.
+    const int n_threads = Renderer::resolve_thread_count(args.n_threads, /*all_cores_default=*/true);
     Mesh mesh;
     const auto load_t0 = std::chrono::steady_clock::now();
     if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
@@ -874,6 +877,16 @@ int main(int argc, char *argv[])
     bool fb_constructed = false;
     try
     {
+        // Declared BEFORE the framebuffer so it outlives it: the framebuffer stores a runner
+        // holding this reference, and reversing the two would leave that runner dangling for the
+        // whole of ~Framebuffer. Nothing on the destructor path presents a frame today, so the
+        // order is what keeps that true rather than an accident that currently holds.
+        //
+        // Resolved again rather than reusing the load's count: the backend is only known after the
+        // capability query, which runs after the model is loaded, and it selects the default (see
+        // resolve_thread_count). An explicit -j resolves to the same number either way.
+        Renderer renderer(Renderer::resolve_thread_count(args.n_threads, pixel_backend));
+
         Framebuffer fb(fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/gfx.query_ran);
         fb_constructed = true;
 
@@ -883,7 +896,11 @@ int main(int argc, char *argv[])
         vec3 ambient;
         make_default_lights(lights, ambient);
 
-        Renderer renderer(n_threads);
+        // Lend the render pool to the present path, which is idle between frames and has real
+        // work waiting: the kitty direct transport's deflate alone is 16 ms of a 1080p frame. The
+        // framebuffer owns no threads, so leaving this unset (tests, --bench) keeps it serial.
+        fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
+                                 renderer.worker_count() });
 
         const bool has_textures = !mesh.textures.empty();
         // --no-input locks every binding but the quit key; see the drain loop below.
