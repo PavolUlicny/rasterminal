@@ -6,7 +6,7 @@ Images and recordings referenced by the top-level `README.md`.
 
 | File | Description |
 | --- | --- |
-| `demo.gif` | Hero demo GIF — auto-spin in Phong shading. |
+| `demo.gif` | Hero demo GIF: auto-spin in Phong shading. |
 | `demo.cast` | asciinema recording the GIF was rendered from; re-render with `agg` (see below). |
 | `shading-wireframe.png` | Wireframe shading still. |
 | `shading-flat.png` | Flat shading still. |
@@ -43,7 +43,7 @@ To record a fresh take (launches rasterminal already spinning in Phong; press `q
 
 ```sh
 asciinema rec --overwrite \
-  -c "./rasterminal --spin -s phong --no-hud <model>" \
+  -c "./rasterminal --spin -s phong --no-hud --graphics blocks <model>" \
   assets/demo.cast
 ```
 
