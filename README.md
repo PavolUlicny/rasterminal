@@ -137,8 +137,8 @@ cmake --build build --target check -j       # build and run the suite in one com
 cmake --build build --target rasterminal_tests -j && ctest --test-dir build --output-on-failure
 
 # Clang
-cmake -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+cmake -B build-clang -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
+cmake --build build-clang -j
 
 # MSVC (Developer PowerShell or cmd with vcvars)
 cmake -B build-msvc

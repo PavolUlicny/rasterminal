@@ -56,7 +56,7 @@ namespace platform
 #else
         // ftello returns off_t; no cast, because on LP64 the types coincide and the cast
         // would trip -Wuseless-cast. The assert makes the -D_FILE_OFFSET_BITS=64 build
-        // contract (both build systems define it) self-enforcing: no CI test can catch
+        // contract (CMakeLists.txt defines it at directory scope) self-enforcing: no CI test can catch
         // losing it (multi-GB fixtures are uncreatable on runners), so a dropped define
         // becomes a cross32-job compile error instead of a silent 2 GB EOVERFLOW regression.
         static_assert(sizeof(off_t) == 8, "64-bit off_t required; build with -D_FILE_OFFSET_BITS=64");

@@ -21,7 +21,7 @@ Set Height 1600
 Set Padding 10
 
 Hide
-Type "./rasterminal Duck.glb --no-hud --fps 30"
+Type "./build/rasterminal Duck.glb --no-hud --fps 30"
 Enter
 Sleep 5s
 # Optional: nudge to a 3/4 angle. Same keys are sent before every mode, so the

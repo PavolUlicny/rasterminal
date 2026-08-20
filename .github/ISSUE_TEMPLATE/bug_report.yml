@@ -15,7 +15,7 @@ body:
       label: Steps to reproduce
       description: The exact command line, plus any keys or mouse actions needed to trigger the bug.
       placeholder: |
-        1. ./rasterminal --shading phong model.glb
+        1. rasterminal --shading phong model.glb
         2. Press Space
         3. ...
     validations:

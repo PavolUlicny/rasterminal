@@ -43,7 +43,7 @@ To record a fresh take (launches rasterminal already spinning in Phong; press `q
 
 ```sh
 asciinema rec --overwrite \
-  -c "./rasterminal --spin -s phong --no-hud --graphics blocks <model>" \
+  -c "./build/rasterminal --spin -s phong --no-hud --graphics blocks <model>" \
   assets/demo.cast
 ```
 

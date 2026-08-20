@@ -132,7 +132,7 @@ license change); then test: `rm -rf build && cmake -B build && cmake --build bui
 For libwebp (decode-only subset for `EXT_texture_webp`): libwebp ships no single-header
 form, so we vendor only the source the decoder pulls. The set is *derived mechanically*
 from an upstream checkout. Do NOT hand-maintain it; regenerate on every version bump.
-The `.c` files are listed individually in both build systems (a unity `#include` shim
+The `.c` files are listed individually in `WEBP_DEC_SRCS` (a unity `#include` shim
 fails on duplicate file-local statics, e.g. `clip_8b`); the dsp SIMD variants self-gate on
 arch macros (`WEBP_USE_SSE2`/`SSE41`/`AVX2`/`NEON`), so no per-file SIMD flags are used.
 They are C TUs, built with blanket `-w` through the `rasterminal_c` object library, whose
