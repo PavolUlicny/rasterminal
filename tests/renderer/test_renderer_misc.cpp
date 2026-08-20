@@ -275,8 +275,14 @@ TEST(renderer, resolve_thread_count_contract)
     // Explicit N above hw clamps to hw (== the all-cores resolution).
     ASSERT_EQ(Renderer::resolve_thread_count(INT_MAX), all);
     ASSERT_EQ(Renderer::resolve_thread_count(all), all);
-    // Auto = min(hw, 4).
+    // Auto = min(hw, 4) for a half-block frame, every core for a pixel-backend one. Only the
+    // default moves: an explicit request resolves the same either way.
     ASSERT_EQ(Renderer::resolve_thread_count(-1), std::min(all, 4));
+    ASSERT_EQ(Renderer::resolve_thread_count(-1, /*all_cores_default=*/false), std::min(all, 4));
+    ASSERT_EQ(Renderer::resolve_thread_count(-1, /*all_cores_default=*/true), all);
+    ASSERT_EQ(Renderer::resolve_thread_count(0, /*all_cores_default=*/false), all);
+    ASSERT_EQ(Renderer::resolve_thread_count(1, /*all_cores_default=*/true), 1);
+    ASSERT_EQ(Renderer::resolve_thread_count(INT_MAX, /*all_cores_default=*/true), all);
     // hw >= 1 always (hardware_concurrency()==0 floors to 1), so 1 passes through.
     ASSERT_EQ(Renderer::resolve_thread_count(1), 1);
     // Idempotent: a resolved value is a fixed point (why the ctor may re-resolve).

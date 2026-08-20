@@ -3,15 +3,25 @@
 #include "tests/rasterize_test_util.h"
 #include "tests/sixel_test_util.h"
 #include "src/framebuffer.h"
+#include "src/renderer.h"
 
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <vector>
+
+#ifndef _WIN32
+// The kitty shm tests read the frame object back by name; there is no shm
+// transport on Windows (platform.h's stubs), so they compile out entirely.
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -1115,6 +1125,43 @@ namespace
         kc.rows = rows;
         return kc;
     }
+
+#ifndef _WIN32
+    GraphicsConfig shm_kitty_config(int cols, int rows)
+    {
+        GraphicsConfig kc = direct_kitty_config(cols, rows);
+        kc.shm = true;
+        return kc;
+    }
+
+    // The object the frame was written to, read back before the Framebuffer dtor
+    // unlinks the ring. Empty when the transport was unavailable (no /dev/shm), in
+    // which case present() fell back to the direct form and there is nothing to check.
+    std::vector<unsigned char> read_shm_ring_slot(unsigned slot, size_t expect_bytes)
+    {
+        char name[64];
+        std::snprintf(name, sizeof name, "/rasterminal-%lu-%u", static_cast<unsigned long>(getpid()), slot);
+        const int fd = shm_open(name, O_RDONLY, 0600);
+        if (fd < 0)
+        {
+            return {};
+        }
+        std::vector<unsigned char> got(expect_bytes);
+        size_t at = 0;
+        while (at < expect_bytes)
+        {
+            const ssize_t r = read(fd, got.data() + at, expect_bytes - at);
+            if (r <= 0)
+            {
+                break;
+            }
+            at += static_cast<size_t>(r);
+        }
+        close(fd);
+        got.resize(at);
+        return got;
+    }
+#endif
 } // namespace
 
 TEST(framebuffer, kitty_present_deflated_pixel_roundtrip)
@@ -1167,6 +1214,382 @@ TEST(framebuffer, kitty_present_deflated_pixel_roundtrip)
     ASSERT_EQ(rgb[px], 200);
     ASSERT_EQ(rgb[px + 1], 100);
     ASSERT_EQ(rgb[px + 2], 50);
+}
+
+#ifndef _WIN32
+TEST(framebuffer, kitty_shm_frame_holds_the_exact_pixels)
+{
+    // The shm transport writes the frame to an object the terminal reads by name,
+    // so nothing on the wire carries the pixels and the escape-level tests above
+    // cannot see them. Read the object back and check every byte.
+    Framebuffer fb(20, 8, /*headless=*/true, ColorMode::TrueColor, shm_kitty_config(10, 4));
+    fb.clear({ 10, 20, 30 });
+    (void)fb.commit_pixel(3, 2, 0.5f, { 200, 100, 50 });
+    std::string out;
+    {
+        CaptureStdout cap;
+        fb.present();
+        out = cap.read();
+    }
+
+    const auto expect = static_cast<size_t>(20 * 8 * 3);
+    const auto got = read_shm_ring_slot(0, expect);
+    if (got.empty())
+    {
+        return; // no working shm here; present() took the direct fallback
+    }
+    ASSERT_TRUE(out.find("t=s") != std::string::npos);
+    ASSERT_EQ(got.size(), expect);
+
+    const size_t bg = 0;                                       // pixel (0,0)
+    const size_t px = ((static_cast<size_t>(2) * 20) + 3) * 3; // pixel (3,2)
+    ASSERT_EQ(got[bg], 10);
+    ASSERT_EQ(got[bg + 1], 20);
+    ASSERT_EQ(got[bg + 2], 30);
+    ASSERT_EQ(got[px], 200);
+    ASSERT_EQ(got[px + 1], 100);
+    ASSERT_EQ(got[px + 2], 50);
+
+    // Every other pixel is the clear colour: a chunked fill that dropped, doubled
+    // or misaligned a chunk shows up here and nowhere else.
+    for (size_t i = 0; i < expect; i += 3)
+    {
+        if (i == px)
+        {
+            continue;
+        }
+        ASSERT_EQ(got[i], 10);
+        ASSERT_EQ(got[i + 1], 20);
+        ASSERT_EQ(got[i + 2], 30);
+    }
+}
+
+TEST(framebuffer, kitty_shm_frame_spans_several_chunks)
+{
+    // The fill hands the object one cache-sized chunk at a time, so a frame larger
+    // than one chunk exercises the loop's offset arithmetic. 400x300 is 360000
+    // bytes against a 256 KB chunk: two chunks, the second a partial one.
+    constexpr int W = 400;
+    constexpr int H = 300;
+    Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, shm_kitty_config(50, 18));
+    fb.clear({ 7, 9, 11 });
+    // Landmarks either side of the first chunk boundary (256*1024/3 = 87381 px).
+    (void)fb.commit_pixel(87380 % W, 87380 / W, 0.5f, { 1, 2, 3 });
+    (void)fb.commit_pixel(87381 % W, 87381 / W, 0.5f, { 4, 5, 6 });
+    (void)fb.commit_pixel(W - 1, H - 1, 0.5f, { 250, 251, 252 });
+    {
+        CaptureStdout cap;
+        fb.present();
+    }
+
+    const size_t expect = static_cast<size_t>(W) * static_cast<size_t>(H) * 3u;
+    const auto got = read_shm_ring_slot(0, expect);
+    if (got.empty())
+    {
+        return;
+    }
+    ASSERT_EQ(got.size(), expect);
+    const size_t last = size_t{ 87380 } * 3;  // last pixel of chunk 0
+    const size_t first = size_t{ 87381 } * 3; // first pixel of chunk 1
+    ASSERT_EQ(got[last], 1);
+    ASSERT_EQ(got[last + 1], 2);
+    ASSERT_EQ(got[last + 2], 3);
+    ASSERT_EQ(got[first], 4);
+    ASSERT_EQ(got[first + 1], 5);
+    ASSERT_EQ(got[first + 2], 6);
+    ASSERT_EQ(got[expect - 3], 250);
+    ASSERT_EQ(got[expect - 2], 251);
+    ASSERT_EQ(got[expect - 1], 252);
+}
+#endif
+
+namespace
+{
+    // Reassembles the transmitted image payload from however many APC records it took.
+    std::string collect_apc_payload(const std::string &out)
+    {
+        std::string b64;
+        size_t i = out.find("\033_G");
+        while (i != std::string::npos)
+        {
+            const size_t semi = out.find(';', i);
+            const size_t st = out.find("\033\\", i);
+            if (st == std::string::npos)
+            {
+                break;
+            }
+            if (semi != std::string::npos && semi < st)
+            {
+                b64 += out.substr(semi + 1, st - semi - 1);
+            }
+            i = out.find("\033_G", st + 2);
+        }
+        return b64;
+    }
+
+    // A runner that calls the task for each worker id in turn on this thread. The
+    // renderer supplies real concurrency in production; what needs pinning here is the
+    // chunk split and the stream assembly, and doing it deterministically keeps the
+    // test from depending on scheduling.
+    Framebuffer::ParallelRunner sequential_runner(int n)
+    {
+        return { [n](const std::function<void(int, int)> &fn)
+                 {
+                     for (int w = 0; w < n; w++)
+                     {
+                         fn(w, n);
+                     }
+                 },
+                 n };
+    }
+} // namespace
+
+TEST(framebuffer, kitty_parallel_deflate_stream_inflates_to_the_exact_frame)
+{
+    // The parallel path emits one zlib stream built from independently deflated chunks
+    // (each closed with a sync flush so it stays non-final). Nothing about that is
+    // visible except by inflating the result with an ordinary decoder, which is exactly
+    // what the terminal does. 1200x600 is 2.16 MB, comfortably past the size at which
+    // deflate_frame splits, so this really does take the chunked path.
+    constexpr int W = 1200;
+    constexpr int H = 600;
+    Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
+    fb.set_parallel_runner(sequential_runner(8));
+    fb.clear({ 12, 34, 56 });
+    (void)fb.commit_pixel(0, 0, 0.5f, { 1, 2, 3 });
+    (void)fb.commit_pixel(W / 2, H / 2, 0.5f, { 90, 91, 92 });
+    (void)fb.commit_pixel(W - 1, H - 1, 0.5f, { 250, 251, 252 });
+
+    std::string out;
+    {
+        CaptureStdout cap;
+        fb.present();
+        out = cap.read();
+    }
+    ASSERT_TRUE(out.find("o=z") != std::string::npos);
+
+    const auto z = b64_decode(collect_apc_payload(out));
+    std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+    const auto rgb_len = static_cast<unsigned int>(rgb.size());
+    mz_ulong len = rgb_len;
+    ASSERT_EQ(mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size())), MZ_OK);
+    ASSERT_EQ(len, rgb_len);
+
+    ASSERT_EQ(rgb[0], 1);
+    ASSERT_EQ(rgb[1], 2);
+    ASSERT_EQ(rgb[2], 3);
+    const size_t mid = ((static_cast<size_t>(H / 2) * W) + (W / 2)) * 3u;
+    ASSERT_EQ(rgb[mid], 90);
+    ASSERT_EQ(rgb[mid + 1], 91);
+    ASSERT_EQ(rgb[mid + 2], 92);
+    ASSERT_EQ(rgb[rgb.size() - 3], 250);
+    ASSERT_EQ(rgb[rgb.size() - 2], 251);
+    ASSERT_EQ(rgb[rgb.size() - 1], 252);
+
+    // Everything else is the clear colour: a dropped, doubled or misordered chunk is
+    // invisible in the landmarks above but not here.
+    for (size_t i = 3; i < rgb.size() - 3; i += 3)
+    {
+        if (i == mid)
+        {
+            continue;
+        }
+        ASSERT_EQ(rgb[i], 12);
+        ASSERT_EQ(rgb[i + 1], 34);
+        ASSERT_EQ(rgb[i + 2], 56);
+    }
+}
+
+TEST(framebuffer, kitty_parallel_and_serial_deflate_agree)
+{
+    // The split must not change what the terminal ends up displaying, so the two paths
+    // are rendered identically and their inflated frames compared byte for byte.
+    constexpr int W = 1200;
+    constexpr int H = 600;
+    const auto paint = [](Framebuffer &fb)
+    {
+        fb.clear({ 5, 6, 7 });
+        for (int y = 0; y < H; y += 7)
+        {
+            for (int x = 0; x < W; x += 5)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f, { static_cast<uint8_t>(x), static_cast<uint8_t>(y), static_cast<uint8_t>(x ^ y) }
+                );
+            }
+        }
+    };
+    const auto inflate_frame = [](const std::string &out)
+    {
+        const auto z = b64_decode(collect_apc_payload(out));
+        std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+        const auto rgb_len = static_cast<unsigned int>(rgb.size());
+        mz_ulong len = rgb_len;
+        const int rc = mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size()));
+        if (rc != MZ_OK || len != rgb_len)
+        {
+            rgb.clear();
+        }
+        return rgb;
+    };
+
+    std::vector<unsigned char> serial;
+    std::vector<unsigned char> parallel;
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        serial = inflate_frame(cap.read());
+    }
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
+        fb.set_parallel_runner(sequential_runner(6));
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        parallel = inflate_frame(cap.read());
+    }
+    ASSERT_FALSE(serial.empty());
+    ASSERT_EQ(parallel.size(), serial.size());
+    ASSERT_TRUE(parallel == serial);
+}
+
+TEST(framebuffer, kitty_parallel_deflate_on_a_real_worker_pool)
+{
+    // The tests above drive the split through a sequential runner, which pins the
+    // assembly but never runs two chunks at once. This one borrows an actual Renderer
+    // pool, the way main.cpp does, so the concurrent path is what the sanitizer jobs
+    // see; without it TSan would report a clean run over code that never ran in parallel.
+    constexpr int W = 1200;
+    constexpr int H = 600;
+    Renderer renderer(4);
+    Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
+    fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
+                             renderer.worker_count() });
+    fb.clear({ 3, 4, 5 });
+    (void)fb.commit_pixel(W - 1, H - 1, 0.5f, { 77, 78, 79 });
+
+    std::string out;
+    {
+        CaptureStdout cap;
+        fb.present();
+        out = cap.read();
+    }
+    ASSERT_TRUE(out.find("o=z") != std::string::npos);
+
+    const auto z = b64_decode(collect_apc_payload(out));
+    std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+    const auto rgb_len = static_cast<unsigned int>(rgb.size());
+    mz_ulong len = rgb_len;
+    ASSERT_EQ(mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size())), MZ_OK);
+    ASSERT_EQ(len, rgb_len);
+    ASSERT_EQ(rgb[0], 3);
+    ASSERT_EQ(rgb[rgb.size() - 3], 77);
+    ASSERT_EQ(rgb[rgb.size() - 2], 78);
+    ASSERT_EQ(rgb[rgb.size() - 1], 79);
+}
+
+TEST(framebuffer, kitty_parallel_deflate_across_threshold_sizes)
+{
+    // The present path now decides serial-vs-parallel from pixel and byte counts, so the
+    // interesting frames are the ones straddling those thresholds, not one convenient
+    // size. 512x512 is exactly the 1<<18-pixel split point; 592x592 is just past the
+    // 1 MB minimum at which the deflate splits at all; the tiny frames sit under every
+    // threshold and also cover a single-pixel buffer and a frame shorter than one sixel
+    // band. Each is inflated back and checked, so a bad chunk boundary at any of them
+    // shows up here rather than on someone's terminal.
+    const int sizes[][2] = { { 1, 1 }, { 3, 7 }, { 64, 6 }, { 65, 5 }, { 511, 511 }, { 512, 512 }, { 592, 592 } };
+    Renderer renderer(4);
+    for (const auto &s : sizes)
+    {
+        const int W = s[0];
+        const int H = s[1];
+        Framebuffer fb(
+            W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(std::max(1, W / 8), std::max(1, H / 16))
+        );
+        fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
+                                 renderer.worker_count() });
+        fb.clear({ 17, 34, 51 });
+        (void)fb.commit_pixel(0, 0, 0.5f, { 1, 2, 3 });
+
+        std::string out;
+        {
+            CaptureStdout cap;
+            fb.present();
+            out = cap.read();
+        }
+        const auto payload = b64_decode(collect_apc_payload(out));
+        ASSERT_FALSE(payload.empty());
+
+        std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+        if (out.find("o=z") != std::string::npos)
+        {
+            const auto rgb_len = static_cast<unsigned int>(rgb.size());
+            mz_ulong len = rgb_len;
+            ASSERT_EQ(
+                mz_uncompress(rgb.data(), &len, payload.data(), static_cast<unsigned int>(payload.size())), MZ_OK
+            );
+            ASSERT_EQ(len, rgb_len);
+        }
+        else
+        {
+            ASSERT_EQ(payload.size(), rgb.size()); // raw fallback
+            std::copy(payload.begin(), payload.end(), rgb.begin());
+        }
+        ASSERT_EQ(rgb[0], 1);
+        ASSERT_EQ(rgb[1], 2);
+        ASSERT_EQ(rgb[2], 3);
+        // Every remaining pixel is the clear colour: a dropped or doubled chunk at this
+        // size is invisible in the landmark above but not here.
+        for (size_t i = 3; i < rgb.size(); i += 3)
+        {
+            ASSERT_EQ(rgb[i], 17);
+            ASSERT_EQ(rgb[i + 1], 34);
+            ASSERT_EQ(rgb[i + 2], 51);
+        }
+    }
+}
+
+TEST(framebuffer, kitty_parallel_deflate_falls_back_when_a_chunk_fails)
+{
+    // A runner that never calls the task stands in for every way a worker can fail to
+    // produce its chunk (bad_alloc in the compressor, chiefly). The frame must still be
+    // transmitted, and must still carry the right pixels.
+    constexpr int W = 1200;
+    constexpr int H = 600;
+    Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
+    fb.set_parallel_runner({ [](const std::function<void(int, int)> &) {}, 8 });
+    fb.clear({ 21, 22, 23 });
+    (void)fb.commit_pixel(4, 4, 0.5f, { 60, 61, 62 });
+
+    std::string out;
+    {
+        CaptureStdout cap;
+        fb.present();
+        out = cap.read();
+    }
+    ASSERT_TRUE(out.find("\033_G") != std::string::npos);
+
+    const auto payload = b64_decode(collect_apc_payload(out));
+    std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+    if (out.find("o=z") != std::string::npos)
+    {
+        const auto rgb_len = static_cast<unsigned int>(rgb.size());
+        mz_ulong len = rgb_len;
+        ASSERT_EQ(mz_uncompress(rgb.data(), &len, payload.data(), static_cast<unsigned int>(payload.size())), MZ_OK);
+        ASSERT_EQ(len, rgb_len);
+    }
+    else
+    {
+        ASSERT_EQ(payload.size(), rgb.size()); // raw fallback
+        std::copy(payload.begin(), payload.end(), rgb.begin());
+    }
+    const size_t px = ((static_cast<size_t>(4) * W) + 4) * 3u;
+    ASSERT_EQ(rgb[px], 60);
+    ASSERT_EQ(rgb[px + 1], 61);
+    ASSERT_EQ(rgb[px + 2], 62);
+    ASSERT_EQ(rgb[0], 21);
 }
 
 TEST(framebuffer, kitty_idle_present_emits_no_image)
@@ -1234,6 +1657,194 @@ namespace
         return sc;
     }
 } // namespace
+
+TEST(framebuffer, sixel_parallel_across_threshold_sizes)
+{
+    // Same idea for sixel: the encode splits by BAND and bails to serial below two bands
+    // per worker, and the quantize splits by pixel count, so these straddle both. A
+    // height under 6 is less than one band; 512x512 is the quantize split point.
+    const int sizes[][2] = { { 1, 1 }, { 4, 5 }, { 64, 6 }, { 64, 7 }, { 511, 511 }, { 512, 512 }, { 592, 592 } };
+    Renderer renderer(4);
+    for (const auto &s : sizes)
+    {
+        const int W = s[0];
+        const int H = s[1];
+        std::string serial;
+        std::string parallel;
+        for (int arm = 0; arm < 2; arm++)
+        {
+            Framebuffer fb(
+                W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(std::max(1, W / 8), std::max(1, H / 16))
+            );
+            if (arm == 1)
+            {
+                fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn)
+                                         { renderer.run_on_workers(fn); }, renderer.worker_count() });
+            }
+            fb.clear({ 17, 34, 51 });
+            (void)fb.commit_pixel(0, 0, 0.5f, { 200, 100, 50 });
+            CaptureStdout cap;
+            fb.present();
+            (arm == 0 ? serial : parallel) = cap.read();
+        }
+        // The split is exact, so the frame must be byte-identical at every size.
+        ASSERT_TRUE(parallel == serial);
+    }
+}
+
+TEST(framebuffer, sixel_parallel_matches_serial_byte_for_byte)
+{
+    // Covers BOTH parallel stages of the sixel path: the per-pixel quantize and the
+    // per-band encode. Both are exact splits of deterministic work, so unlike the
+    // deflate (where the split legitimately moves the compressed bytes) the emitted
+    // frame must be byte-identical. 900x600 is 100 bands against 4 workers, past the
+    // thresholds at which both splits engage.
+    constexpr int W = 900;
+    constexpr int H = 600;
+    const auto paint = [](Framebuffer &fb)
+    {
+        fb.clear({ 9, 40, 90 });
+        for (int y = 0; y < H; y += 3)
+        {
+            for (int x = 0; x < W; x += 3)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f,
+                    { static_cast<uint8_t>(x * 5), static_cast<uint8_t>(y * 3), static_cast<uint8_t>((x + y) * 7) }
+                );
+            }
+        }
+    };
+
+    std::string serial;
+    std::string parallel;
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        serial = cap.read();
+    }
+    {
+        Renderer renderer(4);
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
+                                 renderer.worker_count() });
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        parallel = cap.read();
+    }
+    ASSERT_FALSE(serial.empty());
+    ASSERT_TRUE(parallel == serial);
+}
+
+TEST(framebuffer, sixel_recovers_when_the_pool_produces_nothing)
+{
+    // Both sixel stages hand work to the pool, and a worker CAN fail: append_bands grows
+    // a per-worker mask and a per-worker string (megabytes on a large frame), so
+    // bad_alloc is reachable and run_on_workers swallows it per worker. A runner that
+    // produces nothing stands in for that. The frame must come out byte-identical to the
+    // serial one, not spliced from partial band ranges (which would end mid-token, and
+    // no length check downstream would notice) and not carrying the previous frame's
+    // leftovers. The quantize half matters even more than the encode: an uncovered range
+    // leaves m_idx uninitialized, and the encoder turns a stale byte below 16 into a
+    // NEGATIVE colour-register index into a stack array.
+    constexpr int W = 900;
+    constexpr int H = 600;
+    const auto paint = [](Framebuffer &fb)
+    {
+        fb.clear({ 30, 60, 90 });
+        for (int y = 0; y < H; y += 5)
+        {
+            for (int x = 0; x < W; x += 4)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f, { static_cast<uint8_t>(x), static_cast<uint8_t>(y), static_cast<uint8_t>(x + y) }
+                );
+            }
+        }
+    };
+
+    std::string serial;
+    std::string recovered;
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        serial = cap.read();
+    }
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        fb.set_parallel_runner({ [](const std::function<void(int, int)> &) {}, 8 });
+        // Two frames: the second proves a stale per-worker buffer from the first cannot
+        // be spliced in, which is why the parts are cleared on the calling thread.
+        paint(fb);
+        {
+            CaptureStdout warmup;
+            fb.present();
+        }
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        recovered = cap.read();
+    }
+    ASSERT_FALSE(serial.empty());
+    ASSERT_TRUE(recovered == serial);
+}
+
+TEST(framebuffer, sixel_survives_a_pool_reporting_a_different_worker_count)
+{
+    // The per-worker buffers and the completeness flags are sized from ParallelRunner::n_workers,
+    // but each worker bands the frame up from the count it is HANDED. Were a pool to disagree,
+    // marking a flag would let the completeness check pass over bands nobody encoded and splice a
+    // truncated (yet well-formed) frame. Workers that see a different count sit the round out, so
+    // every flag stays clear and the serial encoder runs. The renderer's pool always agrees; this
+    // pins the contract, since only the guard stands between a mismatch and a silent short frame.
+    constexpr int W = 900;
+    constexpr int H = 600;
+    const auto paint = [](Framebuffer &fb)
+    {
+        fb.clear({ 30, 60, 90 });
+        for (int y = 0; y < H; y += 5)
+        {
+            for (int x = 0; x < W; x += 4)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f, { static_cast<uint8_t>(x), static_cast<uint8_t>(y), static_cast<uint8_t>(x + y) }
+                );
+            }
+        }
+    };
+
+    std::string serial;
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        serial = cap.read();
+    }
+    // Both directions: a pool larger than declared (which would leave the tail unencoded) and a
+    // smaller one (which would cover the frame, but in ranges the serial redo does not expect).
+    for (const int actual : { 16, 3 })
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, sixel_config(112, 37));
+        fb.set_parallel_runner({ [actual](const std::function<void(int, int)> &fn)
+                                 {
+                                     for (int w = 0; w < actual; w++)
+                                     {
+                                         fn(w, actual);
+                                     }
+                                 },
+                                 8 });
+        paint(fb);
+        CaptureStdout cap;
+        fb.present();
+        ASSERT_TRUE(cap.read() == serial);
+    }
+}
 
 TEST(framebuffer, sixel_present_pixel_roundtrip)
 {
@@ -1501,4 +2112,144 @@ TEST(framebuffer, sixel_hud_only_change_emits_no_frame)
         ASSERT_TRUE(out.find("\033P") == std::string::npos);
         ASSERT_TRUE(out.find("second") != std::string::npos);
     }
+}
+
+TEST(framebuffer, kitty_staging_fill_survives_a_pool_reporting_a_different_worker_count)
+{
+    // split_ranges sizes its completeness flags from ParallelRunner::n_workers, but each worker
+    // splits [0, total) by the count it is HANDED and the serial redo uses the flag count. A
+    // worker splitting by a different one would mark a range it never filled, leaving a hole that
+    // ships as stale bytes IN PIXELS. Mismatched workers therefore sit the round out, leaving
+    // every flag clear so the redo covers the frame.
+    //
+    // Frame 0 goes through a MATCHING pool so the staging buffer is known-good, then frame 1
+    // through the mismatched one; a hole then holds frame 0 and is visible. Leaving the buffer's
+    // prior content to the allocator does not work: a same-sized block is handed back holding
+    // exactly the bytes expected, and the test passes with the guard removed (observed, twice).
+    constexpr int W = 640;
+    constexpr int H = 480; // 307200 px, past write_rgb's 1<<18 split threshold
+    const auto paint = [](Framebuffer &fb, int frame)
+    {
+        fb.clear(frame == 0 ? Color{ 11, 22, 33 } : Color{ 200, 190, 180 });
+        for (int y = 0; y < H; y += 3)
+        {
+            for (int x = 0; x < W; x += 7)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f,
+                    { static_cast<uint8_t>((x + frame) & 0xFF), static_cast<uint8_t>(y & 0xFF),
+                      static_cast<uint8_t>((x + y) & 0xFF) }
+                );
+            }
+        }
+    };
+    const auto runner = [](int report)
+    {
+        return Framebuffer::ParallelRunner{ [report](const std::function<void(int, int)> &fn)
+                                            {
+                                                for (int w = 0; w < report; w++)
+                                                {
+                                                    fn(w, report);
+                                                }
+                                            },
+                                            8 };
+    };
+    const auto second_frame = [&](int actual)
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(80, 30));
+        fb.set_parallel_runner(runner(8)); // matching: frame 0 fills the staging buffer everywhere
+        paint(fb, 0);
+        {
+            CaptureStdout warmup;
+            fb.present();
+        }
+        fb.set_parallel_runner(runner(actual));
+        paint(fb, 1);
+        std::string out;
+        {
+            CaptureStdout cap;
+            fb.present();
+            out = cap.read();
+        }
+        const auto z = b64_decode(collect_apc_payload(out));
+        std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+        const auto rgb_len = static_cast<unsigned int>(rgb.size());
+        mz_ulong len = rgb_len;
+        ASSERT_EQ(mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size())), MZ_OK);
+        ASSERT_EQ(len, rgb_len);
+        return rgb;
+    };
+
+    const std::vector<unsigned char> good = second_frame(8);
+    ASSERT_TRUE(second_frame(16) == good); // a bigger pool would cover only the frame's front
+    ASSERT_TRUE(second_frame(3) == good);  // a smaller one, ranges the redo does not expect
+}
+
+TEST(framebuffer, kitty_staging_fill_recovers_from_an_incomplete_pool)
+{
+    // write_rgb splits the staging fill by pixel range, and unlike the deflate (whose zero chunk
+    // length reveals a gap) that loop allocates nothing, so it has no failure signal of its own:
+    // a worker that never ran would ship stale bytes AS PIXELS, silently. The runner here serves
+    // only the even worker ids, standing in for that; the serial redo must fill the rest.
+    //
+    // Frame 0 runs through a COMPLETE pool so the staging buffer is known-good, then frame 1
+    // through the crippled one, so a range the redo missed still holds frame 0 and shows up.
+    // Comparing a fresh framebuffer against a serial one instead does NOT work: the staging
+    // buffer it allocates is the block the previous run just freed, still holding exactly the
+    // bytes expected, and the test then passes with the whole redo loop deleted (observed).
+    constexpr int W = 640;
+    constexpr int H = 480; // 307200 px, past write_rgb's 1<<18 split threshold
+    const auto paint = [](Framebuffer &fb, int frame)
+    {
+        fb.clear(frame == 0 ? Color{ 11, 22, 33 } : Color{ 200, 190, 180 });
+        for (int y = 0; y < H; y += 3)
+        {
+            for (int x = 0; x < W; x += 7)
+            {
+                (void)fb.commit_pixel(
+                    x, y, 0.5f,
+                    { static_cast<uint8_t>((x + frame) & 0xFF), static_cast<uint8_t>(y & 0xFF),
+                      static_cast<uint8_t>((x + y) & 0xFF) }
+                );
+            }
+        }
+    };
+    const auto runner = [](int step)
+    {
+        return Framebuffer::ParallelRunner{ [step](const std::function<void(int, int)> &fn)
+                                            {
+                                                for (int w = 0; w < 8; w += step)
+                                                {
+                                                    fn(w, 8);
+                                                }
+                                            },
+                                            8 };
+    };
+    const auto second_frame = [&](int step)
+    {
+        Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(80, 30));
+        fb.set_parallel_runner(runner(1)); // every worker: frame 0 fills the buffer everywhere
+        paint(fb, 0);
+        {
+            CaptureStdout warmup;
+            fb.present();
+        }
+        fb.set_parallel_runner(runner(step));
+        paint(fb, 1);
+        std::string out;
+        {
+            CaptureStdout cap;
+            fb.present();
+            out = cap.read();
+        }
+        const auto z = b64_decode(collect_apc_payload(out));
+        std::vector<unsigned char> rgb(static_cast<size_t>(W) * static_cast<size_t>(H) * 3u);
+        const auto rgb_len = static_cast<unsigned int>(rgb.size());
+        mz_ulong len = rgb_len;
+        ASSERT_EQ(mz_uncompress(rgb.data(), &len, z.data(), static_cast<unsigned int>(z.size())), MZ_OK);
+        ASSERT_EQ(len, rgb_len);
+        return rgb;
+    };
+
+    ASSERT_TRUE(second_frame(2) == second_frame(1));
 }

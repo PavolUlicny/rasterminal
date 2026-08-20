@@ -322,6 +322,50 @@ TEST(transparency, occluded_by_opaque)
     assert_pixel_near(fb, 20, 10, { 255, 0, 0 }, 2);
 }
 
+TEST(transparency, resizing_repeatedly_keeps_the_a_buffer_correct)
+{
+    // The per-pixel A-buffer head array is reused across a resize rather than rebuilt,
+    // because rebuilding it reallocated, value-initialized and then sentinel-filled the
+    // whole thing and first-touched every page: 7.8 ms at 1080p, paid on EVERY resize by
+    // any blend scene (a glazed vase went 3.0 to 11.2 ms a frame). Reuse is only sound if
+    // every head still reads as empty afterwards, so this walks a blend scene through
+    // grow, shrink-within-half (reuse) and shrink-past-half (reallocate) and checks the
+    // picture each time against the same size rendered by a fresh renderer.
+    const int sizes[][2] = { { 60, 40 }, { 80, 50 }, { 70, 45 }, { 24, 16 }, { 80, 50 } };
+    Renderer shared(3);
+    Framebuffer fb(60, 40, /*headless=*/true);
+    for (const auto &s : sizes)
+    {
+        Mesh mesh;
+        add_flat_large(mesh, 0.5f, RED, 0.5f, /*blend=*/true);
+        add_flat_large(mesh, 0.0f, GREEN, 0.5f, /*blend=*/true);
+        finalize(mesh, /*opaque_count=*/0);
+        Camera cam = make_test_camera();
+
+        fb.resize(s[0], s[1]);
+        fb.clear({ 0, 0, 255 });
+        shared.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
+
+        // A renderer that has only ever seen this size cannot have stale heads.
+        Renderer fresh(3);
+        Framebuffer ref(s[0], s[1], /*headless=*/true);
+        ref.clear({ 0, 0, 255 });
+        fresh.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, ref);
+
+        for (int y = 0; y < s[1]; y++)
+        {
+            for (int x = 0; x < s[0]; x++)
+            {
+                const Color a = fb.get_pixel(x, y);
+                const Color b = ref.get_pixel(x, y);
+                ASSERT_EQ(static_cast<int>(a.r), static_cast<int>(b.r));
+                ASSERT_EQ(static_cast<int>(a.g), static_cast<int>(b.g));
+                ASSERT_EQ(static_cast<int>(a.b), static_cast<int>(b.b));
+            }
+        }
+    }
+}
+
 // A transparent triangle in front of an opaque one blends over it.
 TEST(transparency, blends_in_front_of_opaque)
 {

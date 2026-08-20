@@ -788,3 +788,112 @@ TEST(texture_bump, height_to_normal_unknown_imfchan_defaults_to_luminance)
     Texture l = height_to_normal_map(src, 'l', 1.0f);
     ASSERT_EQ(x.pixels[4], l.pixels[4]); // unknown char falls through to the luminance branch
 }
+
+// The batch shader's SoA forms duplicate locate() and blend(); the branch that introduced them
+// only ever exercised the all-Repeat fast path end to end, so the per-axis wrap branch is pinned
+// here directly. A footprint is the four texel offsets plus the two weights, so a disagreement
+// would sample the wrong texels rather than merely round differently.
+
+// A texture whose bytes differ per texel, so a wrong offset shows up as a wrong colour.
+static Texture batch_ref()
+{
+    std::vector<uint8_t> px;
+    for (int y = 0; y < 5; y++)
+    {
+        for (int x = 0; x < 7; x++)
+        {
+            px.push_back(static_cast<uint8_t>((x * 31) + 7));
+            px.push_back(static_cast<uint8_t>((y * 47) + 11));
+            px.push_back(static_cast<uint8_t>((x * y * 13) + 3));
+            px.push_back(static_cast<uint8_t>(255 - (x * 5) - (y * 9)));
+        }
+    }
+    return make_tex(7, 5, std::move(px));
+}
+
+TEST(texture_batch, locate_batch_matches_locate_under_every_wrap_mode)
+{
+    Texture t = batch_ref();
+    // Boundaries in both directions, an exact integer, either side of zero and one, and values
+    // far enough out to exercise several wrap periods.
+    const float coords[] = { -7.5f, -3.25f,     -1.0f, -0.5f, -1e-7f, 0.0f,  1e-7f,  0.125f, 0.5f,
+                             0.75f, 0.9999999f, 1.0f,  1.5f,  2.0f,   3.75f, 9.125f, 17.3f,  100.5f };
+    constexpr int n = static_cast<int>(sizeof(coords) / sizeof(coords[0]));
+    static_assert(n <= Texture::BATCH_MAX, "one batch per mode pair");
+
+    const WrapMode modes[] = { WrapMode::Repeat, WrapMode::Clamp, WrapMode::Mirror };
+    for (const WrapMode ws : modes)
+    {
+        for (const WrapMode wt : modes)
+        {
+            t.wrap_s = ws;
+            t.wrap_t = wt;
+            // Pair each u with a different v so both axes vary within the one batch.
+            float us[n];
+            float vs[n];
+            for (int i = 0; i < n; i++)
+            {
+                us[i] = coords[i];
+                vs[i] = coords[(i + 5) % n];
+            }
+            Texture::FootprintBatch fb{};
+            t.locate_batch(us, vs, n, fb);
+            for (int i = 0; i < n; i++)
+            {
+                const Texture::Footprint f = t.locate(us[i], vs[i]);
+                ASSERT_EQ(fb.o00[i], f.o00);
+                ASSERT_EQ(fb.o10[i], f.o10);
+                ASSERT_EQ(fb.o01[i], f.o01);
+                ASSERT_EQ(fb.o11[i], f.o11);
+                // The OFFSETS must match exactly, since they pick the texels; the weights only
+                // need to agree numerically. The two spell the same arithmetic but one reads its
+                // input from a parameter and the other from an array, and a compiler is free to
+                // contract or keep extra precision in one and not the other: MSVC does, and an
+                // equality assertion here failed on it while every offset still agreed.
+                ASSERT_NEAR(fb.tx[i], f.tx, 1e-6f);
+                ASSERT_NEAR(fb.ty[i], f.ty, 1e-6f);
+                // Every offset must address a whole texel inside the buffer.
+                ASSERT_TRUE(f.o11 + 4 <= t.pixels.size());
+            }
+        }
+    }
+}
+
+TEST(texture_batch, blend_batch_matches_blend)
+{
+    Texture t = batch_ref();
+    const WrapMode modes[] = { WrapMode::Repeat, WrapMode::Clamp, WrapMode::Mirror };
+    for (const WrapMode ws : modes)
+    {
+        for (const WrapMode wt : modes)
+        {
+            t.wrap_s = ws;
+            t.wrap_t = wt;
+            constexpr int n = 16;
+            float us[n];
+            float vs[n];
+            for (int i = 0; i < n; i++)
+            {
+                us[i] = -1.3f + (0.37f * static_cast<float>(i));
+                vs[i] = 2.1f - (0.29f * static_cast<float>(i));
+            }
+            Texture::FootprintBatch fb{};
+            t.locate_batch(us, vs, n, fb);
+            float r[n];
+            float g[n];
+            float b[n];
+            float a[n];
+            t.blend_batch(fb, n, r, g, b, a);
+            for (int i = 0; i < n; i++)
+            {
+                // Not bitwise: blend_batch reduces per channel across samples where blend()
+                // reduces four channels of one sample, so a vectorized build may reassociate.
+                const vec4 c = t.blend(t.locate(us[i], vs[i]));
+                ASSERT_NEAR(r[i], c.x, 1e-6f);
+                ASSERT_NEAR(g[i], c.y, 1e-6f);
+                ASSERT_NEAR(b[i], c.z, 1e-6f);
+                ASSERT_NEAR(a[i], c.w, 1e-6f);
+            }
+        }
+    }
+}
