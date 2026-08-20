@@ -53,16 +53,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Linux ships `make dist`: portable codegen + static libstdc++/libgcc (no host GLIBCXX
-      # dependency). macOS dist == portable (system libc++ is ABI-stable). -j bounded to the
-      # runner core count so the heavy LTO vendor TUs (basisu/draco/libwebp) can't OOM.
+      # Linux ships the dist configuration: portable codegen + static libstdc++/libgcc (no host
+      # GLIBCXX dependency). On macOS dist == portable (system libc++ is ABI-stable), so it just
+      # drops the static flag. -j bounded to the runner core count so the heavy LTO vendor TUs
+      # (basisu/draco/libwebp) can't OOM. Configured into build/ explicitly rather than through
+      # the dist/portable presets, which use their own binaryDirs: one output path keeps the
+      # verify, smoke-test and packaging steps below free of per-platform branching. No --target
+      # is needed, since rasterminal_tests is EXCLUDE_FROM_ALL and a release wants the viewer.
       - name: Build (Linux)
         if: runner.os == 'Linux'
-        run: make dist -j"$(nproc)"
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DRASTERMINAL_STATIC_LIBSTDCXX=ON
+          cmake --build build -j"$(nproc)"
 
       - name: Build (macOS)
         if: runner.os == 'macOS'
-        run: make portable -j"$(getconf _NPROCESSORS_ONLN)"
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON
+          cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
 
       # Windows: portable codegen (no /arch:AVX2) + static CRT so the .exe is self-contained
       # (no VC++ redist). MultiThreaded runtime is selectable at configure time because
@@ -77,15 +85,15 @@ jobs:
       - name: Verify static link (Linux)
         if: runner.os == 'Linux'
         run: |
-          ldd rasterminal
-          ! ldd rasterminal | grep -E 'libstdc\+\+|libgcc_s'
+          ldd build/rasterminal
+          ! ldd build/rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
       - name: Smoke test (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           set -euo pipefail
-          ./rasterminal --version
-          ./rasterminal --help
+          ./build/rasterminal --version
+          ./build/rasterminal --help
           # Real-pipeline smoke: render a tiny cube headlessly (no terminal I/O in --bench).
           cat > cube.obj <<'EOF'
           v -1 -1 -1
@@ -103,7 +111,7 @@ jobs:
           f 4 3 7 8
           f 1 2 6 5
           EOF
-          ./rasterminal --bench 5 --bench-warmup 1 cube.obj
+          ./build/rasterminal --bench 5 --bench-warmup 1 cube.obj
 
       - name: Smoke test (Windows)
         if: runner.os == 'Windows'
@@ -123,7 +131,7 @@ jobs:
           set -euo pipefail
           stage="${{ matrix.artifact }}"
           mkdir "$stage"
-          cp rasterminal LICENSE THIRD_PARTY_NOTICES README.md "$stage"/
+          cp build/rasterminal LICENSE THIRD_PARTY_NOTICES README.md "$stage"/
           tar czf "$stage.tar.gz" "$stage"
 
       - name: Package (Windows)
