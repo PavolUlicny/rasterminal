@@ -55,14 +55,18 @@
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "release", "targets": ["rasterminal", "rasterminal_tests"] },
-    { "name": "portable", "configurePreset": "portable" },
+    { "name": "portable", "configurePreset": "portable", "targets": ["rasterminal", "rasterminal_tests"] },
     { "name": "dist", "configurePreset": "dist", "targets": ["rasterminal", "rasterminal_tests"] },
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "reldbg", "configurePreset": "reldbg" },
-    { "name": "clang", "configurePreset": "clang" }
+    { "name": "debug", "configurePreset": "debug", "targets": ["rasterminal", "rasterminal_tests"] },
+    { "name": "reldbg", "configurePreset": "reldbg", "targets": ["rasterminal", "rasterminal_tests"] },
+    { "name": "clang", "configurePreset": "clang", "targets": ["rasterminal", "rasterminal_tests"] }
   ],
   "testPresets": [
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "dist", "configurePreset": "dist", "output": { "outputOnFailure": true } }
+    { "name": "portable", "configurePreset": "portable", "output": { "outputOnFailure": true } },
+    { "name": "dist", "configurePreset": "dist", "output": { "outputOnFailure": true } },
+    { "name": "debug", "configurePreset": "debug", "output": { "outputOnFailure": true } },
+    { "name": "reldbg", "configurePreset": "reldbg", "output": { "outputOnFailure": true } },
+    { "name": "clang", "configurePreset": "clang", "output": { "outputOnFailure": true } }
   ]
 }

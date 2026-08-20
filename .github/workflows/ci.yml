@@ -247,6 +247,32 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Every configure preset needs a build preset that names the test binary and a test
+      # preset to run it, or `cmake --build --preset X && ctest --preset X` dies with
+      # "Not Run" the way release did before fe7a39e. Structural, so it covers all six
+      # without paying for six builds; the step below actually runs one of them.
+      - name: Presets are complete
+        run: |
+          python3 - <<'EOF'
+          import json, sys
+          d = json.load(open("CMakePresets.json"))
+          want = ["rasterminal", "rasterminal_tests"]
+          cfg = {c["name"] for c in d["configurePresets"]}
+          bad = []
+          for name in sorted(cfg):
+              b = next((x for x in d["buildPresets"] if x["name"] == name), None)
+              t = next((x for x in d["testPresets"] if x["name"] == name), None)
+              if b is None:
+                  bad.append(f"{name}: no build preset")
+              elif b.get("targets") != want:
+                  bad.append(f"{name}: build preset does not name {want}")
+              if t is None:
+                  bad.append(f"{name}: no test preset")
+          for line in bad:
+              print("ERROR:", line)
+          sys.exit(1 if bad else 0)
+          EOF
+
       # Verbatim from the README. `ctest --preset` needs the test binary, which is
       # EXCLUDE_FROM_ALL, so the build preset has to name it.
       - name: Preset flow

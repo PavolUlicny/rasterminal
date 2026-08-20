@@ -110,7 +110,7 @@ The configurations below are also available as presets (CMake ≥ 3.21):
 ```sh
 cmake --preset release      # or: portable | dist | debug | reldbg | clang
 cmake --build --preset release
-ctest --preset release      # release and dist define test presets
+ctest --preset release      # every preset has a matching build and test preset
 ```
 
 `RASTERMINAL_PORTABLE` omits `-march=native` / `/arch:AVX2`, `RASTERMINAL_STATIC_LIBSTDCXX` adds the static libstdc++/libgcc link on Linux, and `RASTERMINAL_BUILD_TESTS=OFF` drops the test target entirely. All three default so that a plain `cmake -B build` gives a machine-tuned viewer; the test binary is never part of the default build, so building it costs nothing until you ask for it by name or through `check`.
