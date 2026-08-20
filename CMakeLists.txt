@@ -27,10 +27,9 @@ endif()
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 # On modern glibc Threads finds pthread inside libc and then contributes NO flag, so the
-# preference above never fires and -pthread reaches neither the compile nor the link. The
-# Makefile carries it in every C++ flag set, so spell it out and let the two travel together.
-# Compile-side it is close to a no-op on glibc (it defines _REENTRANT), but not everywhere.
-# C++ only, matching the Makefile: the vendored C TUs are built without it.
+# preference above never fires and -pthread reaches neither the compile nor the link, so spell
+# it out and let the two travel together. Compile-side it is close to a no-op on glibc (it
+# defines _REENTRANT), but not everywhere. C++ only: the vendored C TUs are built without it.
 add_library(rasterminal_threads INTERFACE)
 target_link_libraries(rasterminal_threads INTERFACE Threads::Threads)
 target_compile_options(rasterminal_threads INTERFACE
@@ -63,7 +62,7 @@ endif()
 
 # ─── 32-bit (ILP32) target adjustments ────────────────────────────────────────
 # CMAKE_SIZEOF_VOID_P reflects the effective target: a -m32 flag (Linux i686), -A Win32
-# (MSVC), or a native 32-bit toolchain. Mirrors the Makefile's 32-bit handling, applied
+# (MSVC), or a native 32-bit toolchain. Applied
 # at directory scope so both targets, all configs (incl. Debug), and C *and* C++ sources
 # (the vendored zstd/libwebp decode TUs) inherit it.
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
@@ -99,8 +98,8 @@ foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/s
 endforeach()
 
 # The basisu transcoder shim is a large, unaudited vendored TU that trips a long,
-# compiler-specific warning set; suppress all its warnings per-source (mirrors the
-# Makefile's per-TU -w) rather than maintaining a fragile pragma list. The vendored C
+# compiler-specific warning set; suppress all its warnings per-source rather than
+# maintaining a fragile pragma list. The vendored C
 # TUs get the same treatment at target level, on rasterminal_c below.
 set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
@@ -196,8 +195,8 @@ add_library(rasterminal_c OBJECT
   vendor/basisu/zstd/zstddeclib.c
   vendor/miniz/miniz.c
   ${WEBP_DEC_SRCS})
-# MSVC gets no C standard: it is a compiler the Makefile never covered, so leaving it at
-# the default keeps Windows codegen where it is today.
+# MSVC gets no C standard: nothing has ever set one there, so leaving it at the default
+# keeps Windows codegen where it is.
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
   set_target_properties(rasterminal_c PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
@@ -302,10 +301,9 @@ set(RASTERMINAL_GC_LINK_OPTS
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/OPT:REF;/OPT:ICF>)
 
 # The optimisation flags go on the LINK line as well, because under LTO that is where code
-# generation happens: GCC's manual asks for the same options at link, and the Makefile has
-# always passed its whole $(CXXFLAGS) there. Without this the two build systems could emit
-# different machine code from identical sources, and every benchmark this project has
-# recorded was taken from a Makefile build.
+# generation happens, and GCC's manual asks for the same options there. Without this the
+# compile-time tier does not reach the code the linker actually emits. Verified against the
+# Makefile before it was removed: the two produced the same code, function for function.
 # Clang then reports the compile-only members of the set as unused command-line arguments,
 # harmless but noisy, so silence that one group at link. GCC does not warn.
 set(RASTERMINAL_LTO_LINK_OPTS
@@ -348,7 +346,7 @@ add_executable(rasterminal
   $<TARGET_OBJECTS:rasterminal_c>)
 # Repo root on the include path so every include in src/ is root-relative
 # ("src/render/renderer.h"), independent of which subdirectory the including file is in.
-# C++ only, as $(ROOT_INC) is in the Makefile: libwebp's internal includes are repo-rooted
+# C++ only: libwebp's internal includes are repo-rooted
 # ("src/dsp/dsp.h"), so a src/ subdirectory would shadow one. Nothing gates it here because
 # the C TUs are no longer sources of this target; they build in rasterminal_c.
 target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
@@ -492,8 +490,8 @@ if(RASTERMINAL_BUILD_TESTS)
            COMMAND rasterminal_tests
            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-  # `cmake --build <dir> --target check` is the one-command build-and-run, the equivalent
-  # of `make test`. $<CONFIG> rather than a fixed name so it also works under the
+  # `cmake --build <dir> --target check` builds the suite and runs it in one command.
+  # $<CONFIG> rather than a fixed name so it also works under the
   # multi-config generators, where ctest needs to be told which config to run.
   add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -C $<CONFIG>
@@ -503,7 +501,7 @@ if(RASTERMINAL_BUILD_TESTS)
 endif()
 
 # ─── Install ──────────────────────────────────────────────────────────────────
-# Parity with the Makefile's `install` target. GNUInstallDirs supplies the standard,
+# GNUInstallDirs supplies the standard,
 # overridable CMAKE_INSTALL_* paths (DESTDIR-aware for fakeroot staging). The man page
 # and THIRD_PARTY_NOTICES ship per the vendored licenses; docs land in a package-specific
 # subdir (CMAKE_INSTALL_DOCDIR = share/doc/rasterminal).

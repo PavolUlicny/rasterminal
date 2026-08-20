@@ -5,7 +5,7 @@
 // Unlike those, this TU is large (~1.5 MB) and trips a long, compiler-specific set of
 // warnings that would change on every upstream bump, so instead of a pragma list it is
 // built with blanket warning suppression (-w / /w) applied per-TU in the build files
-// (Makefile, CMakeLists.txt) — the same treatment the vendored zstd C TU gets. We do
+// (CMakeLists.txt) — the same treatment the vendored zstd C TU gets. We do
 // not audit vendored code; refresh from upstream instead (see vendor/README.md).
 //
 // Configuration: upstream-default format set. rasterminal only ever transcodes to

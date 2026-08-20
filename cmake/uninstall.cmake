@@ -3,12 +3,12 @@
 #
 # The manifest records prefix paths with no DESTDIR applied, so a staged install has to be
 # uninstalled the same way it was installed: DESTDIR=/tmp/pkg cmake --build <dir> --target
-# uninstall. Same contract as the Makefile's uninstall target.
+# uninstall.
 #
 # Directories are left alone with one exception. bin and share/man/man1 belong to the system
 # and may hold other packages' files; share/doc/rasterminal is ours alone, so it goes once it
 # is empty (RASTERMINAL_DOCDIR is passed in by the target, since the manifest lists only
-# files). That matches `make uninstall`, which rm -rf's the same directory.
+# files).
 
 set(manifest "${CMAKE_CURRENT_BINARY_DIR}/install_manifest.txt")
 if(NOT EXISTS "${manifest}")
