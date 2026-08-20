@@ -89,21 +89,13 @@ foreach(lib cgltf stb stl_reader tinyobjloader tinyply meshoptimizer/src draco/s
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/${lib})
 endforeach()
 
-# The basisu transcoder shim and the zstd C amalgam are large, unaudited vendored TUs
-# that trip a long, compiler-specific warning set; suppress all their warnings per-source
-# (mirrors the Makefile's per-TU -w) rather than maintaining a fragile pragma list.
+# The basisu transcoder shim is a large, unaudited vendored TU that trips a long,
+# compiler-specific warning set; suppress all its warnings per-source (mirrors the
+# Makefile's per-TU -w) rather than maintaining a fragile pragma list. The vendored C
+# TUs get the same treatment at target level, on rasterminal_c below.
 set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
   PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
-# zstd is a C TU: use C_COMPILER_ID so the right flag is chosen on mixed-compiler
-# builds (e.g. Clang CXX + MSVC cl.exe C, a valid CMake configuration on Windows).
-set_source_files_properties(
-  vendor/basisu/zstd/zstddeclib.c
-  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
-# miniz (zlib deflate for the kitty graphics direct transport): a C TU like zstd.
-set_source_files_properties(
-  vendor/miniz/miniz.c
-  PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>")
 # miniz configuration at directory scope so every TU that includes miniz.h sees one
 # uniform set (mixed config on a shared header is the same footgun as _FILE_OFFSET_BITS):
 # NO_ZLIB_COMPATIBLE_NAMES drops the zlib-name compatibility layer (Z_* macros plus,
@@ -121,9 +113,7 @@ add_compile_definitions(MINIZ_NO_ZLIB_COMPATIBLE_NAMES MINIZ_NO_STDIO MINIZ_NO_A
 # libwebp ships CPUID runtime dispatch that COULD safely carry sse41/avx2 in a portable binary
 # via per-file -msse4.1/-mavx2 (kernels are selected by actual CPU, so no SIGILL risk): we
 # deliberately forgo that to keep "portable = no arch-specific codegen" uniform; portable WebP
-# decode stays correct, just SSE2-only (decode is load-time, not hot-path). These are C TUs;
-# suppress warnings per-source like zstd (GNU/Clang C already gets no -W via the
-# COMPILE_LANGUAGE:CXX gate on rasterminal_warnings, but this also covers MSVC's /WX C warnings).
+# decode stays correct, just SSE2-only (decode is load-time, not hot-path).
 set(WEBP_DEC_SRCS
   vendor/libwebp/src/dec/alpha_dec.c
   vendor/libwebp/src/dec/buffer_dec.c
@@ -174,17 +164,60 @@ set(WEBP_DEC_SRCS
   vendor/libwebp/src/utils/random_utils.c
   vendor/libwebp/src/utils/thread_utils.c
   vendor/libwebp/src/utils/utils.c)
+
+# ─── Vendored C sources ───────────────────────────────────────────────────────
+# Compiled once here and linked into both executables, rather than listed as sources of
+# each. Their flag set is deliberately NOT the C++ one: no LTO, no C++-only options, and
+# none of the aggressive tier src/ opts into. Three reasons.
+#
+# LTO is the load-bearing one. INTERPROCEDURAL_OPTIMIZATION applies per LANGUAGE, so a
+# target carrying both would hand these TUs the C compiler's LTO form while C++ gets the
+# C++ compiler's. `cmake -DCMAKE_CXX_COMPILER=clang++` alone (CMAKE_C_COMPILER stays at
+# `cc`, gcc on most distros) then produced GIMPLE C objects that a clang link cannot read:
+# "plugin needed to handle lto object", then undefined references to every C symbol. Off
+# on MSVC too, for uniformity; the lost /GL costs close to nothing, since webp and zstd
+# decode at load time and miniz's deflate feeds only the kitty transport.
+#
+# Second, the C++-only options (-fno-rtti and friends) draw a "valid for C++ but not for C"
+# diagnostic per TU that only the blanket -w was hiding. Third, an OBJECT library compiles
+# these 51 files once for the whole build instead of once per executable. OBJECT rather
+# than STATIC so every object still reaches the link: an archive would let the linker
+# decide which members survive.
+add_library(rasterminal_c OBJECT
+  vendor/basisu/zstd/zstddeclib.c
+  vendor/miniz/miniz.c
+  ${WEBP_DEC_SRCS})
+# MSVC gets no C standard: it is a compiler the Makefile never covered, so leaving it at
+# the default keeps Windows codegen where it is today.
+if(NOT CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  set_target_properties(rasterminal_c PROPERTIES
+    C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+endif()
+# libwebp's internal includes are repo-rooted ("src/dsp/dsp.h"), so it needs its own root
+# on the path. Deliberately just that one: zstd and miniz are self-contained, and handing
+# the C TUs the whole vendor set would hide what they actually depend on.
+target_include_directories(rasterminal_c SYSTEM PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/vendor/libwebp)
 # WEBP_USE_THREAD mutex-guards libwebp's lazy SIMD function-pointer init (cpu.h): texture
 # decode runs on worker threads, so without it the first concurrent WebP decode races on the
 # global DSP tables. cpu.h gates the mutex on `WEBP_USE_THREAD && !_WIN32`, so it engages
 # everywhere except MSVC/_WIN32: there the unsynchronized path (and thus the race) remains,
 # matching upstream's own posture. That residual race is benign: idempotent writes of the same
-# SIMD impl, and aligned-pointer stores are atomic on the targeted ISAs.
-set_source_files_properties(
-  ${WEBP_DEC_SRCS}
-  PROPERTIES
-    COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/w,-w>"
-    COMPILE_DEFINITIONS WEBP_USE_THREAD)
+# SIMD impl, and aligned-pointer stores are atomic on the targeted ISAs. zstd and miniz are
+# self-contained and ignore it.
+target_compile_definitions(rasterminal_c PRIVATE WEBP_USE_THREAD)
+# The speed tier mirrors the C++ one's CPU-agnostic half so these TUs are not left at a bare
+# -O3, and stops there: everything below that line is either C++-only or an aggressive option
+# src/ opts into for its own code and these unaudited amalgams do not.
+target_compile_options(rasterminal_c PRIVATE
+  $<IF:$<C_COMPILER_ID:MSVC>,/w,-w>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:
+    -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
+    -ffunction-sections;-fdata-sections;-pipe>
+  $<$<AND:$<CONFIG:Debug>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-O0;-pipe>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS-;/Gy>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<C_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
 # ─── Warning flags ────────────────────────────────────────────────────────────
 # Probe -Wno-invalid-feature-combination (used in the warnings target below): the group
@@ -197,17 +230,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 add_library(rasterminal_warnings INTERFACE)
-# Warning flags are gated to C++ sources (COMPILE_LANGUAGE:CXX): the C sources (the
-# vendored zstd and miniz amalgams and the libwebp decode subset) must not receive the
-# C++-only -W flags (they would trip the driver's "valid for C++ but not C" diagnostics
-# under -Werror). They are suppressed via the per-source -w sets above.
+# Only the two C++ executables link this. The vendored C TUs build in rasterminal_c, which
+# does not, so none of these C++-only -W flags can reach a C compile and trip the driver's
+# "valid for C++ but not for C" diagnostic under -Werror.
 target_compile_options(rasterminal_warnings INTERFACE
-  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
+  $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:
     -Wall;-Wextra;-Wpedantic;-Wshadow;-Wconversion;-Wsign-conversion;
     -Wold-style-cast;-Wcast-align;-Wunused;-Woverloaded-virtual;
     -Wnon-virtual-dtor;-Wnull-dereference;-Wdouble-promotion;
     -Wformat=2;-Wimplicit-fallthrough;-Wmisleading-indentation;-Werror>
-  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>>:
+  $<$<CXX_COMPILER_ID:GNU>:
     -Wlogical-op;-Wduplicated-cond;-Wduplicated-branches>
   # Clang's -march=native on AVX10-capable CPUs (e.g. 2026 GitHub runners) emits
   # "+avx10.1-256; will be promoted to avx10.1-512" per TU (a frontend warning from X86
@@ -216,12 +248,11 @@ target_compile_options(rasterminal_warnings INTERFACE
   # "invalid"); suppress it rather than drop -march=native. Gated on the probed
   # RASTERMINAL_HAS_WNO_IFC (see above): the group only exists since clang 18, and clang
   # makes an unknown -Wno- group itself fatal under -Werror (-Wunknown-warning-option).
-  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<BOOL:${RASTERMINAL_HAS_WNO_IFC}>>:-Wno-invalid-feature-combination>
+  $<$<BOOL:${RASTERMINAL_HAS_WNO_IFC}>:-Wno-invalid-feature-combination>
   # -Wuseless-cast is word-size-dependent (a cast that narrows/widens at LP64 is a no-op at
   # ILP32); keep it on 64-bit, drop it on 32-bit. See the ILP32 block near the top.
-  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:GNU>,$<NOT:$<BOOL:${RASTERMINAL_ILP32}>>>:
-    -Wuseless-cast>
-  $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/W4;/WX;/permissive->
+  $<$<AND:$<CXX_COMPILER_ID:GNU>,$<NOT:$<BOOL:${RASTERMINAL_ILP32}>>>:-Wuseless-cast>
+  $<$<CXX_COMPILER_ID:MSVC>:/W4;/WX;/permissive->
   $<$<CXX_COMPILER_ID:MSVC>:/D_CRT_SECURE_NO_WARNINGS>)
 
 # ─── Release optimisation flags ───────────────────────────────────────────────
@@ -289,17 +320,13 @@ add_executable(rasterminal
   vendor/meshoptimizer/meshoptimizer_impl.cpp
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
-  vendor/basisu/zstd/zstddeclib.c
-  vendor/miniz/miniz.c
-  ${WEBP_DEC_SRCS})
+  $<TARGET_OBJECTS:rasterminal_c>)
 # Repo root on the include path so every include in src/ is root-relative
 # ("src/render/renderer.h"), independent of which subdirectory the including file is in.
-# Gated to C++ because target scope does NOT separate languages: the vendored C TUs are
-# sources of this same target, and libwebp's internal includes are repo-rooted
-# ("src/dsp/dsp.h"), so handing them the repo root lets a src/ subdirectory shadow one.
-# Matches the Makefile, where $(ROOT_INC) is in the C++ flag sets only.
-target_include_directories(rasterminal PRIVATE
-  $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}>)
+# C++ only, as $(ROOT_INC) is in the Makefile: libwebp's internal includes are repo-rooted
+# ("src/dsp/dsp.h"), so a src/ subdirectory would shadow one. Nothing gates it here because
+# the C TUs are no longer sources of this target; they build in rasterminal_c.
+target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -406,15 +433,11 @@ if(RASTERMINAL_BUILD_TESTS)
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp
-    vendor/basisu/zstd/zstddeclib.c
-    vendor/miniz/miniz.c
-    ${WEBP_DEC_SRCS})
+    $<TARGET_OBJECTS:rasterminal_c>)
   # Repo root on the include path so every test include is root-relative:
   # "src/foo.h" for code under test, "tests/foo.h" for shared helpers/fixtures
   # (which stay at tests/ root while sources nest under tests/<subsystem>/).
-  # C++-gated for the same reason as the rasterminal target above.
-  target_include_directories(rasterminal_tests PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}>)
+  target_include_directories(rasterminal_tests PRIVATE ${PROJECT_SOURCE_DIR})
   target_link_libraries(rasterminal_tests PRIVATE
     rasterminal_vendor
     rasterminal_warnings
