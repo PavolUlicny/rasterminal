@@ -12,7 +12,7 @@
 
 ![rasterminal spinning a model](assets/demo.gif)
 
-rasterminal renders 3D models on the CPU and displays them in your terminal in real time, so you can view OBJ, PLY, STL, and glTF files anywhere you have a terminal, including over SSH with no display or GPU.
+rasterminal renders 3D models on the CPU and draws them in your terminal in real time. It opens OBJ, PLY, STL and glTF files anywhere you have a terminal, over ssh included, with no display and no GPU.
 
 ## Contents
 
@@ -66,19 +66,25 @@ More test assets live in the [Khronos glTF Sample Assets](https://github.com/Khr
 
 ## How it works
 
-rasterminal implements the same rasterization pipeline a GPU runs, entirely in CPU code. Each frame, every triangle is transformed from model space through the view and projection matrices into clip space. A world-space backface test rejects roughly half of all triangles before any projection work, with double-sided materials opting out of the test and flipping their normals instead. Triangles that cross the near plane are clipped so nothing renders behind the camera, and the remainder are conservatively rejected against the view frustum.
+rasterminal runs the same rasterization pipeline a GPU does, in CPU code. Each frame every triangle goes from model space through the view and projection matrices into clip space, where a world-space backface test drops roughly half of them before any projection work (double-sided materials opt out and flip their normals instead). Triangles crossing the near plane are clipped so nothing renders behind the camera. The rest are scan-converted into fragments, with color, texture coordinates, world position and normals interpolated perspective-correctly, and a z-buffer keeps the nearest fragment at each pixel. Flat shading evaluates Blinn-Phong lighting once per face and Phong evaluates it per pixel; both are modulated by texture sampling and baked ambient occlusion.
 
-Surviving triangles go through the perspective divide and are scan-converted into fragments, with color, texture coordinates, world position, and normals all interpolated in a perspective-correct way across the triangle. A z-buffer keeps the nearest fragment at each pixel. Shading runs per fragment: flat shading evaluates Blinn-Phong lighting once per face, Phong shading evaluates it per pixel, and both are modulated by texture sampling and baked ambient occlusion.
+Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha) take a separate path. Their fragments are gathered into a per-pixel list, sorted back to front, and composited over the finished opaque image, so the result is correct even where transparent geometry interpenetrates or is double-sided. Fully opaque models skip that path.
 
-Transparent surfaces (glTF `BLEND` materials, MTL `d`/`Tr`, or per-vertex alpha) take a separate path. Their fragments are gathered into a per-pixel list, sorted back to front, and composited over the finished opaque image, so the result is correct even where transparent geometry interpenetrates or is double-sided. Fully opaque models skip this path entirely.
+All of it is multi-threaded with a work-stealing scheduler. The opaque pass picks one of two strategies each frame from how large the triangles are on screen: bin them into screen tiles and resolve visibility per tile, so every pixel is shaded once, or rasterize each triangle straight into the framebuffer through a per-pixel atomic that packs depth and color into one slot. On the pixel backends the same threads then compress and encode the finished frame for the terminal.
 
-The finished framebuffer is then written to the terminal. On terminals that implement the kitty graphics protocol (kitty, Ghostty, WezTerm), detected by a capability query at startup, the frame is transmitted as real pixels at the window's resolution (scaled by `--graphics-scale`, default 0.75; 1 renders native): locally through a shared-memory object, so only a tiny escape sequence crosses the terminal pipe per frame, and over ssh as zlib-compressed inline data. On terminals that instead advertise sixel graphics in their device attributes reply (xterm with sixel enabled, foot, mlterm, Windows Terminal 1.22+), the frame is emitted as a sixel image at native resolution, quantized to the fixed 240-color xterm palette by the same perceptual matching as the 256-color fallback, and capped to the maximum image size the terminal advertises, when it does, centered in the window when a size limit leaves it smaller and the cell size is known rather than guessed (xterm defaults to 1000x1000 pixels and discards anything larger). Sixel leaves the last terminal row unpainted even with `--no-hud` (an image touching it would scroll the screen on every frame), and keeps the image height to whole 6-pixel sixel bands. Under tmux or GNU screen neither pixel backend is available: `--graphics auto` uses half-blocks and forcing a pixel backend is an error. One xterm limitation is not detectable and so not worked around: its `maxStringParse` resource (default 600000) silently drops any single frame whose sixel encoding is larger, which very busy scenes can exceed; raise it with `xterm -xrm '*maxStringParse: 10000000'`. Everywhere else each character cell represents two vertically stacked pixels, drawn as a `▀` half-block glyph whose foreground color is the top pixel and background color is the bottom, both in 24-bit ANSI color (perceptually quantized to the xterm-256 palette on terminals without truecolor support). In every mode the whole frame is assembled in a single buffer, flushed in one write, and wrapped in synchronized-output escapes so capable terminals paint it atomically; `--graphics` overrides the backend choice.
+How the frame reaches the screen depends on what the terminal can do, which a capability query settles at startup. `--graphics` overrides the choice.
 
-Rendering is multi-threaded with a work-stealing scheduler. Each worker claims a chunk of triangles and rasterizes it end to end, committing opaque fragments through a per-pixel 64-bit atomic that packs depth and color into one slot, with no separate depth pre-pass. Transparency adds two further work-stealing phases, accumulate then resolve, but only for models that actually use blended materials.
+- The kitty graphics protocol (kitty, Ghostty, WezTerm) carries real pixels at the window's resolution, scaled by `--graphics-scale` (default 0.75, `1` being native). Locally they travel through shared memory, so almost nothing crosses the terminal pipe per frame; over ssh they go inline, zlib-compressed.
+- Sixel (xterm with sixel enabled, foot, mlterm, Windows Terminal 1.22+) draws real pixels at native resolution, quantized to the fixed 240-color xterm palette. The image is capped to the largest size the terminal advertises, since xterm discards anything bigger rather than clipping it, and it never paints the last terminal row, because an image touching it scrolls the screen every frame.
+- Half-blocks cover everything else. Each cell holds two vertically stacked pixels drawn as `▀`, foreground for the top and background for the bottom, in 24-bit color, or quantized to the xterm-256 palette where truecolor is missing.
+
+Neither pixel backend works under tmux or GNU screen, which do not pass the protocols through. One xterm limit is not detectable and so not worked around: its `maxStringParse` resource (default 600000) silently drops any frame whose sixel encoding is larger, which very busy scenes can exceed. Raise it with `xterm -xrm '*maxStringParse: 10000000'`.
+
+Whichever backend runs, the whole frame is built in one buffer, written in one call, and wrapped in synchronized-output escapes so capable terminals paint it atomically.
 
 ## Prebuilt binaries
 
-Prebuilt binaries for Linux, macOS, and Windows are attached to each [release](https://github.com/PavolUlicny/rasterminal/releases). They use portable codegen (no `-march=native`, so they run on any CPU of the target architecture) and are self-contained: the Linux build statically links libstdc++/libgcc, and the Windows build statically links the C runtime, so neither needs extra runtime packages installed.
+Each [release](https://github.com/PavolUlicny/rasterminal/releases) carries binaries for Linux, macOS and Windows. They use portable codegen (no `-march=native`, so they run on any CPU of the target architecture) and are self-contained: the Linux build statically links libstdc++/libgcc and the Windows build statically links the C runtime, so neither needs a runtime package installed.
 
 Download the archive for your platform, then:
 
@@ -96,7 +102,7 @@ Each release includes a `checksums.txt`; verify your download with `sha256sum -c
 
 ## Build
 
-Two build systems are provided. Each has a **release** variant (`-march=native`, fastest on the build machine) and a **portable** variant (no `-march=native`, runs on any CPU of the target architecture). All other speed flags (`-O3 -ffast-math -funroll-loops`, LTO, and so on) apply to both.
+There are two build systems. Each has a release variant (`-march=native`, fastest on the build machine) and a portable one (no `-march=native`, runs on any CPU of the target architecture). Every other speed flag (`-O3 -ffast-math -funroll-loops`, LTO and so on) applies to both.
 
 ### Linux / macOS: Make (GCC or Clang)
 
@@ -188,19 +194,19 @@ rasterminal [options] <model>
 | `--lighting` | `-l` | `dual` | `dual`, `single`, `flat` |
 | `--wireframe-color` | `-w` | `white` | `white`, `red`, `green`, `yellow`, `cyan`, `magenta` |
 | `--yaw` | none | `0` | Initial camera yaw in degrees `[-180, 180]`; positive turns the model left on screen |
-| `--pitch` | none | `-17.2` | Initial camera pitch in degrees `[-180, 180]`; negative looks down from above; clamped to just inside straight up and straight down under `--first-person`, the same limit the mode holds while you look |
-| `--zoom` | none | `1` | Initial zoom `[0.2, 100]` as a size multiplier of the auto-fit framing; `2` = twice as close; the bounds equal the range the scroll wheel reaches in orbit mode. Under `--first-person` it sets how far back you start, and the wheel sets movement speed instead |
+| `--pitch` | none | `-17.2` | Initial camera pitch in degrees `[-180, 180]`; negative looks down from above. Under `--first-person` it is clamped to just inside straight up and straight down, the limit that mode holds while you look |
+| `--zoom` | none | `1` | Initial zoom `[0.2, 100]` as a size multiplier of the auto-fit framing, `2` being twice as close. The bounds are the scroll wheel's range in orbit mode; under `--first-person` this sets how far back you start and the wheel sets movement speed |
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
-| `--threads [N]` | `-j [N]` | per backend | Worker threads: all cores with the kitty and sixel backends, `min(cores, 4)` with half-blocks. Loading a model always uses all cores. Bare `-j` uses all cores; `N` above the CPU thread count is clamped |
+| `--threads [N]` | `-j [N]` | per backend | Worker threads: all cores under kitty and sixel, `min(cores, 4)` under half-blocks. Loading a model always uses all cores. Bare `-j` uses all cores, and `N` above the CPU thread count is clamped |
 | `--fps [N]` | `-f [N]` | `30` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle in degrees `[0, 180]` for computed normals; `0` = faceted, `180` = fully smooth (ignored when an OBJ authors smoothing groups) |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto`; with the kitty graphics backend the image is always 24-bit and with sixel always 240-color, so there this affects only the HUD line |
-| `--graphics` | none | `auto` | `kitty`, `sixel`, `blocks`, `auto`: rendering backend; `auto` draws real pixels via the kitty graphics protocol where the terminal supports it, then via sixel where advertised, else unicode half-blocks |
-| `--graphics-scale` | none | `0.75` | Render scale for the kitty backend in `[0.05, 1]`: the frame renders at this fraction of the window's pixel resolution and the terminal stretches it back over the same cells, trading sharpness for speed; `1` = native; an error with an explicit `--graphics blocks` or `--graphics sixel` (neither scales), inert when `auto` falls back to either |
+| `--graphics` | none | `auto` | `kitty`, `sixel`, `blocks`, `auto`. `auto` draws real pixels through the kitty graphics protocol where the terminal supports it, then sixel where advertised, else half-blocks |
+| `--graphics-scale` | none | `0.75` | Render scale for the kitty backend in `[0.05, 1]`, `1` being native. The frame renders at this fraction of the window's pixel resolution and the terminal stretches it back over the same cells, trading sharpness for speed. Neither other backend scales, so an explicit `--graphics blocks` or `--graphics sixel` makes it an error; it is inert when `auto` falls back to either |
 | `--spin-speed` | none | `45` | Auto-rotation speed in degrees per second (positive number); applies whenever spinning is active |
-| `--spin-direction` | none | `left` | `left`, `right`: the way the model's front face moves on screen; under `--first-person`, where nothing is being orbited, it is the way the view itself turns |
+| `--spin-direction` | none | `left` | `left`, `right`, the way the model's front face moves on screen. Under `--first-person` nothing is being orbited, so it names the way the view itself turns |
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels (`WxH`); requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
@@ -236,7 +242,7 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 
 ### First-person controls
 
-`--first-person` swaps the turntable for a free-flying camera. There is no gravity, collision or ground plane: it flies, and passes through geometry. Only the camera bindings change: the shading, lighting, background, wireframe-color, texture and culling keys, and `R` and `Q`, all behave exactly as they do above. `Space` still starts and stops auto-rotation, but see below for what it does here.
+`--first-person` swaps the turntable for a free-flying camera. There is no gravity, collision or ground plane: it flies, and passes through geometry. Only the camera bindings change. The shading, lighting, background, wireframe-color, texture and culling keys behave as they do above, as do `R` and `Q`, and `Space` still starts and stops auto-rotation.
 
 | Key | Action |
 | --- | --- |
@@ -246,11 +252,11 @@ String values are case-insensitive. Long flags that take a value accept `--flag 
 | Mouse drag | Look |
 | `+` / `-`, scroll wheel | Movement speed |
 
-The camera flies through geometry, and since the near plane is scaled to the model rather than to the mode, a surface can pass inside it and vanish just before you reach it. It cannot be flown off into empty space (the outer limit is the same distance the scroll wheel reaches in orbit mode), though it can be pointed away from the model; `R` returns to the launch view. At `--zoom 0.2` you start at that outer limit, so flying backwards does nothing until you move in.
+The camera cannot be flown off into empty space: its outer limit is the distance the scroll wheel reaches in orbit mode. It can still be pointed away from the model, and `R` returns to the launch view and speed. At `--zoom 0.2` you start at that outer limit, so flying backwards does nothing until you move in. Pitch stops at straight up and straight down, so the horizon never inverts. The near plane is scaled to the model rather than to the mode, so a surface can pass inside it and vanish just before you reach it.
 
-Only one key moves you at a time, so there is no diagonal flight: you cannot hold forward and strafe together, or move and turn together with the keyboard. That is a limitation of terminal input rather than a choice, since a terminal sends no key releases and the operating system repeats only the most recently pressed key. Drag the mouse to look while you move.
+Movement speed scales with the model, so the keys feel the same on a tiny model and a huge one, and `--first-person-speed` sets where it starts. `Space` still spins, which here is a slow panorama from wherever the camera stands, worth trying from inside a large scene.
 
-Movement speed is scaled to the model, so the keys feel the same on a tiny model and a huge one, and `--first-person-speed` sets where it starts. Pitch stops at straight up and straight down, so the horizon never inverts, and the camera cannot fly further out than the scroll wheel can already zoom in orbit mode. `Space` still works and becomes a slow panorama from wherever the camera is standing, which is worth trying from inside a large scene. `R` returns to the launch view and speed.
+Only one key moves you at a time, so there is no diagonal flight: you cannot hold forward and strafe together, or move and turn together from the keyboard. That is terminal input rather than a choice, since a terminal sends no key releases and the operating system repeats only the most recently pressed key. Drag the mouse to look while you move.
 
 ## Supported formats
 
@@ -263,20 +269,19 @@ Movement speed is scaled to the model, so the keys feel the same on a tiny model
 
 ## Requirements
 
-Any terminal with:
+Any terminal with UTF-8 support, ANSI color, and mouse reporting for drag-to-orbit and scroll-to-zoom.
 
-- UTF-8 support
-- ANSI color: 24-bit (truecolor) where supported, with an automatic 256-color fallback elsewhere, detected from `COLORTERM`/`TERM`/`TMUX`/`STY` and overridable with `--color` (a `dumb` terminal, or a Windows console that cannot enable ANSI escape processing, is rejected outright; inside GNU screen, detected from `STY` or a screen `TERM` without tmux, the 256-color fallback always applies, since screen 4.x garbles 24-bit color and the inherited `COLORTERM` describes the outer terminal); kitty graphics frames are always 24-bit pixels and sixel frames always the 240-color palette, so there the mode affects only the HUD line
-- Pixel rendering on terminals implementing the kitty graphics protocol (renders at 0.75 of the window resolution by default; `--graphics-scale 1` for native) or sixel graphics (native resolution; stock xterm needs sixel enabled, e.g. `xterm -ti vt340`), detected by a startup query with kitty preferred and overridable with `--graphics`; not available under tmux or GNU screen (kitty is not passed through, and sixel support there is build-dependent and not detected)
-- Mouse reporting (for drag-to-orbit and scroll-to-zoom)
+Color is 24-bit where the terminal supports it and 256 colors elsewhere, decided from `COLORTERM`, `TERM`, `TMUX` and `STY`, with `--color` overriding. A `dumb` terminal, or a Windows console that cannot enable ANSI escape processing, is rejected outright. Inside GNU screen the 256-color fallback always applies, since screen 4.x garbles 24-bit color and the inherited `COLORTERM` describes the outer terminal. Under a pixel backend the setting reaches only the HUD line: kitty frames are always 24-bit and sixel frames always the 240-color palette.
 
-Interactive rendering also requires that both standard input and standard output be the terminal: if either is piped or redirected, rasterminal exits with an error instead of emitting escape sequences into the stream. The headless `--bench` mode is exempt.
+Pixel rendering is optional and detected by a startup query, kitty preferred over sixel, with `--graphics` overriding. kitty renders at 0.75 of the window resolution by default (`--graphics-scale 1` for native); sixel renders at native resolution, and stock xterm needs sixel switched on, for example `xterm -ti vt340`. Neither is available under tmux or GNU screen, where kitty is not passed through and sixel support is build-dependent and not detected.
 
-Works well with: iTerm2, kitty, WezTerm, Windows Terminal, and most modern Linux terminals.
+Both standard input and standard output must be the terminal. If either is piped or redirected, rasterminal exits with an error rather than emitting escape sequences into the stream; the headless `--bench` mode is exempt.
+
+Known to work well with iTerm2, kitty, WezTerm, Windows Terminal, and most modern Linux terminals.
 
 ## Project status
 
-Pre-1.0 and under active development. rasterminal works today, but it is still maturing: expect rough edges, and CLI flags or controls may change before 1.0.
+Pre-1.0 and under active development. It works today, but expect rough edges, and CLI flags or controls may change before 1.0.
 
 ## Contributing
 
