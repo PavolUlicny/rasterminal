@@ -393,7 +393,11 @@ if(RASTERMINAL_BUILD_TESTS)
   target_link_options(rasterminal_test_opts INTERFACE
     ${RASTERMINAL_GC_LINK_OPTS} ${RASTERMINAL_TEST_OPTS} ${RASTERMINAL_LTO_LINK_OPTS})
 
-  add_executable(rasterminal_tests
+  # EXCLUDE_FROM_ALL so a plain `cmake --build` produces the viewer and nothing else, the way
+  # a plain `make` did. Building the suite means a second copy of every src/ and vendored C++
+  # TU on top of its own 45, which is most of the build under LTO and pure waste for anyone
+  # who only wants the binary. Build it by name, or through the `check` target below.
+  add_executable(rasterminal_tests EXCLUDE_FROM_ALL
     tests/test_main.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp

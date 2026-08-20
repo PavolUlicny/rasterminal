@@ -142,8 +142,12 @@ jobs:
           ${{ matrix.cc  && format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
           && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
 
+      # Both targets by name: rasterminal_tests is EXCLUDE_FROM_ALL, so a plain
+      # `cmake --build` builds the viewer alone and ctest would find no binary.
       - name: Build
-        run: cmake --build build --config ${{ matrix.build_type }} -j
+        run: >
+          cmake --build build --config ${{ matrix.build_type }} -j
+          --target rasterminal rasterminal_tests
 
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
@@ -241,7 +245,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON \
             -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
-          cmake --build build -j
+          cmake --build build -j --target rasterminal rasterminal_tests
           ctest --test-dir build --output-on-failure
 
       # MSVC multi-config VS generator; -A Win32 selects the 32-bit toolchain. Always pass
@@ -250,7 +254,7 @@ jobs:
         if: matrix.kind == 'win32'
         run: |
           cmake -B build -A Win32
-          cmake --build build --config Release -j
+          cmake --build build --config Release -j --target rasterminal rasterminal_tests
           ctest --test-dir build -C Release --output-on-failure
 
   # ── clang-format (Linux) ─────────────────────────────────────────────────────
@@ -361,7 +365,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
-        run: cmake --build build --config Debug -j
+        run: cmake --build build --config Debug -j --target rasterminal rasterminal_tests
 
       - name: Download models
         run: |
