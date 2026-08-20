@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -27,6 +28,32 @@
 
 namespace
 {
+    // Make room for `extra` more elements, doubling rather than fitting exactly.
+    //
+    // reserve(size() + extra) allocates EXACTLY that, so calling it once per primitive reallocates
+    // and copies everything read so far, every time: a scene of a hundred primitives moves
+    // gigabytes for a mesh of tens of megabytes. Doubling makes the growth amortized, which is what
+    // push_back would have done on its own had the reserve not pinned the capacity each round. On a
+    // 645k-triangle city with 113 primitives this was most of the load time (1.8 s -> 0.6 s).
+    template <typename T> void grow_for(std::vector<T> &v, size_t extra)
+    {
+        const size_t need = v.size() + extra;
+        if (v.capacity() < need)
+        {
+            v.reserve(std::max(need, v.capacity() * 2));
+        }
+    }
+
+    // One unpacked attribute accessor: its floats, plus the stride cgltf actually wrote them at.
+    struct Attr
+    {
+        const float *data = nullptr;
+        size_t stride = 0;
+
+        explicit operator bool() const noexcept { return data != nullptr; }
+        [[nodiscard]] const float *at(size_t i) const noexcept { return data + (i * stride); }
+    };
+
     // Apply the node world matrix (column-major) to a position. Shared by the
     // uncompressed accessor path and the Draco decode path so both stay identical.
     vec3 apply_world_pos(const float w[16], const float p[3])
@@ -533,6 +560,55 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
     // walk so a corrupt bitstream fails the whole load (visit() returns void).
     bool draco_error = false;
 
+    // Attribute staging, reused across primitives. cgltf_accessor_read_float re-tests sparseness,
+    // re-derives the buffer-view pointer and re-dispatches on component type for EVERY element;
+    // unpacking the accessor once hoists all of that out of the vertex loop and reduces the common
+    // case (float32, tightly packed, not sparse) to a single memcpy inside cgltf. On a 645k-triangle
+    // city this took the scene walk from 1406 ms to a fraction of it. Grow-only, so a scene of many
+    // primitives allocates a handful of times; one buffer per attribute, since building a vertex
+    // needs several of them at once.
+    std::vector<float> buf_pos;
+    std::vector<float> buf_norm;
+    std::vector<float> buf_uv;
+    std::vector<float> buf_uv1;
+    std::vector<float> buf_color;
+    // Unpack `acc` into `buf`, empty when there is no accessor or it carries fewer than `comps`
+    // components. The stride is the ACCESSOR's component count, never `comps`: cgltf writes that
+    // many floats per element and scatters a sparse accessor's overrides at that stride across the
+    // full element count. Sizing or indexing by `comps` therefore reads interleaved garbage from a
+    // wider accessor and, when that accessor is also sparse, writes past the end of the buffer.
+    // A file reaches this because cgltf_validate constrains an attribute's type only to "valid",
+    // never to the one its semantic prescribes, so POSITION declared VEC4 passes it. Refusing a
+    // NARROWER accessor reads it as absent, which every caller already handles, rather than leaving
+    // the components it does not carry uninitialized.
+    const auto unpack = [](std::vector<float> &buf, const cgltf_accessor *acc, size_t comps) -> Attr
+    {
+        if (!acc)
+        {
+            return {};
+        }
+        const size_t stride = cgltf_num_components(acc->type);
+        if (stride < comps)
+        {
+            return {};
+        }
+        const size_t need = acc->count * stride;
+        if (buf.size() < need)
+        {
+            buf.resize(need);
+        }
+        // A short read (a malformed accessor that cgltf_validate let through) leaves the tail
+        // zeroed rather than holding the previous primitive's values.
+        const size_t got = cgltf_accessor_unpack_floats(acc, buf.data(), need);
+        if (got < need)
+        {
+            std::fill(
+                buf.begin() + static_cast<std::ptrdiff_t>(got), buf.begin() + static_cast<std::ptrdiff_t>(need), 0.0f
+            );
+        }
+        return { buf.data(), stride };
+    };
+
     // True once any primitive provides TEXCOORD_1; gates the parallel uv1 array.
     bool building_uv1 = false;
 
@@ -740,7 +816,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     // mis-classification in the per-triangle blend partition).
                     const bool color_has_alpha = !dm.colors_alpha.empty() && prim.material &&
                                                  prim.material->alpha_mode == cgltf_alpha_mode_blend;
-                    vertices.reserve(vertices.size() + n_verts);
+                    grow_for(vertices, n_verts);
                     if (has_dc)
                     {
                         vertex_colors.resize(vert_base + n_verts, { 1.0f, 1.0f, 1.0f });
@@ -796,7 +872,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     // primitive's glTF-level indices accessor is metadata only per
                     // the KHR_draco_mesh_compression spec.
                     const size_t n_tris = dm.indices.size() / 3;
-                    triangles.reserve(triangles.size() + n_tris);
+                    grow_for(triangles, n_tris);
                     for (size_t f = 0; f < n_tris; f++)
                     {
                         Triangle t;
@@ -852,27 +928,30 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 const size_t n_verts = pos_acc->count;
                 const size_t vert_base = vertices.size();
 
-                vertices.reserve(vertices.size() + n_verts);
+                const Attr pos_a = unpack(buf_pos, pos_acc, 3);
+                if (!pos_a)
+                {
+                    continue; // POSITION narrower than vec3: skip the primitive, as an absent one does
+                }
+                const Attr norm_a = unpack(buf_norm, norm_acc, 3);
+                const Attr uv_a = unpack(buf_uv, uv_acc, 2);
+                const Attr uv1_a = unpack(buf_uv1, uv1_acc, 2);
+
+                grow_for(vertices, n_verts);
                 for (size_t i = 0; i < n_verts; i++)
                 {
                     Vertex v{};
 
-                    float p[3];
-                    cgltf_accessor_read_float(pos_acc, i, p, 3);
-                    v.pos = apply_world_pos(w, p);
+                    v.pos = apply_world_pos(w, pos_a.at(i));
 
-                    if (norm_acc)
+                    if (norm_a)
                     {
-                        float n[3];
-                        cgltf_accessor_read_float(norm_acc, i, n, 3);
-                        v.normal = apply_world_normal(uniform_scale, w, nm, n);
+                        v.normal = apply_world_normal(uniform_scale, w, nm, norm_a.at(i));
                     }
 
-                    if (uv_acc)
+                    if (uv_a)
                     {
-                        float uv[2];
-                        cgltf_accessor_read_float(uv_acc, i, uv, 2);
-                        v.uv = { uv[0], 1.0f - uv[1] };
+                        v.uv = { uv_a.at(i)[0], 1.0f - uv_a.at(i)[1] };
                     }
 
                     v.ao = 1.0f;
@@ -880,16 +959,14 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 }
 
                 append_uv1(
-                    vert_base, n_verts, uv1_acc != nullptr,
-                    [&](size_t i) -> vec2
-                    {
-                        float uv[2];
-                        cgltf_accessor_read_float(uv1_acc, i, uv, 2);
-                        return { uv[0], 1.0f - uv[1] };
-                    }
+                    vert_base, n_verts, static_cast<bool>(uv1_a),
+                    [&](size_t i) -> vec2 { return { uv1_a.at(i)[0], 1.0f - uv1_a.at(i)[1] }; }
                 );
 
-                if (norm_acc)
+                // norm_a, not norm_acc: a NORMAL narrower than vec3 was read as absent above, so
+                // these vertices carry no normal. Keying the flag on the accessor's mere presence
+                // would skip compute_normals and leave the whole primitive at a zero normal.
+                if (norm_a)
                 {
                     has_normals = true;
                 }
@@ -909,10 +986,12 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     {
                         vertex_alpha.resize(vert_base + n_verts, 1.0f);
                     }
-                    for (size_t i = 0; i < n_verts; i++)
+                    // Three components asked for, so a vec3 accessor is accepted; the fourth is read
+                    // only under color_has_alpha, which requires vec4 and so a stride of four.
+                    const Attr col_a = unpack(buf_color, color_acc, 3);
+                    for (size_t i = 0; col_a && i < n_verts; i++)
                     {
-                        float c[4];
-                        cgltf_accessor_read_float(color_acc, i, c, 4);
+                        const float *c = col_a.at(i);
                         vertex_colors[vert_base + i] = { c[0], c[1], c[2] };
                         if (color_has_alpha)
                         {
@@ -943,7 +1022,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                     };
                     if (count >= 3)
                     {
-                        triangles.reserve(triangles.size() + (count - 2));
+                        grow_for(triangles, count - 2);
                         // Rolling window: read each source index exactly once.
                         // cgltf_accessor_read_index re-derives the buffer pointer per call, so
                         // re-reading the two shared edge indices on every triangle would triple
@@ -985,7 +1064,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 else if (prim.indices)
                 {
                     const size_t n_idx = prim.indices->count;
-                    triangles.reserve(triangles.size() + (n_idx / 3));
+                    grow_for(triangles, n_idx / 3);
                     for (size_t i = 0; i + 2 < n_idx; i += 3)
                     {
                         Triangle t;
@@ -1003,7 +1082,7 @@ bool Mesh::load_gltf(const std::string &path, int n_threads, float crease_cos)
                 else
                 {
                     // Non-indexed: every 3 vertices form a triangle.
-                    triangles.reserve(triangles.size() + (n_verts / 3));
+                    grow_for(triangles, n_verts / 3);
                     for (size_t i = 0; i + 2 < n_verts; i += 3)
                     {
                         Triangle t;
