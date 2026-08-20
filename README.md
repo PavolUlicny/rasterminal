@@ -146,12 +146,12 @@ cmake --build build-portable -j
 cmake -B build-dist -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DRASTERMINAL_STATIC_LIBSTDCXX=ON
 cmake --build build-dist -j
 
-# Tests
-cmake --build build --target rasterminal_tests -j
-ctest --test-dir build --output-on-failure
+# Tests (the test binary is not part of the default build)
+cmake --build build --target check -j       # build and run, the `make test` equivalent
+cmake --build build --target rasterminal_tests -j && ctest --test-dir build --output-on-failure
 
 # Clang
-cmake -B build -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 
 # MSVC (Developer PowerShell or cmd with vcvars)
@@ -171,6 +171,7 @@ sudo make uninstall      # remove everything install added
 
 # CMake equivalent (after configuring/building a build dir):
 sudo cmake --install build
+sudo cmake --build build --target uninstall
 ```
 
 Override the prefix to install without root, or stage into a fakeroot for packaging:
@@ -179,7 +180,11 @@ Override the prefix to install without root, or stage into a fakeroot for packag
 make install PREFIX=~/.local              # no sudo; ensure ~/.local/bin is on PATH
 make install DESTDIR=/tmp/pkg PREFIX=/usr # staged install for packagers
 cmake --install build --prefix ~/.local   # CMake prefix override
+DESTDIR=/tmp/pkg cmake --install build    # staged install
 ```
+
+CMake's `uninstall` reads the `install_manifest.txt` its install step wrote, so it removes
+exactly what that build directory installed. Pass the same `DESTDIR` you installed with.
 
 ## Usage
 

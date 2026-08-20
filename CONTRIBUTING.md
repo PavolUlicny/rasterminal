@@ -13,13 +13,13 @@ make            # build
 make test       # build and run the test suite
 ```
 
-Or with CMake: `cmake --preset release && cmake --build --preset release && ctest --preset release`.
+Or with CMake: `cmake --preset release && cmake --build --preset release`, then `cmake --build build --target check` to build and run the suite. The test binary is not part of the default build, so `cmake --build` on its own gives you the viewer alone.
 
 The project is C++17 with no external dependencies (everything third-party is vendored under `vendor/`). You need a C++17 compiler (GCC, Clang, and MSVC are all supported) plus a C compiler for the vendored C sources (the zstd and miniz amalgams and the libwebp decode subset; any system `cc`, selected by the Makefile's `CC` variable), and the preset commands need CMake 3.21 or newer (plain `cmake -B build` works on older versions). See the [Build section of the README](README.md#build) for the full set of build variants and platforms.
 
 ### Adding a source or test file
 
-Every source list is written by hand in both build systems, with no globbing. A new `src/` file goes in `SRCS` in the `Makefile` and in `add_executable(rasterminal ...)` in `CMakeLists.txt`, and in both `rasterminal_tests` lists if the tests link it; a new test file goes in `TEST_SRCS` and the `rasterminal_tests` list. Skip one and the file silently won't be built by that build system.
+Every source list is written by hand in both build systems, with no globbing. A new `src/` file goes in `SRCS` in the `Makefile` and in `add_executable(rasterminal ...)` in `CMakeLists.txt`, and in both `rasterminal_tests` lists if the tests link it; a new test file goes in `TEST_SRCS` and the `rasterminal_tests` list. Skip one and the file silently won't be built by that build system. A new vendored **C** file goes in `CSRCS` in the `Makefile` and in the `rasterminal_c` object library in `CMakeLists.txt`, which both executables pick up.
 
 Includes are root-relative throughout `src/` and `tests/` (`#include "src/render/renderer.h"`, `#include "tests/foo.h"`), never `../`-relative and never a bare neighbouring filename, because the repo root is on the include path for both. `src/` is grouped into `loaders/`, `render/`, `math/`, `terminal/` and `platform/`, with the entry point and CLI at its root; test sources nest under `tests/<subsystem>/` while shared helpers and fixtures stay at `tests/` root.
 
