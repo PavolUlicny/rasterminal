@@ -511,14 +511,16 @@ install(FILES man/rasterminal.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)
 install(FILES THIRD_PARTY_NOTICES LICENSE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
 
 # CMake ships no uninstall target, so this walks the install_manifest.txt the install step
-# writes. That removes exactly what THIS build directory installed, wherever it went, which
-# is stricter than a fixed list of paths: a prefix change between install and uninstall
-# cannot leave files behind or delete someone else's.
-# DESTDIR is read from the environment by the script, so a staged install is undone the way
-# it was made: DESTDIR=/tmp/pkg cmake --build <dir> --target uninstall.
+# writes, removing exactly the paths that install recorded, wherever they went. DESTDIR is
+# read from the environment by the script, so a staged install is undone the way it was made:
+# DESTDIR=/tmp/pkg cmake --build <dir> --target uninstall.
+# Only the docdir's NAME is passed, never its full path: `cmake --install --prefix` sets the
+# prefix at install time, so a configure-time path would name a tree the install never
+# touched. The script finds the real one in the manifest.
+get_filename_component(RASTERMINAL_DOCDIR_NAME "${CMAKE_INSTALL_DOCDIR}" NAME)
 add_custom_target(uninstall
   COMMAND ${CMAKE_COMMAND}
-          -DRASTERMINAL_DOCDIR=${CMAKE_INSTALL_FULL_DOCDIR}
+          -DRASTERMINAL_DOCDIR_NAME=${RASTERMINAL_DOCDIR_NAME}
           -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/uninstall.cmake
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   USES_TERMINAL)
