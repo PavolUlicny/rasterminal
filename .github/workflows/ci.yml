@@ -92,6 +92,17 @@ jobs:
               portable: ON,
               static_libstdcxx: ON,
             }
+          # Only CMAKE_CXX_COMPILER set, so C falls back to `cc` (gcc here). Before the
+          # vendored C sources moved to their own no-LTO object library this combination
+          # produced GIMPLE C objects that a clang link could not read. `cc` is left out of
+          # the matrix entry on purpose: the configure step omits the flag when it is unset.
+          - {
+              os: ubuntu-latest,
+              label: clang++ only,
+              cxx: clang++,
+              build_type: Release,
+              portable: ON,
+            }
           # macOS, AppleClang (platform default; Debug x Portable=ON omitted, same flags as OFF)
           - {
               os: macos-latest,
@@ -159,6 +170,24 @@ jobs:
           ldd build/rasterminal
           ! ldd build/rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
+      # The same smoke test and packaging release.yml runs, which a tag push is otherwise the
+      # only way to exercise. Deliberately duplicated rather than shared: if the two drift,
+      # this is what notices, on a normal push instead of on a release.
+      - name: Smoke test and package (dist)
+        if: matrix.static_libstdcxx == 'ON'
+        run: |
+          set -euo pipefail
+          ./build/rasterminal --version
+          ./build/rasterminal --help
+          printf 'v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nf 1 2 3\n' > tri.obj
+          ./build/rasterminal --bench 5 --bench-warmup 1 tri.obj
+          stage=rasterminal-ci-linux-x86_64
+          mkdir "$stage"
+          cp build/rasterminal LICENSE THIRD_PARTY_NOTICES README.md "$stage"/
+          tar czf "$stage.tar.gz" "$stage"
+          tar tzf "$stage.tar.gz"
+          test "$(tar tzf "$stage.tar.gz" | grep -c '[^/]$')" -eq 4
+
   # ── 32-bit (ILP32) verification ──────────────────────────────────────────────
   # No 32-bit OS runner exists, but 32-bit binaries run natively on the 64-bit runners
   # (Linux multilib / Windows WOW64), so we build and test 32-bit in place. Linux i686 uses
@@ -206,6 +235,77 @@ jobs:
           cmake -B build -A Win32
           cmake --build build --config Release -j --target rasterminal rasterminal_tests
           ctest --test-dir build -C Release --output-on-failure
+
+  # ── Documented workflows (Linux) ─────────────────────────────────────────────
+  # Every step here is a sequence README.md or CONTRIBUTING.md tells a user to run, or a
+  # target nothing else exercises. Both of the first two were broken at some point by a
+  # change that looked local: the preset flow by making the test binary EXCLUDE_FROM_ALL,
+  # and the uninstall docdir by an install-time --prefix. One build serves all of them.
+  workflows:
+    name: documented workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Verbatim from the README. `ctest --preset` needs the test binary, which is
+      # EXCLUDE_FROM_ALL, so the build preset has to name it.
+      - name: Preset flow
+        run: |
+          cmake --preset release
+          cmake --build --preset release -j"$(nproc)"
+          ctest --preset release
+
+      # The one-command build-and-run CONTRIBUTING.md documents.
+      - name: check target
+        run: cmake --build build --target check -j"$(nproc)"
+
+      # The quick start ends in ./build/rasterminal, so that path has to exist.
+      - name: Quick-start binary path
+        run: test -x build/rasterminal
+
+      # Staged install for packagers: the files, their modes, then a clean uninstall that
+      # leaves the shared directories alone and takes its own docdir with it.
+      - name: Install and uninstall (DESTDIR)
+        run: |
+          set -euo pipefail
+          DESTDIR="$PWD/stage" cmake --install build
+          test "$(find stage -type f | wc -l)" -eq 5
+          test "$(stat -c %a stage/usr/local/bin/rasterminal)" = 755
+          test "$(stat -c %a stage/usr/local/share/man/man1/rasterminal.1)" = 644
+          test "$(stat -c %a stage/usr/local/share/doc/rasterminal/LICENSE)" = 644
+          DESTDIR="$PWD/stage" cmake --build build --target uninstall
+          test -z "$(find stage -type f)"
+          test ! -d stage/usr/local/share/doc/rasterminal
+          test -d stage/usr/local/share/man/man1
+
+      # An install-time --prefix, which the README documents. The docdir cleanup has to
+      # follow the prefix actually installed to, not whatever configure happened to see.
+      - name: Install and uninstall (--prefix)
+        run: |
+          set -euo pipefail
+          cmake --install build --prefix "$PWD/pfx"
+          test -x pfx/bin/rasterminal
+          cmake --build build --target uninstall
+          test -z "$(find pfx -type f)"
+          test ! -d pfx/share/doc/rasterminal
+
+      # A docdir holding anything we did not install is not ours to delete.
+      - name: Uninstall leaves a shared docdir alone
+        run: |
+          set -euo pipefail
+          cmake --install build --prefix "$PWD/pfx2"
+          touch pfx2/share/doc/rasterminal/NOTES.txt
+          cmake --build build --target uninstall
+          test -f pfx2/share/doc/rasterminal/NOTES.txt
+
+      # Uninstalling where nothing was installed must fail loud, never quietly succeed.
+      - name: Uninstall without a manifest fails
+        run: |
+          cmake -B build-empty -DCMAKE_BUILD_TYPE=Release
+          if cmake --build build-empty --target uninstall; then
+            echo "ERROR: uninstall succeeded with no install_manifest.txt"
+            exit 1
+          fi
 
   # ── clang-format (Linux) ─────────────────────────────────────────────────────
   clang-format:
