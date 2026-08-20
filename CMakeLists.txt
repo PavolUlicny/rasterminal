@@ -294,8 +294,12 @@ add_executable(rasterminal
   ${WEBP_DEC_SRCS})
 # Repo root on the include path so every include in src/ is root-relative
 # ("src/render/renderer.h"), independent of which subdirectory the including file is in.
-# PRIVATE on the target, not directory scope: the vendored C TUs keep their own lookup.
-target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
+# Gated to C++ because target scope does NOT separate languages: the vendored C TUs are
+# sources of this same target, and libwebp's internal includes are repo-rooted
+# ("src/dsp/dsp.h"), so handing them the repo root lets a src/ subdirectory shadow one.
+# Matches the Makefile, where $(ROOT_INC) is in the C++ flag sets only.
+target_include_directories(rasterminal PRIVATE
+  $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}>)
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -408,7 +412,9 @@ if(RASTERMINAL_BUILD_TESTS)
   # Repo root on the include path so every test include is root-relative:
   # "src/foo.h" for code under test, "tests/foo.h" for shared helpers/fixtures
   # (which stay at tests/ root while sources nest under tests/<subsystem>/).
-  target_include_directories(rasterminal_tests PRIVATE ${PROJECT_SOURCE_DIR})
+  # C++-gated for the same reason as the rasterminal target above.
+  target_include_directories(rasterminal_tests PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:${PROJECT_SOURCE_DIR}>)
   target_link_libraries(rasterminal_tests PRIVATE
     rasterminal_vendor
     rasterminal_warnings
