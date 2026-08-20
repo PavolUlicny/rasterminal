@@ -12,9 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── CMake: all platforms, compilers, build types, portable toggle ────────────
-  cmake:
-    name: cmake / ${{ matrix.os }} ${{ matrix.label }} ${{ matrix.build_type }}
+  # ── Build + test: all platforms, compilers, build types, portable toggle ─────
+  build:
+    name: ${{ matrix.os }} ${{ matrix.label }} ${{ matrix.build_type }}
       portable=${{ matrix.portable }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -173,8 +173,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, name: linux i686 cmake gcc, kind: cmake, cc: gcc, cxx: g++ }
-          - { os: ubuntu-latest, name: linux i686 cmake clang, kind: cmake, cc: clang, cxx: clang++ }
+          - { os: ubuntu-latest, name: linux i686 gcc, kind: linux, cc: gcc, cxx: g++ }
+          - { os: ubuntu-latest, name: linux i686 clang, kind: linux, cc: clang, cxx: clang++ }
           - { os: windows-latest, name: windows Win32 msvc, kind: win32 }
 
     steps:
@@ -184,10 +184,10 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
-      # cmake at -m32 via env (mirrors the sanitizer jobs) + portable codegen (drops
+      # -m32 via env (mirrors the sanitizer jobs) + portable codegen (drops
       # -march=native). The build system adds -msse2 and drops -Wuseless-cast on ILP32.
-      - name: cmake build + ctest (i686)
-        if: matrix.kind == 'cmake'
+      - name: Build + ctest (i686)
+        if: matrix.kind == 'linux'
         env:
           CXXFLAGS: -m32
           CFLAGS: -m32
@@ -200,7 +200,7 @@ jobs:
 
       # MSVC multi-config VS generator; -A Win32 selects the 32-bit toolchain. Always pass
       # --config/-C (the generator ignores CMAKE_BUILD_TYPE at configure time).
-      - name: cmake build + ctest (Win32)
+      - name: Build + ctest (Win32)
         if: matrix.kind == 'win32'
         run: |
           cmake -B build -A Win32
