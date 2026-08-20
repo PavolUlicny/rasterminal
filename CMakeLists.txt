@@ -335,9 +335,10 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_platform.cpp
     tests/test_text.cpp
     tests/test_hud.cpp
-    tests/test_graphics.cpp
-    tests/test_kitty.cpp
-    tests/test_sixel.cpp
+    tests/terminal/test_framebuffer.cpp
+    tests/terminal/test_graphics.cpp
+    tests/terminal/test_kitty.cpp
+    tests/terminal/test_sixel.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
@@ -372,7 +373,6 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/pipeline/test_camera.cpp
     tests/pipeline/test_clip.cpp
     tests/pipeline/test_clip_near.cpp
-    tests/pipeline/test_framebuffer.cpp
     tests/math/test_fastmath.cpp
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
