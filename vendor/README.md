@@ -23,7 +23,7 @@ Libraries are chosen for fit, not size, and vendored directly. One may be a sing
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/cgltf.h -o vendor/cgltf/cgltf.h
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/LICENSE  -o vendor/cgltf/LICENSE
 git ls-remote https://github.com/jkuhlmann/cgltf refs/tags/v1.16
-# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
+# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: rm -rf build && cmake -B build && cmake --build build --target check -j
 ```
 
 For stb (no per-file tags), use `master` and record the resolved HEAD SHA:
@@ -50,13 +50,13 @@ git ls-remote https://github.com/richgel999/miniz refs/tags/<tag>
 ```
 
 Update the commit and version in this table (and in the README's third-party table); update
-`THIRD_PARTY_NOTICES` if the license changed. Re-verify the three config macros the build systems define globally
-(`MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, `MINIZ_NO_STDIO`, `MINIZ_NO_ARCHIVE_APIS`; set in the
-Makefile, CMakeLists.txt and `compile_flags.txt`) still exist upstream: a bump that renames
+`THIRD_PARTY_NOTICES` if the license changed. Re-verify the three config macros the build defines globally
+(`MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, `MINIZ_NO_STDIO`, `MINIZ_NO_ARCHIVE_APIS`; set in
+CMakeLists.txt and `compile_flags.txt`) still exist upstream: a bump that renames
 or drops one silently restores the zlib-name compatibility layer, the stdio layer and its
 `#pragma message` note, and the ZIP archive layer, with nothing failing. Never set
 `MINIZ_NO_INFLATE_APIS` (the tests round-trip frames through `mz_uncompress`); then test:
-`make clean && make && make test`.
+`rm -rf build && cmake -B build && cmake --build build --target check -j`.
 
 For meshoptimizer (header lives in `src/`, compiled via unity shim `meshoptimizer_impl.cpp`):
 
@@ -71,7 +71,7 @@ for f in allocator clusterizer indexanalyzer indexcodec indexgenerator \
     curl -sL "$BASE/src/$f.cpp" -o "vendor/meshoptimizer/src/$f.cpp"
 done
 git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
-# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: make clean && make && make test
+# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: rm -rf build && cmake -B build && cmake --build build --target check -j
 ```
 
 For draco (decode-only glTF-bitstream subset, compiled via unity shim `draco_impl.cpp`):
@@ -104,7 +104,7 @@ git rev-parse HEAD   # record the commit SHA in the table above
 Update the commit and version in this table (and in the README's third-party table); verify
 `vendor/draco/src/draco/draco_features.h`
 still matches what `DRACO_GLTF_BITSTREAM=ON` generates; update `THIRD_PARTY_NOTICES` if the
-license changed; then test: `make clean && make && make test`.
+license changed; then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.
 
 For basis_universal (decode-only KTX2/Basis transcoder for `KHR_texture_basisu`): we vendor
 the whole `transcoder/` directory plus the bundled zstd *decode* amalgam (zstd ships inside
@@ -112,7 +112,8 @@ the basis_universal repo). The transcoder is configured for decode in the
 `vendor/basisu/basisu_impl.cpp` shim (only `BASISD_SUPPORT_KTX2` + `BASISD_SUPPORT_KTX2_ZSTD`
 are set; the GPU block-format targets are left at upstream defaults, since partial stripping does
 not compile). The shim and the zstd C TU are built with blanket `-w` (they are large,
-unaudited TUs), wired per-source in both the Makefile and CMakeLists.txt.
+unaudited TUs): the shim per-source in CMakeLists.txt, the C TU through the
+`rasterminal_c` object library that carries every vendored C source.
 
 ```sh
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/basis_universal.git /tmp/bu && cd /tmp/bu
@@ -126,7 +127,7 @@ git rev-parse HEAD        # record the commit SHA in the table above (both basis
 Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; if either
 license **or the NOTICE text** changed, update `THIRD_PARTY_NOTICES` (it reproduces the
 basis_universal NOTICE verbatim, so a NOTICE change there must be mirrored; it is not a
-license change); then test: `make clean && make && make test`.
+license change); then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.
 
 For libwebp (decode-only subset for `EXT_texture_webp`): libwebp ships no single-header
 form, so we vendor only the source the decoder pulls. The set is *derived mechanically*
@@ -134,8 +135,8 @@ from an upstream checkout. Do NOT hand-maintain it; regenerate on every version 
 The `.c` files are listed individually in both build systems (a unity `#include` shim
 fails on duplicate file-local statics, e.g. `clip_8b`); the dsp SIMD variants self-gate on
 arch macros (`WEBP_USE_SSE2`/`SSE41`/`AVX2`/`NEON`), so no per-file SIMD flags are used.
-They are C TUs, built with blanket `-w` (Makefile `C_OPT`; CMake `set_source_files_properties`
-on `WEBP_DEC_SRCS`). Internal includes are repo-rooted (`"src/dec/..."`), so the layout
+They are C TUs, built with blanket `-w` through the `rasterminal_c` object library, whose
+flag set is deliberately not the C++ one (no LTO, no C++-only options). Internal includes are repo-rooted (`"src/dec/..."`), so the layout
 must keep the `src/` prefix and the include path is `-isystem vendor/libwebp`.
 
 ```sh
@@ -169,6 +170,6 @@ cp COPYING PATENTS AUTHORS /path/to/vendor/libwebp/
 git rev-parse HEAD   # record the commit SHA in the table above
 ```
 
-If the `.c` closure changed (new/removed files), update `CSRCS` (Makefile) and
-`WEBP_DEC_SRCS` (CMakeLists.txt) to match; if the license or PATENTS text changed, update
-`THIRD_PARTY_NOTICES`; then test: `make clean && make && make test`.
+If the `.c` closure changed (new/removed files), update `WEBP_DEC_SRCS` in CMakeLists.txt
+to match; if the license or PATENTS text changed, update
+`THIRD_PARTY_NOTICES`; then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.

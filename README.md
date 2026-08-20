@@ -33,17 +33,18 @@ rasterminal renders 3D models on the CPU and draws them in your terminal in real
 ## Quick start
 
 ```sh
-# 1. Clone and build (release build, GCC or Clang)
+# 1. Clone and build (release build)
 git clone https://github.com/PavolUlicny/rasterminal.git
 cd rasterminal
-make
+cmake -B build
+cmake --build build -j
 
 # 2. Grab a model to look at
 curl -fsSL -o Duck.glb \
   https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/Duck/glTF-Binary/Duck.glb
 
 # 3. Render it
-./rasterminal Duck.glb
+./build/rasterminal Duck.glb
 ```
 
 Drag with the mouse to orbit, scroll to zoom, press `Space` to spin, `1` to `3` to switch shading modes, `Q` to quit.
@@ -53,7 +54,7 @@ For a denser model, try the Stanford bunny:
 ```sh
 curl -fsSL -o bunny.stl \
   https://raw.githubusercontent.com/reprap-io/reprapio_stanford_bunny/master/bunny.stl
-./rasterminal bunny.stl
+./build/rasterminal bunny.stl
 ```
 
 More test assets live in the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) repository; any `.glb`, `.gltf`, `.obj`, `.ply`, or `.stl` file works.
@@ -102,22 +103,7 @@ Each release includes a `checksums.txt`; verify your download with `sha256sum -c
 
 ## Build
 
-There are two build systems. Each has a release variant (`-march=native`, fastest on the build machine) and a portable one (no `-march=native`, runs on any CPU of the target architecture). Every other speed flag (`-O3 -ffast-math -funroll-loops`, LTO and so on) applies to both.
-
-### Linux / macOS: Make (GCC or Clang)
-
-```sh
-make                     # release: -O3 -march=native + all speed flags
-make CXX=clang++         # same with Clang
-make portable            # distributable binary, no -march=native
-make dist                # release artifact: portable + static libstdc++/libgcc (Linux)
-make debug               # -O0 -g
-make test                # build and run test suite
-```
-
-`dist` is the binary to ship: same portable codegen, but it statically links libstdc++/libgcc so it runs on older distros without a matching `GLIBCXX` symbol. glibc stays dynamic, so build on the oldest distro you need to support.
-
-### All platforms: CMake
+CMake, on Linux, macOS and Windows, with GCC, Clang, AppleClang or MSVC. There is a release variant (`-march=native`, fastest on the build machine) and a portable one (no `-march=native`, runs on any CPU of the target architecture); every other speed flag (`-O3 -ffast-math -funroll-loops`, LTO and so on) applies to both. `dist` is the binary to ship: portable codegen plus statically linked libstdc++/libgcc, so it runs on older distros without a matching `GLIBCXX` symbol. glibc stays dynamic, so build it on the oldest distro you need to support.
 
 The configurations below are also available as presets (CMake ≥ 3.21):
 
@@ -147,7 +133,7 @@ cmake -B build-dist -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DRASTE
 cmake --build build-dist -j
 
 # Tests (the test binary is not part of the default build)
-cmake --build build --target check -j       # build and run, the `make test` equivalent
+cmake --build build --target check -j       # build and run the suite in one command
 cmake --build build --target rasterminal_tests -j && ctest --test-dir build --output-on-failure
 
 # Clang
@@ -162,25 +148,19 @@ ctest --test-dir build-msvc -C Release --output-on-failure
 
 ### Install
 
-Both build systems install the binary, the man page, and the license/notices following the GNU directory layout (defaulting to `/usr/local`). Build first, then install:
+Installs the binary, the man page, and the license/notices following the GNU directory layout (defaulting to `/usr/local`). Build first, then install:
 
 ```sh
-make                     # build whichever variant you want to ship (or: make dist)
-sudo make install        # binary -> /usr/local/bin, man page -> .../share/man/man1, docs -> .../share/doc/rasterminal
-sudo make uninstall      # remove everything install added
-
-# CMake equivalent (after configuring/building a build dir):
-sudo cmake --install build
-sudo cmake --build build --target uninstall
+cmake --build build -j                        # build whichever variant you configured
+sudo cmake --install build                    # binary -> /usr/local/bin, man page -> .../share/man/man1, docs -> .../share/doc/rasterminal
+sudo cmake --build build --target uninstall   # remove everything install added
 ```
 
 Override the prefix to install without root, or stage into a fakeroot for packaging:
 
 ```sh
-make install PREFIX=~/.local              # no sudo; ensure ~/.local/bin is on PATH
-make install DESTDIR=/tmp/pkg PREFIX=/usr # staged install for packagers
-cmake --install build --prefix ~/.local   # CMake prefix override
-DESTDIR=/tmp/pkg cmake --install build    # staged install
+cmake --install build --prefix ~/.local   # no sudo; ensure ~/.local/bin is on PATH
+DESTDIR=/tmp/pkg cmake --install build    # staged install for packagers
 ```
 
 CMake's `uninstall` reads the `install_manifest.txt` its install step wrote, so it removes

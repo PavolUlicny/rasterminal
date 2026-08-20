@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--spin-speed` and `--spin-direction left|right` set the auto-rotation rate in degrees per second and the way the model's front face moves on screen. Both apply whenever spinning is active, and neither implies `--spin`. The defaults, 45 degrees per second and `left`, match the previous fixed behavior.
 - `--input`/`--no-input`. Under `--no-input` every keyboard and mouse binding is ignored except the quit key: `Q` and Ctrl+C still quit. Nothing else changes. Auto-rotation keeps running if `--spin` started it, the HUD updates, and the render reflows on a resize. The mouse stays claimed by the viewer, so a drag over the render neither orbits nor paints a text selection. Input is still read so it cannot pile up in the terminal, it is just not acted on.
 - `--no-spin`, `--ao` and `--hud`, so every boolean state flag now comes as a `--flag`/`--no-flag` pair with the later flag winning and the default state always spellable.
-- `install` and `uninstall` targets for both Make and CMake, following the GNU directory layout with `PREFIX` and `DESTDIR` overrides. They install the binary, the man page, and the license and notices.
+- `install` and `uninstall` targets, following the GNU directory layout with prefix and `DESTDIR` overrides. They install the binary, the man page, and the license and notices.
 - A man page, `man/rasterminal.1`.
 
 ### Changed
@@ -47,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The Makefile. CMake is now the only build system, which is the one of the two that ever built on Windows. Nothing about the resulting binary changes: the two were verified to compile and link with identical flags first, and to produce the same code. `make` becomes `cmake -B build && cmake --build build -j`, `make test` becomes `cmake --build build --target check`, `make install` and `make uninstall` become `cmake --install build` and `cmake --build build --target uninstall`, and `make portable`/`dist`/`debug` become the `portable`, `dist` and `debug` presets or their `-D` equivalents. The binary now lands in the build directory rather than the repo root.
 - The 1-indexed numeric value aliases for `--shading`, `--bg`, `--lighting` and `--wireframe-color` (`-s 3` for `-s phong`, or `--bg 2` for `--bg gray`). Use the named values; a numeric value is now an invalid-value error.
 - The shadow map and the `--no-shadow` flag. A single auto-fit model with no ground plane has nothing to receive a cast shadow, so the feature cost load time and frame time without giving a model viewer anything. Lit surfaces now use every configured light uniformly and baked ambient occlusion still darkens crevices; the default look is slightly flatter than before. `--no-shadow` is now an unknown-flag error.
 

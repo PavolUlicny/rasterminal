@@ -34,8 +34,7 @@ body:
       label: How it was installed
       options:
         - Prebuilt release binary
-        - Built from source with make
-        - Built from source with CMake
+        - Built from source
     validations:
       required: true
   - type: input
