@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/light.h"
+#include "src/math/light.h"
 
 #include <cmath>
 

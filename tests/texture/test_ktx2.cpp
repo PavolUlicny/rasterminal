@@ -1,7 +1,7 @@
 #include "tests/test.h"
 #include "tests/ktx2_fixtures.h"
-#include "src/ktx2_decode.h"
-#include "src/texture.h"
+#include "src/loaders/ktx2_decode.h"
+#include "src/render/texture.h"
 
 #include <cstdint>
 #include <thread>

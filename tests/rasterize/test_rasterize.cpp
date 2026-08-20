@@ -1,6 +1,6 @@
 #include "tests/test.h"
 #include "tests/rasterize_test_util.h"
-#include "src/rasterize.h"
+#include "src/render/rasterize.h"
 
 #include <algorithm>
 #include <atomic>

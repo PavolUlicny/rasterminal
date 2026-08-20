@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/text.h"
+#include "src/terminal/text.h"
 
 #include <cstddef>
 #include <string>

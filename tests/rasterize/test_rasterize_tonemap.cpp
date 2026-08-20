@@ -1,6 +1,6 @@
 #include "tests/test.h"
 #include "tests/rasterize_test_util.h"
-#include "src/rasterize.h"
+#include "src/render/rasterize.h"
 
 // Integration coverage for the soft-knee highlight rolloff at the rasterizer commit sites.
 // The pure-function curve is locked in test_framebuffer.cpp; here we verify it actually reaches

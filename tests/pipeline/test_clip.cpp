@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/clip.h"
+#include "src/render/clip.h"
 
 // clip_reject is a conservative frustum-rejection test: it MUST return true
 // when the triangle is provably invisible, and is allowed to return false even

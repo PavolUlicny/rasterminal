@@ -6,8 +6,8 @@
 // unused here.
 #include "tests/test.h" // IWYU pragma: export
 #include "tests/rasterize_test_util.h"
-#include "src/renderer.h" // IWYU pragma: export
-#include "src/texture.h"
+#include "src/render/renderer.h" // IWYU pragma: export
+#include "src/render/texture.h"
 
 // Camera at (0,0,5) looking at origin.  Identity orientation so the projection
 // is symmetric and pixel (20,10) on a 40×20 framebuffer maps exactly to world (0,0,0).

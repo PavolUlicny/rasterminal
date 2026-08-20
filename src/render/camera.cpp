@@ -1,0 +1,279 @@
+#include "src/render/camera.h"
+#include "src/math/linalg.h"
+#include "src/platform/input.h"
+
+#include <cmath>
+
+namespace
+{
+    // The turntable rotation composition, shared by orbit() and look() so the two
+    // cannot drift: yaw about world Y, pitch about the camera's own right axis.
+    // Composition order is load-bearing.
+    quat rotated(const quat &o, float dx, float dy)
+    {
+        const vec3 local_right = o.rotate({ 1.0f, 0.0f, 0.0f });
+        const quat yaw = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, -dx);
+        const quat pitch = quat::from_axis_angle(local_right, dy);
+        return normalize(yaw * pitch * o);
+    }
+
+    // First-person's pivot rule, shared by every rotation that reaches this camera:
+    // adopt the new orientation with the eye held still, re-deriving `target` ahead of
+    // it. Only `target` is stored, so a rotation that forgets this step swings the eye
+    // around a point `distance` in front of the camera instead of turning the view.
+    void reorient_about_eye(Camera &c, const quat &o)
+    {
+        const vec3 eye_before = c.eye();
+        c.orientation = o;
+        c.target = eye_before + c.forward() * c.distance;
+    }
+
+    // Growth of the first-person speed multiplier for one frame of a held +/- key, derived
+    // from Camera's two constants so neither can drift away from the other. Fed dts summing
+    // to HELD_KEY_WINDOW the factors multiply to exactly one wheel notch, but a real tap
+    // lands within ONE FRAME of it in EITHER direction (main.cpp hands over whole frame
+    // intervals, the first of which measures the interval that ended BEFORE the byte
+    // arrived): even pacing only overshoots, a short frame at the press followed by longer
+    // ones undershoots (both measured). The dt cap exists to bound this at one frame.
+    float speed_key_factor(float dt)
+    {
+        return std::pow(Camera::FP_SPEED_WHEEL_STEP, dt / Camera::HELD_KEY_WINDOW);
+    }
+} // namespace
+
+float Camera::max_eye_distance() const
+{
+    return far_plane * 0.5f;
+}
+
+vec3 Camera::eye() const
+{
+    return target + orientation.rotate({ 0.0f, 0.0f, 1.0f }) * distance;
+}
+
+vec3 Camera::forward() const
+{
+    return orientation.rotate({ 0.0f, 0.0f, -1.0f });
+}
+
+vec3 Camera::up() const
+{
+    return orientation.rotate({ 0.0f, 1.0f, 0.0f });
+}
+
+mat4 Camera::view(const vec3 &eye_pos) const
+{
+    return look_at(eye_pos, target, up());
+}
+
+mat4 Camera::view() const
+{
+    return view(eye());
+}
+
+mat4 Camera::projection(int pixel_width, int pixel_height) const
+{
+    const float aspect = (pixel_width > 0 && pixel_height > 0)
+                             ? static_cast<float>(pixel_width) / static_cast<float>(pixel_height)
+                             : 1.0f;
+    return perspective(fov, aspect, near_plane, far_plane);
+}
+
+void Camera::orbit(float dx, float dy)
+{
+    // Turntable yaw is about world Y; when the camera is upside down (up vector's
+    // world-Y component negative) that rotation sweeps the screen opposite to the
+    // drag, so invert dx to keep the model following the mouse (Blender behaviour).
+    // up().y is the same quantity the closed form 1 - 2(x^2 + z^2) gives for a unit
+    // quat (it is R[1][1]); orientation is always unit, normalized after every
+    // rotation. Shared with look()'s past-the-pole test rather than written twice.
+    if (up().y < 0.0f)
+    {
+        dx = -dx;
+    }
+
+    orientation = rotated(orientation, dx, dy);
+}
+
+void Camera::look(float dx, float dy)
+{
+    if (!first_person)
+    {
+        orbit(dx, dy);
+        return;
+    }
+
+    // Both modes apply the same rotation to `orientation`; only the pivot differs,
+    // and that alone gives each mode its convention. The eye and the look direction
+    // are opposite vectors, so one rotation reads as "the model follows the drag"
+    // while swinging the eye, and as "the view follows the drag" while swinging the
+    // look direction. Negating an axis here would invert first-person, not fix it.
+
+    // Pitch clamps to straight up / straight down: a fly camera must never roll, and looping
+    // past a pole would invert the horizon. The rotation is about the camera's right axis,
+    // horizontal while there is no roll, so the elevation change equals the rotation angle
+    // and the limit applies to the delta directly. asin() alone cannot express that limit:
+    // it is even about the pole (90+d returns 90-d), so an overshoot reads as headroom and
+    // the excess DOUBLES every call; rounding is enough to start it, and the horizon then
+    // inverts within about 31 calls, half a second of held key (measured, equally from pure
+    // pitch: dx is not involved). Two things stop it: the up vector's Y component carries
+    // the sign asin drops (an overshoot then pulls back instead of pushing on), and stopping
+    // a hair short of the pole keeps ordinary rounding from crossing at all. A test watching
+    // only forward.y cannot see any of this, since that value is identical either side.
+    constexpr float PI = 3.14159265f;
+    const vec3 fwd = forward();
+    float pitch_now = std::asin(clamp(fwd.y, -1.0f, 1.0f));
+    if (up().y < 0.0f)
+    {
+        pitch_now = (fwd.y >= 0.0f) ? (PI - pitch_now) : (-PI - pitch_now);
+    }
+    dy = clamp(dy, -FP_MAX_PITCH - pitch_now, FP_MAX_PITCH - pitch_now);
+
+    // orbit()'s upside-down dx inversion has no counterpart here: the pitch clamp puts
+    // upside down out of reach.
+    reorient_about_eye(*this, rotated(orientation, dx, dy));
+}
+
+void Camera::move(float fwd, float right, float world_up, float dt)
+{
+    if (!first_person)
+    {
+        return;
+    }
+
+    vec3 step = forward() * fwd + orientation.rotate({ 1.0f, 0.0f, 0.0f }) * right;
+    step.y += world_up; // world-absolute, not view-relative: E/V must still rise and fall while pitched
+    // Only `target` is stored; the eye is derived from it, so it comes along.
+    target = target + step * (fp_base_speed * fp_speed * dt);
+
+    // Outer bound: the distance orbit's zoom-out already stops at, measured from the
+    // model centre, so both modes reach the same positions radially. Past far_plane
+    // the model is clipped away entirely and nothing on screen says which way back is.
+    // No inner bound, since flying into the geometry is the point of the mode.
+    const vec3 offset = eye() - fp_centre;
+    const float dist = offset.length();
+    const float max_dist = max_eye_distance();
+    if (dist > max_dist)
+    {
+        target = fp_centre + offset * (max_dist / dist) + forward() * distance;
+    }
+}
+
+void Camera::adjust_speed(float factor)
+{
+    fp_speed = clamp(fp_speed * factor, FP_SPEED_MIN, FP_SPEED_MAX);
+}
+
+void Camera::spin_world_y(float radians)
+{
+    const quat r = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, radians);
+    if (first_person)
+    {
+        // Spin is a rotation like any other and takes the same pivot, which is what
+        // makes it a panorama from where the camera stands rather than a turntable.
+        // Pivoting on `target` instead would fly the eye around a circle of radius
+        // `distance`, and past move()'s far bound, which nothing else enforces.
+        reorient_about_eye(*this, normalize(r * orientation));
+        return;
+    }
+    orientation = normalize(r * orientation);
+}
+
+void Camera::process_key(platform::Key key, float dt)
+{
+    const float orbit_speed = 2.5f;
+
+    if (first_person)
+    {
+        // WASD leaves the rotation group to translate, so the arrows become the only keyboard
+        // look. +/- retune movement speed rather than zooming: `distance` is the lever arm
+        // `target` is derived through, so scaling it dollies the eye straight along the view
+        // axis, which W and S already do; the wheel would duplicate a key instead of adding
+        // the control freelook wants (speed). Looking is deliberately slower than orbiting:
+        // orbiting only turns a centred model while looking sweeps the whole scene across the
+        // frame, so the same angular rate reads much faster here. The anchor is one VERTICAL
+        // field of view per second (`fov` is the vertical one): a pitch sweeps the frame's
+        // height in about a second and a yaw sweeps that same angle, less than a wide frame's
+        // width (roughly two thirds at 80x24). Scaling yaw by aspect instead would change how
+        // fast you turn on every resize, and a turn rate that moves under you is worse than a
+        // slow one. One key acts per frame, so there is no diagonal flight; not a choice: a
+        // terminal delivers no key releases, a held key is inferred from autorepeat, and the
+        // OS repeats only the most recent key while the others go silent, which nothing here
+        // can observe. Drag the mouse to look while moving.
+        const float look_speed = fov;
+        switch (key)
+        {
+        case platform::Key::W:
+            move(1.0f, 0.0f, 0.0f, dt);
+            break;
+        case platform::Key::S:
+            move(-1.0f, 0.0f, 0.0f, dt);
+            break;
+        case platform::Key::D:
+            move(0.0f, 1.0f, 0.0f, dt);
+            break;
+        case platform::Key::A:
+            move(0.0f, -1.0f, 0.0f, dt);
+            break;
+        case platform::Key::E:
+            move(0.0f, 0.0f, 1.0f, dt);
+            break;
+        case platform::Key::V:
+            move(0.0f, 0.0f, -1.0f, dt);
+            break;
+        case platform::Key::Left:
+            look(-look_speed * dt, 0.0f);
+            break;
+        case platform::Key::Right:
+            look(look_speed * dt, 0.0f);
+            break;
+        case platform::Key::Up:
+            look(0.0f, look_speed * dt);
+            break;
+        case platform::Key::Down:
+            look(0.0f, -look_speed * dt);
+            break;
+        case platform::Key::Plus:
+            adjust_speed(speed_key_factor(dt));
+            break;
+        case platform::Key::Minus:
+            adjust_speed(1.0f / speed_key_factor(dt));
+            break;
+        default:
+            break;
+        }
+        return;
+    }
+
+    const float zoom_speed = distance * 1.5f; // scales with distance so zoom feels consistent
+
+    switch (key)
+    {
+    case platform::Key::A:
+    case platform::Key::Left:
+        orbit(-orbit_speed * dt, 0.0f);
+        break;
+    case platform::Key::D:
+    case platform::Key::Right:
+        orbit(orbit_speed * dt, 0.0f);
+        break;
+    case platform::Key::W:
+    case platform::Key::Up:
+        orbit(0.0f, orbit_speed * dt);
+        break;
+    case platform::Key::S:
+    case platform::Key::Down:
+        orbit(0.0f, -orbit_speed * dt);
+        break;
+    case platform::Key::Plus:
+        distance -= zoom_speed * dt;
+        break;
+    case platform::Key::Minus:
+        distance += zoom_speed * dt;
+        break;
+    default:
+        break;
+    }
+
+    distance = clamp(distance, near_plane * 2.0f, max_eye_distance());
+}

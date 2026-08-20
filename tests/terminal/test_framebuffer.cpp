@@ -2,8 +2,8 @@
 #include "tests/b64_test_util.h"
 #include "tests/rasterize_test_util.h"
 #include "tests/sixel_test_util.h"
-#include "src/framebuffer.h"
-#include "src/renderer.h"
+#include "src/terminal/framebuffer.h"
+#include "src/render/renderer.h"
 
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 

@@ -1,9 +1,9 @@
-#include "args.h"
+#include "src/args.h"
 
-#include "camera.h" // FP_SPEED_{MIN,MAX}: --first-person-speed parses the interactive range
-#include "platform.h"
-#include "shading.h"
-#include "version.h"
+#include "src/platform/platform.h"
+#include "src/render/camera.h" // FP_SPEED_{MIN,MAX}: --first-person-speed parses the interactive range
+#include "src/shading.h"
+#include "src/version.h"
 
 #include <algorithm>
 #include <cctype>

@@ -98,6 +98,10 @@ ifeq ($(IS_ILP32),4)
 WARNINGS := $(filter-out -Wuseless-cast,$(WARNINGS))
 endif
 
+# The repo root, so every include in src/ and tests/ is root-relative ("src/foo.h",
+# "tests/foo.h") and no file's include lines depend on which subdirectory it sits in.
+# C++ only: the vendored C TUs include no project headers.
+ROOT_INC    = -I.
 VENDOR_INC  = -isystem vendor/cgltf -isystem vendor/stb -isystem vendor/stl_reader \
               -isystem vendor/tinyobjloader -isystem vendor/tinyply \
               -isystem vendor/meshoptimizer/src -isystem vendor/draco/src \
@@ -136,34 +140,34 @@ OPT_COMMON = -O3 $(LTO) -funroll-loops -ffast-math -fno-finite-math-only -DNDEBU
 # Tier 2: machine-specific (release only).
 ARCH_NATIVE = -march=native
 
-CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ARCH_NATIVE) $(VENDOR_INC)
+CXXFLAGS      = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ARCH_NATIVE) $(ROOT_INC) $(VENDOR_INC)
 TEST_CXXFLAGS = -std=c++17 $(WARNINGS) -Werror -O3 $(LTO) $(ARCH_NATIVE) -funroll-loops \
                 -ffast-math -fno-finite-math-only -DNDEBUG -ffunction-sections -fdata-sections \
                 -fomit-frame-pointer -fstrict-aliasing \
                 -fstack-protector-strong -D_FORTIFY_SOURCE=2 \
-                -pipe -pthread -I. $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
+                -pipe -pthread $(ROOT_INC) $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
 TARGET   = rasterminal
 
 SRCS = src/main.cpp \
        src/args.cpp \
-       src/color.cpp \
-       src/framebuffer.cpp \
-       src/hud.cpp \
-       src/graphics.cpp \
-       src/kitty.cpp \
-       src/sixel.cpp \
-       src/mesh.cpp \
-       src/mesh_obj.cpp \
-       src/mesh_ply.cpp \
-       src/mesh_stl.cpp \
-       src/mesh_gltf.cpp \
-       src/draco_decode.cpp \
-       src/camera.cpp \
-       src/rasterize.cpp \
-       src/renderer.cpp \
-       src/texture.cpp \
-       src/ktx2_decode.cpp \
-       src/webp_decode.cpp \
+       src/terminal/color.cpp \
+       src/terminal/framebuffer.cpp \
+       src/terminal/hud.cpp \
+       src/terminal/graphics.cpp \
+       src/terminal/kitty.cpp \
+       src/terminal/sixel.cpp \
+       src/loaders/mesh.cpp \
+       src/loaders/mesh_obj.cpp \
+       src/loaders/mesh_ply.cpp \
+       src/loaders/mesh_stl.cpp \
+       src/loaders/mesh_gltf.cpp \
+       src/loaders/draco_decode.cpp \
+       src/render/camera.cpp \
+       src/render/rasterize.cpp \
+       src/render/renderer.cpp \
+       src/render/texture.cpp \
+       src/loaders/ktx2_decode.cpp \
+       src/loaders/webp_decode.cpp \
        vendor/meshoptimizer/meshoptimizer_impl.cpp \
        vendor/draco/draco_impl.cpp \
        vendor/basisu/basisu_impl.cpp
@@ -247,7 +251,7 @@ TEST_HDRS := $(shell find tests -name '*.h' 2>/dev/null)
 
 # LTO_SUPPRESS: per-compiler warning suppression needed only at the link step.
 #  - GCC: LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
-#    the link step's recompile, and per-TU pragma context (in src/draco_decode.cpp +
+#    the link step's recompile, and per-TU pragma context (in src/loaders/draco_decode.cpp +
 #    vendor/draco/draco_impl.cpp) doesn't survive that re-emit.
 #  - Clang: the link rules pass the full CXXFLAGS (incl. compile-only math flags like
 #    -fno-finite-math-only) to a link-only clang++ invocation; under ThinLTO AppleClang
@@ -310,24 +314,24 @@ TEST_SRCS   = tests/test_main.cpp \
               tests/math/test_linalg.cpp \
               tests/math/test_light.cpp \
               src/args.cpp \
-              src/color.cpp \
-              src/renderer.cpp \
-              src/mesh.cpp \
-              src/mesh_obj.cpp \
-              src/mesh_ply.cpp \
-              src/mesh_stl.cpp \
-              src/mesh_gltf.cpp \
-              src/draco_decode.cpp \
-              src/texture.cpp \
-              src/ktx2_decode.cpp \
-              src/webp_decode.cpp \
-              src/camera.cpp \
-              src/rasterize.cpp \
-              src/framebuffer.cpp \
-              src/hud.cpp \
-              src/graphics.cpp \
-              src/kitty.cpp \
-              src/sixel.cpp \
+              src/terminal/color.cpp \
+              src/render/renderer.cpp \
+              src/loaders/mesh.cpp \
+              src/loaders/mesh_obj.cpp \
+              src/loaders/mesh_ply.cpp \
+              src/loaders/mesh_stl.cpp \
+              src/loaders/mesh_gltf.cpp \
+              src/loaders/draco_decode.cpp \
+              src/render/texture.cpp \
+              src/loaders/ktx2_decode.cpp \
+              src/loaders/webp_decode.cpp \
+              src/render/camera.cpp \
+              src/render/rasterize.cpp \
+              src/terminal/framebuffer.cpp \
+              src/terminal/hud.cpp \
+              src/terminal/graphics.cpp \
+              src/terminal/kitty.cpp \
+              src/terminal/sixel.cpp \
               vendor/meshoptimizer/meshoptimizer_impl.cpp \
               vendor/draco/draco_impl.cpp \
               vendor/basisu/basisu_impl.cpp
@@ -341,8 +345,8 @@ TEST_SRCS   = tests/test_main.cpp \
 # few seconds on no-change rebuilds); the per-variant .o cache still avoids
 # unnecessary recompiles, so source edits stay incremental.
 OBJDIR             = obj
-PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(VENDOR_INC)
-DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
+PORTABLE_CXXFLAGS  = -std=c++17 $(WARNINGS) -Werror $(OPT_COMMON) $(ROOT_INC) $(VENDOR_INC)
+DEBUG_CXXFLAGS     = -std=c++17 $(WARNINGS) -Werror -O0 -g -pthread $(ROOT_INC) $(VENDOR_INC) $(ARCH32) $(LFS) $(MINIZ)
 
 # ─── C flags (vendored zstd + miniz amalgams + libwebp decode subset) ─────────
 # Third-party C; compile with $(CC), warnings off (-w), never via the strict C++

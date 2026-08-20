@@ -268,30 +268,34 @@ endif()
 add_executable(rasterminal
   src/main.cpp
   src/args.cpp
-  src/color.cpp
-  src/framebuffer.cpp
-  src/hud.cpp
-  src/graphics.cpp
-  src/kitty.cpp
-  src/sixel.cpp
-  src/mesh.cpp
-  src/mesh_obj.cpp
-  src/mesh_ply.cpp
-  src/mesh_stl.cpp
-  src/mesh_gltf.cpp
-  src/draco_decode.cpp
-  src/camera.cpp
-  src/rasterize.cpp
-  src/renderer.cpp
-  src/texture.cpp
-  src/ktx2_decode.cpp
-  src/webp_decode.cpp
+  src/terminal/color.cpp
+  src/terminal/framebuffer.cpp
+  src/terminal/hud.cpp
+  src/terminal/graphics.cpp
+  src/terminal/kitty.cpp
+  src/terminal/sixel.cpp
+  src/loaders/mesh.cpp
+  src/loaders/mesh_obj.cpp
+  src/loaders/mesh_ply.cpp
+  src/loaders/mesh_stl.cpp
+  src/loaders/mesh_gltf.cpp
+  src/loaders/draco_decode.cpp
+  src/render/camera.cpp
+  src/render/rasterize.cpp
+  src/render/renderer.cpp
+  src/render/texture.cpp
+  src/loaders/ktx2_decode.cpp
+  src/loaders/webp_decode.cpp
   vendor/meshoptimizer/meshoptimizer_impl.cpp
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
   vendor/basisu/zstd/zstddeclib.c
   vendor/miniz/miniz.c
   ${WEBP_DEC_SRCS})
+# Repo root on the include path so every include in src/ is root-relative
+# ("src/render/renderer.h"), independent of which subdirectory the including file is in.
+# PRIVATE on the target, not directory scope: the vendored C TUs keep their own lookup.
+target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(rasterminal PRIVATE
   rasterminal_vendor
   rasterminal_warnings
@@ -299,7 +303,7 @@ target_link_libraries(rasterminal PRIVATE
   Threads::Threads
   ${RASTERMINAL_SHM_LIB})
 # GCC's LTO re-emits -Wmaybe-uninitialized from Draco's edgebreaker templates during
-# the link-step recompile, where per-TU pragma context (src/draco_decode.cpp +
+# the link-step recompile, where per-TU pragma context (src/loaders/draco_decode.cpp +
 # vendor/draco/draco_impl.cpp) doesn't reach. Suppress only at link time so other
 # TUs keep -Wmaybe-uninitialized active at compile.
 target_link_options(rasterminal PRIVATE
@@ -377,24 +381,24 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
     src/args.cpp
-    src/color.cpp
-    src/renderer.cpp
-    src/mesh.cpp
-    src/mesh_obj.cpp
-    src/mesh_ply.cpp
-    src/mesh_stl.cpp
-    src/mesh_gltf.cpp
-    src/draco_decode.cpp
-    src/texture.cpp
-    src/ktx2_decode.cpp
-    src/webp_decode.cpp
-    src/camera.cpp
-    src/rasterize.cpp
-    src/framebuffer.cpp
-    src/hud.cpp
-    src/graphics.cpp
-    src/kitty.cpp
-    src/sixel.cpp
+    src/terminal/color.cpp
+    src/render/renderer.cpp
+    src/loaders/mesh.cpp
+    src/loaders/mesh_obj.cpp
+    src/loaders/mesh_ply.cpp
+    src/loaders/mesh_stl.cpp
+    src/loaders/mesh_gltf.cpp
+    src/loaders/draco_decode.cpp
+    src/render/texture.cpp
+    src/loaders/ktx2_decode.cpp
+    src/loaders/webp_decode.cpp
+    src/render/camera.cpp
+    src/render/rasterize.cpp
+    src/terminal/framebuffer.cpp
+    src/terminal/hud.cpp
+    src/terminal/graphics.cpp
+    src/terminal/kitty.cpp
+    src/terminal/sixel.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp

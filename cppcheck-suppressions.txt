@@ -5,8 +5,8 @@
 toomanyconfigs
 
 // Utility functions intentionally kept for completeness; exercised by tests.
-unusedFunction:src/framebuffer.h
-unusedFunction:src/linalg.h
+unusedFunction:src/terminal/framebuffer.h
+unusedFunction:src/math/linalg.h
 // main.cpp carries one inline `cppcheck-suppress knownConditionTrueFalse` (the VT-gate
 // condition, constant only because <windows.h> is absent on the Linux runner so the _WIN32
 // body can't be analysed). Under --inline-suppr that inline directive is a two-sided
@@ -19,7 +19,7 @@ unmatchedSuppression:src/main.cpp
 // in transmit_shm and present_kitty: under _WIN32 the shm create is the
 // nullptr stub, so their shm-failure conditions read as constant to the
 // multi-config scan. Same aging-out rationale as the main.cpp entry above.
-unmatchedSuppression:src/framebuffer.cpp
+unmatchedSuppression:src/terminal/framebuffer.cpp
 
 // platform.h's two inline knownConditionTrueFalse suppressions (both in the
 // graphics query's shm-probe block, whose create is the nullptr stub in the
@@ -31,7 +31,7 @@ unmatchedSuppression:src/framebuffer.cpp
 
 // Raw loops kept where an STL-algorithm rewrite would need a lambda and read worse. The
 // platform.h entry is a separate case (a constexpr context); its reason lives at the code site.
-useStlAlgorithm:src/mesh.cpp
-useStlAlgorithm:src/mesh_obj.cpp
-useStlAlgorithm:src/mesh_ply.cpp
-useStlAlgorithm:src/platform.h
+useStlAlgorithm:src/loaders/mesh.cpp
+useStlAlgorithm:src/loaders/mesh_obj.cpp
+useStlAlgorithm:src/loaders/mesh_ply.cpp
+useStlAlgorithm:src/platform/platform.h

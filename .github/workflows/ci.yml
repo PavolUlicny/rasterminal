@@ -287,10 +287,11 @@ jobs:
       # invocation re-parses one TU, so this scales near-linearly). All src TUs are
       # linted, including the ktx2/webp vendor-header isolation wrappers, which pass
       # under the clang-analyzer suppressions already in .clang-tidy. A file failing
-      # under --warnings-as-errors makes xargs exit non-zero (123).
+      # under --warnings-as-errors makes xargs exit non-zero (123). `find`, never a
+      # src/*.cpp glob: a glob silently skips the subdirectories and still reports green.
       - name: Run clang-tidy (src)
         run: >
-          printf '%s\n' src/*.cpp
+          find src -name '*.cpp'
           | xargs -r -P "$(nproc)" -n1
           clang-tidy-22 --warnings-as-errors='*' -p build --header-filter='src/.*'
 
@@ -316,7 +317,7 @@ jobs:
           --inline-suppr
           --suppress=missingIncludeSystem
           --suppressions-list=cppcheck-suppressions.txt
-          -I src/
+          -I .
           -I vendor/cgltf
           -I vendor/meshoptimizer/src
           -I vendor/stb
@@ -328,7 +329,7 @@ jobs:
           -I vendor/basisu/zstd
           -I vendor/libwebp
           -I vendor/miniz
-          src/*.cpp
+          $(find src -name '*.cpp')
 
   # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────
   sanitizers:

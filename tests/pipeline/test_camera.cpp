@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/camera.h"
+#include "src/render/camera.h"
 
 #include <cmath>
 

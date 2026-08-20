@@ -6,7 +6,7 @@
 // fine given these are tiny functions only used by tests.
 
 #include "tests/test.h"
-#include "src/mesh.h"
+#include "src/loaders/mesh.h"
 
 #include <cstdint>
 #include <cstdio>

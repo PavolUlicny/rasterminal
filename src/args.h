@@ -1,6 +1,6 @@
 #pragma once
 
-#include "shading.h"
+#include "src/shading.h"
 
 #include <cstdint>
 #include <string>

@@ -1,6 +1,6 @@
 #include "tests/ktx2_fixtures.h"
 #include "tests/loader_util.h"
-#include "src/mesh.h"
+#include "src/loaders/mesh.h"
 
 #include <cstddef>
 #include <cstdint>

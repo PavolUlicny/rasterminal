@@ -1,4 +1,4 @@
-#include "src/kitty.h"
+#include "src/terminal/kitty.h"
 #include "tests/b64_test_util.h"
 #include "tests/test.h"
 

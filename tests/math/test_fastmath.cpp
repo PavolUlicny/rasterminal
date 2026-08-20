@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/fastmath.h"
+#include "src/math/fastmath.h"
 
 #include <cmath>
 #include <cstdint>

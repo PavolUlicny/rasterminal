@@ -1,6 +1,6 @@
 #include "tests/test.h"
-#include "src/input.h"
-#include "src/platform.h"
+#include "src/platform/input.h"
+#include "src/platform/platform.h"
 
 // <stdlib.h>, not <cstdlib>: the POSIX pty functions (posix_openpt/grantpt/unlockpt/
 // ptsname), the env mutators (setenv/unsetenv on POSIX, _putenv_s on the MSVC CRT), and
@@ -383,7 +383,7 @@ TEST(platform, detect_term_color_reads_env)
 namespace
 {
     // Minimal scoped temp file. tests/loader_util.h's TmpFile is the same idiom but
-    // pulls in src/mesh.h, overkill for this standalone platform test.
+    // pulls in src/loaders/mesh.h, overkill for this standalone platform test.
     struct ScopedTmpFile
     {
         std::string path;

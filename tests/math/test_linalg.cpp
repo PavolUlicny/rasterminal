@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/linalg.h"
+#include "src/math/linalg.h"
 #include <cmath>
 
 // vec3

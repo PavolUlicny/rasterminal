@@ -1,7 +1,7 @@
 #include "tests/test.h"
 #include "tests/loader_util.h"
 #include "tests/inline_bmp.h"
-#include "src/texture.h"
+#include "src/render/texture.h"
 
 #include <climits>
 #include <cstdio>

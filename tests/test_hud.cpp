@@ -1,6 +1,6 @@
 #include "tests/test.h"
-#include "src/hud.h"
-#include "src/text.h"
+#include "src/terminal/hud.h"
+#include "src/terminal/text.h"
 
 #include <cstddef>
 #include <string>

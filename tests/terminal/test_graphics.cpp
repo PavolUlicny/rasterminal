@@ -1,4 +1,4 @@
-#include "src/graphics.h"
+#include "src/terminal/graphics.h"
 #include "tests/test.h"
 
 #include <string>

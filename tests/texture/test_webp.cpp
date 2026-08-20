@@ -1,7 +1,7 @@
 #include "tests/test.h"
 #include "tests/webp_fixtures.h"
-#include "src/texture.h"
-#include "src/webp_decode.h"
+#include "src/render/texture.h"
+#include "src/loaders/webp_decode.h"
 
 #include <cstdint>
 #include <thread>

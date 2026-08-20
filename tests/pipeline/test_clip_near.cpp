@@ -1,5 +1,5 @@
 #include "tests/test.h"
-#include "src/rasterize.h"
+#include "src/render/rasterize.h"
 
 static ClipVert
 make_cv(float w, float u = 0.0f, float v_coord = 0.0f, float px = 0.0f, float py = 0.0f, float pz = 0.0f)

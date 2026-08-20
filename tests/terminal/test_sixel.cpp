@@ -1,6 +1,6 @@
-#include "src/sixel.h"
+#include "src/terminal/sixel.h"
 
-#include "src/color.h"
+#include "src/terminal/color.h"
 #include "tests/sixel_test_util.h"
 #include "tests/test.h"
 
