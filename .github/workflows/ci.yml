@@ -21,7 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux — GCC
+          # Linux, GCC
           - {
               os: ubuntu-latest,
               label: gcc,
@@ -46,7 +46,7 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Linux — Clang
+          # Linux, Clang
           - {
               os: ubuntu-latest,
               label: clang,
@@ -71,7 +71,7 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Linux — dist (portable codegen + static libstdc++/libgcc; the release artifact).
+          # Linux, dist (portable codegen + static libstdc++/libgcc; the release artifact).
           # Linux-only: static-libstdc++ is a no-op on macOS and unsupported on MSVC. The
           # extra "Verify static link" step below asserts the binary's defining invariant.
           - {
@@ -92,7 +92,7 @@ jobs:
               portable: ON,
               static_libstdcxx: ON,
             }
-          # macOS — AppleClang (platform default; Debug×Portable=ON omitted — same flags as OFF)
+          # macOS, AppleClang (platform default; Debug x Portable=ON omitted, same flags as OFF)
           - {
               os: macos-latest,
               label: appleclang,
@@ -111,7 +111,7 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Windows — MSVC (multi-config VS generator; CMAKE_BUILD_TYPE ignored at configure time)
+          # Windows, MSVC (multi-config VS generator; CMAKE_BUILD_TYPE ignored at configure time)
           - {
               os: windows-latest,
               label: msvc,
@@ -163,19 +163,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux — GCC
+          # Linux, GCC
           - { os: ubuntu-latest, cxx: g++, target: release }
           - { os: ubuntu-latest, cxx: g++, target: portable }
           - { os: ubuntu-latest, cxx: g++, target: dist }
           - { os: ubuntu-latest, cxx: g++, target: debug }
           - { os: ubuntu-latest, cxx: g++, target: test }
-          # Linux — Clang
+          # Linux, Clang
           - { os: ubuntu-latest, cxx: clang++, target: release }
           - { os: ubuntu-latest, cxx: clang++, target: portable }
           - { os: ubuntu-latest, cxx: clang++, target: dist }
           - { os: ubuntu-latest, cxx: clang++, target: debug }
           - { os: ubuntu-latest, cxx: clang++, target: test }
-          # macOS — AppleClang (explicit clang++ avoids g++→clang symlink ambiguity)
+          # macOS, AppleClang (explicit clang++ avoids the g++ to clang symlink ambiguity)
           - { os: macos-latest, cxx: clang++, target: release }
           - { os: macos-latest, cxx: clang++, target: portable }
           - { os: macos-latest, cxx: clang++, target: debug }
@@ -225,7 +225,7 @@ jobs:
 
       # make `test` builds and runs the suite at -m32. ARCH_NATIVE= drops -march=native (it
       # conflicts with -m32 on a 64-bit host); the build system supplies -msse2 on x86-32.
-      # -j bounded to core count — the heavy LTO vendor TUs can OOM the runner otherwise.
+      # -j bounded to core count: the heavy LTO vendor TUs can OOM the runner otherwise.
       - name: make test (i686)
         if: matrix.kind == 'make'
         run: make test CXX='g++ -m32' CC='gcc -m32' ARCH_NATIVE= -j"$(nproc)"
@@ -285,7 +285,7 @@ jobs:
 
       # clang-tidy has no -j; fan the file list across cores with xargs -P (each
       # invocation re-parses one TU, so this scales near-linearly). All src TUs are
-      # linted — including the ktx2/webp vendor-header isolation wrappers, which pass
+      # linted, including the ktx2/webp vendor-header isolation wrappers, which pass
       # under the clang-analyzer suppressions already in .clang-tidy. A file failing
       # under --warnings-as-errors makes xargs exit non-zero (123).
       - name: Run clang-tidy (src)

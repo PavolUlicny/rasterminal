@@ -1,6 +1,6 @@
 # Vendored libraries
 
-Libraries are chosen for fit, not size, and vendored directly — a library may be a single header, a small source set, or a full vendored source subset, whatever the job warrants. Do not edit these files manually — they are formatting-disabled via `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
+Libraries are chosen for fit, not size, and vendored directly. One may be a single header, a small source set, or a full source subset, whatever the job warrants. Do not edit these files by hand: they are formatting-disabled through `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
 
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
@@ -77,7 +77,7 @@ git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
 For draco (decode-only glTF-bitstream subset, compiled via unity shim `draco_impl.cpp`):
 Draco ships no single-header form, so we vendor only the source files the decoder
 pulls. The subset is *derived mechanically* from an upstream checkout rather than
-hand-listed — regenerate it on every version bump:
+hand-listed, so regenerate it on every version bump:
 
 ```sh
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/google/draco.git /tmp/draco && cd /tmp/draco
@@ -110,7 +110,7 @@ For basis_universal (decode-only KTX2/Basis transcoder for `KHR_texture_basisu`)
 the whole `transcoder/` directory plus the bundled zstd *decode* amalgam (zstd ships inside
 the basis_universal repo). The transcoder is configured for decode in the
 `vendor/basisu/basisu_impl.cpp` shim (only `BASISD_SUPPORT_KTX2` + `BASISD_SUPPORT_KTX2_ZSTD`
-are set; the GPU block-format targets are left at upstream defaults — partial stripping does
+are set; the GPU block-format targets are left at upstream defaults, since partial stripping does
 not compile). The shim and the zstd C TU are built with blanket `-w` (they are large,
 unaudited TUs), wired per-source in both the Makefile and CMakeLists.txt.
 
@@ -119,18 +119,18 @@ TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/ba
 cp transcoder/*           /path/to/vendor/basisu/transcoder/
 cp zstd/zstd.h zstd/zstd_errors.h zstd/zstddeclib.c zstd/LICENSE  /path/to/vendor/basisu/zstd/
 cp LICENSE                /path/to/vendor/basisu/LICENSE          # Apache-2.0 (basisu)
-cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by Apache 2.0 4(d) — do not drop
+cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by Apache 2.0 4(d), do not drop
 git rev-parse HEAD        # record the commit SHA in the table above (both basisu + zstd rows)
 ```
 
 Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; if either
 license **or the NOTICE text** changed, update `THIRD_PARTY_NOTICES` (it reproduces the
-basis_universal NOTICE verbatim, so a NOTICE change there must be mirrored — it is not a
+basis_universal NOTICE verbatim, so a NOTICE change there must be mirrored; it is not a
 license change); then test: `make clean && make && make test`.
 
 For libwebp (decode-only subset for `EXT_texture_webp`): libwebp ships no single-header
 form, so we vendor only the source the decoder pulls. The set is *derived mechanically*
-from an upstream checkout — do NOT hand-maintain it; regenerate on every version bump.
+from an upstream checkout. Do NOT hand-maintain it; regenerate on every version bump.
 The `.c` files are listed individually in both build systems (a unity `#include` shim
 fails on duplicate file-local statics, e.g. `clip_8b`); the dsp SIMD variants self-gate on
 arch macros (`WEBP_USE_SSE2`/`SSE41`/`AVX2`/`NEON`), so no per-file SIMD flags are used.
