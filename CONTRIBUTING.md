@@ -16,7 +16,7 @@ cmake --build build --target check -j     # build and run the test suite
 
 The test binary is not part of the default build, so `cmake --build build` on its own gives you the viewer alone.
 
-The project is C++17 with no external dependencies (everything third-party is vendored under `vendor/`). You need CMake 3.16 or newer, a C++17 compiler (GCC, Clang and MSVC are all supported) and a C compiler for the vendored C sources (the zstd and miniz amalgams and the libwebp decode subset), which CMake picks up as `CMAKE_C_COMPILER`. The `--preset` commands need CMake 3.21. See the [Build section of the README](README.md#build) for the full set of build variants and platforms.
+The project is C++17 with no external dependencies (everything third-party is vendored under `vendor/`). You need CMake 3.22 or newer, a C++17 compiler (GCC, Clang and MSVC are all supported), and a C compiler for the vendored C sources (the Assimp zlib copy, zstd and miniz amalgams, and the libwebp decode subset), which CMake picks up as `CMAKE_C_COMPILER`. See the [Build section of the README](README.md#build) for the full set of build variants and platforms.
 
 ### Adding a source or test file
 

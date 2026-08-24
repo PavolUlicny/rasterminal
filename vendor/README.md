@@ -4,6 +4,7 @@ Libraries are chosen for fit, not size, and vendored directly. One may be a sing
 
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
+| Assimp | v6.0.5 | `392a658f9c271be965271f45e7521a1b80ea4392` | <https://github.com/assimp/assimp> | BSD-3-Clause plus bundled-component licenses |
 | stb_image | v2.30 | `31c1ad37456438565541f4919958214b6e762fb4` | <https://github.com/nothings/stb> | MIT / Unlicense (dual) |
 | cgltf | master (post-v1.15) | `85cd62382dfea638278962690cf515023f33ed00` | <https://github.com/jkuhlmann/cgltf> | MIT |
 | tinyply | 3.0 | `c9bb690dfe5e9105961e9e28120c48c9ae084bc6` | <https://github.com/ddiakopoulos/tinyply> | public domain |
@@ -17,6 +18,52 @@ Libraries are chosen for fit, not size, and vendored directly. One may be a sing
 | miniz (release amalgamation) | 3.1.2 | `77d0dce8627735138c51770d1799a1ef48f2117d` | <https://github.com/richgel999/miniz> | MIT |
 
 ## Refresh recipe
+
+Assimp comes from the tagged source archive. Keep the build and legal files plus
+`cmake-modules/`, `code/`, `contrib/` and `include/`. Copy only the paths below. The
+source root contains a `.clang-format` that would override `vendor/.clang-format`.
+Never copy `test/models-nonbsd/`, whose models have separate licenses.
+
+```sh
+TAG=v6.0.5
+ARCHIVE=/tmp/assimp-${TAG}.tar.gz
+SOURCE=/tmp/assimp-${TAG}
+curl -fL "https://github.com/assimp/assimp/archive/refs/tags/${TAG}.tar.gz" -o "$ARCHIVE"
+sha256sum "$ARCHIVE"
+mkdir "$SOURCE"
+tar -xzf "$ARCHIVE" --strip-components=1 -C "$SOURCE"
+rm -rf vendor/assimp
+mkdir vendor/assimp
+cp -a "$SOURCE"/{CMakeLists.txt,Build.md,CHANGES.md,CREDITS,LICENSE,Readme.md,SECURITY.md,assimp.pc.in} \
+      "$SOURCE"/{cmake-modules,code,contrib,include} vendor/assimp/
+rm -rf vendor/assimp/contrib/{android-cmake,draco,googletest,meshlab,tinyusdz,zip} \
+       vendor/assimp/contrib/zlib/contrib
+git ls-remote https://github.com/assimp/assimp.git "refs/tags/${TAG}"
+```
+
+Record the resolved tag commit and archive SHA-256. For v6.0.5 the archive is
+`edf3749559c2b7d1f758ffb66fc5bec62186221e623b7f2e8969f17ee46ecb6f`.
+Review the root and retained `contrib/` licenses. Update this table, README and
+`THIRD_PARTY_NOTICES`. Recheck every `ASSIMP_*` option because renamed options can restore
+disabled code or dependencies. Retained files must match upstream byte for byte. Tools,
+samples, tests and Draco depend on pruned directories. USD and VRML fetch source during
+configuration. Keep them disabled.
+
+Assimp builds as a static, import-only library. Exporters, tools, samples, tests,
+documentation, installation, Draco, M3D, USD, VRML and C4D are disabled. OBJ, PLY, STL
+and glTF remain native-only. A clean configure must report this importer set:
+
+```text
+Enabled:  AMF 3DS AC ASE ASSBIN B3D BVH COLLADA DXF CSM HMP IRRMESH IQM IRR LWO LWS
+          MD2 MD3 MD5 MDC MDL NFF NDO OFF OGRE OPENGEX MS3D COB BLEND IFC XGL FBX
+          Q3D Q3BSP RAW SIB SMD TERRAGEN 3D X X3D 3MF MMD
+Disabled: OBJ PLY STL USD GLTF
+```
+
+Inspect the final link graph. Assimp and `zlibstatic` must come from `vendor/assimp/`, with
+no system or downloaded dependency. The root CMake file works around zlib 1.2.13 treating
+Darwin Clang's `TARGET_OS_MAC` builtin as legacy Mac OS. Keep the workaround until that
+check disappears upstream.
 
 ```sh
 # Example: update cgltf to v1.16

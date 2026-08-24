@@ -12,7 +12,7 @@
 
 ![rasterminal spinning a model](assets/demo.gif)
 
-rasterminal renders 3D models on the CPU and draws them in your terminal in real time. It opens OBJ, PLY, STL and glTF files anywhere you have a terminal, over ssh included, with no display and no GPU.
+rasterminal renders 3D models on the CPU and draws them in your terminal in real time. Native loaders handle OBJ, PLY, STL and glTF. Assimp handles more than 40 other formats. It needs no display or GPU and works over ssh.
 
 ## Contents
 
@@ -57,7 +57,7 @@ curl -fsSL -o bunny.stl \
 ./build/rasterminal bunny.stl
 ```
 
-More test assets live in the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) repository; any `.glb`, `.gltf`, `.obj`, `.ply`, or `.stl` file works.
+More test assets live in the [Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets) repository. `.glb`, `.gltf`, `.obj`, `.ply`, and `.stl` use the dedicated loaders; the [supported formats](#supported-formats) section lists the compatibility formats.
 
 ## Gallery
 
@@ -105,7 +105,7 @@ Each release includes a `checksums.txt`; verify your download with `sha256sum -c
 
 CMake, on Linux, macOS and Windows, with GCC, Clang, AppleClang or MSVC. There is a release variant (`-march=native`, fastest on the build machine) and a portable one (no `-march=native`, runs on any CPU of the target architecture); every other speed flag (`-O3 -ffast-math -funroll-loops`, LTO and so on) applies to both. `dist` is the binary to ship: portable codegen plus statically linked libstdc++/libgcc, so it runs on older distros without a matching `GLIBCXX` symbol. glibc stays dynamic, so build it on the oldest distro you need to support.
 
-The configurations below are also available as presets (CMake ≥ 3.21):
+The build requires CMake 3.22 or newer. The configurations below are also available as presets:
 
 ```sh
 cmake --preset release      # or: portable | dist | debug | reldbg | clang
@@ -246,12 +246,15 @@ Only one key moves you at a time, so there is no diagonal flight: you cannot hol
 
 ## Supported formats
 
-| Format | Notes |
-| --- | --- |
-| OBJ / MTL | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
-| PLY | ASCII and binary (LE/BE); vertex and face colors |
-| STL | ASCII and binary; the format's conventional Z-up orientation is remapped so models load upright. ASCII files are rejected if any single line exceeds 64 KB (a malformed-input guard; the format puts one short statement per line) |
-| glTF 2.0 | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
+| Format | Loader | Notes |
+| --- | --- | --- |
+| OBJ / MTL | Native | Triangles, quads, n-gons; diffuse (`map_Kd`), specular (`map_Ks`), and normal (`map_Bump` / `norm`) maps |
+| PLY | Native | ASCII and binary (LE/BE); vertex and face colors |
+| STL | Native | ASCII and binary; the format's conventional Z-up orientation is remapped so models load upright. ASCII files are rejected if any single line exceeds 64 KB (a malformed-input guard; the format puts one short statement per line) |
+| glTF 2.0 | Native | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
+| AMF, 3DS, AC, ASE, Assbin, B3D, BVH, Collada, DXF, CSM, HMP, IrrMesh, IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX, MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen, Unreal 3D, DirectX X, X3D, 3MF, MMD | Assimp fallback | Static meshes, scene transforms, triangulation, generated normals, two UV sets, vertex colors, common material factors, and the first common texture of each supported role |
+
+Native extensions never fall back to Assimp after a parse failure. The fallback accepts only extensions advertised by the bundled build. It imports static geometry, flattens scene transforms and instances, and discards animation, skinning, cameras, lights and format-specific metadata. It maps common material properties and the first texture for each role. Separate metallic and roughness images remain scalar factors. `--smooth-angle 180` is capped to Assimp's 175-degree limit.
 
 ## Requirements
 
@@ -279,6 +282,7 @@ Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 
 | Library | Version | License | Use |
 | --- | --- | --- | --- |
+| [Assimp](https://github.com/assimp/assimp) | v6.0.5 | BSD-3-Clause plus bundled-component licenses | Import-only fallback for formats without a native loader |
 | [cgltf](https://github.com/jkuhlmann/cgltf) | master (post-v1.15) | MIT | glTF / GLB parsing |
 | [stb_image](https://github.com/nothings/stb) | v2.30 | MIT / Unlicense | Image loading |
 | [stl_reader](https://github.com/sreiter/stl_reader) | v2.0 | BSD-2 | STL parsing |

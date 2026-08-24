@@ -55,6 +55,16 @@ ASCII files are rejected if any single line exceeds 64 KB (a malformed\-input gu
 .TP
 .B .gltf, .glb
 glTF 2.0 (PBR materials, textures, node transforms).
+.TP
+.B Other formats through Assimp
+AMF, 3DS, AC, ASE, Assbin, B3D, BVH, Collada, DXF, CSM, HMP, IrrMesh,
+IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX,
+MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen,
+Unreal 3D, DirectX X, X3D, 3MF and MMD.
+The fallback imports static geometry and common materials and textures.
+It flattens scene transforms and does not retain animation, skinning, cameras,
+lights or format-specific metadata. Native extensions are never retried through
+Assimp.
 .SH OPTIONS
 .SS Initial state
 .TP
@@ -204,6 +214,7 @@ above it they hard-edge. Default
 is faceted,
 .B 180
 is fully smooth. Ignored when an OBJ authors smoothing groups.
+Assimp-backed formats cap this setting at Assimp's 175-degree maximum.
 .TP
 .BI \-\-color " mode"
 Color output:
