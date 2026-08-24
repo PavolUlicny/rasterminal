@@ -4,6 +4,10 @@
 -DMINIZ_NO_STDIO
 -DMINIZ_NO_ARCHIVE_APIS
 -isystem
+tooling/assimp-config
+-isystem
+vendor/assimp/include
+-isystem
 vendor/cgltf
 -isystem
 vendor/meshoptimizer/src

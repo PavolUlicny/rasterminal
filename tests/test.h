@@ -42,6 +42,10 @@ static inline int test_fileno(std::FILE *f)
 {
     return _fileno(f);
 }
+static inline int test_seek(int fd, long offset, int whence)
+{
+    return _lseek(fd, offset, whence);
+}
 static const int TEST_STDOUT = 1;
 static const int TEST_STDERR = 2;
 #else
@@ -62,6 +66,10 @@ static inline void test_close(int fd)
 static inline int test_devnull()
 {
     return open("/dev/null", O_WRONLY);
+}
+static inline int test_seek(int fd, long offset, int whence)
+{
+    return static_cast<int>(lseek(fd, offset, whence));
 }
 static inline int test_fileno(std::FILE *f)
 {

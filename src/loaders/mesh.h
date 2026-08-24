@@ -30,12 +30,10 @@ struct Mesh
     std::vector<vec3> tangents;      // per-vertex tangents; always vertices.size() after load_model()
     std::vector<vec3> vertex_colors; // per-vertex RGB; populated only when has_vertex_colors is true
     std::vector<float> vertex_alpha; // per-vertex opacity (COLOR_0 / PLY alpha); only when has_vertex_alpha
-    std::vector<vec2> uv1;           // second UV set (glTF TEXCOORD_1); parallel, populated only when has_uv1
-    bool has_vertex_colors = false;  // true when any loader populates vertex_colors (PLY, OBJ, glTF COLOR_0)
+    std::vector<vec2> uv1;           // second UV set; parallel, populated only when has_uv1
+    bool has_vertex_colors = false;  // true when a loader populates the parallel vertex_colors array
     bool has_vertex_alpha = false;   // true when any loader populates per-vertex alpha (transparent path only)
-    bool has_uv1 = false;            // true when glTF TEXCOORD_1 is present AND referenced by some texture's texCoord;
-                                     // when set, uv1.size() == vertices.size() and a uv_set==1 texture binding exists
-                                     // (otherwise the loader drops uv1 and forces every TexSlot::uv_set back to 0)
+    bool has_uv1 = false;            // true when a texture uses UV set 1; uv1 stays parallel to vertices
     bool has_transparent = false;    // true if any material blends OR any vertex is translucent; gates the
                                      // transparent render passes. When set, opaque_count MUST be valid: the
                                      // render passes trust the range split and do NOT re-test per triangle.
@@ -60,7 +58,8 @@ struct Mesh
         return (idx >= 0 && idx < static_cast<int>(textures.size())) ? &textures[static_cast<size_t>(idx)] : nullptr;
     }
 
-    // Dispatch loader: picks load_obj, load_ply, or load_stl based on file extension.
+    // Dispatch loader: native loaders own OBJ, PLY, STL, and glTF/GLB. Other extensions
+    // advertised by the vendored Assimp build use the compatibility fallback.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
     // crease_angle_deg is the smoothing threshold used when a file provides no normals:
     // adjacent faces are smoothed together below this angle and hard-edged above it.
@@ -97,6 +96,9 @@ struct Mesh
     // forwarded to compute_normals() when the file has no normals.
     // Returns false on failure.
     bool load_gltf(const std::string &path, int n_threads = 1, float crease_cos = -1.0f);
+
+    // Compatibility loader for non-native formats. Native-load failures are not retried here.
+    bool load_assimp(const std::string &path, int n_threads = 1, float crease_angle_deg = 60.0f);
 
   private:
     // Compute smooth per-vertex normals, splitting vertices across hard edges. crease_cos

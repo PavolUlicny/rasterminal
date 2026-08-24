@@ -1,6 +1,8 @@
 #include "tests/inline_bmp.h"
 #include "tests/loader_util.h"
 
+#include <string>
+
 // HAND-CRAFTED VALID PLY
 
 TEST(ply_valid, ascii_minimal_triangle)
@@ -313,6 +315,199 @@ TEST(reject, ply_no_end_header)
                                                 "property float x\n"
     );
     assert_rejects(t.path);
+}
+
+// tinyply otherwise treats this unknown format as ASCII.
+TEST(reject, ply_unknown_format_token)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_badformat.ply"), "ply\n"
+                                                    "format bogus_nonsense 1.0\n"
+                                                    "element vertex 3\n"
+                                                    "property float x\n"
+                                                    "property float y\n"
+                                                    "property float z\n"
+                                                    "element face 1\n"
+                                                    "property list uchar int vertex_indices\n"
+                                                    "end_header\n"
+                                                    "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+// NumPy byte-order spellings are not PLY formats.
+TEST(reject, ply_abbreviated_binary_format_token)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_abbrevformat.ply"), "ply\n"
+                                                       "format binary_< 1.0\n"
+                                                       "element vertex 3\n"
+                                                       "property float x\n"
+                                                       "property float y\n"
+                                                       "property float z\n"
+                                                       "element face 1\n"
+                                                       "property list uchar int vertex_indices\n"
+                                                       "end_header\n"
+                                                       "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+// A missing format must not default to ASCII.
+TEST(reject, ply_no_format_line)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_noformat.ply"), "ply\n"
+                                                   "element vertex 3\n"
+                                                   "property float x\n"
+                                                   "property float y\n"
+                                                   "property float z\n"
+                                                   "element face 1\n"
+                                                   "property list uchar int vertex_indices\n"
+                                                   "end_header\n"
+                                                   "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+// Match tinyply's permissive header rules outside the format token.
+TEST(reject, ply_uppercase_format_keyword)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_upperkw.ply"), "ply\n"
+                                                  "FORMAT ascii 1.0\n"
+                                                  "element vertex 3\n"
+                                                  "property float x\n"
+                                                  "property float y\n"
+                                                  "property float z\n"
+                                                  "element face 1\n"
+                                                  "property list uchar int vertex_indices\n"
+                                                  "end_header\n"
+                                                  "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    assert_rejects(t.path);
+}
+
+// Long comments before the format line remain valid.
+TEST(ply_valid, format_line_far_into_a_long_header)
+{
+    std::string ply = "ply\n";
+    while (ply.size() < size_t{ 80 } * 1024)
+    {
+        ply += "comment padding line filler filler filler filler filler\n";
+    }
+    ply += "format ascii 1.0\n"
+           "element vertex 3\n"
+           "property float x\n"
+           "property float y\n"
+           "property float z\n"
+           "element face 1\n"
+           "property list uchar int vertex_indices\n"
+           "end_header\n"
+           "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n";
+    TmpFile t(tmp_path("rasterminal_test_longheader.ply"), ply);
+    ASSERT_EQ(load_ok(t.path).triangles.size(), size_t(1));
+}
+
+TEST(ply_valid, uppercase_magic_is_accepted)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_uppermagic.ply"), "PLY\n"
+                                                     "format ascii 1.0\n"
+                                                     "element vertex 3\n"
+                                                     "property float x\n"
+                                                     "property float y\n"
+                                                     "property float z\n"
+                                                     "element face 1\n"
+                                                     "property list uchar int vertex_indices\n"
+                                                     "end_header\n"
+                                                     "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    ASSERT_EQ(load_ok(t.path).triangles.size(), size_t(1));
+}
+
+TEST(ply_valid, format_line_after_an_unknown_header_field)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_junkkw.ply"), "ply\n"
+                                                 "something unknown\n"
+                                                 "format ascii 1.0\n"
+                                                 "element vertex 3\n"
+                                                 "property float x\n"
+                                                 "property float y\n"
+                                                 "property float z\n"
+                                                 "element face 1\n"
+                                                 "property list uchar int vertex_indices\n"
+                                                 "end_header\n"
+                                                 "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    ASSERT_EQ(load_ok(t.path).triangles.size(), size_t(1));
+}
+
+TEST(ply_valid, format_line_out_of_spec_order)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_outoforder.ply"), "ply\n"
+                                                     "element vertex 3\n"
+                                                     "property float x\n"
+                                                     "property float y\n"
+                                                     "property float z\n"
+                                                     "format ascii 1.0\n"
+                                                     "element face 1\n"
+                                                     "property list uchar int vertex_indices\n"
+                                                     "end_header\n"
+                                                     "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    ASSERT_EQ(load_ok(t.path).triangles.size(), size_t(1));
+}
+
+TEST(ply_valid, byte_order_mark_before_the_magic)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_bom.ply"), "\xEF\xBB\xBF"
+                                              "ply\n"
+                                              "format ascii 1.0\n"
+                                              "element vertex 3\n"
+                                              "property float x\n"
+                                              "property float y\n"
+                                              "property float z\n"
+                                              "element face 1\n"
+                                              "property list uchar int vertex_indices\n"
+                                              "end_header\n"
+                                              "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n"
+    );
+    ASSERT_EQ(load_ok(t.path).triangles.size(), size_t(1));
+}
+
+TEST(reject, ply_format_line_without_a_token)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_emptyformat.ply"), "ply\n"
+                                                      "format\n"
+                                                      "element vertex 0\n"
+                                                      "end_header\n"
+    );
+    assert_rejects(t.path);
+}
+
+// Comments and CRLF must not hide the format line.
+TEST(ply_valid, ascii_format_line_after_a_comment_with_crlf)
+{
+    TmpFile t(
+        tmp_path("rasterminal_test_crlfformat.ply"), "ply\r\n"
+                                                     "comment written by a test\r\n"
+                                                     "format ascii 1.0\r\n"
+                                                     "element vertex 3\r\n"
+                                                     "property float x\r\n"
+                                                     "property float y\r\n"
+                                                     "property float z\r\n"
+                                                     "element face 1\r\n"
+                                                     "property list uchar int vertex_indices\r\n"
+                                                     "end_header\r\n"
+                                                     "0 0 0\r\n1 0 0\r\n0 1 0\r\n3 0 1 2\r\n"
+    );
+    const Mesh m = load_ok(t.path);
+    ASSERT_EQ(m.triangles.size(), size_t(1));
 }
 
 TEST(reject, ply_unknown_property_type)

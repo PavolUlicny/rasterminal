@@ -706,7 +706,7 @@ int main(int argc, char *argv[])
         std::fprintf(
             stderr,
             "%s: failed to load '%s'\n"
-            "Supported formats: .obj, .ply, .stl, .gltf, .glb\n",
+            "Native formats: .obj, .ply, .stl, .gltf, .glb; see --help for fallback formats\n",
             program_name(argv[0]), args.model_path.c_str()
         );
         return 1;

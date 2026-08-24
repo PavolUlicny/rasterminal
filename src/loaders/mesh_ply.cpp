@@ -8,7 +8,9 @@
 #include <cstring>
 #include <fstream>
 #include <ios>
+#include <istream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -31,6 +33,40 @@
 
 namespace
 {
+
+    // tinyply treats every unknown format as ASCII. Reject it before tinyply parses the
+    // body, but retain tinyply's permissive handling of the rest of the header.
+    bool has_supported_format(std::istream &is)
+    {
+        std::string line;
+        for (;;)
+        {
+            if (!std::getline(is, line))
+            {
+                return false;
+            }
+            std::istringstream ls(line);
+            std::string keyword;
+            if (!(ls >> keyword))
+            {
+                continue;
+            }
+            if (keyword == "end_header")
+            {
+                return false;
+            }
+            if (keyword != "format")
+            {
+                continue;
+            }
+            std::string format;
+            if (!(ls >> format))
+            {
+                return false;
+            }
+            return format == "ascii" || format == "binary_little_endian" || format == "binary_big_endian";
+        }
+    }
 
     float rd_f(const uint8_t *buf, tinyply::Type t, size_t i)
     {
@@ -213,6 +249,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     {
         return false;
     }
+
+    if (!has_supported_format(ss))
+    {
+        return false;
+    }
+    ss.clear();
+    ss.seekg(0);
 
     tinyply::PlyFile file;
     try
