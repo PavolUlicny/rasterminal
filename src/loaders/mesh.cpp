@@ -86,6 +86,10 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         {
             ok = load_gltf(path, n_threads, crease_cos);
         }
+        else
+        {
+            ok = load_assimp(path, n_threads, crease_angle_deg);
+        }
 
         if (!ok)
         {
@@ -119,7 +123,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             return false;
         }
         // The second UV set reaches the same sampler, so it needs the same guard. Separate scan
-        // because it is a parallel array that only glTF populates.
+        // because it is a parallel array populated by glTF and compatible fallback formats.
         if (std::any_of(
                 uv1.begin(), uv1.end(), [](const vec2 &t) { return !std::isfinite(t.x) || !std::isfinite(t.y); }
             ))
@@ -516,11 +520,10 @@ void Mesh::compute_tangents()
 {
     tangents.assign(vertices.size(), vec3{});
 
-    // Tangents must be built from the UV set the normal map samples (glTF spec). This is
-    // well-defined per vertex even with mixed UV sets: glTF primitives never share vertices
-    // across our merged array and glTF passes no weld to compute_normals, so every triangle
-    // incident to a vertex carries one material (hence one normal-map set) and the
-    // accumulation never mixes sets at a vertex. uv1 is null for every non-glTF format.
+    // Tangents must be built from the UV set the normal map samples. This is well-defined per
+    // vertex even with mixed UV sets: loaders do not share vertices across primitives or meshes
+    // with different material bindings, so every triangle incident to a vertex carries one
+    // material and normal-map set. The accumulation therefore never mixes sets at a vertex.
     const vec2 *p_uv1 = has_uv1 ? uv1.data() : nullptr;
 
     // Accumulate tangent vectors from each triangle's UV layout.

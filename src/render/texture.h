@@ -42,8 +42,8 @@ inline void prefetch_line([[maybe_unused]] const void *p) noexcept
 }
 
 // How out-of-[0,1] UV coordinates fold back into the texture. Closed set: glTF defines
-// exactly these three, MTL only Repeat/Clamp, PLY/STL none. Default Repeat keeps every
-// loader that does not set it (and all historical output) unchanged.
+// exactly these three, MTL only Repeat/Clamp, and Assimp maps its common modes here.
+// Default Repeat keeps every loader that does not set it (and all historical output) unchanged.
 enum class WrapMode : uint8_t
 {
     Repeat,

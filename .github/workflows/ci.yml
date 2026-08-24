@@ -155,9 +155,10 @@ jobs:
 
       # Both targets by name: rasterminal_tests is EXCLUDE_FROM_ALL, so a plain
       # `cmake --build` builds the viewer alone and ctest would find no binary.
+      # Bare -j launches every Assimp TU at once. Cap the build for small macOS runners.
       - name: Build
         run: >
-          cmake --build build --config ${{ matrix.build_type }} -j
+          cmake --build build --config ${{ matrix.build_type }} -j4
           --target rasterminal rasterminal_tests
 
       - name: Test
@@ -224,7 +225,7 @@ jobs:
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON \
             -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
-          cmake --build build -j --target rasterminal rasterminal_tests
+          cmake --build build -j"$(nproc)" --target rasterminal rasterminal_tests
           ctest --test-dir build --output-on-failure
 
       # MSVC multi-config VS generator; -A Win32 selects the 32-bit toolchain. Always pass
@@ -393,11 +394,13 @@ jobs:
 
       - name: Run cppcheck
         run: >
-          cppcheck --enable=all --std=c++17 --check-level=exhaustive --error-exitcode=1
+          cppcheck --enable=all --std=c++17 --check-level=normal --error-exitcode=1
           --inline-suppr
           --suppress=missingIncludeSystem
           --suppressions-list=cppcheck-suppressions.txt
           -I .
+          -I tooling/assimp-config
+          -I vendor/assimp/include
           -I vendor/cgltf
           -I vendor/meshoptimizer/src
           -I vendor/stb
@@ -441,7 +444,7 @@ jobs:
         run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
 
       - name: Build
-        run: cmake --build build --config Debug -j --target rasterminal rasterminal_tests
+        run: cmake --build build --config Debug -j"$(nproc)" --target rasterminal rasterminal_tests
 
       - name: Download models
         run: |

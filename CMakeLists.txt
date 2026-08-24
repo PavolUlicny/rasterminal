@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.22)
 # C is enabled for the vendored zstd decode amalgam (vendor/basisu/zstd/zstddeclib.c),
 # used by the basisu transcoder for KTX2 Zstd supercompression.
 project(rasterminal CXX C)
@@ -104,6 +104,51 @@ endforeach()
 set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
   PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
+
+# Static, import-only fallback for formats without native loaders. OBJ, PLY, STL, and
+# glTF remain native-only. The function keeps Assimp's ordinary variables out of the
+# parent scope. It must precede the directory-wide MINIZ_NO_* definitions.
+function(rasterminal_add_assimp)
+  set(BUILD_SHARED_LIBS OFF)
+  set(ASSIMP_HUNTER_ENABLED OFF)
+  set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT ON)
+  set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF)
+  set(ASSIMP_DOUBLE_PRECISION OFF)
+  set(ASSIMP_NO_EXPORT ON)
+  set(ASSIMP_BUILD_ASSIMP_TOOLS OFF)
+  set(ASSIMP_BUILD_SAMPLES OFF)
+  set(ASSIMP_BUILD_TESTS OFF)
+  set(ASSIMP_BUILD_DOCS OFF)
+  set(ASSIMP_INSTALL OFF)
+  set(ASSIMP_WARNINGS_AS_ERRORS OFF)
+  set(ASSIMP_BUILD_USE_CCACHE OFF)
+  set(ASSIMP_INJECT_DEBUG_POSTFIX OFF)
+  set(ASSIMP_IGNORE_GIT_HASH ON)
+  set(ASSIMP_BUILD_ZLIB ON)
+  set(ZLIB_FOUND FALSE)
+  set(ASSIMP_BUILD_DRACO OFF)
+  set(ASSIMP_BUILD_NONFREE_C4D_IMPORTER OFF)
+  set(ASSIMP_BUILD_M3D_IMPORTER OFF)
+  set(ASSIMP_BUILD_USD_IMPORTER OFF)
+  set(ASSIMP_BUILD_VRML_IMPORTER OFF)
+  set(ASSIMP_BUILD_OBJ_IMPORTER OFF)
+  set(ASSIMP_BUILD_PLY_IMPORTER OFF)
+  set(ASSIMP_BUILD_STL_IMPORTER OFF)
+  set(ASSIMP_BUILD_GLTF_IMPORTER OFF)
+  add_subdirectory(vendor/assimp EXCLUDE_FROM_ALL)
+  # A future global IPO setting must not reach vendored code.
+  set_property(TARGET assimp PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
+  set_property(TARGET zlibstatic PROPERTY INTERPROCEDURAL_OPTIMIZATION FALSE)
+  # zlib 1.2.13 mistakes Clang's TARGET_OS_MAC builtin for legacy Mac OS and breaks fdopen.
+  if(APPLE AND CMAKE_C_COMPILER_ID MATCHES "Clang")
+    include(CheckCCompilerFlag)
+    check_c_compiler_flag(-fno-define-target-os-macros RASTERMINAL_HAS_NO_TARGET_OS_MACROS)
+    if(RASTERMINAL_HAS_NO_TARGET_OS_MACROS)
+      target_compile_options(zlibstatic PRIVATE -fno-define-target-os-macros)
+    endif()
+  endif()
+endfunction()
+rasterminal_add_assimp()
 # miniz configuration at directory scope so every TU that includes miniz.h sees one
 # uniform set (mixed config on a shared header is the same footgun as _FILE_OFFSET_BITS):
 # NO_ZLIB_COMPATIBLE_NAMES drops the zlib-name compatibility layer (Z_* macros plus,
@@ -333,6 +378,7 @@ add_executable(rasterminal
   src/loaders/mesh_ply.cpp
   src/loaders/mesh_stl.cpp
   src/loaders/mesh_gltf.cpp
+  src/loaders/mesh_assimp.cpp
   src/loaders/draco_decode.cpp
   src/render/camera.cpp
   src/render/rasterize.cpp
@@ -351,6 +397,7 @@ add_executable(rasterminal
 # the C TUs are no longer sources of this target; they build in rasterminal_c.
 target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(rasterminal PRIVATE
+  assimp::assimp
   rasterminal_vendor
   rasterminal_warnings
   rasterminal_release_opts
@@ -409,6 +456,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
+    tests/loaders/test_assimp.cpp
     tests/loaders/test_gltf.cpp
     tests/loaders/test_gltf_topology.cpp
     tests/loaders/test_gltf_vertex_colors.cpp
@@ -451,6 +499,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/loaders/mesh_ply.cpp
     src/loaders/mesh_stl.cpp
     src/loaders/mesh_gltf.cpp
+    src/loaders/mesh_assimp.cpp
     src/loaders/draco_decode.cpp
     src/render/texture.cpp
     src/loaders/ktx2_decode.cpp
@@ -471,6 +520,7 @@ if(RASTERMINAL_BUILD_TESTS)
   # (which stay at tests/ root while sources nest under tests/<subsystem>/).
   target_include_directories(rasterminal_tests PRIVATE ${PROJECT_SOURCE_DIR})
   target_link_libraries(rasterminal_tests PRIVATE
+    assimp::assimp
     rasterminal_vendor
     rasterminal_warnings
     rasterminal_test_opts

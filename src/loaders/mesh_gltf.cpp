@@ -1,5 +1,6 @@
 #include "src/loaders/mesh.h"
 #include "src/loaders/draco_decode.h"
+#include "src/loaders/image_sniff.h"
 #include "src/loaders/mesh_loader.h"
 #include "src/math/light.h"
 #include "src/math/linalg.h"
@@ -84,21 +85,6 @@ namespace
             r = r * (1.0f / len);
         }
         return r;
-    }
-
-    // The 12-byte KTX2 file identifier. KHR_texture_basisu images are KTX2 containers,
-    // which stb_image cannot decode; they are routed to the basisu transcoder instead.
-    bool is_ktx2(const uint8_t *data, size_t size)
-    {
-        static const uint8_t magic[12] = { 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A };
-        return data && size >= sizeof(magic) && std::memcmp(data, magic, sizeof(magic)) == 0;
-    }
-
-    // The WebP RIFF container signature: "RIFF" at byte 0 and "WEBP" at byte 8. EXT_texture_webp
-    // images are WebP, which stb_image cannot decode; they are routed to libwebp instead.
-    bool is_webp(const uint8_t *data, size_t size)
-    {
-        return data && size >= 12 && std::memcmp(data, "RIFF", 4) == 0 && std::memcmp(data + 8, "WEBP", 4) == 0;
     }
 
     // Read an entire file into out. Returns false (out untouched) on any error. Used to
