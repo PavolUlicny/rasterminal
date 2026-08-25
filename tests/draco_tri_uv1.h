@@ -2,13 +2,9 @@
 
 #include <cstddef>
 
-// Tiny real Draco bitstream used by tests/test_gltf_draco.cpp for the TEXCOORD_1 path.
-//
-// One triangle (3 unshared verts / 1 face) carrying two TEX_COORD attributes, encoded
-// with the vendored-version Draco encoder (TriangleSoupMeshBuilder, 16-bit position/uv
-// quantization). Encoder-assigned unique-ids: POSITION->0, TEXCOORD_0->1, TEXCOORD_1->2
-// (verified at mint time). uv0 = (0,0)(1,0)(0.5,1); uv1 = (0.2,0.3)(0.8,0.3)(0.5,0.9).
-// Vendoring the bytes keeps the repo model-file-free, matching draco_cube_bitstream.h.
+// Draco triangle with two UV sets, encoded at 16-bit position/UV quantization.
+// IDs: POSITION=0, TEXCOORD_0=1, TEXCOORD_1=2.
+// uv0=(0,0)(1,0)(0.5,1); uv1=(0.2,0.3)(0.8,0.3)(0.5,0.9).
 inline constexpr unsigned char kDracoTriUv1[] = {
     0x44, 0x52, 0x41, 0x43, 0x4f, 0x02, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x03, 0x01, 0x02, 0x01, 0x00, 0x00, 0x01,
     0x07, 0xff, 0x01, 0x11, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x03, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,

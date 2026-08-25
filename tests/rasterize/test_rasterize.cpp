@@ -696,9 +696,7 @@ TEST(rasterize, winding_agnostic_cw_also_draws)
 
 TEST(rasterize, color_above_one_rolls_off_below_255)
 {
-    // An HDR-overflow colour (2,2,2) no longer hard-clips to (255,255,255): the lit path runs it
-    // through the soft-knee tonemap, which asymptotes toward but never reaches 1.0. tonemap(2.0) =
-    // 0.7 + 0.3*(1 - exp(-1.3/0.3)) = 0.99606 -> 253.
+    // Soft-knee tonemapping maps 2.0 to 0.99606, or 253, instead of clipping to 255.
     Framebuffer fb(40, 20, /*headless=*/true);
     vec3 hot{ 2.0f, 2.0f, 2.0f };
     rast_colored(
@@ -745,7 +743,6 @@ TEST(draw_line, negative_slope)
 {
     // From (1,7) to (7,1): dx=+6, dy=−6, steps=6, sx=+1.0, sy=−1.0.
     // Anti-diagonal: (1,7),(2,6),(3,5),(4,4),(5,3),(6,2),(7,1).
-    // First test with negative sy; all prior tests have sy ≥ 0.
     Framebuffer fb(20, 10, /*headless=*/true);
     draw_line(fb, { 1.0f, 7.0f, 0.5f }, { 7.0f, 1.0f, 0.5f }, Color{ 255, 255, 255 });
     for (int i = 0; i <= 6; ++i)
@@ -809,11 +806,8 @@ TEST(rasterize_phong, entirely_off_screen_no_crash)
 
 TEST(rasterize, bbox_clamps_all_four_edges)
 {
-    // Triangle extends past all four screen edges simultaneously:
-    //   x: ⌊-5⌋=−5 → clamps x0=0; ⌈25⌉=25 → clamps x1=19
-    //   y: ⌊-5⌋=−5 → clamps y0=0; ⌈25⌉=25 → clamps y1=19
-    // Pixel (10,5) lies inside the triangle (at y=5 the span is x≈[0,20]) and
-    // within the framebuffer, must be drawn without OOB write.
+    // Clamp a triangle crossing all four edges to [0,19] on both axes. Interior
+    // pixel (10,5) must draw without an out-of-bounds write.
     Framebuffer fb(20, 20, /*headless=*/true);
     rast(fb, { -5.0f, -5.0f, 0.5f }, { 25.0f, -5.0f, 0.5f }, { 10.0f, 25.0f, 0.5f }, 0, fb.height() - 1);
     ASSERT_TRUE(was_drawn(fb, 10, 5));
@@ -909,17 +903,9 @@ TEST(tri_covers_no_pixel, separates_a_covering_triangle_from_a_sub_pixel_one)
     ASSERT_TRUE(tri_covers_no_pixel(oa, ob, oc, 40, 20));
 }
 
-// A pixel is lit if and only if its CENTRE is inside the triangle. Checked against
-// double-precision edge functions rather than against another rasterizer, so it pins the
-// property itself and not an agreement between two implementations that could drift together.
-//
-// This is the invariant behind evaluating each barycentric at the pixel (`row0 + ry*dy + rx*dx`)
-// instead of carrying it along the row by repeated addition. Accumulating drifts ~100 ulps over a
-// few hundred pixels, and on an edge nearly parallel to a scanline (|dx| ~ 3e-7 per pixel) that
-// moves the apparent edge by more than ten pixels: the triangle bled over whatever was behind it,
-// and coverage depended on where the row-span skip started the walk, which punched holes. The
-// triangle below is deliberately long (past the x = 271 where the drift was first measured) and
-// shallow, so a reintroduced accumulation shows up here.
+// Compare pixel-center coverage with independent double-precision edge functions.
+// The long, shallow triangle exposes repeated-addition drift that can move a nearly
+// horizontal edge by several pixels; direct barycentric evaluation must remain stable.
 TEST(rasterize, coverage_follows_the_pixel_centre_on_a_near_horizontal_edge)
 {
     constexpr int W = 320;

@@ -171,12 +171,8 @@ TEST(text, sanitize_controls_replaces_every_listed_format_control)
 
 TEST(text, sanitize_controls_replaces_bidi_and_zero_width)
 {
-    // U+202E (right-to-left override) reverses everything after it, the classic filename
-    // spoofing trick; U+200B is invisible. Neither may reach the bar.
-    //
-    // The U+202E bytes are joined at run time rather than written as one literal: a single
-    // literal holding them would make THIS FILE display misleadingly in an editor, which is
-    // exactly what the check that flags it is for.
+    // Strip invisible U+200B and spoofing U+202E. Build U+202E at runtime so this
+    // source file cannot itself display misleadingly in an editor.
     const std::string rlo = std::string("a") + "\xe2" + "\x80" + "\xae" + "b";
     ASSERT_TRUE(sanitize_controls(rlo) == "a???b");
     ASSERT_TRUE(
@@ -271,10 +267,7 @@ TEST(text, display_width_emoji_presentation_selector_adds_a_column)
 
 TEST(text, display_width_marks_inside_wide_ranges_are_zero)
 {
-    // The coarse Wide ranges swallow a few nonspacing marks, which ZERO has to win back: these
-    // attach to the preceding syllable and add no column. Counting them wide leaves the bar
-    // short of the right edge, which is visible wherever the terminal does not repaint the row
-    // background for us.
+    // ZERO must override coarse Wide ranges for nonspacing marks that add no column.
     ASSERT_EQ(display_width("\xe3\x82\x9a"), static_cast<size_t>(0)); // U+309A kana semi-voiced
     ASSERT_EQ(display_width("\xe3\x80\xaa"), static_cast<size_t>(0)); // U+302A CJK tone mark
     // A kana syllable plus its voiced-sound mark is one 2-column glyph, not two.
@@ -283,12 +276,8 @@ TEST(text, display_width_marks_inside_wide_ranges_are_zero)
 
 TEST(text, display_width_regional_indicators_round_up_to_two_each)
 {
-    // A flag is two regional indicators, and terminals genuinely disagree about it: one that
-    // clusters them draws a single 2-column flag, one that does not draws two boxed letters in
-    // four columns. Charging each indicator its full two columns is exact for the second and
-    // two columns wide for the first, which is the direction this file rounds. (An earlier
-    // version charged the pair 2 and under-measured on every non-clustering terminal, which is
-    // the failure that clips the reading.)
+    // Terminals render two regional indicators as either one two-column flag or two
+    // two-column letters. Charge four columns, preferring harmless overestimation.
     const std::string ri_a = "\xf0\x9f\x87\xa6"; // U+1F1E6
     const std::string ri_u = "\xf0\x9f\x87\xba"; // U+1F1FA
     ASSERT_EQ(display_width(ri_a), static_cast<size_t>(2));

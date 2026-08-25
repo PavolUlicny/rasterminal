@@ -2,15 +2,11 @@
 
 #include <utility>
 
-// KHR_materials_unlit rendering
-// Unlit materials bypass lighting/ambient/emissive and output
-// baseColor * diffuse texture * vertex color directly, regardless of the active
-// shading mode. The unit triangle's centre pixel (20,10) maps to world (0,0,0).
+// Unlit output is baseColor * texture * vertex color. The unit triangle covers pixel (20,10).
 
 namespace
 {
 
-    // A front-facing unit triangle whose single material is unlit with the given base colour.
     Mesh make_unlit_triangle(vec3 diffuse)
     {
         Mesh m = make_unit_triangle();
@@ -20,9 +16,7 @@ namespace
         return m;
     }
 
-    // Two front-facing triangles in disjoint screen regions: the left one (centroid
-    // ≈ pixel (15,10)) uses an unlit blue material, the right one (≈ (25,10)) a lit red
-    // material. Exercises the per-triangle unlit gate when has_unlit is mesh-wide true.
+    // Disjoint unlit-blue and lit-red triangles exercise the per-triangle material gate.
     Mesh make_mixed_mesh()
     {
         Mesh m;
@@ -76,7 +70,6 @@ namespace
 
 } // namespace
 
-// Base colour reaches the framebuffer unmodified by the light or ambient term.
 TEST(renderer_unlit, outputs_base_color_ignoring_light)
 {
     Renderer r(1);
@@ -90,8 +83,6 @@ TEST(renderer_unlit, outputs_base_color_ignoring_light)
     assert_pixel_near(fb, 20, 10, Color{ 51, 102, 153 }, 1);
 }
 
-// Different light directions/colours and ambient all yield the same unlit pixel; a
-// lit (non-unlit) control with the same base colour renders differently.
 TEST(renderer_unlit, independent_of_light)
 {
     Camera cam = make_test_camera();
@@ -117,8 +108,7 @@ TEST(renderer_unlit, independent_of_light)
     assert_pixel_near(fb1, 20, 10, Color{ 51, 102, 153 }, 1);
     assert_pixel_near(fb2, 20, 10, Color{ 51, 102, 153 }, 1);
 
-    // Control: the same base colour, lit, must NOT equal the unlit base colour;
-    // otherwise the assertions above would pass trivially.
+    // A lit control prevents the result from passing independently of material handling.
     Mesh lit = make_unit_triangle();
     lit.materials[0].diffuse = { 0.2f, 0.4f, 0.6f };
     Framebuffer fb3(40, 20, /*headless=*/true);
@@ -128,7 +118,6 @@ TEST(renderer_unlit, independent_of_light)
     ASSERT_TRUE(c3.r != 51 || c3.g != 102 || c3.b != 153);
 }
 
-// Unlit overrides every lit shading mode identically.
 TEST(renderer_unlit, honored_in_flat_and_phong)
 {
     Camera cam = make_test_camera();
@@ -145,7 +134,6 @@ TEST(renderer_unlit, honored_in_flat_and_phong)
     }
 }
 
-// Diffuse texture modulates the unlit base colour (base * texel).
 TEST(renderer_unlit, modulates_diffuse_texture)
 {
     Renderer r(1);
@@ -171,7 +159,6 @@ TEST(renderer_unlit, modulates_diffuse_texture)
     assert_pixel_near(fb2, 20, 10, Color{ 0, 127, 0 }, 2);
 }
 
-// Vertex colours modulate the unlit base colour (base * vcol).
 TEST(renderer_unlit, modulates_vertex_color)
 {
     Renderer r(1);
@@ -187,7 +174,6 @@ TEST(renderer_unlit, modulates_vertex_color)
     assert_pixel_near(fb, 20, 10, Color{ 127, 63, 191 }, 2);
 }
 
-// Emissive factor is ignored by the unlit model (no additive glow).
 TEST(renderer_unlit, ignores_emissive)
 {
     Renderer r(1);
@@ -200,11 +186,9 @@ TEST(renderer_unlit, ignores_emissive)
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, { 0.0f, 0.0f, 0.0f }, fb);
-    // Stays blue: no red emissive contribution.
     assert_pixel_near(fb, 20, 10, Color{ 0, 0, 127 }, 2);
 }
 
-// Alpha cutout still discards fully transparent texels in the unlit path.
 TEST(renderer_unlit, alpha_cutout_discards)
 {
     Renderer r(1);
@@ -227,7 +211,6 @@ TEST(renderer_unlit, alpha_cutout_discards)
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
 
-// A mesh mixing unlit and lit materials renders each correctly (per-triangle gate).
 TEST(renderer_unlit, mixed_unlit_and_lit)
 {
     Renderer r(1);
@@ -237,19 +220,15 @@ TEST(renderer_unlit, mixed_unlit_and_lit)
     Light light;
     light.direction = { 0.0f, 0.0f, 1.0f };
     light.color = { 1.0f, 1.0f, 1.0f };
-    // Strong ambient: the lit material picks it up (its default ambient is {1,1,1}),
-    // the unlit material ignores it entirely.
+    // Strong ambient distinguishes the lit triangle from the unlit one.
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, &light, 1, { 0.5f, 0.5f, 0.5f }, fb);
-    // Unlit triangle: pure base blue (0.8 → 204), light and ambient ignored.
     assert_pixel_near(fb, 15, 10, Color{ 0, 0, 204 }, 2);
-    // Lit triangle: ambient lifts every channel, so green is well above zero.
     Color lit = fb.get_pixel(25, 10);
     ASSERT_TRUE(lit.g > 50);
 }
 
-// Wireframe mode ignores materials entirely; unlit does not affect edge drawing.
 TEST(renderer_unlit, no_effect_in_wireframe)
 {
     Renderer r(1);

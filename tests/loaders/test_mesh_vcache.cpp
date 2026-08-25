@@ -4,8 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// Tests for Mesh::optimize_vertex_cache(): the function is private, so all
-// tests exercise it indirectly through load_model().
+// Exercise private Mesh::optimize_vertex_cache() through load_model().
 //
 // Code paths covered:
 //   n_tris < 2 early exit     -> early_exit_single_triangle
@@ -36,11 +35,8 @@ TEST(vcache, early_exit_single_triangle)
 
 TEST(vcache, fully_unshared_stl_optimises_correctly)
 {
-    // STL deduplicates shared positions (stl_reader), but the two triangles here have six
-    // all-distinct positions, so nothing welds and the mesh is genuinely unshared (nv == nt*3).
-    // This pins that all three vcache passes still run on that layout: overdraw reorders
-    // triangles, vertex fetch remaps to first-use order. (nv == nt*3 is a property of THIS
-    // all-distinct input, not STL in general: a shared-position STL would dedup to fewer verts.)
+    // Six distinct STL positions keep nv == nt*3 after stl_reader deduplication.
+    // All cache passes must still handle this fully unshared layout.
     TmpFile f(
         tmp_path("rast_vc_stl.stl"), "solid s\n"
                                      "facet normal 0 0 1\n outer loop\n"
@@ -185,11 +181,8 @@ TEST(vcache, tangents_remain_orthogonal_to_normals)
 
 TEST(vcache, vertex_colors_remapped_correctly)
 {
-    // 4-vertex quad fan (2 triangles), each vertex has a distinct uchar color.
-    // v0=(0,0,0)→red, v1=(1,0,0)→green, v2=(1,1,0)→blue, v3=(0,1,0)→yellow.
-    // v0 and v2 are each shared by both triangles (adj_count=2).
-    // After Pass 2 remap, vertex_colors[i] must match the color that belongs
-    // to the position stored at vertices[i].pos.
+    // A two-triangle quad gives each position a distinct color. After remapping,
+    // vertex_colors[i] must still match vertices[i].pos.
     const std::string ply = "ply\nformat ascii 1.0\n"
                             "element vertex 4\n"
                             "property float x\nproperty float y\nproperty float z\n"
@@ -257,10 +250,7 @@ TEST(vcache, vertex_colors_not_populated_without_vcol)
 
 TEST(vcache, triangle_order_changed_for_suboptimal_input)
 {
-    // 3-triangle OBJ with one shared vertex (v0) and two disconnected pairs.
-    // Verifies that all geometry is preserved regardless of the optimizer's output order.
-    // Explicit normals so compute_normals is skipped; v0 is a point-share (bowtie)
-    // that crease smoothing would otherwise split, which is irrelevant to vcache.
+    // Explicit normals prevent crease smoothing from splitting the shared bowtie vertex.
     const std::string obj = "v  0 0 0\n" // shared by tri0 and tri2
                             "v  1 0 0\n" // only tri0
                             "v  0 1 0\n" // only tri0
@@ -295,11 +285,8 @@ TEST(vcache, triangle_order_changed_for_suboptimal_input)
 
 TEST(vcache, cache_update_cur_zero)
 {
-    // 5-vertex mesh with one shared vertex at (0,0,0) referenced by both triangles.
-    // After any correct optimizer, both triangles must reference the same index
-    // for the shared vertex regardless of which triangle is emitted first.
-    // Explicit normals so compute_normals is skipped; v0 is a point-share (bowtie)
-    // that crease smoothing would otherwise split into two vertices.
+    // Two triangles share only the origin. Explicit normals avoid bowtie splitting;
+    // both optimized triangles must still reference one shared index.
     const std::string obj = "v 0 0 0\n" // shared
                             "v 1 0 0\n"
                             "v 2 0 0\n"
@@ -341,12 +328,8 @@ TEST(vcache, cache_update_cur_zero)
 
 TEST(vcache, cache_eviction_large_mesh)
 {
-    // Triangle strip with 34 vertices (2 rows of 17) and 32 triangles.
-    // A mesh large enough to exercise the optimizer's internal reordering across
-    // multiple cache lines. Assertions verify no vertex is corrupted or dropped.
-    //
-    // Layout: even vertices (0,2,…,32) at y=0; odd (1,3,…,33) at y=1.
-    // 16 quads, each split into 2 triangles.
+    // Two 17-vertex rows form 16 split quads. The 32 triangles are large enough
+    // to reorder across cache lines without losing or corrupting vertices.
     std::string obj;
     for (int i = 0; i <= 16; i++)
     {
@@ -402,12 +385,8 @@ TEST(vcache, cache_eviction_large_mesh)
 
 TEST(vcache, material_idx_stays_aligned_with_geometry)
 {
-    // Two materials interleaved across usemtl directives so triangles arrive
-    // out of material order: forces the scatter path in optimize_vertex_cache.
-    // After meshopt's per-group reorder, each triangle's material_idx must
-    // still match the half its centroid sits in (left → red, right → blue).
-    // Pre-fix this failed: meshopt reordered triangles globally while
-    // material_idx stayed in original slots, so geometry and material desynced.
+    // Interleaved materials force the scatter path. After per-group reordering,
+    // centroid side must still match material color.
     TmpFile mtl(
         tmp_path("rast_vc_matalign.mtl"), "newmtl red\nKd 1 0 0\n"
                                           "newmtl blue\nKd 0 0 1\n"

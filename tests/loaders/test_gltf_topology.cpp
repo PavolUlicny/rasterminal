@@ -5,13 +5,9 @@
 #include <cmath>
 #include <vector>
 
-// TRIANGLE STRIP / FAN DE-STRIPIFY HELPERS
-//
-// Vertices are authored with a unique integer x per index (a zig-zag in y so the
-// triangles are non-degenerate), so a vertex id is recoverable from its world
-// position as round(|x|). That survives both optimize_vertex_cache (which remaps
-// vertex indices and reorders triangles) and negative-determinant node transforms
-// (which only negate x). All strip/fan assertions are therefore position-based.
+// triangle strip/fan helpers
+// Unique integer |x| recovers each authored vertex id after cache reordering and
+// negative-determinant transforms, so topology assertions use positions.
 
 static void emit_pos(std::string &bin, float x, float y, float z)
 {
@@ -366,7 +362,7 @@ TEST(gltf_valid, gltf_triangle_fan_min)
     assert_tris_eq(m, { { 0, 1, 2 } });
 }
 
-// TRIANGLE STRIP / FAN DE-STRIPIFY
+// Triangle strip and fan expansion
 
 // strip topology + winding
 

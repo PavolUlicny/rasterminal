@@ -364,10 +364,8 @@ TEST(graphics, sixel_geometry_reply_records_the_max)
 
 TEST(graphics, sixel_geometry_failure_or_other_item_is_ignored)
 {
-    // A failure status and the colour-registers item (1) are located and
-    // skipped; neither may write the max. The four-parameter forms pin the
-    // item and status guards themselves, which the short forms cannot reach
-    // (arity rejects them first).
+    // Failure status and colour-register item 1 must not update the maximum.
+    // Four-parameter replies reach guards that shorter forms fail at arity.
     TermGraphics tg;
     ASSERT_TRUE(scan(std::string("\033[?2;3;0S") + "\033[?1;0;1024S" + DSR, tg).done);
     ASSERT_EQ(tg.sixel_max_w, 0);

@@ -1,28 +1,9 @@
 #include "tests/renderer_test_util.h"
 
-// Group M: vertex-color end-to-end through the renderer
-// test_rasterize_vcol.cpp exercises rasterize_phong()'s vertex-color handling directly.
-// These tests cover the renderer's own dispatch:
-//   • p_vcols = has_vertex_colors ? vertex_colors.data() : nullptr
-//   • ClipVert.color loaded from p_vcols or white
-//   • Phong:   a/b/c.color passed straight through to rasterize_phong
-//   • Flat:    face_vcol average + vcol_mat build
-//   • Wireframe: vcol must have no effect (and must not crash)
-//
-// All tests use Renderer(1) for deterministic single-thread ordering.
-// Camera: make_test_camera(); pixel (20,10) on a 40×20 framebuffer = world (0,0,0).
-// Material: white diffuse=ambient=(1,1,1), specular=(0,0,0); vcol tint is the
-//   only colour source so per-channel assertions are clean.
-// Light: white key from +z; dot(n=(0,0,1), L=(0,0,1))=1 → full diffuse.
-// Ambient: (0.1,0.1,0.1), small white baseline for all channels.
-//
-// Expected with red vcol (1,0,0) and the material above:
-//   effective diffuse = ambient = (1,0,0)
-//   ambient_contrib   = (0.1,0.1,0.1) * (1,0,0) = (0.1,0,0)
-//   diffuse_contrib   = (1,1,1) * (1,0,0) * 1   = (1,0,0)
-//   result = (1.1,0,0) → clamped → R=255, G=0, B=0
-// Expected with no vcol (white material, no tint):
-//   result = (1.1,1.1,1.1) → all channels = 255
+// Group M: renderer vertex-color dispatch
+// Cover ClipVert loading, Phong interpolation, Flat averaging, white fallback,
+// and wireframe independence. A white material and frontal light isolate the tint:
+// red vertex color yields red, while absent color yields white.
 
 static Mesh make_vcol_triangle(vec3 vca, vec3 vcb, vec3 vcc, bool has_colors = true)
 {
@@ -64,9 +45,6 @@ static Mesh make_vcol_triangle(vec3 vca, vec3 vcb, vec3 vcc, bool has_colors = t
     return m;
 }
 
-// Phong: uniform red vcol → pixel (20,10) is red.
-// Catches: has_vertex_colors branch not firing, p_vcols not loaded,
-//          rt.ph.vcola/b/c not propagated to rasterize_phong.
 TEST(renderer, phong_vcol_uniform_red_tints_pixel)
 {
     Renderer r(1);
@@ -88,14 +66,10 @@ TEST(renderer, phong_vcol_uniform_red_tints_pixel)
     }
 }
 
-// Phong: has_vertex_colors=false; vertex_colors populated with red but flag is
-// false → pixel must NOT be red-only.
-// Catches: flag ignored (always-on tinting from vertex_colors array).
 TEST(renderer, phong_vcol_flag_false_no_tint)
 {
     Renderer r(1);
     r.mode = ShadingMode::Phong;
-    // has_colors=false: data present but flag off.
     Mesh mesh = make_vcol_triangle(
         { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f },
         /*has_colors=*/false
@@ -117,9 +91,6 @@ TEST(renderer, phong_vcol_flag_false_no_tint)
     }
 }
 
-// Phong: per-vertex colours red/green/blue → all three channels contribute at
-// the centre pixel.
-// Catches: vcol collapsed to a single vertex (e.g. always vcola).
 TEST(renderer, phong_vcol_per_vertex_interpolation)
 {
     Renderer r(1);
@@ -143,11 +114,6 @@ TEST(renderer, phong_vcol_per_vertex_interpolation)
     }
 }
 
-// Phong: white vcol (all 1s) with flag=true must match the no-vcol baseline.
-// Phong tints per vertex (rt.ph.vcola/b/c); a white vcol must leave the lit
-// result identical to running with no vertex colours at all.
-// Catches: the per-vertex vcol multiply diverging from the no-vcol path when the
-//          colour is the identity (1,1,1).
 TEST(renderer, phong_vcol_white_matches_no_vcol)
 {
     Camera cam = make_test_camera();
@@ -189,12 +155,7 @@ TEST(renderer, phong_vcol_white_matches_no_vcol)
     }
 }
 
-// Phong: mixed white (v0) + red (v1, v2) vcol; Phong is the per-vertex
-// interpolating path, so this guards correct independent per-vertex tinting with
-// no stale state leaking between vertices. v0 stays white,
-// v1/v2 are red → R must dominate at the red-weighted centre pixel.
-// Catches: vcol collapsed to a single vertex, or one vertex's tint leaking onto
-//          another.
+// Two red vertices make red dominant at the centre without collapsing interpolation.
 TEST(renderer, phong_vcol_mixed_white_and_color)
 {
     Renderer r(1);
@@ -218,9 +179,6 @@ TEST(renderer, phong_vcol_mixed_white_and_color)
     }
 }
 
-// Flat: uniform red vcol → pixel (20,10) is red.
-// Catches: face_vcol average / vcol_mat build broken; vcol_mat.diffuse/ambient
-//          not tinted.
 TEST(renderer, flat_vcol_uniform_tints_pixel)
 {
     Renderer r(1);
@@ -242,10 +200,7 @@ TEST(renderer, flat_vcol_uniform_tints_pixel)
     }
 }
 
-// Flat: white vcol (all 1s) with flag=true must match the no-vcol baseline.
-// The renderer takes an early-skip when face_vcol==(1,1,1); this tests that
-// the skip produces the same result as flag=false.
-// Catches: the if(face_vcol != white) optimisation diverging from the no-vcol path.
+// White hits face_vcol's early skip and must match the no-colour path.
 TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
 {
     Camera cam = make_test_camera();
@@ -290,10 +245,6 @@ TEST(renderer, flat_vcol_white_skip_matches_no_vcol)
     }
 }
 
-// Wireframe: vertex colors must not affect the wireframe path (which uses
-// m_wire_color, not vcol) and must not cause a crash.
-// Catches: wireframe path accessing vertex_colors and crashing, or erroneously
-//          consuming vcol data.
 TEST(renderer, wireframe_vcol_does_not_affect_output)
 {
     Renderer r(1);
@@ -303,6 +254,5 @@ TEST(renderer, wireframe_vcol_does_not_affect_output)
     Framebuffer fb(40, 20, /*headless=*/true);
     fb.clear();
     r.render(mesh, cam, nullptr, 0, { 0.0f, 0.0f, 0.0f }, fb);
-    // Wireframe draws edges regardless of vcol; just confirm it renders without crash.
     ASSERT_TRUE(count_drawn_pixels(fb) > 0);
 }

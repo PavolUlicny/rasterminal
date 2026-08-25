@@ -1,14 +1,7 @@
 #pragma once
 
-// Minimal test framework, self-contained and header-only.
-//
-// Usage:
-//     TEST(linalg, identity) { ASSERT_TRUE(...); ASSERT_NEAR(x, y, 1e-6f); }
-//
-// Tests register themselves via static initializers into a process-wide
-// registry. run_all_tests() iterates, runs each in a try/catch, and prints
-// a one-line pass/fail summary. Assertion macros throw on failure so a
-// failing assert inside a helper still aborts the test cleanly.
+// Header-only test registry. TEST cases self-register; assertion macros throw so
+// run_all_tests() can abort one case, report it, and continue.
 
 #include <cmath>
 #include <cstdio>

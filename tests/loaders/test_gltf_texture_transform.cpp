@@ -132,15 +132,9 @@ TEST(gltf_valid, texture_transform_absent_is_identity)
     }
 }
 
-// Keystone correctness test for the v-flip handling, independent of bake_transform's own
-// derivation. Author a non-trivial offset+rotation+scale, load it (running the real bake), then
-// for several UV points assert that our full pipeline, store v-flip (uv.y = 1 - v_gltf) → baked
-// affine → the sampler's internal v-flip, lands on the EXACT image pixel the glTF transform with
-// NEGATED rotation (Tr·R(-θ)·S, the flipY convention for v-flipped textures) intends. The expected
-// value encodes that spec-with-negated-rotation directly; the implementation reaches it by a
-// different route, so a wrong rotation sign (or any sign slip in the affine) makes expected !=
-// actual. This is the check that catches a bad derivation: the exact-coefficient test above only
-// pins the formula against itself, and would happily accept the un-negated (red-marker) bake.
+// Check v-flip handling independently of bake_transform's formula. For several UVs,
+// the stored flip, baked affine, and sampler flip must match Tr*R(-theta)*S directly;
+// a wrong rotation sign then disagrees instead of being tested against itself.
 TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
 {
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
@@ -179,12 +173,8 @@ TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
     for (const vec2 &p : pts)
     {
         const float u_g = p.x, v_g = p.y;
-        // The image texel our pipeline reads (sampler does v = 1 - feed.y, so the v-down sampling
-        // coordinate is (feed.x, 1 - feed.y)) must equal the glTF transform with the rotation angle
-        // NEGATED: Tr · R(-θ) · S · g. That -θ is the flipY convention every glTF reference renderer
-        // uses for v-flipped textures; the naive +θ (R(+θ)) points the TextureTransformTest arrow at
-        // the red "opposite direction" marker. Only the sin terms flip sign, so offset and
-        // axis-aligned scale are identical either way; this isolates the rotation handedness.
+        // The sampled coordinate (feed.x, 1-feed.y) must match Tr*R(-theta)*S*g.
+        // Only sine terms change, isolating rotation handedness from offset and scale.
         const float u_exp = (c * sx * u_g) + (s * sy * v_g) + ox;
         const float v_exp = (-s * sx * u_g) + (c * sy * v_g) + oy;
         const vec2 feed = apply_tex_transform(d, vec2{ u_g, 1.0f - v_g });
@@ -197,15 +187,9 @@ TEST(gltf_valid, texture_transform_matches_gltf_spec_sampling)
     }
 }
 
-// End-to-end rotation-handedness guard. The keystone above only checks apply_tex_transform's
-// coordinates against a 1x1 texture; it cannot see which way a rotation actually turns the image.
-// This drives the REAL pipeline: load a pure +rotation (real bake_transform) → apply the baked
-// affine → sample a real multi-texel texture through the REAL Texture::sample, and assert the
-// rotated brightness gradient runs the direction the official Khronos TextureTransformTest render
-// shows. A regression that drops the v-flip rotation negation flips the cross term (t[3]) sign and
-// reverses this inequality, the exact failure that pointed the arrow at the "opposite direction"
-// marker. Robust by construction: a vertical gradient + an inequality assertion (no bilinear/wrap
-// edge fragility), and the sampled colours come from this test's own texture, not the loaded glTF's.
+// End-to-end handedness check through bake, affine application, and real sampling.
+// A vertical gradient turns the expected Khronos direction; dropping rotation
+// negation reverses the inequality without bilinear or wrap-edge sensitivity.
 TEST(gltf_valid, texture_transform_rotation_handedness_end_to_end)
 {
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
@@ -255,8 +239,7 @@ TEST(gltf_valid, texture_transform_rotation_handedness_end_to_end)
     const float lo_u = brightness(0.2f);
     const float hi_u = brightness(0.8f);
 
-    // Khronos-correct sense (t[3] = +sin θ): larger u samples a lower image row → darker. The
-    // pre-fix bug negated t[3], making larger u brighter. Margin guards against noise, not sign.
+    // With t[3] = +sin θ, larger u samples a lower, darker row. The margin covers noise.
     if (hi_u >= lo_u - 0.15f)
     {
         ASSERT_FAIL("rotation handedness reversed: +rotation must darken with increasing u "

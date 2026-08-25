@@ -3,7 +3,7 @@
 
 #include <string>
 
-// HAND-CRAFTED VALID PLY
+// Valid hand-written PLY fixtures
 
 TEST(ply_valid, ascii_minimal_triangle)
 {
@@ -294,7 +294,7 @@ TEST(ply_valid, float_vertex_colors)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.0f, 1e-4f);
 }
 
-// REJECTIONS: malformed/corrupt PLY must not crash
+// Malformed PLY rejection
 
 TEST(reject, ply_missing_magic)
 {
@@ -749,9 +749,8 @@ TEST(reject, ply_missing_xyz_properties)
 TEST(reject, ply_non_finite_vertex)
 {
     // A genuine +inf float (0x7F800000) in a binary-LE vertex must be rejected by
-    // load_model's post-load finiteness scan. Binary is deliberate: tinyply's ASCII reader
-    // rejects a bare "inf"/"nan" token on its own (a pre-existing path), so only a raw
-    // bit-pattern actually exercises the new finiteness guard rather than the parser.
+    // Exercise load_model's finiteness scan with a raw bit pattern. The ASCII parser rejects
+    // "inf" and "nan" before that guard.
     std::string s = "ply\n"
                     "format binary_little_endian 1.0\n"
                     "element vertex 3\n"
@@ -780,11 +779,8 @@ TEST(reject, ply_non_finite_vertex)
 
 TEST(reject, ply_non_finite_uv)
 {
-    // A non-finite UV is rejected for a different reason than a non-finite position: it reaches
-    // the texture sampler, whose `static_cast<int>(u * (width - 1))` converts a NaN. That is UB,
-    // yields INT_MIN on x86, and the texel offset built from it reads far outside the image
-    // (caught by UBSan before the guard existed). Binary again, since tinyply's ASCII reader
-    // rejects a bare "nan" token on its own and so would not exercise the guard.
+    // Reject binary NaN UVs before the sampler's undefined float-to-int conversion.
+    // ASCII tinyply rejects "nan" itself and would not reach this guard.
     std::string s = "ply\n"
                     "format binary_little_endian 1.0\n"
                     "element vertex 3\n"
@@ -822,7 +818,7 @@ TEST(reject, ply_non_finite_uv)
     assert_rejects(t.path);
 }
 
-// UV PROPERTY NAME FALLBACKS
+// UV property aliases
 
 TEST(ply_valid, ascii_uv_st_property_names)
 {
@@ -870,7 +866,7 @@ TEST(ply_valid, ascii_uv_texture_uv_property_names)
     ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
 }
 
-// FLOAT64 COORDINATE TYPE
+// FLOAT64 coordinates
 
 static void emit_f64_le(std::string &s, double v)
 {
@@ -934,12 +930,11 @@ TEST(ply_valid, ascii_vertex_index_singular_alias)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// UV PROPERTY NAME: u/v (primary alias)
+// Primary u/v UV properties
 
 TEST(ply_valid, ascii_uv_u_v_property_names)
 {
-    // "u"/"v" is the first alias tried; prior tests only exercise the fallback
-    // aliases ("s"/"t" and "texture_u"/"texture_v").
+    // u/v is the primary UV property pair; s/t and texture_u/texture_v are aliases.
     TmpFile t(
         tmp_path("rast_uv_uv.ply"), "ply\nformat ascii 1.0\n"
                                     "element vertex 3\n"
@@ -960,7 +955,7 @@ TEST(ply_valid, ascii_uv_u_v_property_names)
     ASSERT_NEAR(m.vertices[2].uv.x, 0.75f, 1e-5f);
 }
 
-// FLOAT-TYPED VERTEX COLORS (rd_col FLOAT32 and FLOAT64 paths)
+// FLOAT32 and FLOAT64 vertex colours
 
 TEST(ply_valid, ascii_vertex_colors_float32)
 {
@@ -1019,12 +1014,11 @@ TEST(ply_valid, binary_le_vertex_colors_float64)
     ASSERT_NEAR(m.vertex_colors[0].z, 0.6f, 1e-5f);
 }
 
-// FACE COLOR r/g/b ALIAS
+// Face-colour r/g/b aliases
 
 TEST(ply_valid, ascii_face_colors_r_g_b_alias)
 {
-    // Face element using "r"/"g"/"b" rather than "red"/"green"/"blue": the
-    // second alias branch in load_ply was previously dead.
+    // Face colours also accept the short r/g/b aliases.
     TmpFile t(
         tmp_path("rast_fcol_rgb.ply"), "ply\nformat ascii 1.0\n"
                                        "element vertex 3\n"
@@ -1044,7 +1038,7 @@ TEST(ply_valid, ascii_face_colors_r_g_b_alias)
     ASSERT_NEAR(m.vertex_colors[0].z, 200.0f / 255.0f, 1e-4f);
 }
 
-// FACE COLORS + FILE NORMALS: compute_normals always runs
+// Face colours with file normals
 
 TEST(ply_valid, face_colors_with_file_normals_recomputes)
 {
@@ -1113,7 +1107,7 @@ TEST(reject, ply_face_list_count_below_3)
     assert_rejects(t.path);
 }
 
-// OOB INDEX SKIPPING
+// Out-of-range index skipping
 
 TEST(reject, ply_all_faces_have_oob_indices_standard_path)
 {
@@ -1169,7 +1163,7 @@ TEST(ply_valid, partial_oob_indices_valid_faces_survive)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// NON-INT32 FACE INDEX TYPES (rd_idx UINT16 and UINT32)
+// UINT16 and UINT32 face indices
 
 TEST(ply_valid, binary_le_uint16_face_indices)
 {
@@ -1334,12 +1328,11 @@ TEST(ply_valid, binary_le_int16_face_indices)
     ASSERT_EQ(m.triangles[0].v[2], 2u);
 }
 
-// FLOAT64 FACE COLORS (rd_col FLOAT64 path for face element)
+// FLOAT64 face colours
 
 TEST(ply_valid, binary_le_face_colors_float64)
 {
-    // "double" face colors → FLOAT64 path in rd_col; prior tests only cover
-    // FLOAT64 vertex colors.
+    // Cover FLOAT64 face colours separately from FLOAT64 vertex colours.
     std::string s = "ply\n"
                     "format binary_little_endian 1.0\n"
                     "element vertex 3\n"
@@ -1401,13 +1394,12 @@ TEST(ply_valid, face_color_mixed_valid_invalid_indices)
     ASSERT_TRUE(m.has_vertex_colors);
 }
 
-// FACE COLORS + UV COORDINATES
+// Face colours with UV coordinates
 
 TEST(ply_valid, ascii_face_color_with_uv_coords)
 {
     // PLY with per-face colors AND per-vertex s/t UV coordinates.
-    // The face-color expansion path builds a vertex pool that reads UVs into
-    // pool[i].uv when ub != nullptr (line 345 in mesh_ply.cpp).
+    // Face-colour expansion must preserve per-vertex UVs.
     TmpFile t(
         tmp_path("rast_fcol_uv.ply"), "ply\nformat ascii 1.0\n"
                                       "element vertex 3\n"
@@ -1427,7 +1419,7 @@ TEST(ply_valid, ascii_face_color_with_uv_coords)
     ASSERT_TRUE(m.has_vertex_colors);
 }
 
-// CREASE SMOOTHING: load_ply forwards crease_cos to compute_normals
+// Crease smoothing
 
 TEST(ply_valid, crease_smoothing_splits_hard_edge)
 {
@@ -1525,7 +1517,7 @@ TEST(ply_valid, crease_threshold_controls_split)
     ASSERT_EQ(count_origin(hard), 2); // 90 deg > 45 deg threshold → split
 }
 
-// FACE-LIST TEXCOORD (per-corner UVs, photogrammetry / scanner PLYs)
+// Per-corner face-list UVs
 
 // Count split copies of a target position in the loaded mesh.
 [[maybe_unused]] static int count_at(const Mesh &m, float x, float y, float z)
@@ -1824,10 +1816,7 @@ TEST(ply_valid, ascii_face_texcoord_seam_split_carries_vertex_colors)
 
 TEST(ply_valid, ascii_face_texcoord_with_face_colors)
 {
-    // Combo: face-list texcoord + face colors. Face-color path engages (full
-    // unshare, 3 verts per triangle), but UVs come from the face-list buffer
-    // (not the per-vertex pool). Each triangle has 3 unique vertices, each with
-    // its own face-list UV.
+    // Face-colour expansion unshares vertices while retaining face-list UVs.
     TmpFile t(
         tmp_path("rast_ftc_fcol.ply"), "ply\nformat ascii 1.0\n"
                                        "element vertex 3\n"
@@ -1952,8 +1941,7 @@ TEST(reject, ply_face_texcoord_wrong_corner_count)
 
 TEST(reject, ply_face_texcoord_mixed_face_sizes)
 {
-    // One triangle + one quad → list_sizes populated → reject (the uniform-ipf
-    // assumption that per-corner indexing relies on no longer holds).
+    // A triangle and quad invalidate the uniform per-corner indexing assumption.
     TmpFile t(
         tmp_path("rast_ftc_mixed.ply"), "ply\nformat ascii 1.0\n"
                                         "element vertex 4\n"
@@ -1971,12 +1959,8 @@ TEST(reject, ply_face_texcoord_mixed_face_sizes)
 
 TEST(ply_valid, face_texcoord_with_face_colors_smooths_seam)
 {
-    // Combo: face-list texcoord + face colors. The face-color path stays fully
-    // unshared, but a weld map (one source position id per emitted vertex) is
-    // threaded into compute_normals so a UV-seam shared position smooths as
-    // one surface: without the weld, every corner would be its own group and
-    // the surface would render faceted. Two coplanar triangles sharing v0 and
-    // v2 with a UV seam at both shared corners → every vertex normal = (0,0,1).
+    // Face colors keep vertices unshared, but the weld map must smooth coplanar
+    // UV-seam positions together. Every emitted normal remains +Z.
     TmpFile t(
         tmp_path("rast_ftc_fcol_smooth.ply"), "ply\nformat ascii 1.0\n"
                                               "element vertex 4\n"
@@ -2003,8 +1987,7 @@ TEST(ply_valid, face_texcoord_with_face_colors_smooths_seam)
 TEST(reject, ply_face_texcoord_all_oob_indices)
 {
     // Face-list texcoord present but every index is OOB → all triangles skipped
-    // → empty triangle list → load_ply returns false (existing OOB guard still
-    // fires in the new path).
+    // Skipping every invalid face leaves an empty triangle list and fails the load.
     TmpFile t(
         tmp_path("rast_ftc_oob.ply"), "ply\nformat ascii 1.0\n"
                                       "element vertex 3\n"
@@ -2021,10 +2004,7 @@ TEST(reject, ply_face_texcoord_all_oob_indices)
 
 TEST(reject, ply_mixed_size_index_lists)
 {
-    // Mixed n-gon index lists (a triangle + a quad) leave ipf undefined:
-    // total_idx/n_faces = 7/2 = 3 rounds, and the per-face stride is then wrong.
-    // The texcoord lists are coincidentally uniform (6 floats each) so the
-    // texcoord gate alone would pass; only the faces->list_sizes guard rejects.
+    // A triangle and quad make the index stride non-uniform even though both UV lists have six values.
     TmpFile t(
         tmp_path("rast_mixed_idx.ply"), "ply\nformat ascii 1.0\n"
                                         "element vertex 4\n"
@@ -2042,9 +2022,7 @@ TEST(reject, ply_mixed_size_index_lists)
 
 TEST(reject, ply_mixed_size_index_lists_no_texcoord)
 {
-    // Same mixed n-gon index lists, no texcoord at all. Pins that the
-    // faces->list_sizes guard rejects independently of the texcoord path
-    // (previously these loaded with silently mis-derived ipf).
+    // Reject mixed face sizes independently of the texcoord path.
     TmpFile t(
         tmp_path("rast_mixed_idx_notc.ply"), "ply\nformat ascii 1.0\n"
                                              "element vertex 4\n"
@@ -2099,11 +2077,8 @@ TEST(ply_valid, binary_le_face_texcoord_float64)
     ASSERT_NEAR(m.vertices[tri.v[2]].uv.y, 0.6f, 1e-5f);
 }
 
-// comment TextureFile  (MeshLab / photogrammetry albedo binding)
-//
-// The texture name is resolved relative to the PLY's directory; tmp_path() puts
-// the .ply and the .bmp in the same temp dir, so the comment carries the bare
-// BMP filename. k1x1_red_bmp (inline_bmp.h) decodes via stb to RGBA {255,0,0,255}.
+// TextureFile comment: MeshLab/photogrammetry albedo binding
+// Resolve the bare BMP name beside the temporary PLY; the inline fixture decodes red.
 
 TEST(ply_valid, texturefile_with_uvs_loads)
 {

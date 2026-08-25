@@ -155,9 +155,7 @@ TEST(gltf_valid, texcoord_ge_2_caps_to_zero)
     ASSERT_EQ(static_cast<int>(m.materials[1].diffuse_map.uv_set), 0);
 }
 
-// A two-triangle quad (>= 2 tris, so optimize_vertex_cache actually runs and remaps the
-// vertex arrays) must keep uv1 paired with each vertex through the remap. Locate the vertex
-// by position post-remap and confirm its uv1 survived correctly.
+// A two-triangle quad triggers cache optimization. UV1 must follow its vertex through remapping.
 TEST(gltf_valid, texcoord1_survives_vertex_cache_remap)
 {
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
@@ -230,11 +228,8 @@ TEST(gltf_valid, texcoord1_survives_vertex_cache_remap)
     ASSERT_TRUE(found);
 }
 
-// Partial coverage across primitives: prim0 (no TEXCOORD_1), prim1 (TEXCOORD_1), prim2 (no
-// TEXCOORD_1), all referencing one material whose baseColorTexture is on texCoord:1. The lazy
-// builder must back-fill prim0's vertices (from their uv0) when prim1 first provides a second
-// set, push prim1's real values, and pad prim2, keeping uv1 length-matched. Verts lacking a
-// real second set degrade to uv0; the one primitive that has it keeps distinct values.
+// Only the middle of three primitives has TEXCOORD_1. Lazy creation must backfill
+// and pad the others from uv0 while preserving the middle's distinct values.
 TEST(gltf_valid, texcoord1_partial_coverage_backfills_and_pads)
 {
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);

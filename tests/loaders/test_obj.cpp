@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// HAND-CRAFTED VALID OBJ: exercises specific format features in isolation
+// Valid hand-written OBJ fixtures
 
 TEST(obj_valid, mtl_multi_material_loaded)
 {
@@ -195,7 +195,7 @@ TEST(obj_valid, comments_and_blank_lines_ignored)
     ASSERT_EQ(m.triangles.size(), size_t{ 1 });
 }
 
-// REJECTIONS: malformed/corrupt OBJ must not crash
+// Malformed OBJ rejection
 
 TEST(reject, obj_only_comments)
 {
@@ -270,7 +270,7 @@ TEST(reject, obj_non_finite_vertex)
     assert_rejects(t.path);
 }
 
-// MTL MATERIAL PARSING
+// MTL material parsing
 
 TEST(obj_valid, mtl_default_material_is_white)
 {
@@ -556,12 +556,9 @@ TEST(obj_bump, lowercase_bump_keyword_converts)
     ASSERT_EQ(nm->pixels[2], uint8_t{ 255 }); // converted
 }
 
-// MTL -s / -o texture transform (KHR_texture_transform analog)
-// -s (scale) and -o (origin offset) bake per map into the TexSlot 2×3 affine (light.h),
-// the same affine apply_tex_transform feeds at sample time. MTL authors in OBJ's stored
-// (v-up) UV space with no rotation, so the bake is feed.u=sx*u+ox, feed.v=sy*v+oy with no
-// v-flip fold. -t (turbulence) and the 3rd (w) component are intentionally ignored; identity
-// leaves has_transform false (fast path). See bake_obj_transform in mesh_obj.cpp.
+// MTL -s/-o texture transforms
+// Bake v-up scale and offset into each TexSlot affine. Ignore turbulence and w;
+// identity keeps the sampling fast path.
 
 // Reusable 1×1 diffuse texture file for the texopt cases (transform lives on the slot, not the
 // texels, so the pixel content is irrelevant; any decodable image makes load_tex bind a slot).
@@ -789,9 +786,7 @@ TEST(obj_texopt, shared_image_distinct_transforms_dedup_one_texture)
 
 TEST(obj_texopt, missing_file_leaves_orphan_transform_harmless)
 {
-    // The image fails to decode ⇒ the slot is unbound (tex = -1), but the baked affine stays on
-    // the slot. It is never sampled (no texture), so the orphan transform is harmless; this
-    // documents that the loader does not (and need not) clear it.
+    // A failed image leaves tex=-1. The unused transform may remain on the unbound slot.
     TmpFile mtl(tmp_path("texopt.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd -s 2 2 1 does_not_exist.bmp\n");
     TmpFile obj(tmp_path("texopt.obj"), kTexoptObj);
 
@@ -954,11 +949,7 @@ TEST(obj_valid, mtl_map_d_sets_alpha_cutoff)
     ASSERT_NEAR(m.materials[1].alpha_cutoff, 0.5f, 1e-6f);
 }
 
-// Note: the src_has_vcol guard in mesh_obj.cpp checks
-// attrib.colors.size() == attrib.vertices.size(). tinyobjloader either leaves
-// attrib.colors empty (no color data) or fills it with exactly the same
-// element count as attrib.vertices: the mismatched-non-empty case cannot
-// occur through valid OBJ input and there is no test for it.
+// tinyobjloader returns colours either empty or parallel to vertices.
 
 TEST(obj_valid, vertex_colors_extension)
 {
@@ -1042,10 +1033,7 @@ TEST(obj_valid, failed_load_rollback_preserves_previous_mesh_state)
 
 TEST(obj_valid, mtl_map_kn_normal_tex_missing_file)
 {
-    // map_Kn exercises the !normal_texname.empty() true branch in load_obj.
-    // File is absent so load_tex returns -1, but the branch is exercised and
-    // no crash occurs. Without this test, every material path goes through the
-    // bump_texname fallback (else branch) only.
+    // An absent map_Kn follows the normal-texture branch and remains unbound.
     TmpFile mtl(tmp_path("rast_mapkn.mtl"), "newmtl M\nKd 1 1 1\nmap_Kn nonexistent_normal.png\n");
     TmpFile obj(
         tmp_path("rast_mapkn.obj"), "mtllib rast_mapkn.mtl\n"
@@ -1059,10 +1047,7 @@ TEST(obj_valid, mtl_map_kn_normal_tex_missing_file)
 
 TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
 {
-    // First face has explicit vn references; second has none. This sets
-    // all_have_normals=false in get_vertex → compute_normals() runs at line 200.
-    // Without this, the !attrib.normals.empty() && !all_have_normals branch
-    // is never triggered: all prior tests either have all normals or none.
+    // Mixing faces with and without vn entries forces normal recomputation.
     TmpFile t(
         tmp_path("rast_partnorm.obj"), "v 0 0 0\n"
                                        "v 1 0 0\n"
@@ -1081,7 +1066,7 @@ TEST(obj_valid, partial_normals_falls_back_to_compute_normals)
     }
 }
 
-// UV-SEAM NORMAL WELDING: normal-less OBJs split one position into several
+// Normal welding across UV seams
 // vertices by texcoord; compute_normals welds them by source position so the
 // seam smooths like a desktop viewer, while the dihedral crease test still wins.
 
@@ -1222,12 +1207,8 @@ TEST(obj_valid, uv_seam_degenerate_face_no_corruption)
 
 TEST(obj_valid, faceted_cube_appends_stay_in_bounds)
 {
-    // A normal-less, UV-less cube loaded fully faceted (crease 0) splits every
-    // shared vertex into one wedge per incident face → many appended split
-    // vertices, and later groups revisit triangles whose corners were already
-    // rewritten to those appended indices. The welded-adjacency lookup must stay
-    // in bounds for appended vertices (regression: it indexed the fixed-size weld
-    // map, overflowing once a corner pointed past the original vertex count).
+    // A fully faceted cube appends wedges, then revisits triangles already rewritten
+    // to appended indices. Welded adjacency must remain in bounds for those indices.
     const std::string obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\n"
                             "v -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n"
                             "f 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\n"
@@ -1246,12 +1227,8 @@ TEST(obj_valid, faceted_cube_appends_stay_in_bounds)
 
 TEST(obj_valid, uv_seam_crease_split_syncs_vertex_colors)
 {
-    // OBJ vertex-color extension + a UV seam at a 90 deg fold. Each seam half
-    // lands in its own wedge (crease > threshold), so Pass B appends one split
-    // vertex per half, the has_weld branch on the vcol sync path. After:
-    //   - vertex_colors stays length-matched to vertices (parallel-array invariant);
-    //   - all four origin vertices inherit the source color, not white;
-    //   - the two +Z halves carry the +Z normal, the two +Y halves carry +Y.
+    // A colored UV seam at a 90-degree fold creates four origin wedges. Colors
+    // must remain parallel and inherited; each pair keeps its +Z or +Y normal.
     const std::string obj = "v 0 0 0 0.8 0.2 0.1\n"
                             "v 1 0 0 0.8 0.2 0.1\n"
                             "v 0 1 0 0.8 0.2 0.1\n"
@@ -1303,12 +1280,11 @@ TEST(obj_valid, uv_seam_smooth_angle_extremes)
     ASSERT_NEAR(sn[0].z, sn[1].z, 1e-5f);
 }
 
-// TEXTURE SUCCESS PATHS: load_tex() with a real BMP on disk
+// Texture loading from BMP files
 
 TEST(obj_valid, mtl_map_kd_real_file_sets_diffuse_tex)
 {
-    // First test to exercise the load_tex success branch (mesh_obj.cpp:62-64):
-    // a real file is present, so load_tex pushes a Texture and returns index 0.
+    // A decoded file creates texture slot 0.
     TmpFile bmp(tmp_path("rast_kd_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile mtl(tmp_path("rast_kd_tex.mtl"), "newmtl M\nKd 1 1 1\nmap_Kd rast_kd_tex.bmp\n");
     TmpFile obj(
@@ -1415,10 +1391,7 @@ TEST(obj_valid, mtl_map_ke_with_explicit_ke_keeps_authored_factor)
 
 TEST(obj_valid, mtl_map_ke_without_ke_skips_decode_even_if_file_missing)
 {
-    // With no Ke (factor {0,0,0}) the loader skips load_tex entirely, so emissive_tex stays
-    // -1 and the material renders dark. The map_Ke points at a missing file, but that's never
-    // attempted: the zero-factor skip short-circuits before any decode. (The failed-decode
-    // remap path itself is exercised by the non-zero-Ke remap test below.)
+    // A zero Ke factor skips map_Ke decoding and leaves the emissive texture unbound.
     TmpFile mtl(
         tmp_path("rast_ke_missing.mtl"), "newmtl M\n"
                                          "Kd 1 1 1\n"
@@ -1466,8 +1439,7 @@ TEST(obj_valid, mtl_map_ke_failed_decode_remaps_index_to_minus_one)
 
 TEST(obj_valid, mtl_map_bump_fallback_when_map_kn_absent)
 {
-    // Only map_Bump declared (no map_Kn) → normal_texname is empty →
-    // the else branch at mesh_obj.cpp:84 fires: load_tex(m.bump_texname).
+    // Without map_Kn, map_Bump supplies the normal texture.
     TmpFile bmp(tmp_path("rast_bump_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile mtl(tmp_path("rast_bump_tex.mtl"), "newmtl M\nKd 1 1 1\nmap_Bump rast_bump_tex.bmp\n");
     TmpFile obj(
@@ -1557,7 +1529,7 @@ TEST(obj_valid, mtl_clamp_dedup_splits)
 
 TEST(obj_valid, mtl_clamp_dedup_keeps)
 {
-    // Same image, same clamp in both materials → one slot (no dedup regression).
+    // Identical image and wrap state deduplicate to one slot.
     TmpFile bmp(tmp_path("rast_clampkeep_tex.bmp"), k1x1_red_bmp, sizeof(k1x1_red_bmp));
     TmpFile mtl(
         tmp_path("rast_clampkeep_tex.mtl"), "newmtl A\nKd 1 1 1\nmap_Kd -clamp on rast_clampkeep_tex.bmp\n"

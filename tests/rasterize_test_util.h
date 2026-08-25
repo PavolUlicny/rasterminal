@@ -7,10 +7,8 @@
 #include <limits>
 #include <string>
 
-// Redirects stdout to /dev/null for the duration of its lifetime.
-// Use for tests that call Framebuffer::resize() or Framebuffer::present(),
-// which write to stdout regardless of headless mode.  Tests that only
-// construct, draw, and read back a Framebuffer should use headless=true instead.
+// Redirect stdout for resize/present tests, which emit even in headless mode.
+// Pure draw/readback tests should construct a headless framebuffer instead.
 struct FdRedirect
 {
     int saved_out;

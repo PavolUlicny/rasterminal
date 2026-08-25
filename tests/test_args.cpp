@@ -609,9 +609,8 @@ TEST(args, no_spin_disables)
 
 TEST(args, spin_last_flag_wins)
 {
-    // Asserting ok/model_path too: neither form takes a value, so a regression
-    // that consumed the following token would otherwise pass here vacuously.
-    // The off order uses -S so the cluster-path assignment is covered too.
+    // Check model_path because either flag consuming the next token would otherwise
+    // pass vacuously. The off order also covers clustered -S assignment.
     ParseResult off = run({ "-S", "--no-spin", "m.obj" });
     ASSERT_TRUE(off.ok);
     ASSERT_TRUE(off.args.model_path == "m.obj");
@@ -653,8 +652,7 @@ TEST(args, no_ao_disables)
 
 TEST(args, ao_last_flag_wins)
 {
-    // Asserting ok/model_path too: neither form takes a value, so a regression
-    // that consumed the following token would otherwise pass here vacuously.
+    // Check model_path to catch accidental value consumption.
     ParseResult on = run({ "--no-ao", "--ao", "m.obj" });
     ASSERT_TRUE(on.ok);
     ASSERT_TRUE(on.args.model_path == "m.obj");
@@ -696,8 +694,7 @@ TEST(args, no_hud_disables)
 
 TEST(args, hud_last_flag_wins)
 {
-    // Asserting ok/model_path too: neither form takes a value, so a regression
-    // that consumed the following token would otherwise pass here vacuously.
+    // Check model_path to catch accidental value consumption.
     ParseResult on = run({ "--no-hud", "--hud", "m.obj" });
     ASSERT_TRUE(on.ok);
     ASSERT_TRUE(on.args.model_path == "m.obj");
@@ -739,8 +736,7 @@ TEST(args, no_input_disables)
 
 TEST(args, input_last_flag_wins)
 {
-    // Asserting ok/model_path too: neither form takes a value, so a regression
-    // that consumed the following token would otherwise pass here vacuously.
+    // Check model_path to catch accidental value consumption.
     ParseResult on = run({ "--no-input", "--input", "m.obj" });
     ASSERT_TRUE(on.ok);
     ASSERT_TRUE(on.args.model_path == "m.obj");
@@ -1012,8 +1008,7 @@ TEST(args, cluster_unknown_char_first_is_error)
 
 TEST(args, single_short_flag_is_length_one_cluster)
 {
-    // A lone short flag is just a length-one cluster; the refactor must not
-    // regress solo short flags.
+    // A lone short flag is a one-element cluster.
     ParseResult r = run({ "-S", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
@@ -1521,8 +1516,7 @@ TEST(args, no_cull_disables)
 
 TEST(args, cull_last_flag_wins)
 {
-    // Asserting ok/model_path too: neither form takes a value, so a regression
-    // that consumed the following token would otherwise pass here vacuously.
+    // Check model_path to catch accidental value consumption.
     ParseResult on = run({ "--no-cull", "--cull", "m.obj" });
     ASSERT_TRUE(on.ok);
     ASSERT_TRUE(on.args.model_path == "m.obj");
@@ -1800,9 +1794,8 @@ TEST(args, bench_size_trailing_garbage_is_error)
 
 TEST(args, bench_size_overflowing_product_is_error)
 {
-    // Each axis is <= INT_MAX and parses fine, but the pixel count would overflow
-    // size_t on a 32-bit build (wrapping to a tiny framebuffer, then out-of-bounds
-    // rasterization). The product guard rejects it before that.
+    // Each axis fits int, but their product overflows 32-bit size_t. Reject before
+    // it wraps to an undersized framebuffer.
     ParseResult r = run({ "--bench", "50", "--bench-size", "65536x65537", "m.obj" });
     ASSERT_FALSE(r.ok);
     ASSERT_EQ(r.exit_code, 1);
@@ -2227,9 +2220,8 @@ TEST(args, yaw_inf_is_error)
 }
 
 // --pitch
-// --pitch shares parse_orbit_angle with --yaw, whose suite owns the wrapper's
-// error paths (range, malformed, nan/inf, missing/empty value); these pin only
-// the branch wiring, the target field, and one fail-loud rejection.
+// --yaw already covers shared parser errors. These cases pin --pitch wiring,
+// its destination field, and one rejection.
 
 TEST(args, pitch_valid)
 {

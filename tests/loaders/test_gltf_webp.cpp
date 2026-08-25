@@ -126,8 +126,7 @@ TEST(gltf_webp, embedded_webp_texture_decodes_with_correct_layout)
     ASSERT_EQ(chan(5, 1, 1), 200);
 }
 
-// Routing is by content sniff, not the declared mimeType: a texture declaring
-// EXT_texture_webp whose bytes are actually a PNG still decodes (via stb).
+// Routing follows the bytes, not mimeType: a declared WebP containing PNG data still decodes.
 
 TEST(gltf_webp, image_routed_by_content_not_declared_webp_type)
 {
@@ -185,8 +184,7 @@ TEST(gltf_webp, webp_source_preferred_over_fallback_image)
     ASSERT_EQ(t.height, 2);
 }
 
-// Graceful degradation: when the preferred WebP fails to decode but the texture
-// also supplies an ordinary source, fall back to it rather than dropping it.
+// If the WebP source fails, use the ordinary source instead of dropping the texture.
 
 TEST(gltf_webp, falls_back_to_ordinary_source_when_webp_fails)
 {
@@ -322,10 +320,7 @@ TEST(gltf_webp, animated_webp_dropped_but_loads)
     ASSERT_TRUE(m.textures.empty());
 }
 
-// A WebP carried by an inline base64 data: URI decodes, proving the data-URI
-// path routes through decode_bytes to libwebp (the is_webp sniff branch), the
-// third decode_bytes branch the data-URI tests cover (KTX2 and stb are covered
-// in test_gltf_ktx2.cpp and test_gltf.cpp).
+// Content sniffing routes an inline base64 data URI to WebP decoding.
 
 TEST(gltf_webp, data_uri_webp_decodes)
 {

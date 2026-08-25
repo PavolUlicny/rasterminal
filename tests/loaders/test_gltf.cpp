@@ -5,11 +5,8 @@
 
 TEST(gltf_valid, pbr_material_mapping)
 {
-    // Known PBR values → verify Blinn-Phong mapping:
-    //   diffuse  = baseColorFactor.rgb = {0.5, 0.2, 0.8}
-    //   ambient  = diffuse
-    //   specular = {metallicFactor, …} = {0.3, 0.3, 0.3}
-    //   shininess = (1 - roughnessFactor) * 126 + 2 = 0.6*126+2 = 77.6
+    // Pin PBR mapping: diffuse/ambient use baseColor, specular uses metallic,
+    // and roughness 0.4 gives shininess 77.6.
     std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                        "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                        "{\"POSITION\":0},\"material\":0}]}],\"materials\":[{\"pbrMetallicRoughness\":"
@@ -228,11 +225,8 @@ TEST(gltf_valid, emissive_factor_infinity_clamped)
 
 TEST(gltf_valid, emissive_strength_infinity_clamped)
 {
-    // Hostile asset: emissiveStrength=1e400 parses as +Inf via cgltf. Without an upper
-    // clamp, +Inf reaches mat.emissive, and a per-pixel `Inf * 0` from a zero texel channel
-    // produces NaN: vec3_to_color's clamp is not NaN-safe and the uint8_t cast is UB.
-    // Upper clamp at 1e6 keeps the result finite (and post-saturation in vec3_to_color it
-    // looks identical to any other very-high LDR strength).
+    // cgltf parses emissiveStrength=1e400 as infinity. Clamp it before zero texture
+    // channels can produce NaN and an undefined uint8_t conversion.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"extensionsUsed\":[\"KHR_materials_emissive_strength\"],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
@@ -480,7 +474,7 @@ TEST(gltf_valid, unused_vertex_keeps_ao_at_one)
     ASSERT_NEAR(m.vertices[3].ao, 1.0f, 1e-6f);
 }
 
-// REJECTIONS
+// Rejections
 
 TEST(reject, empty_file_gltf)
 {
@@ -1025,9 +1019,7 @@ TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
 
 TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
 {
-    // Mesh has two primitives: primitive[0] has only NORMAL (no POSITION) so
-    // pos_acc stays null → the "if (!pos_acc) continue;" guard fires (line 139
-    // in mesh_gltf.cpp).  Primitive[1] has POSITION → 1 non-indexed triangle.
+    // Skip the primitive without POSITION and load the following non-indexed triangle.
     std::string bin;
     emit_tri_verts(bin);
 
@@ -1051,13 +1043,9 @@ TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
 
 TEST(gltf_valid, non_uniform_scale_uses_inverse_transpose_for_normals)
 {
-    // Triangle in local space with surface normal n = (1,0,1)/sqrt(2):
-    //   p0=(0,0,0)  p1=(1,0,-1)/sqrt(2)  p2=(0,1,0)
-    // Node scale [2,1,1]. The naive upper-3x3 transform gives (2,0,1)/sqrt(5);
-    // the correct inverse-transpose gives (1,0,2)/sqrt(5). Geometric check:
-    // after scaling, edges (sqrt(2),0,-sqrt(2)/2) and (0,1,0) cross to
-    // (sqrt(2)/2, 0, sqrt(2)) ∝ (1,0,2). The supplied normals are identical
-    // on every vertex, so any vertex-cache permutation preserves the test.
+    // Scaling [2,1,1] sends local normal (1,0,1) to inverse-transpose result
+    // normalize(1,0,2), not naive normalize(2,0,1). Identical vertex normals
+    // make the assertion independent of cache permutation.
     const float s = 0.70710678f; // 1/sqrt(2)
 
     std::string bin;
@@ -1150,8 +1138,7 @@ TEST(gltf_valid, negative_determinant_flips_triangle_winding)
 TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
 {
     // Same setup as the non-indexed mirror test, but with an indices accessor;
-    // covers the indexed branch in load_gltf (the flip is duplicated in both
-    // branches, so the non-indexed test alone wouldn't catch a regression here).
+    // Cover winding reversal in the indexed branch as well as the non-indexed branch.
     std::string bin;
     emit_f32_le(bin, 0.0f);
     emit_f32_le(bin, 0.0f);
@@ -1199,11 +1186,8 @@ TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
 
 TEST(gltf_valid, sparse_accessor_resolves_positions)
 {
-    // POSITION has no base bufferView (an all-zero implicit base per spec) and a
-    // sparse override replacing all 4 of its indices with the actual quad positions.
-    // Exercises cgltf_accessor_read_float's sparse-resolution path: before the cgltf
-    // refresh, a sparse accessor's read silently returned 0 instead of resolving the
-    // override, so every vertex would have landed at the origin.
+    // POSITION has an implicit zero base and sparse overrides for all quad vertices.
+    // cgltf_accessor_read_float must resolve those overrides instead of returning zeros.
     std::string bin;
     // Sparse indices: UNSIGNED_BYTE 0,1,2,3 (bufferView 0, 4 bytes).
     bin.push_back(static_cast<char>(0));
@@ -1321,11 +1305,8 @@ TEST(gltf_valid, position_declared_wider_than_vec3_reads_its_first_three_compone
 
 TEST(gltf_valid, sparse_position_declared_wider_than_vec3_stays_in_bounds)
 {
-    // The same over-wide POSITION, now sparse. cgltf scatters a sparse override to
-    // `index * components_of_the_accessor`, over the accessor's whole count and not the
-    // element count the requested float budget implies, so a buffer sized for three
-    // components per vertex is written a quarter past its end (caught by the sanitizer
-    // jobs; the position checks below fail with or without one).
+    // Sparse over-wide POSITION scatters using the accessor's full component count.
+    // The destination must be sized accordingly; sanitizers catch a three-component allocation.
     std::string bin;
     for (int i = 0; i < 3; i++) // sparse indices, UNSIGNED_BYTE
     {

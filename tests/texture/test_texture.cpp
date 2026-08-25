@@ -300,7 +300,7 @@ TEST(texture_wrap, default_is_repeat)
 
 TEST(texture_wrap, explicit_repeat_matches_default_for_out_of_range)
 {
-    // Setting Repeat explicitly must reproduce the historical fract() exactly.
+    // Explicit Repeat matches the default wrapping formula.
     Texture t = wrap_ref();
     t.wrap_s = WrapMode::Repeat;
     t.wrap_t = WrapMode::Repeat;
@@ -501,8 +501,7 @@ TEST(texture_load, load_valid_file_populates_texture)
 
 TEST(texture_load, load_from_memory_success_overwrites_previous)
 {
-    // Complements load_from_memory_failure_preserves_previous_data: a SUCCESSFUL
-    // load must replace the existing texture, not leave the old data in place.
+    // A successful load replaces the texture; failures preserve it.
     Texture t = solid(0, 255, 0); // green
     ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
     ASSERT_EQ(t.pixels[0], uint8_t{ 255 }); // R now 255 (was 0)
@@ -532,8 +531,7 @@ TEST(texture, sample_rgba_v_near_one_maps_to_top_image_row)
 
 TEST(texture_load, load_from_memory_success_updates_dimensions)
 {
-    // Previous overwrite test uses same-size textures; here we verify width/height
-    // are actually reassigned when the new image has different dimensions.
+    // Replacement also updates dimensions.
     Texture t = make_tex(2, 2, { 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255 });
     ASSERT_TRUE(t.load_from_memory(k1x1_red_bmp, sizeof(k1x1_red_bmp)));
     ASSERT_EQ(t.width, 1);
@@ -789,10 +787,8 @@ TEST(texture_bump, height_to_normal_unknown_imfchan_defaults_to_luminance)
     ASSERT_EQ(x.pixels[4], l.pixels[4]); // unknown char falls through to the luminance branch
 }
 
-// The batch shader's SoA forms duplicate locate() and blend(); the branch that introduced them
-// only ever exercised the all-Repeat fast path end to end, so the per-axis wrap branch is pinned
-// here directly. A footprint is the four texel offsets plus the two weights, so a disagreement
-// would sample the wrong texels rather than merely round differently.
+// Compare scalar and SoA footprints directly for per-axis wrapping. Offsets choose
+// texels exactly; weights may differ only by normal floating-point rounding.
 
 // A texture whose bytes differ per texel, so a wrong offset shows up as a wrong colour.
 static Texture batch_ref()
@@ -845,11 +841,8 @@ TEST(texture_batch, locate_batch_matches_locate_under_every_wrap_mode)
                 ASSERT_EQ(fb.o10[i], f.o10);
                 ASSERT_EQ(fb.o01[i], f.o01);
                 ASSERT_EQ(fb.o11[i], f.o11);
-                // The OFFSETS must match exactly, since they pick the texels; the weights only
-                // need to agree numerically. The two spell the same arithmetic but one reads its
-                // input from a parameter and the other from an array, and a compiler is free to
-                // contract or keep extra precision in one and not the other: MSVC does, and an
-                // equality assertion here failed on it while every offset still agreed.
+                // Offsets choose texels and must match exactly. Compare weights with
+                // tolerance because MSVC contracts the scalar and array forms differently.
                 ASSERT_NEAR(fb.tx[i], f.tx, 1e-6f);
                 ASSERT_NEAR(fb.ty[i], f.ty, 1e-6f);
                 // Every offset must address a whole texel inside the buffer.

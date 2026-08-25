@@ -1,9 +1,6 @@
 #pragma once
 
-// Shared helpers for the format-specific loader test files
-// (test_obj.cpp, test_ply.cpp, test_stl.cpp, test_dispatch.cpp).
-// Header-only: each translation unit gets its own `static` copy, which is
-// fine given these are tiny functions only used by tests.
+// Small header-only helpers shared by format loader tests.
 
 #include "tests/test.h"
 #include "src/loaders/mesh.h"
@@ -32,10 +29,8 @@ static void write_bytes(const std::string &path, const void *data, size_t n)
     ASSERT_EQ(closed, 0);
 }
 
-// Scoped temp file: writes on construction, removes on destruction. Ensures
-// the file is cleaned up even if an assertion throws mid-test, including one
-// thrown by the write itself (the destructor never runs on a ctor throw, so the
-// guard below removes any partial file before rethrowing).
+// Write a scoped temporary file and remove it on destruction. The constructor
+// also removes partial output before rethrowing a write failure.
 struct TmpFile
 {
     std::string path;

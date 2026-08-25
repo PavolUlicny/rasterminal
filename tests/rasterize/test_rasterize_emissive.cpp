@@ -4,8 +4,6 @@
 
 #include <initializer_list>
 
-// helpers
-
 static Texture make_em_tex(int w, int h, std::initializer_list<int> rgba)
 {
     Texture t;
@@ -19,8 +17,7 @@ static Texture make_em_tex(int w, int h, std::initializer_list<int> rgba)
     return t;
 }
 
-// rasterize_flat() (Flat path) with optional emissive factor + texture.
-// Lighting is zero (col_a/b/c == {0,0,0}) so any non-zero output comes from emissive.
+// Zero lighting isolates the emissive contribution.
 static void rast_emissive(Framebuffer &fb, const Texture *etex, vec3 emissive, vec2 uva, vec2 uvb, vec2 uvc)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
@@ -30,13 +27,12 @@ static void rast_emissive(Framebuffer &fb, const Texture *etex, vec3 emissive, v
     );
 }
 
-// rasterize_phong() with no lights so any output comes from ambient*0 + emissive.
 static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Texture *etex)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
     vec3 zero{}, normal{ 0.0f, 0.0f, 1.0f }, tan{ 1.0f, 0.0f, 0.0f };
     vec3 eye{ 20.0f, 10.0f, -100.0f };
-    vec3 ambient{ 0.0f, 0.0f, 0.0f }; // no ambient so emissive is the only contribution
+    vec3 ambient{ 0.0f, 0.0f, 0.0f };
     vec2 uv{ 0.5f, 0.5f };
     vec3 white{ 1.0f, 1.0f, 1.0f };
     rasterize_phong(
@@ -46,9 +42,6 @@ static void rast_phong_emissive(Framebuffer &fb, const Material &mat, const Text
     );
 }
 
-// Flat emissive in rasterize_flat()
-
-// Pure factor with no lit color, no texture: pixel should be the emissive colour.
 TEST(rasterize_emissive, factor_only_adds_pure_colour)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -56,25 +49,21 @@ TEST(rasterize_emissive, factor_only_adds_pure_colour)
     rast_emissive(fb, nullptr, vec3{ 1.0f, 0.0f, 0.0f }, uv, uv, uv);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    // Full-intensity emissive (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
+    // tonemap(1.0) ~= 226
     assert_pixel_near(fb, 20, 10, Color{ 226, 0, 0 }, 2);
 }
 
-// Emissive texture modulates the factor.
 TEST(rasterize_emissive, texture_modulates_factor)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
     Texture etex = make_em_tex(1, 1, { 0, 255, 0, 255 }); // pure green
     vec2 uv{ 0.5f, 0.5f };
-    // factor = white; texture = green; expected output = green.
     rast_emissive(fb, &etex, vec3{ 1.0f, 1.0f, 1.0f }, uv, uv, uv);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    // Full-intensity green (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
     assert_pixel_near(fb, 20, 10, Color{ 0, 226, 0 }, 2);
 }
 
-// Zero factor + no texture: nothing added, so the pixel stays as the lit colour (zero here).
 TEST(rasterize_emissive, zero_factor_no_texture_is_noop)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -84,8 +73,6 @@ TEST(rasterize_emissive, zero_factor_no_texture_is_noop)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     assert_pixel_near(fb, 20, 10, Color{ 0, 0, 0 }, 2);
 }
-
-// Phong emissive in rasterize_phong()
 
 TEST(rasterize_phong_emissive, factor_only_bypasses_lighting)
 {
@@ -98,7 +85,6 @@ TEST(rasterize_phong_emissive, factor_only_bypasses_lighting)
     rast_phong_emissive(fb, mat, nullptr);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    // Full-intensity emissive (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
     assert_pixel_near(fb, 20, 10, Color{ 226, 0, 0 }, 2);
 }
 
@@ -114,6 +100,5 @@ TEST(rasterize_phong_emissive, texture_modulates_factor)
     rast_phong_emissive(fb, mat, &etex);
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
-    // Full-intensity blue (1.0) rolls off through the soft-knee tonemap: 1.0 -> ~0.890 -> 226.
     assert_pixel_near(fb, 20, 10, Color{ 0, 0, 226 }, 2);
 }

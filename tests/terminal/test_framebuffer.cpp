@@ -234,8 +234,7 @@ TEST(framebuffer, headless_clear_resets_depth)
 
 TEST(framebuffer, present_dirty_then_present_again_no_crash)
 {
-    // First present() takes the full-redraw path; second takes the dirty path
-    // with most cells clean.  Verifies the dirty path doesn't crash or corrupt.
+    // Follow a full redraw with a mostly clean incremental frame.
     FdRedirect rd;
     Framebuffer fb(4, 4, /*headless=*/true);
     (void)fb.commit_pixel(0, 0, 0.5f, { 255, 0, 0 });
@@ -337,10 +336,8 @@ TEST(framebuffer, hud_empty_emits_no_hud_escape)
 
 TEST(framebuffer, hud_erase_precedes_text_never_follows)
 {
-    // The row is erased BEFORE the line is drawn. A trailing EL0 after a full-width line would
-    // eat the last character (with auto-wrap off the cursor finishes ON the final column), a bug
-    // these bytes cannot show on their own: the emission ORDER is the only testable proxy, and
-    // the rendered result is pinned by the tmux recipe in CLAUDE.md.
+    // Erase before drawing; trailing EL0 would remove a full-width line's last cell.
+    // Byte order is the unit-testable proxy for the rendered tmux check in CLAUDE.md.
     Framebuffer fb(10, 4, /*headless=*/true);
     CaptureStdout cap;
     fb.set_hud("HUDMARK");
@@ -441,10 +438,8 @@ TEST(framebuffer, hud_cleared_after_set_is_omitted)
 
 namespace
 {
-    // Runs the full-redraw frame that seeds m_prev_color, discarding its bytes in a capture
-    // scope of its own. The incremental frame under test is then the ONLY thing in the caller's
-    // capture: asserting across both frames is a trap, since the full redraw positions every row
-    // and emits no advances, so it can satisfy an assertion the incremental frame never earns.
+    // Seed m_prev_color in a separate capture so full-redraw positioning cannot
+    // satisfy assertions intended for the incremental frame.
     void seed_prev_color(Framebuffer &fb)
     {
         CaptureStdout warm;
@@ -491,10 +486,8 @@ TEST(framebuffer, incremental_multi_skip_emits_counted_cursor_advance)
     ASSERT_TRUE(inc.find("\033[4C") != std::string::npos);
 }
 
-// A clean run reaching the row end must emit no cursor advance of either form: the cursor is
-// hidden and never read back, and whatever writes next (a later dirty row, the HUD, or the next
-// frame) positions absolutely. Without this the escape is dead bytes on every row ending in
-// background. Mode-independent, so truecolor covers both.
+// A clean row tail needs no cursor advance because all later output positions
+// absolutely. This is mode-independent, so truecolor covers both.
 TEST(framebuffer, present_no_cursor_advance_for_clean_run_to_row_end)
 {
     Framebuffer fb(4, 2, /*headless=*/true);
@@ -528,8 +521,6 @@ TEST(framebuffer, present_next_dirty_row_repositions_after_dropped_advance)
     ASSERT_TRUE(inc.find("\033[2;1H") != std::string::npos); // row 1 still positioned absolutely
 }
 
-// The HUD is the most common thing that follows a dropped advance in real use: it must still
-// position itself absolutely on its own row rather than continuing from the pixel cursor.
 TEST(framebuffer, present_hud_positions_absolutely_after_dropped_advance)
 {
     Framebuffer fb(4, 2, /*headless=*/true); // 2 px tall = 1 pixel row; HUD lands on row 2
@@ -551,11 +542,8 @@ TEST(framebuffer, present_hud_positions_absolutely_after_dropped_advance)
 
 TEST(framebuffer, present_incremental_entirely_clean_row_emits_no_cursor_pos)
 {
-    // Incremental path: when no cell in a row changed, row_started stays false
-    // and no cursor-positioning or cell output is emitted for that row.
-    // CaptureStdout always rewinds on read(), so we count occurrences across
-    // both frames: \033[1;1H must appear exactly once (from the full-redraw),
-    // not twice, proving the clean incremental frame added none.
+    // A clean incremental row emits no positioning or cells. CaptureStdout retains
+    // both frames, so the home escape must occur only in the initial full redraw.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
     fb.present(); // frame 1: full-redraw, emits \033[1;1H once
@@ -597,11 +585,8 @@ TEST(framebuffer, present_height_1_does_not_crash)
 
 TEST(framebuffer, present_after_resize_forces_full_redraw)
 {
-    // resize() sets m_force_redraw=true; the next present() must take the
-    // full-redraw path and emit cursor positioning for every term row.
-    // Start with a 2-pixel-high FB (1 term row); frames 1-2 only emit \033[1;1H.
-    // Resize to 4-pixel-high (2 term rows); frame 3's full-redraw must emit
-    // \033[2;1H, something frames 1-2 never produced.
+    // Resize from one to two terminal rows. The next present must fully redraw and
+    // emit row-two positioning absent from the first two frames.
     Framebuffer fb(4, 2, /*headless=*/true);
     CaptureStdout cap;
     fb.present(); // frame 1: full-redraw (1 term row, only \033[1;1H)
@@ -632,10 +617,8 @@ TEST(framebuffer, emit_cell_top_eq_bot_known_bg_suppresses_sgr)
 
 TEST(framebuffer, write_byte_lut_boundary_values)
 {
-    // write_byte() has three ranges: [0-9] (1 digit), [10-99] (2 digits),
-    // [100-255] (3 digits).  Exercise the start and end of each range by using
-    // the value as the R channel of a pixel whose top != bot so that the fg SGR
-    // \033[38;2;R;G;Bm is emitted on the full-redraw present().
+    // Exercise both ends of write_byte's one-, two-, and three-digit ranges through
+    // the red channel of an emitted foreground SGR.
     const uint8_t vals[] = { 0, 9, 10, 99, 100, 255 };
     for (uint8_t v : vals)
     {
@@ -683,10 +666,8 @@ TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
 
 TEST(framebuffer, adopt_alt_screen_skips_enter_but_still_exits)
 {
-    // With adopt_alt_screen the graphics query already entered the alternate
-    // screen: the ctor must not re-enter (a leave/re-enter pair flashes the
-    // normal screen and a second 1049h clobbers the saved cursor), but the dtor
-    // still owns the exit.
+    // An adopted alternate screen must not be entered twice, but the framebuffer
+    // still owns the eventual exit.
     CaptureStdout cap;
     {
         Framebuffer fb(1, 2, /*headless=*/false, ColorMode::TrueColor, {}, /*adopt_alt_screen=*/true);
@@ -761,11 +742,8 @@ TEST(tonemap, vec3_applies_per_channel)
     ASSERT_NEAR(out.z, 0.996060f, 1e-4f); // 2.0 rolls off further
 }
 
-// quantize_256 (perceptual CIELAB nearest via the 64^3 LUT)
-// The RGB->palette-index map used by present() in ColorMode::Palette256. Cube 16..231,
-// grey ramp 232..255; never returns a 0..15 system colour. Each colour takes the
-// deltaE76-nearest entry for its 64^3 cell's centre, except that a cell containing an
-// exact palette colour maps to that colour.
+// quantize_256: nearest CIELAB entry through the 64^3 LUT
+// Results use cube/ramp indices 16..255, with exact palette colours fixed to themselves.
 
 namespace
 {
@@ -823,12 +801,8 @@ TEST(framebuffer, quantize_256_cube_exact)
 
 TEST(framebuffer, quantize_256_grey_ramp_exact)
 {
-    // Exact ramp values (8 + 10*k) pick index 232 + k; {160,160,160} is not one (its cell centre
-    // resolves to ramp 158 = 247 via the scan). 233 and 253 also pin the two hard-coded HUD bar
-    // palette constants (the {18,18,18} background and the {220,220,220} default foreground) at
-    // the emit site in framebuffer.cpp, which a static_assert can no longer reach now that the
-    // table is runtime-built. The composer's other foregrounds quantize at runtime in hud.cpp
-    // and need no pin here.
+    // Exact ramp values map to 232+k; 160 instead maps to ramp 158. Indices 233 and
+    // 253 also pin the framebuffer's hard-coded HUD background and foreground.
     ASSERT_EQ(static_cast<int>(quantize_256({ 8, 8, 8 })), 232);
     // Through the shared constants, not their literal values, so this fails if the bar's
     // colours move rather than only if the quantizer does.
@@ -854,11 +828,8 @@ TEST(framebuffer, quantize_256_cube_beats_grey)
 
 TEST(framebuffer, quantize_256_dark_colors_keep_hue)
 {
-    // The regression the CIELAB metric exists to fix: dark foliage green and terracotta brown
-    // used to collapse to the grey ramp under squared-RGB distance (the palette cube has no
-    // chromatic entry below 95 per channel, so nearly all dark colours were nearer a grey).
-    // deltaE76 keeps their hue. Margins to the runner-up entry are >= 0.47 deltaE (~4 orders
-    // above float noise), so the pins are stable across libm implementations.
+    // CIELAB keeps dark green and brown chromatic where squared RGB chose grey.
+    // Their runner-up margin is at least 0.47 deltaE, well above float noise.
     ASSERT_EQ(static_cast<int>(quantize_256({ 60, 90, 60 })), 65); // cube (95,135,95), green
     ASSERT_EQ(static_cast<int>(quantize_256({ 90, 55, 40 })), 95); // cube (135,95,95), rust
 }
@@ -920,12 +891,8 @@ TEST(framebuffer, quantize_256_never_system_color)
 
 TEST(framebuffer, quantize_256_matches_cielab_reference)
 {
-    // Ground truth for the whole table against an independent double-precision CIELAB
-    // implementation. For every 64^3 cell: a cell containing an exact palette colour must map to
-    // it; any other cell's entry must achieve the true minimum squared deltaE76 to the cell
-    // centre within a small epsilon (distances are compared, not indices, so a float-vs-double
-    // near-tie between two entries cannot flake the test). Deliberately exhaustive, not sampled:
-    // ~64 ms plain and ~1-2 s under the sanitizer CI jobs, accepted for a whole-table guarantee.
+    // Exhaustively compare all 64^3 cells with independent double-precision CIELAB.
+    // Compare distances rather than indices so float-vs-double near-ties remain stable.
     double pal_lab[240][3];
     for (int j = 0; j < 240; ++j)
     {
@@ -1327,10 +1294,7 @@ namespace
         return b64;
     }
 
-    // A runner that calls the task for each worker id in turn on this thread. The
-    // renderer supplies real concurrency in production; what needs pinning here is the
-    // chunk split and the stream assembly, and doing it deterministically keeps the
-    // test from depending on scheduling.
+    // Run each worker id sequentially to test deterministic splitting and assembly.
     Framebuffer::ParallelRunner sequential_runner(int n)
     {
         return { [n](const std::function<void(int, int)> &fn)
@@ -1346,11 +1310,8 @@ namespace
 
 TEST(framebuffer, kitty_parallel_deflate_stream_inflates_to_the_exact_frame)
 {
-    // The parallel path emits one zlib stream built from independently deflated chunks
-    // (each closed with a sync flush so it stays non-final). Nothing about that is
-    // visible except by inflating the result with an ordinary decoder, which is exactly
-    // what the terminal does. 1200x600 is 2.16 MB, comfortably past the size at which
-    // deflate_frame splits, so this really does take the chunked path.
+    // A 2.16 MB frame forces chunked deflate. Inflate the assembled stream with an
+    // ordinary decoder, matching terminal behavior.
     constexpr int W = 1200;
     constexpr int H = 600;
     Framebuffer fb(W, H, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(150, 37));
@@ -1457,10 +1418,8 @@ TEST(framebuffer, kitty_parallel_and_serial_deflate_agree)
 
 TEST(framebuffer, kitty_parallel_deflate_on_a_real_worker_pool)
 {
-    // The tests above drive the split through a sequential runner, which pins the
-    // assembly but never runs two chunks at once. This one borrows an actual Renderer
-    // pool, the way main.cpp does, so the concurrent path is what the sanitizer jobs
-    // see; without it TSan would report a clean run over code that never ran in parallel.
+    // Borrow a real Renderer pool so sanitizers exercise concurrent chunks, not only
+    // the deterministic sequential runner above.
     constexpr int W = 1200;
     constexpr int H = 600;
     Renderer renderer(4);
@@ -1492,13 +1451,8 @@ TEST(framebuffer, kitty_parallel_deflate_on_a_real_worker_pool)
 
 TEST(framebuffer, kitty_parallel_deflate_across_threshold_sizes)
 {
-    // The present path now decides serial-vs-parallel from pixel and byte counts, so the
-    // interesting frames are the ones straddling those thresholds, not one convenient
-    // size. 512x512 is exactly the 1<<18-pixel split point; 592x592 is just past the
-    // 1 MB minimum at which the deflate splits at all; the tiny frames sit under every
-    // threshold and also cover a single-pixel buffer and a frame shorter than one sixel
-    // band. Each is inflated back and checked, so a bad chunk boundary at any of them
-    // shows up here rather than on someone's terminal.
+    // Straddle the pixel and byte thresholds: 512x512 reaches parallel staging,
+    // 592x592 reaches chunked deflate, and tiny frames stay serial. Inflate every result.
     const int sizes[][2] = { { 1, 1 }, { 3, 7 }, { 64, 6 }, { 65, 5 }, { 511, 511 }, { 512, 512 }, { 592, 592 } };
     Renderer renderer(4);
     for (const auto &s : sizes)
@@ -1618,10 +1572,8 @@ TEST(framebuffer, kitty_idle_present_emits_no_image)
 
 TEST(framebuffer, kitty_zero_rows_deletes_resident_image)
 {
-    // A shrink to zero image rows (a one-row terminal with the HUD shown)
-    // transmits nothing, but the frame already resident in the terminal must
-    // not stay displayed over the HUD row: the first present after the shrink
-    // deletes it, exactly once.
+    // Shrinking to zero image rows transmits nothing but must delete the resident
+    // kitty image exactly once so it cannot cover the HUD.
     Framebuffer fb(4, 4, /*headless=*/true, ColorMode::TrueColor, direct_kitty_config(2, 2));
     fb.clear({ 1, 2, 3 });
     {
@@ -1694,11 +1646,8 @@ TEST(framebuffer, sixel_parallel_across_threshold_sizes)
 
 TEST(framebuffer, sixel_parallel_matches_serial_byte_for_byte)
 {
-    // Covers BOTH parallel stages of the sixel path: the per-pixel quantize and the
-    // per-band encode. Both are exact splits of deterministic work, so unlike the
-    // deflate (where the split legitimately moves the compressed bytes) the emitted
-    // frame must be byte-identical. 900x600 is 100 bands against 4 workers, past the
-    // thresholds at which both splits engage.
+    // A 900x600 frame engages parallel quantization and band encoding. Both splits
+    // are deterministic, so output must match serial bytes exactly.
     constexpr int W = 900;
     constexpr int H = 600;
     const auto paint = [](Framebuffer &fb)
@@ -1741,15 +1690,9 @@ TEST(framebuffer, sixel_parallel_matches_serial_byte_for_byte)
 
 TEST(framebuffer, sixel_recovers_when_the_pool_produces_nothing)
 {
-    // Both sixel stages hand work to the pool, and a worker CAN fail: append_bands grows
-    // a per-worker mask and a per-worker string (megabytes on a large frame), so
-    // bad_alloc is reachable and run_on_workers swallows it per worker. A runner that
-    // produces nothing stands in for that. The frame must come out byte-identical to the
-    // serial one, not spliced from partial band ranges (which would end mid-token, and
-    // no length check downstream would notice) and not carrying the previous frame's
-    // leftovers. The quantize half matters even more than the encode: an uncovered range
-    // leaves m_idx uninitialized, and the encoder turns a stale byte below 16 into a
-    // NEGATIVE colour-register index into a stack array.
+    // A runner that produces nothing models swallowed worker failures in both sixel
+    // stages. Serial recovery must prevent partial bands, stale bytes, and invalid
+    // palette indices, and reproduce the serial frame exactly.
     constexpr int W = 900;
     constexpr int H = 600;
     const auto paint = [](Framebuffer &fb)
@@ -1796,12 +1739,8 @@ TEST(framebuffer, sixel_recovers_when_the_pool_produces_nothing)
 
 TEST(framebuffer, sixel_survives_a_pool_reporting_a_different_worker_count)
 {
-    // The per-worker buffers and the completeness flags are sized from ParallelRunner::n_workers,
-    // but each worker bands the frame up from the count it is HANDED. Were a pool to disagree,
-    // marking a flag would let the completeness check pass over bands nobody encoded and splice a
-    // truncated (yet well-formed) frame. Workers that see a different count sit the round out, so
-    // every flag stays clear and the serial encoder runs. The renderer's pool always agrees; this
-    // pins the contract, since only the guard stands between a mismatch and a silent short frame.
+    // A worker-count mismatch changes band ownership. Mismatched workers must remain
+    // uncovered so completeness forces a serial encode instead of a truncated frame.
     constexpr int W = 900;
     constexpr int H = 600;
     const auto paint = [](Framebuffer &fb)
@@ -2013,10 +1952,7 @@ TEST(framebuffer, sync_output_idle_blocks_frame_stays_zero_bytes)
 
 TEST(framebuffer, resize_erase_is_deferred_into_the_next_frame_bracket)
 {
-    // resize() itself writes nothing; the whole-screen erase it owes travels
-    // inside the next present's synchronized bracket, so a resize swaps
-    // atomically to the new frame instead of blanking the window while the
-    // first re-render runs.
+    // resize() defers its erase into the next synchronized present, avoiding a blank frame.
     Framebuffer fb(4, 4, /*headless=*/true);
     fb.clear({ 1, 2, 3 });
     {
@@ -2116,16 +2052,8 @@ TEST(framebuffer, sixel_hud_only_change_emits_no_frame)
 
 TEST(framebuffer, kitty_staging_fill_survives_a_pool_reporting_a_different_worker_count)
 {
-    // split_ranges sizes its completeness flags from ParallelRunner::n_workers, but each worker
-    // splits [0, total) by the count it is HANDED and the serial redo uses the flag count. A
-    // worker splitting by a different one would mark a range it never filled, leaving a hole that
-    // ships as stale bytes IN PIXELS. Mismatched workers therefore sit the round out, leaving
-    // every flag clear so the redo covers the frame.
-    //
-    // Frame 0 goes through a MATCHING pool so the staging buffer is known-good, then frame 1
-    // through the mismatched one; a hole then holds frame 0 and is visible. Leaving the buffer's
-    // prior content to the allocator does not work: a same-sized block is handed back holding
-    // exactly the bytes expected, and the test passes with the guard removed (observed, twice).
+    // Seed staging through a matching pool, then use a mismatched worker count.
+    // Mismatched workers must stay uncovered so serial redo replaces every stale range.
     constexpr int W = 640;
     constexpr int H = 480; // 307200 px, past write_rgb's 1<<18 split threshold
     const auto paint = [](Framebuffer &fb, int frame)
@@ -2187,16 +2115,8 @@ TEST(framebuffer, kitty_staging_fill_survives_a_pool_reporting_a_different_worke
 
 TEST(framebuffer, kitty_staging_fill_recovers_from_an_incomplete_pool)
 {
-    // write_rgb splits the staging fill by pixel range, and unlike the deflate (whose zero chunk
-    // length reveals a gap) that loop allocates nothing, so it has no failure signal of its own:
-    // a worker that never ran would ship stale bytes AS PIXELS, silently. The runner here serves
-    // only the even worker ids, standing in for that; the serial redo must fill the rest.
-    //
-    // Frame 0 runs through a COMPLETE pool so the staging buffer is known-good, then frame 1
-    // through the crippled one, so a range the redo missed still holds frame 0 and shows up.
-    // Comparing a fresh framebuffer against a serial one instead does NOT work: the staging
-    // buffer it allocates is the block the previous run just freed, still holding exactly the
-    // bytes expected, and the test then passes with the whole redo loop deleted (observed).
+    // Seed staging with a complete frame, then run only even worker ids. Serial redo
+    // must overwrite every uncovered range rather than transmit stale pixels from frame 0.
     constexpr int W = 640;
     constexpr int H = 480; // 307200 px, past write_rgb's 1<<18 split threshold
     const auto paint = [](Framebuffer &fb, int frame)

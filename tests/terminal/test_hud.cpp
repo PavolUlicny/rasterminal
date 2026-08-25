@@ -218,11 +218,8 @@ TEST(hud, first_person_speed_outlives_the_lighting_mode)
 
 TEST(hud, every_drop_level_styles_its_first_glyph)
 {
-    // The framebuffer sets a default foreground before the line, so an unstyled glyph would not
-    // look broken, just wrong: it would take that default instead of the style the composer
-    // chose. The dedup makes this hold by construction (nothing is known-current at the start,
-    // so the first non-padding segment always emits), but the drop levels shed leading segments,
-    // so pin it at every width from the full bar down past the floor, in both colour depths.
+    // The first retained segment must emit its style instead of inheriting the
+    // framebuffer default. Check every drop level in both colour modes.
     HudInfo wf = wireframe_info();
     HudInfo fp = base_info();
     fp.first_person = true;
@@ -243,11 +240,8 @@ TEST(hud, every_drop_level_styles_its_first_glyph)
 
 TEST(hud, the_fps_reading_outlives_every_other_field)
 {
-    // The right zone is right-aligned, so whatever the line overruns by is taken off its LAST
-    // field, which is the fps reading the floor exists to protect: letting the line run past the
-    // edge hands the choice to the terminal and it always makes the wrong one. The ladder keeps
-    // going instead (name budget, then the name, then the first-person speed), so from the width
-    // where the numbers alone fit, the line stays inside cols and still ends with the reading.
+    // The right-aligned FPS field must survive every supported width. The drop ladder
+    // removes name budget, name, and speed before allowing the line to overrun.
     for (const int cols : { 80, 40, 30, 24, 20, 16, 12, 10 })
     {
         const std::string out = compose_hud(base_info(), cols, ColorMode::TrueColor);
@@ -298,10 +292,8 @@ TEST(hud, toggle_tags_accent_on_dim_off)
 
 TEST(hud, background_field_is_dimmer_than_the_fields_before_it)
 {
-    // With the captions gone, the wireframe colour and the background are the only two fields
-    // that can render the same word ("white", two fields apart). The background carries the
-    // label grey rather than the value grey so they stay tellable apart, which also matches its
-    // being the first field the layout drops.
+    // Without captions, wireframe and background may both read "white". Give the
+    // background label styling so the two fields remain distinguishable.
     HudInfo info = base_info();
     info.shading_name = "wireframe";
     info.wf_name = "white";
@@ -312,7 +304,7 @@ TEST(hud, background_field_is_dimmer_than_the_fields_before_it)
     // The background now shares the label grey with the separator that precedes it, so the SGR
     // dedup emits one escape covering both and the word follows the separator directly.
     ASSERT_TRUE(out.find("\033[38;2;140;140;140m \xc2\xb7 white") != std::string::npos);
-    // ...and it is emphatically not in the brighter value grey, which the lighting mode keeps.
+    // The background label must not use the brighter grey reserved for values such as lighting.
     ASSERT_TRUE(out.find("\033[38;2;220;220;220mwhite") == std::string::npos);
     ASSERT_TRUE(out.find("\033[38;2;220;220;220mdual") != std::string::npos);
 }
@@ -372,10 +364,8 @@ TEST(hud, nonascii_name_fills_the_bar_exactly)
 
 TEST(hud, name_starting_with_an_orphan_selector_fills_the_bar_exactly)
 {
-    // The name is measured on its own and its width summed with the other segments, so a
-    // segment whose first character's width depends on what precedes it would resolve to one
-    // number here and render as another. A leading emoji presentation selector is the only such
-    // case, and it is dropped rather than measured.
+    // Drop a leading emoji presentation selector because its width depends on the
+    // preceding segment, while the name is measured independently.
     HudInfo info = base_info();
     const std::string name = std::string("\xef\xb8\x8f") + "model.obj";
     info.model_name = name;

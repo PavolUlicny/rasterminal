@@ -8,11 +8,8 @@
 
 TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
 {
-    // image[0] has bufferView=1 (4 garbage bytes) and no URI.
-    // load_tex takes the else-if(img->buffer_view) branch; load_from_memory fails
-    // on the garbage data → load_tex returns -1 → mat.normal_map.tex = -1.
-    // Covers both the buffer_view branch in load_tex AND the mat.normal_map.tex
-    // assignment in map_mat.  Mesh geometry still loads.
+    // A garbage bufferView with no URI fails embedded decoding and leaves the
+    // normal-map slot unbound while geometry still loads.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"material\":0}]}],"
@@ -140,11 +137,8 @@ TEST(gltf_valid, normal_scale_default_one_no_has_flag)
 
 TEST(gltf_valid, normal_scale_with_failed_decode_no_has_flag)
 {
-    // scale=0.5 is parsed (assignment lives inside if(normal_texture.texture),
-    // which is truthy whenever the JSON binds a texture, independent of decode),
-    // but the 4 garbage image bytes make load_tex return -1. The has_normal_scale
-    // predicate's normal_tex>=0 guard must keep the gate disarmed despite the
-    // non-unit scale, so a failed normal-map decode never costs the per-pixel path.
+    // Parse scale 0.5, then fail image decoding. An unbound normal texture must keep
+    // has_normal_scale false despite the non-unit authored value.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"material\":0}]}],"
@@ -324,10 +318,7 @@ TEST(gltf_valid, occlusion_strength_above_one_clamped)
 
 TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
 {
-    // image[0] has uri="does_not_exist.tga" (no bufferView).
-    // load_tex takes the URI branch; tex.load(dir + uri) fails because the file
-    // does not exist → load_tex returns -1 → mat.diffuse_map.tex = -1.
-    // Covers the if(img->uri) branch in load_tex.  Mesh geometry still loads.
+    // A missing external image leaves the binding unset without failing the mesh.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":[{\"attributes\":"
                              "{\"POSITION\":0},\"material\":0}]}],"
@@ -352,10 +343,6 @@ TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
 
 TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
 {
-    // image[0] has bufferView=1 pointing to a valid 1×1 BMP embedded in the GLB
-    // binary buffer.  load_tex takes the buffer_view branch and load_from_memory
-    // succeeds → ok=true → lines 62-64 in mesh_gltf.cpp (store idx, push texture,
-    // return idx) are executed.  mat.diffuse_map.tex is set to a valid (≥0) index.
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
     std::string bin;
     emit_tri_verts(bin); // 36 bytes geometry at offset 0
@@ -387,10 +374,7 @@ TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
 
 TEST(gltf_valid, shared_image_deduplicates_texture)
 {
-    // Two primitives both reference material 0, whose baseColorTexture resolves
-    // to image 0 (a valid embedded BMP).  map_mat runs once per primitive, so
-    // load_tex is invoked twice with the same cgltf_image; dedup must collapse
-    // them into a single texture slot rather than decoding twice.
+    // Two primitives reuse material 0, causing two lookups of the same embedded image.
     constexpr size_t bmp_size = sizeof(k1x1_red_bmp);
     std::string bin;
     emit_tri_verts(bin); // 36 bytes geometry at offset 0
@@ -624,7 +608,7 @@ TEST(gltf_sampler, dedup_splits_on_differing_sampler)
 
 TEST(gltf_sampler, dedup_keeps_identical_sampler)
 {
-    // Two textures, same image, same sampler → still one decoded slot (no dedup regression).
+    // Identical images and samplers deduplicate to one slot.
     std::string bin;
     emit_tri_verts(bin);
     bin.append(reinterpret_cast<const char *>(k1x1_red_bmp), sizeof(k1x1_red_bmp));

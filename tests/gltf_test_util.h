@@ -1,10 +1,7 @@
 #pragma once
 
-// Shared GLB builders for the per-theme glTF loader test files
-// (test_gltf.cpp + test_gltf_{topology,vertex_colors,textures,texcoord1,texture_transform}.cpp).
-// Header-only: each translation unit gets its own `static` copy (tiny, test-only),
-// matching tests/loader_util.h. [[maybe_unused]] silences -Wunused-function in
-// translation units that pull in the header but do not call every helper.
+// Shared header-only GLB builders. Static copies are tiny; [[maybe_unused]] covers
+// translation units that use only part of the helper set.
 
 #include "tests/loader_util.h"
 

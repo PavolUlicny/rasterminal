@@ -277,11 +277,8 @@ TEST(normals, winding_order_determines_sign)
 
 TEST(normals, area_weighted_averaging)
 {
-    // Two triangles share edge (0,0,0)-(10,0,0) at a 45 deg fold (< 60 deg crease,
-    // so the shared-edge vertices stay merged into one normal). The +Z triangle has
-    // ~70x the area of the small tilted one, so the merged normal is dominated by
-    // +Z. Without area weighting (equal-weight unit normals) the shared normal's z
-    // would fall to ~0.92, so z > 0.99 specifically verifies area weighting.
+    // A large +Z face and 70x smaller tilted face smooth across a 45-degree fold.
+    // Area weighting keeps shared normal z above 0.99; equal weighting gives about 0.92.
     const std::string obj = "v 0 0 0\n"
                             "v 10 0 0\n"
                             "v 0 10 0\n"
@@ -393,11 +390,8 @@ TEST(normals, crease_threshold_controls_split)
 
 TEST(normals, crease_boundary_brackets_threshold)
 {
-    // Same 90 deg fold, but the crease angle now sits one degree on either side of the
-    // dihedral to pin the comparison (cos_a >= crease_cos, mesh.cpp) right at the
-    // boundary: earlier tests only bracket far away (45/180). The exact-90 case is left
-    // unasserted: std::cos(to_radians(90)) is not exactly 0 in float, so equality there
-    // is too fragile to depend on.
+    // Bracket a 90-degree fold at 89 and 91 degrees to pin the comparison near its
+    // boundary without relying on fragile floating-point equality at exactly 90.
     const std::string obj = "v 0 0 0\n"
                             "v 1 0 0\n"
                             "v 0 1 0\n"
@@ -454,11 +448,9 @@ TEST(normals, bowtie_point_share_splits)
     ASSERT_EQ(at_origin, 2); // bowtie split despite full-smooth threshold
 }
 
-// compute_normals: smoothing groups (OBJ)
-// When an OBJ authors `s` directives they are authoritative over the crease angle:
-// faces smooth iff they share the same non-zero group; `s off`/`s 0` is faceted.
-// Each test below uses geometry whose crease-angle outcome is the OPPOSITE of the
-// group outcome, isolating the override.
+// compute_normals: OBJ smoothing groups
+// Authored nonzero groups override crease angle; off/zero stays faceted. Each case
+// chooses geometry where the angle alone would produce the opposite result.
 
 TEST(normals, smoothing_group_splits_where_angle_would_merge)
 {
@@ -583,11 +575,8 @@ TEST(normals, smoothing_group_smooths_across_uv_seam)
 
 TEST(normals, smoothing_group_differs_across_uv_seam_no_weld)
 {
-    // Same geometry as smoothing_group_smooths_across_uv_seam (90 deg fold, UV seam
-    // splitting the origin), but the two faces are in DIFFERENT groups. The seam already
-    // splits the origin by UV; the open question is whether the group machinery welds the
-    // two halves' normals back together. Different groups must NOT unite: each half keeps
-    // its own axis-aligned face normal, the opposite of the same-group welded case above.
+    // A UV seam already splits the folded origin. Different smoothing groups must
+    // keep those halves axis-aligned instead of welding their normals together.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
                             "vt 0 0\nvt 1 0\nvt 0 1\nvt 0.5 0.5\nvt 0.6 0.6\nvt 0.2 0.8\n"
                             "s 1\n"
@@ -620,11 +609,8 @@ TEST(normals, smoothing_group_differs_across_uv_seam_no_weld)
 
 TEST(normals, smoothing_group_smooths_across_object_boundary)
 {
-    // The same group 1 spans two `g` shapes. OBJ smoothing-group ids are file-global
-    // (tinyobj keeps the active id across `g`/`o`), and the loader builds the
-    // per-triangle id array across all shapes, so two same-group faces in different
-    // shapes sharing an edge must merge at a 90 deg fold (where the angle would
-    // split). Guards both the cross-shape semantics and the multi-shape build loop.
+    // Smoothing ids are file-global across `g` shapes. Two same-group faces in
+    // different shapes must merge across a 90-degree edge despite the crease angle.
     const std::string obj = "v 0 0 0\n"
                             "v 1 0 0\n"
                             "v 0 1 0\n"
@@ -862,11 +848,8 @@ TEST(ao, disabled_skips_computation)
 
 TEST(ao, stl_load_runs_compute_ao)
 {
-    // STL now consumes stl_reader's shared (deduplicated) vertices, so compute_ao runs for STL
-    // like every other format (the old ext=="stl" skip is gone). Same concave pyramid pit as
-    // ao/concave_vertex_darkened and ao/ply_load_runs_compute_ao: a center vertex at (0,0,0)
-    // shared by 4 facets, rim at z=1 → curvature 1/sqrt(2) → clamps to ao = 0.85. The center is written
-    // bit-identically in every facet so stl_reader welds it into one shared, 4-incident vertex.
+    // Deduplicated STL vertices now receive AO like other formats. Four facets share
+    // the pit center, whose curvature clamps to AO 0.85.
     auto facet = [](const char *a, const char *b, const char *c)
     {
         return std::string("facet normal 0 0 0\n  outer loop\n    vertex ") + a + "\n    vertex " + b +
@@ -945,11 +928,8 @@ TEST(ao, convex_vertex_stays_at_one)
 
 TEST(ao, shallow_concavity_darkens_less_than_deep)
 {
-    // The point of the magnitude-aware curvature: depth matters relative to spacing, so a shallow
-    // dip darkens far less than a deep one of the same width. The old normalized formula discarded
-    // depth and gave both the SAME 0.85; reverting to dot(normalize(d), N) fails this test.
-    //
-    // Same 4-facet pyramid pit as ao/concave_vertex_darkened, parameterized by rim height z.
+    // Magnitude-aware curvature makes a shallow pit lighter than a deep pit of equal
+    // width. Normalizing displacement would discard depth and give both AO 0.85.
     auto pit = [](const char *z)
     {
         return std::string("v 0 0 0\n") + "v 1 0 " + z + "\n" + "v 0 1 " + z + "\n" + "v -1 0 " + z + "\n" + "v 0 -1 " +
@@ -969,14 +949,13 @@ TEST(ao, shallow_concavity_darkens_less_than_deep)
     ASSERT_TRUE(shallow.load_model(shallow_f.path, /*ao=*/true, /*n_threads=*/1, /*crease_angle_deg=*/180.0f));
     ASSERT_NEAR(shallow.vertices[0].ao, 0.9503f, 1e-3f);
 
-    // The shallow dip must be visibly lighter than the deep one (the regression the fix targets).
+    // The shallow dip must be visibly lighter than the deep one.
     ASSERT_TRUE(shallow.vertices[0].ao > deep.vertices[0].ao + 0.05f);
 }
 
 TEST(mesh, load_model_sets_has_double_sided_false_for_obj)
 {
-    // std::any_of in load_model() checks all materials; OBJ never sets double_sided.
-    // Verifies the flag is computed via the std::any_of path, not left at its clear() default.
+    // OBJ never sets double_sided, so the aggregate flag remains false.
     const std::string obj = "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
     TmpFile f(tmp_path("rast_ds_obj.obj"), obj);
     Mesh m;

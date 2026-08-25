@@ -49,12 +49,8 @@ TEST(gltf_valid, color0_sets_has_vertex_colors_and_loads_rgb)
 
 TEST(gltf_valid, partial_color0_split_inherits_color)
 {
-    // Two primitives, NO normals anywhere (so compute_normals runs). P0 has COLOR_0
-    // and a 90 deg fold whose shared edge splits at the default crease; P1 has no
-    // COLOR_0 and comes after, so vertex_colors ends up shorter than vertices. The
-    // split copies of the colored origin vertex must inherit its color, and
-    // vertex_colors must stay the same length as vertices.
-    // Regression: with the short-array gate, split copies were padded white instead.
+    // P0 has COLOR_0 and a crease split; following P1 has no colors or normals.
+    // Split copies must inherit color and keep vertex_colors parallel to vertices.
     const std::string json =
         "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
         "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
@@ -143,12 +139,8 @@ TEST(gltf_valid, partial_color0_split_inherits_color)
 
 TEST(gltf_valid, partial_color0_uncolored_primitive_first)
 {
-    // Reverse of the above: the UNCOLORED primitive (P0) comes FIRST, the colored
-    // one (P1) second. The colored primitive's resize(vert_base + n_verts, white)
-    // is absolute-indexed by vert_base, so it back-fills P0's leading gap with white
-    // and writes P1's colors at the correct indices: colors must NOT shift. No
-    // normals anywhere so compute_normals runs; the two triangles share nothing so
-    // there is no split. Proves the leading/middle-gap ordering, not just tail-gap.
+    // Put the uncolored primitive first. Absolute resize must backfill its leading
+    // gap with white without shifting the following primitive's colors.
     const std::string json =
         "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
         "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
@@ -222,11 +214,8 @@ TEST(gltf_valid, partial_color0_uncolored_primitive_first)
 
 TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
 {
-    // Two-primitive mesh: prim 0 has no COLOR_0 (3 verts), prim 1 has COLOR_0
-    // (3 verts: red, green, blue).  When prim 1 is processed with vert_base=3,
-    // vertex_colors.resize(6, {1,1,1}) fills indices 0-5 with white then the
-    // loop overwrites [3..5] with actual colors.
-    // Covers the vert_base>0 resize path in the color_acc block.
+    // The second primitive introduces COLOR_0 at vert_base 3. Resize must backfill
+    // the first primitive white, then write red/green/blue at indices 3..5.
     const std::string json = "{\"asset\":{\"version\":\"2.0\"},\"scene\":0,\"scenes\":[{\"nodes\":[0]}],"
                              "\"nodes\":[{\"mesh\":0}],\"meshes\":[{\"primitives\":["
                              "{\"attributes\":{\"POSITION\":0}},"

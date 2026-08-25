@@ -75,11 +75,8 @@ namespace
         return rgb;
     }
 
-    // Reassembles the chunked payload and asserts the framing rules the protocol
-    // states: only the first record carries the control keys, every record but
-    // the last says m=1, the last m=0 (or no m at all when there is only one),
-    // and every non-final chunk is a multiple of 4 base64 chars within the 4096
-    // ceiling.
+    // Reassemble payload while checking control keys, m continuation flags, and
+    // non-final base64 chunks aligned to four bytes within the 4096-byte limit.
     std::vector<unsigned char> decode_direct(const std::vector<Apc> &apcs, int width, int height)
     {
         ASSERT_TRUE(!apcs.empty());

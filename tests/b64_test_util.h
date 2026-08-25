@@ -5,9 +5,7 @@
 #include <string>
 #include <vector>
 
-// Independent base64 decoder so kitty.cpp's encoder is not checking itself.
-// Shared by test_kitty.cpp and the framebuffer kitty-present tests; '=' padding
-// is skipped, any other non-alphabet byte fails the calling test.
+// Independent decoder for kitty output. It skips '=' padding and rejects other non-alphabet bytes.
 inline std::vector<unsigned char> b64_decode(const std::string &s)
 {
     auto val = [](char c) -> int

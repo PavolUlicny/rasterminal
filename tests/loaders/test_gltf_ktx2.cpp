@@ -164,9 +164,7 @@ TEST(gltf_ktx2, basisu_source_preferred_over_fallback_image)
     ASSERT_EQ(t.height, 6);
 }
 
-// Graceful degradation: when the preferred KTX2 fails to transcode but the
-// texture also supplies an ordinary source, fall back to it (KHR_texture_basisu
-// intent) rather than dropping the texture.
+// If KTX2 transcoding fails, use the texture's ordinary source.
 
 TEST(gltf_ktx2, falls_back_to_ordinary_source_when_ktx2_fails)
 {

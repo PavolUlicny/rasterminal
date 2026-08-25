@@ -1,21 +1,12 @@
 #pragma once
 
-// Tiny real Draco bitstream used by tests/test_gltf_draco.cpp.
-//
-// Encoded once from a unit cube OBJ (8 positions / 4 UVs / 6 normals
-// expanded to 24 unshared verts + 12 tris) with draco_encoder at the
-// default settings. Vendoring the bytes, rather than a .drc/.glb model
-// file, keeps the repo literally model-file-free; we vendor only the
-// Draco decoder, so this can't be regenerated inline. To regenerate,
-// follow vendor/README.md's Draco refresh recipe (build draco_encoder
-// in scratch, encode any small mesh, paste the xxd -i output here).
-//
-// Encoder-assigned attribute unique-ids (verified with a vendored-decoder
-// inspector at fixture-mint time):
+// Unit-cube Draco fixture: 24 unshared vertices and 12 triangles. Regenerate with
+// vendor/README.md's Draco recipe; the project vendors no encoder.
+// Attribute IDs:
 //   POSITION   -> 0
 //   TEXCOORD_0 -> 1
 //   NORMAL     -> 2
-// num_points = 24, num_faces = 12, positions[0] = (-1, 1, -1).
+// positions[0] = (-1, 1, -1).
 constexpr unsigned char draco_cube_drc[] = {
     0x44, 0x52, 0x41, 0x43, 0x4f, 0x02, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x08, 0x0c, 0x02, 0x0b, 0x00, 0x00, 0x03,
     0x5f, 0x4b, 0x15, 0x01, 0x01, 0x10, 0x72, 0x04, 0x60, 0x35, 0x6b, 0x6a, 0x55, 0x04, 0x8a, 0xac, 0xa4, 0x46, 0x03,

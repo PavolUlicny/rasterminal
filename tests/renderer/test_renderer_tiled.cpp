@@ -8,11 +8,8 @@
 #include <string>
 #include <vector>
 
-// The renderer's two opaque passes (immediate and tiled visibility-buffer) must produce the
-// same picture. Every scene here is rendered through both, forced by Renderer::opaque_path,
-// and compared pixel by pixel: colours may differ by rounding (the tiled pass evaluates edge
-// functions and barycentrics in a different order), coverage may differ only on the rare pixel
-// whose centre sits on a triangle edge, and nothing else.
+// Force every scene through immediate and tiled opaque paths. Pixel colors may
+// round differently, and only centers exactly on triangle edges may differ in coverage.
 
 namespace
 {
@@ -172,17 +169,8 @@ namespace
 
 TEST(renderer_tiled, a_resize_does_not_throw_away_the_pass_choice)
 {
-    // The Auto predictor reads the previous frame's pixel-weighted mean triangle area,
-    // which is an on-screen AREA, so a resize rescales it rather than invalidating it
-    // (screen x and y both scale with the frame height under a vertical-fov projection).
-    // Before that, every resize spent one frame on the immediate pass: measured 170 ms
-    // against a settled 7.8 ms on Sponza at zoom 4. Interactive resizing delivers a
-    // stream of resize events, so it was a stream of those frames.
-    //
-    // A 4x4-quad grid over a frame past TILE_MIN_PIXELS is squarely in tiled territory.
-    // It needs to be a grid rather than one triangle: only one drawn triangle in
-    // AREA_SAMPLE feeds the statistic, so a mesh of fewer than 8 never accumulates one and
-    // can never leave the immediate pass at all.
+    // Resize must rescale the previous screen-space area statistic instead of forcing
+    // an immediate frame. A 4x4 grid supplies enough samples to select tiling.
     constexpr int RW = 400;
     constexpr int RH = 200;
     Mesh mesh = make_grid(4);
@@ -213,8 +201,7 @@ TEST(renderer_tiled, a_resize_does_not_throw_away_the_pass_choice)
     r.render(mesh, cam, lights, 1, { 0.2f, 0.2f, 0.2f }, fb);
     ASSERT_TRUE(r.last_frame_tiled());
 
-    // Shrinking below TILE_MIN_PIXELS must still fall back: the rescale changes which
-    // pass is right, it does not pin the old answer.
+    // Shrinking below TILE_MIN_PIXELS must recompute the decision and fall back.
     fb.resize(64, 32);
     fb.clear();
     r.render(mesh, cam, lights, 1, { 0.2f, 0.2f, 0.2f }, fb);
@@ -432,9 +419,7 @@ TEST(renderer_tiled, auto_on_a_cold_small_frame_matches_the_forced_passes)
 
 TEST(renderer_tiled, auto_choosing_tiles_matches_both_forced_passes)
 {
-    // Auto's own choice rather than a forced one, which needs a frame past TILE_MIN_PIXELS
-    // and a previous frame of the same mesh for the predictor to read. The picture then has
-    // to match BOTH forced passes, so a wrong choice cannot hide behind agreeing with one.
+    // Prime Auto's predictor, then compare its output with both forced paths.
     constexpr int AW = 400;
     constexpr int AH = 200;
     Scene s;
@@ -481,14 +466,9 @@ TEST(renderer_tiled, large_frame_many_tiles)
 
 TEST(renderer_tiled, a_single_odd_frame_does_not_flip_the_pass)
 {
-    // The path choice is damped in time: the statistics must ask for the other pass on several
-    // consecutive frames before render() switches. They are sampled ratios over a moving view and
-    // their tails are wide, so one frame's dip across a threshold is noise, and acting on it costs
-    // a frame at the wrong pass's price. Un-damped this misbehaved badly in practice: a zoomed-in
-    // Sponza kept its median but its worst frame went from 32 ms to 218 ms.
-    //
-    // Perturbed with the CAMERA, not the mesh: a mesh change is a different scene and deliberately
-    // resets the damping so the new one is judged at once (see render()).
+    // Require several consecutive votes before switching paths so a moving view's
+    // sampled tail cannot cause one-frame oscillation. Perturb the camera because a
+    // mesh change intentionally resets damping.
     constexpr int RW = 400;
     constexpr int RH = 200;
     Mesh mesh = make_grid(4);
@@ -507,14 +487,14 @@ TEST(renderer_tiled, a_single_odd_frame_does_not_flip_the_pass)
     }
     ASSERT_TRUE(r.last_frame_tiled());
 
-    // One frame from far away, then back. Not enough evidence to move the choice.
+    // One distant frame does not overcome damping.
     fb.clear();
     r.render(mesh, far_cam, lights, 1, { 0.2f, 0.2f, 0.2f }, fb);
     fb.clear();
     r.render(mesh, near_cam, lights, 1, { 0.2f, 0.2f, 0.2f }, fb);
     ASSERT_TRUE(r.last_frame_tiled());
 
-    // Sustained, though, it must be followed: the damping delays a real change, never blocks it.
+    // Sustained distant frames switch away from tiling.
     for (int i = 0; i < 24; i++)
     {
         fb.clear();
@@ -522,7 +502,7 @@ TEST(renderer_tiled, a_single_odd_frame_does_not_flip_the_pass)
     }
     ASSERT_FALSE(r.last_frame_tiled());
 
-    // And coming back is followed too, so the damping is not a one-way latch.
+    // Sustained near frames switch back to tiling.
     for (int i = 0; i < 24; i++)
     {
         fb.clear();
@@ -533,13 +513,9 @@ TEST(renderer_tiled, a_single_odd_frame_does_not_flip_the_pass)
 
 TEST(renderer_tiled, a_worker_task_throwing_length_error_does_not_terminate)
 {
-    // worker_func is a std::thread entry, so anything escaping it is std::terminate. The
-    // guards there catch std::exception and not std::bad_alloc for a reason: a vector grown
-    // past max_size throws LENGTH_ERROR without attempting an allocation, and on ILP32 a
-    // vector<uint32_t> tops out at PTRDIFF_MAX/4, which the tiled pass's tile-touch total can
-    // exceed while nowhere near out of memory. Reaching that through the tiled pass needs a
-    // 32-bit build and a half-billion tile touches; run_on_workers is the same catch on the
-    // same thread, so it pins the behaviour on every target.
+    // Worker entry points must catch any std::exception, including length_error from
+    // vector max_size on ILP32, or std::thread calls terminate. run_on_workers pins
+    // that catch without requiring half a billion tile touches.
     Renderer r(4);
     // Not the 4 requested: resolve_thread_count clamps to the hardware thread count, so a
     // two- or three-core runner builds a smaller pool.
@@ -570,16 +546,7 @@ TEST(renderer_tiled, a_worker_task_throwing_length_error_does_not_terminate)
 
 TEST(renderer_tiled, a_new_mesh_is_judged_at_once_rather_than_damped)
 {
-    // The damping above deliberately does NOT apply to the first stats-backed choice on a scene:
-    // a mesh change is a different question, and damping it would spend PATH_SWITCH_FRAMES frames
-    // on the immediate pass every time the model changes, which on the scenes the tiled pass
-    // exists for is the difference between ~10 ms and ~58 ms a frame.
-    //
-    // The subtlety this pins is that clearing the settled FLAG is not enough: the statistics it
-    // is re-latched from are only rewritten after the frame's dispatch, so an implementation that
-    // leaves them holding the previous mesh's numbers re-latches on the mesh-change frame itself
-    // and damps the new mesh after all. That misbehaves only from the SECOND mesh onward, which
-    // is why this renders two.
+    // A mesh change clears settled state and statistics, bypassing damping on the new scene.
     constexpr int RW = 400;
     constexpr int RH = 200;
     Renderer r(4);

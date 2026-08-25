@@ -2,10 +2,8 @@
 #include "tests/rasterize_test_util.h"
 #include "src/render/rasterize.h"
 
-// Integration coverage for the soft-knee highlight rolloff at the rasterizer commit sites.
-// The pure-function curve is locked in test_framebuffer.cpp; here we verify it actually reaches
-// the framebuffer through rasterize_flat (Flat + unlit) and rasterize_phong, and that the unlit
-// path is excluded. Geometry: one triangle covering pixel (20,10) in a 40x20 buffer.
+// Verify the soft-knee rolloff reaches flat and Phong output, but not the unlit path.
+// The triangle covers pixel (20,10) in a 40x20 buffer.
 
 namespace
 {
@@ -46,9 +44,8 @@ TEST(rasterize_tonemap, opaque_below_knee_byte_identical)
     assert_pixel_near(fb, 20, 10, Color{ 127, 127, 127 }, 0);
 }
 
-// The defining win: two distinct above-1 lit values map to distinct displayed values (gradient
-// restored), where the old hard clamp collapsed both to flat 255. tonemap(1.0) -> 226,
-// tonemap(1.6) -> 0.98506 -> 251.
+// Above-range values remain distinct instead of both clamping to 255:
+// tonemap(1.0) -> 226; tonemap(1.6) -> 251.
 TEST(rasterize_tonemap, distinct_overrange_values_stay_distinct)
 {
     Framebuffer fb_a(40, 20, /*headless=*/true), fb_b(40, 20, /*headless=*/true);

@@ -198,11 +198,8 @@ TEST(clip_near, two_inside_c_outside_correct_output)
 
 TEST(clip_near, two_inside_uv_interpolated_at_both_crossings)
 {
-    // Verifies cross_edge UV interpolation in the n=2 path (two separate crossings).
-    // a inside: w=2, uv=(0,0).  b inside: w=2, uv=(1,0).  c outside: w=0, uv=(1,1).
-    // t = (NEAR - 2) / (0 - 2) = (0.1 - 2) / (0 - 2) = 0.95 for both edges.
-    // cross(b,c): uv = (1,0) + ((1,1)-(1,0))*0.95 = (1, 0.95)
-    // cross(a,c): uv = (0,0) + ((1,1)-(0,0))*0.95 = (0.95, 0.95)
+    // Pin both n=2 crossing interpolations. With a,b at w=2 and c at w=0,
+    // t=0.95 gives cross(b,c) uv=(1,0.95) and cross(a,c) uv=(0.95,0.95).
     ClipVert a = make_cv(2.0f, 0.0f, 0.0f);
     ClipVert b = make_cv(2.0f, 1.0f, 0.0f);
     ClipVert c = make_cv(0.0f, 1.0f, 1.0f);

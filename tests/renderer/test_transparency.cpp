@@ -259,13 +259,8 @@ TEST(transparency, two_disjoint_regions_both_resolved)
     ASSERT_TRUE(gap.r == 0 && gap.g == 0 && gap.b == 255);
 }
 
-// Each worker accumulates its touched-pixel box in a worker-local variable (kept off the
-// shared, cache-line-adjacent box array to avoid false sharing under heavy overdraw); render()
-// then merges the per-worker boxes. This stresses that merge: four high-overdraw clusters in
-// the screen corners, with enough stacked triangles (256 total > 4 work-stealing chunks) that
-// the clusters land on different workers. Every cluster must composite: dropping or mismerging
-// any worker's box would leave that corner at the background, while the central gap, touched by
-// no worker, stays the exact background.
+// Four high-overdraw corner clusters span multiple work claims. Merging worker-local
+// touched boxes must composite every corner while leaving the untouched center exact.
 TEST(transparency, multi_worker_box_merge_covers_all_regions)
 {
     Renderer r(4);
@@ -324,13 +319,8 @@ TEST(transparency, occluded_by_opaque)
 
 TEST(transparency, resizing_repeatedly_keeps_the_a_buffer_correct)
 {
-    // The per-pixel A-buffer head array is reused across a resize rather than rebuilt,
-    // because rebuilding it reallocated, value-initialized and then sentinel-filled the
-    // whole thing and first-touched every page: 7.8 ms at 1080p, paid on EVERY resize by
-    // any blend scene (a glazed vase went 3.0 to 11.2 ms a frame). Reuse is only sound if
-    // every head still reads as empty afterwards, so this walks a blend scene through
-    // grow, shrink-within-half (reuse) and shrink-past-half (reallocate) and checks the
-    // picture each time against the same size rendered by a fresh renderer.
+    // Walk through grow, reuse-on-small-shrink, and reallocate-on-large-shrink.
+    // Each reused A-buffer must match a fresh renderer, proving every head stayed empty.
     const int sizes[][2] = { { 60, 40 }, { 80, 50 }, { 70, 45 }, { 24, 16 }, { 80, 50 } };
     Renderer shared(3);
     Framebuffer fb(60, 40, /*headless=*/true);
@@ -383,11 +373,8 @@ TEST(transparency, blends_in_front_of_opaque)
     assert_pixel_near(fb, 20, 10, { 128, 128, 0 }, 2);
 }
 
-// The transparent resolve composites over the opaque colour ALREADY stored in the framebuffer,
-// which was tonemapped once at the opaque commit. The resolve must not tonemap it again (that would
-// double-darken the background under glass). Verify by laying a near-zero-alpha overlay over a LIT
-// (tonemapped, >1) opaque base: the covered pixel must stay ~equal to the same base rendered with no
-// overlay. A double-tonemap would drop it ~25 levels.
+// Resolve must composite over the already-tonemapped opaque color without tonemapping
+// it again. A near-zero-alpha overlay should leave a bright base nearly unchanged.
 TEST(transparency, resolve_does_not_double_tonemap_opaque_base)
 {
     Camera cam = make_test_camera();

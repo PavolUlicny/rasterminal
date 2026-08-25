@@ -7,10 +7,8 @@
 #include <string>
 #include <vector>
 
-// Independent sixel decoder so sixel.cpp's encoder is not checking itself
-// (the b64_test_util pattern). Executes the full command stream (raster
-// attributes, register definitions, `!` repeats, `$`/`-` motion, data chars)
-// into a register plane, asserting the wire grammar as it goes.
+// Independent sixel decoder. Execute raster attributes, register definitions,
+// repeats, motion, and data into a register plane while validating the wire grammar.
 
 struct SixelRgb
 {

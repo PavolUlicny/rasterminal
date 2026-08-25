@@ -3,10 +3,8 @@
 
 #include <cmath>
 
-// Camera is a turntable orbit camera: eye sits on a sphere around `target`,
-// at `distance` along the +Z axis of its `orientation` frame.  Orbit yaws
-// around world Y (inverted while upside down so drag direction is preserved)
-// and pitches around the camera's local right axis.
+// The orbit eye sits `distance` along its orientation's +Z from `target`.
+// Yaw uses world Y with upside-down inversion; pitch uses camera-local right.
 
 static constexpr float EPS = 1e-4f;
 
@@ -133,9 +131,7 @@ TEST(camera, projection_degenerate_size_does_not_divide_by_zero)
     ASSERT_TRUE(std::isfinite(P.m[1][1]));
 }
 
-// process_key()
-// Tested behaviourally: verify that eye() moves in the expected world direction
-// after each key, starting from identity orientation.
+// process_key() from identity orientation
 
 TEST(camera, process_key_A_model_moves_left)
 {
@@ -301,10 +297,8 @@ TEST(camera, orbit_keeps_eye_on_sphere)
 
 TEST(camera, orbit_pure_yaw_and_pitch_are_commutative)
 {
-    // With world-Y yaw, a pure-yaw step followed by a pure-pitch step is
-    // mathematically equivalent to pitch-then-yaw (the conjugation identity
-    // cancels the intermediate axis rotation). This pins the turntable
-    // behaviour that distinguishes world-Y yaw from the old local-up yaw.
+    // World-Y yaw makes yaw-then-pitch equal pitch-then-yaw here. Local-up yaw
+    // would not satisfy this turntable identity.
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
@@ -352,10 +346,7 @@ TEST(camera, orbit_does_not_gimbal_lock)
 
 TEST(camera, orbit_yaw_follows_drag_when_upside_down)
 {
-    // Pitched 180°: eye at -Z, up = (0,-1,0), screen-right still world +X.
-    // The same positive dx must move the eye the same screen direction as when
-    // upright (eye.x < 0, pinned by process_key_D_model_moves_right); without
-    // the upside-down yaw inversion it would land at eye.x > 0.
+    // At 180° pitch, positive dx still moves the eye toward screen-right, eye.x < 0.
     Camera c;
     c.target = { 0.0f, 0.0f, 0.0f };
     c.distance = 5.0f;
@@ -392,10 +383,7 @@ TEST(camera, orbit_upside_down_keeps_eye_on_sphere)
     ASSERT_NEAR(r, 6.0f, 1e-4f);
 }
 
-// look(): first-person
-// In first-person the rotation applied to `orientation` is the same one orbit()
-// applies; only the pivot moves, from `target` to the eye. Sign conventions are
-// pinned behaviourally here rather than derived from the quaternion algebra.
+// First-person look uses the orbit rotation around the eye instead of the target.
 
 namespace
 {
@@ -457,10 +445,7 @@ TEST(camera, fp_look_target_stays_ahead_of_the_eye)
 
 TEST(camera, fp_look_positive_dx_turns_the_view_right)
 {
-    // main.cpp passes a rightward drag as a positive dx, and screen-right is +X from
-    // the identity orientation, so forward must gain +X. This is the "input direction
-    // = look direction" convention, and it falls out of the pivot change with no sign
-    // flip: the same rotation swings the eye the other way in orbit mode.
+    // From identity, a rightward drag makes forward gain +X.
     Camera c = fp_camera();
     c.look(0.2f, 0.0f);
     ASSERT_TRUE(c.forward().x > 0.0f);
@@ -511,13 +496,8 @@ TEST(camera, fp_look_pitch_clamps_looking_down)
 
 TEST(camera, fp_look_pitch_clamp_never_inverts_the_horizon)
 {
-    // The clamp has to be watched through the up vector, not forward.y: forward.y is
-    // even about the pole (identical at 89.99 and 90.01 degrees), which is both why an
-    // asin-only clamp let the pitch escape and why the forward.y tests above could not
-    // see it. up.y going negative is the horizon flipping, and once it flipped the
-    // overshoot doubled every call, inverting fully in about 31 (half a second held).
-    // Driven well past the limit in several patterns, since pure pitch and pitch mixed
-    // with yaw reach the pole by different arithmetic.
+    // Detect pole crossing through up.y; forward.y is symmetric around the pole and
+    // cannot distinguish 89.99 from 90.01 degrees. Exercise pure and yaw-mixed pitch.
     const float patterns[4][2] = { { 0.0f, 0.05f }, { 0.05f, 0.05f }, { 0.2f, 0.05f }, { 0.05f, 10.0f } };
     for (const auto &p : patterns)
     {
@@ -532,11 +512,8 @@ TEST(camera, fp_look_pitch_clamp_never_inverts_the_horizon)
 
 TEST(camera, fp_launch_pitch_limit_is_a_pose_look_can_hold)
 {
-    // main.cpp clamps the --pitch launch pose to FP_MAX_PITCH, the same limit look()
-    // enforces, so the camera never starts in a pose the mode forbids. Pinned from the
-    // consequence: at exactly the limit a pure yaw must stay a pure yaw. Clamping the
-    // launch to a round 90 degrees instead put the start a hair outside, and the first
-    // look of any direction was forced to pitch back off the pole.
+    // At FP_MAX_PITCH, pure yaw must remain pure yaw. A round 90-degree launch clamp
+    // starts beyond look()'s limit and forces the first input away from the pole.
     Camera c = fp_camera();
     c.orientation = quat::from_axis_angle({ 1.0f, 0.0f, 0.0f }, Camera::FP_MAX_PITCH);
     c.target = c.eye() + c.forward() * c.distance;
@@ -907,10 +884,8 @@ TEST(camera, fp_process_key_plus_and_minus_retune_speed)
 
 TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
 {
-    // The identity behind the derivation, NOT the end-to-end tap: fed dts summing to
-    // the latch window, the per-frame factors multiply to exactly one wheel notch, for
-    // any value of either constant. What a real tap does is a frame coarser; see
-    // fp_key_tap_lands_within_a_frame_of_one_wheel_notch below.
+    // Deltas summing to the latch window multiply to exactly one wheel notch.
+    // The end-to-end tap below allows one frame of timing error.
     for (int frames : { 1, 6, 60 }) // one slow frame, 60 fps, 600 fps: same total
     {
         Camera c = fp_camera();
@@ -925,12 +900,9 @@ TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
 
 TEST(camera, fp_key_tap_lands_within_a_frame_of_one_wheel_notch)
 {
-    // The end-to-end guarantee, replaying main.cpp's latch. `since` is real time from
-    // the key byte, NOT a sum of the dts handed to process_key: the first of those is
-    // the frame interval that ended BEFORE the byte arrived. That offset is what makes
-    // the error two-sided, so the bound is one frame either way rather than an
-    // overshoot only. Uneven pacing is swept explicitly, because under even pacing the
-    // tap only ever overshoots and a one-sided bound looks like it holds.
+    // Replay main.cpp's latch using real time since the key byte. The first applied
+    // dt began before that byte, making the one-frame error two-sided; uneven pacing
+    // is required to expose undershoot.
     struct Pacing
     {
         float press_frame, rest;
@@ -1049,10 +1021,7 @@ TEST(camera, fp_spin_rotates_the_view)
 
 TEST(camera, fp_spin_left_turns_the_view_left)
 {
-    // --spin-direction is documented by the way the model's front face moves, which has
-    // no meaning when nothing is being orbited. main.cpp maps `left` to a positive
-    // angle; this pins that the same angle turns the view left here, so the flag's name
-    // still describes what happens, by a different definition. Documented as such.
+    // In first person, the positive angle used for `left` turns the view left.
     Camera c = fp_camera();
     c.spin_world_y(0.2f);
     ASSERT_TRUE(c.forward().x < 0.0f);
@@ -1217,10 +1186,8 @@ TEST(camera, eye_zero_distance_returns_target)
 
 TEST(camera, projection_near_equals_far_produces_nonfinite)
 {
-    // perspective() denominator is (far - near); near == far → divide by zero.
-    // No guard exists; documents that the result contains non-finite values.
-    // volatile prevents MSVC from constant-folding (far - near) to 0 at
-    // compile time and raising C4723 (potential divide by 0) as an error.
+    // Equal planes divide by zero and intentionally produce non-finite output.
+    // volatile prevents MSVC from diagnosing a constant division during compilation.
     Camera c;
     c.fov = to_radians(60.0f);
     volatile float same = 1.0f;

@@ -1,13 +1,8 @@
 #include "tests/test.h"
 #include "src/render/clip.h"
 
-// clip_reject is a conservative frustum-rejection test: it MUST return true
-// when the triangle is provably invisible, and is allowed to return false even
-// for triangles that turn out to be off-screen after fuller clipping. So tests
-// come in two shapes:
-//   - REJECT: clip_reject must return true (an obviously-invisible triangle).
-//   - ACCEPT: clip_reject must return false (visible, or borderline cases the
-//     function is not allowed to reject because that would drop real pixels).
+// clip_reject rejects only triangles proven outside one frustum plane.
+// REJECT cases are certainly invisible; ACCEPT cases are visible or conservatively retained.
 
 // Build a clip-space vertex from NDC-like (x,y,z) with an explicit w.
 // After perspective divide these would give NDC = (x/w, y/w, z/w).

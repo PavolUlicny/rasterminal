@@ -2,10 +2,8 @@
 #include "src/platform/input.h"
 #include "src/platform/platform.h"
 
-// <stdlib.h>, not <cstdlib>: the POSIX pty functions (posix_openpt/grantpt/unlockpt/
-// ptsname), the env mutators (setenv/unsetenv on POSIX, _putenv_s on the MSVC CRT), and
-// getenv are all specified there and not guaranteed to reach the global namespace via the
-// C++ header. Unconditional because the env helpers below are cross-platform.
+// <stdlib.h> declares the POSIX pty and cross-platform environment functions in
+// the global namespace; <cstdlib> need not.
 #include <stdlib.h> // NOLINT(modernize-deprecated-headers,hicpp-deprecated-headers)
 
 #include <chrono>
@@ -28,16 +26,8 @@ namespace
     constexpr platform::TermColor P256 = platform::TermColor::Palette256;
     constexpr platform::TermColor TC = platform::TermColor::TrueColor;
 
-    // The TEST cases below all evaluate classify_term_color at runtime, so none would catch a
-    // future edit that silently demotes it (or a helper it calls) from constexpr. These
-    // static_asserts pin that at compile time. The -direct case covers all three string
-    // helpers on its own (ieq at the dumb check, istarts_with at the screen floor, icontains
-    // for the hint); the COLORTERM case is kept because it is the only one that
-    // constant-evaluates the COLORTERM branch, which the -direct case short-circuits past;
-    // the allowlist case is the only one that constant-evaluates the TRUECOLOR_TERMS loop,
-    // which the -direct case never reaches (xterm-kitty carries no hint, so the loop is its
-    // only path); the screen case pins the floor branch's compile-time RESULT, which no
-    // TrueColor-returning case can.
+    // Runtime tests cannot prove constexpr support. These assertions cover every
+    // classifier branch and its three string helpers during constant evaluation.
     static_assert(
         platform::classify_term_color(nullptr, "xterm-direct", platform::TermColor::Palette256, false, false) ==
             platform::TermColor::TrueColor,
@@ -59,9 +49,7 @@ namespace
         "classify_term_color screen floor branch must keep its compile-time result"
     );
 
-    // Closes a fd on scope exit (via the portable test_close) so a thrown ASSERT
-    // mid-test can't leak it (the framework catches AssertionError and continues
-    // in-process).
+    // Close through portable test_close even when an assertion aborts the case.
     struct ScopedFd
     {
         int fd;
@@ -80,10 +68,8 @@ namespace
     };
 } // namespace
 
-// The null device is a character device but not a terminal, so is_tty must
-// return false for it. A more interesting negative case than a plain file: on
-// Windows NUL is exactly what _isatty answers true for, so it pins the
-// GetConsoleMode-based probe (not _isatty) that platform.h documents.
+// NUL is a character device that _isatty accepts on Windows, but GetConsoleMode
+// rejects it. This pins the probe used by platform::is_tty.
 TEST(platform, is_tty_false_for_null_device)
 {
     ScopedFd dev(test_devnull());
@@ -92,11 +78,8 @@ TEST(platform, is_tty_false_for_null_device)
 }
 
 #ifndef _WIN32
-// Positive case via a freshly allocated pty. is_tty is probed on the SLAVE side,
-// which POSIX defines as a terminal on every platform; the master side is a
-// terminal on Linux but not guaranteed elsewhere (e.g. FreeBSD returns false).
-// POSIX-only: Windows has no portable pty fixture (the console API needs a real
-// console session).
+// Probe a fresh pty slave, which POSIX defines as a terminal. Master behavior
+// varies by OS, and Windows has no equivalent portable fixture.
 TEST(platform, is_tty_true_for_pty_slave)
 {
     ScopedFd master(posix_openpt(O_RDWR | O_NOCTTY));
@@ -114,8 +97,7 @@ TEST(platform, is_tty_true_for_pty_slave)
 #endif
 
 // color-capability classifier
-// classify_term_color is pure (env values passed in), so every case incl. the
-// platform-divergent unset default is testable identically on all platforms.
+// Pure inputs make every branch portable except the platform-specific unset default.
 
 TEST(platform, classify_unset_env_uses_default)
 {
@@ -136,11 +118,8 @@ TEST(platform, classify_dumb_always_fatal)
 
 TEST(platform, classify_dumb_is_exact_match_not_substring)
 {
-    // The dumb match is an exact ieq(), unlike the truecolor TERM hints which are substring
-    // icontains(). Pin that asymmetry: a TERM merely containing "dumb" must NOT be fatally
-    // rejected. Without this, a refactor unifying the four TERM checks onto icontains would
-    // fatally reject real terminals (e.g. a "dumb"-embedding terminfo alias) with the suite
-    // still green.
+    // "dumb" is an exact match, unlike truecolor substring hints. A containing
+    // terminfo alias must not be rejected.
     ASSERT_EQ(platform::classify_term_color(nullptr, "dumbo", P256, false, false), P256);
     ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-dumbnot", TC, false, false), P256);
 }
@@ -174,19 +153,14 @@ TEST(platform, classify_term_direct_hints)
     // The third hint: without this, deleting icontains(term, "24bit") from the classifier
     // leaves the whole suite green.
     ASSERT_EQ(platform::classify_term_color(nullptr, "xterm-24bit", P256, false, false), TC);
-    // A set-but-unrecognized COLORTERM must fall through (step 2 -> step 3) to the TERM
-    // hint, not short-circuit to the floor. Without this every -direct case above passes
-    // colorterm=nullptr, so a regression that returned Palette256 on a non-truecolor
-    // COLORTERM would pass them all while breaking e.g. COLORTERM=gnome-terminal here.
+    // An unknown COLORTERM falls through to TERM rather than forcing Palette256.
     ASSERT_EQ(platform::classify_term_color("gnome-terminal", "xterm-direct", P256, false, false), TC);
 }
 
 TEST(platform, classify_known_truecolor_terms)
 {
-    // The TRUECOLOR_TERMS allowlist: TERM names set exclusively by truecolor
-    // terminals, covering ssh sessions where COLORTERM is not forwarded. Matched
-    // as substrings (xterm-kitty, xterm-ghostty carry the bare name as a suffix) and
-    // case-insensitively.
+    // The case-insensitive allowlist covers terminals whose TERM suffix identifies
+    // truecolor when ssh does not forward COLORTERM.
     const char *terms[] = { "xterm-kitty", "wezterm", "alacritty", "xterm-ghostty", "foot", "contour" };
     for (const char *t : terms)
     {
@@ -197,11 +171,8 @@ TEST(platform, classify_known_truecolor_terms)
 
 TEST(platform, classify_real_screen_floors_colorterm)
 {
-    // Inside real GNU screen (TERM screen-family, no TMUX) an inherited
-    // COLORTERM describes the OUTER terminal; screen 4.x misparses 24-bit SGR
-    // into garbage, so the floor must win over COLORTERM. Covers the plain,
-    // -suffixed, derived (screen.xterm-256color), and case-folded entry forms
-    // and both canonical COLORTERM spellings.
+    // GNU screen must override an inherited outer-terminal COLORTERM because 4.x
+    // misparses 24-bit SGR. Cover plain, derived, suffixed, and case-folded names.
     ASSERT_EQ(platform::classify_term_color("truecolor", "screen", P256, false, false), P256);
     ASSERT_EQ(platform::classify_term_color("truecolor", "screen-256color", P256, false, false), P256);
     ASSERT_EQ(platform::classify_term_color("truecolor", "screen.xterm-256color", P256, false, false), P256);
@@ -249,11 +220,8 @@ TEST(platform, classify_plain_terms_are_256)
 }
 
 #ifndef _WIN32
-// POSIX init_console_output is a no-op that must report VT support unconditionally
-// (escape handling is the terminal emulator's job). The Windows side is deliberately
-// untested at unit level: under the test runner stdout is redirected, so the console
-// handle probe is environment-dependent (same reason is_tty has no Windows-positive
-// test).
+// POSIX delegates escapes to the terminal and always reports VT support. A Windows
+// unit test would depend on whether redirected stdout has a real console handle.
 TEST(platform, init_console_output_ok_on_posix)
 {
     ASSERT_TRUE(platform::init_console_output());
@@ -262,13 +230,8 @@ TEST(platform, init_console_output_ok_on_posix)
 
 namespace
 {
-    // Portable env mutation for the tests. std::getenv (which detect_term_color reads)
-    // sees the CRT environment, which setenv/unsetenv (POSIX) and _putenv_s (the MSVC CRT)
-    // both update; the Win32 Set/GetEnvironmentVariable pair is a separate environment that
-    // getenv does NOT see. _putenv_s(name, "") removes the variable, and even if a CRT left
-    // it empty instead, the assertions below hold either way: the classifier treats an empty
-    // TERM/COLORTERM the same as unset, and detect_term_color reads TMUX/STY as non-empty,
-    // not mere presence. Single-threaded test binary, so mutation is safe.
+    // Mutate the CRT environment read by std::getenv. Empty and absent values are
+    // equivalent here; the single-threaded test binary makes mutation safe.
     void set_env(const char *name, const char *value)
     {
 #ifdef _WIN32
@@ -318,9 +281,7 @@ namespace
     };
 } // namespace
 
-// End-to-end over the getenv wrapper (the classifier itself is covered above). Cross-platform
-// so the one platform-divergent constant in detection, the unset-env default, is exercised on
-// the platform CI actually runs on rather than only asserted for POSIX.
+// Exercise getenv integration and each platform's real unset-env default.
 TEST(platform, detect_term_color_reads_env)
 {
     ScopedEnv colorterm_guard("COLORTERM");
@@ -375,10 +336,8 @@ TEST(platform, detect_term_color_reads_env)
 }
 
 // file size
-// platform::file_size sizes streams via the platform's 64-bit seek/tell so >= 2 GB
-// model files work on Windows/ILP32. The large case itself is not creatable in CI
-// (multi-GB files on every runner); these pin the exact byte count, the empty-file
-// zero, and the documented leaves-position-at-EOF contract on the shared code path.
+// Pin exact and empty sizes plus the EOF-position contract. Multi-GB fixtures are
+// impractical in CI, but these use the same 64-bit seek/tell path.
 
 namespace
 {
@@ -419,9 +378,7 @@ namespace
 
 TEST(platform, file_size_reports_exact_byte_count)
 {
-    // 259 bytes, deliberately not a round number so an off-by-one or block-granular
-    // size can't pass. Content is arbitrary binary (file_size only seeks and tells,
-    // never reads, so content can't affect the result).
+    // A non-round 259 bytes catches off-by-one and block-granularity errors.
     unsigned char data[259];
     for (size_t i = 0; i < sizeof(data); i++)
     {
@@ -452,11 +409,8 @@ TEST(platform, file_size_empty_file_is_zero)
 }
 
 // input parser
-// detail::parse_input is pure (a byte span in, a decision out), so the grammar is
-// tested directly: no pipes, no dup2, no timing, and it runs on every platform
-// rather than POSIX only. The contract it must uphold is that a sequence is
-// consumed in full or not at all, because any byte left behind is dispatched as a
-// keypress and several of those are destructive ('q' quits, 'r' resets the view).
+// Test the pure grammar directly on every platform. A sequence must be consumed
+// whole or not at all because leftover bytes become live keybindings.
 
 namespace
 {
@@ -650,13 +604,8 @@ TEST(parse_input, x10_mouse_report_consumed_by_count)
     // counted, not scanned: column 49 encodes as 'Q' and would quit.
     expect_dropped_whole("\033[M\x20\x51\x21");
     expect_dropped_whole("\033[M\x20\x72\x21"); // 'r' would reset the view
-    // Every byte value is legitimate payload: a coordinate past column 223 wraps
-    // into the control range, so 0x00 and ESC must not be read as terminators.
-    // This makes X10 the one arm that does NOT treat an embedded ESC as a sequence
-    // boundary, and the asymmetry is deliberate: a click at column 251 sends ESC as
-    // a coordinate, and stopping there would leak the remaining bytes, which are
-    // printable and can be the quit key. Adding the boundary rule here was tried;
-    // this case is what caught it.
+    // X10 coordinates may contain any byte, including NUL and ESC after wrapping.
+    // Treating ESC as a boundary would leak the remaining coordinates as keybindings.
     expect_dropped_whole(std::string("\033[M\x20\x00Q", 6));
     expect_dropped_whole("\033[M\x20\x1b\x21");
     expect_dropped_whole("\033[M\x20\x51\x1b"); // ESC as the y coordinate
@@ -732,19 +681,15 @@ TEST(parse_input, sgr_mouse_press_and_release)
 
 TEST(parse_input, sgr_mouse_oversized_params_are_rejected)
 {
-    // A long digit run must not overflow the int accumulator (signed overflow is
-    // UB). Stopping at the ceiling avoids that, but the clamped value is not a
-    // coordinate anyone asked for, so the report is dropped rather than reported:
-    // main.cpp would take it as a drag origin.
+    // Bound the integer accumulator without reporting a clamped coordinate that
+    // main.cpp would accept as a drag origin.
     expect_dropped_whole("\033[<0;99999999999999999999;6M");
 }
 
 TEST(parse_input, sgr_mouse_scans_to_its_final_before_deciding)
 {
-    // Every CSI arm consumes through the terminator. Abandoning at the first
-    // unexpected byte instead would leave the remainder to dispatch: the digits in
-    // these would surface as shading-mode keys, and the trailing bytes of the
-    // others reach the dispatch outright.
+    // Every CSI arm consumes through its terminator so malformed tails cannot
+    // escape as keybindings.
     expect_dropped_whole("\033[<0 1;2M");   // stray space among the parameters
     expect_dropped_whole("\033[<0;5:6;7M"); // sub-parameter separator
     expect_dropped_whole("\033[<0;5;6#M");  // CSI intermediate byte
@@ -774,10 +719,8 @@ TEST(parse_input, malformed_sgr_mouse_is_dropped_not_reported)
 
 TEST(parse_input, a_truncated_sequence_never_swallows_the_next_one)
 {
-    // An ESC is a boundary, not payload. A sequence cut short by the next one
-    // starting must stop at that ESC: consuming it strips the next sequence's
-    // introducer, and its body then dispatches byte by byte as live bindings.
-    // Every scanning arm has to honour this, so each is covered separately.
+    // ESC starts the next sequence. Consuming it here would strip that introducer
+    // and dispatch the following body byte by byte.
     struct Case
     {
         const char *bytes;
@@ -806,14 +749,8 @@ TEST(parse_input, a_truncated_sequence_never_swallows_the_next_one)
 
 TEST(parse_input, a_string_sequence_treats_an_embedded_esc_as_payload)
 {
-    // The other half of the boundary rule, and the opposite of the case above. A CSI
-    // carries parameters and then a final, an alphabet an ESC can never belong to, so
-    // an ESC really does end one. A string payload is arbitrary text delivered in
-    // pieces, so an ESC inside it is either payload or a sequence the terminal wrote
-    // between two of those pieces; the reply continues afterwards either way. Ending
-    // it there hands the rest of the reply to the dispatch, which is a leak of exactly
-    // the kind this design exists to stop (measured: a 307-byte clipboard reply with a
-    // scroll notch inside it surfaced 102 keypresses, two of them quits).
+    // ESC ends CSI parameters but not an arbitrary string payload. Ending a string
+    // there would dispatch the rest of a split reply as keybindings.
     ASSERT_EQ(parse("\033]0;abc\033[A").kind, PK::Incomplete);
     ASSERT_EQ(parse("\033]52;c;AAA\033[<64;1;1MAAA").kind, PK::Incomplete);
 
@@ -861,9 +798,8 @@ TEST(parse_input, sgr_wheel_is_detected_through_modifier_bits)
     expect_dropped_whole("\033[<64;1;1m");
     expect_dropped_whole("\033[<65;1;1m");
 
-    // Motion needs a button actually held and the press form. Button bits 3 is the
-    // no-button motion a terminal in mode 1003 sends, and a motion-flagged release
-    // is malformed; either reported as a drag would orbit on a bare pointer move.
+    // Motion requires a held button and the press form. Button bits 3 means no-button
+    // motion; a motion-flagged release is malformed. Neither may orbit the model.
     expect_dropped_whole("\033[<35;5;6M"); // 32 + 3: motion, no button
     expect_dropped_whole("\033[<32;5;6m"); // motion flag on a release
 
@@ -897,25 +833,9 @@ TEST(parse_input, sgr_wheel_is_detected_through_modifier_bits)
 
 TEST(parse_input, grammar_properties_hold_over_every_short_byte_string)
 {
-    // The three invariants the buffered design rests on, checked exhaustively rather
-    // than on hand-picked cases, over an alphabet holding every byte the grammar
-    // reacts to (introducers, finals, terminators, separators, digits, and a few it
-    // must treat as ordinary).
-    //
-    //   1. consumed stays within the input, or poll_event's compaction underflows.
-    //   2. Incomplete exactly when nothing was consumed, or its loop stops making
-    //      progress and spins on a buffer it can never drain.
-    //   3. DECISION STABILITY: once a decision is made, appending a byte may not
-    //      change it. This is the one that matters most and the hardest to get from
-    //      examples: without it the result depends on how the terminal happened to
-    //      split its writes, which is precisely the class of bug that reached the
-    //      dispatch in earlier designs. A sequence must decode the same whether it
-    //      arrives whole or a byte at a time.
-    //
-    // Depth 4 keeps this at about a million parses, which is milliseconds. It was
-    // also run out-of-band to depth 7 (286 million strings, zero violations); the
-    // depth here is what the suite can afford on every run, not the limit of the
-    // evidence.
+    // Exhaustively check the buffered parser's invariants over every meaningful byte:
+    // consumed stays in bounds, Incomplete consumes nothing, and appending a byte
+    // cannot change a completed decision. Depth 4 costs about one million parses.
     const char alphabet[] = { '\033', '[', ']', 'O', 'M', '<', ';', '0', 'A', 'q', '\a', '\\', 'P', '\0', ' ' };
     const auto same_event = [](const platform::InputEvent &a, const platform::InputEvent &b)
     { return a.type == b.type && a.key == b.key && a.x == b.x && a.y == b.y; };
@@ -978,20 +898,13 @@ TEST(parse_input, consumed_length_never_exceeds_input)
 }
 
 // poll_event integration
-// The read path and the pending buffer, exercised over a real fd. POSIX-only:
-// the Windows path reads the console via _kbhit/_getch, which a pipe cannot
-// stand in for. The grammar itself is covered above, without any of this.
+// Exercise buffering over a real POSIX fd. A pipe cannot emulate Windows console input.
 
 #ifndef _WIN32
 namespace
 {
-    // Feeds bytes to poll_event by swapping a pipe's read end onto stdin. Writes
-    // can be staged, so a sequence can be delivered in separate bursts.
-    //
-    // Precondition (new to this file): fd 0 must be open and dup-able, so that it
-    // can be saved and restored. Every runner the suite targets inherits an open
-    // stdin; if one ever does not, `ok` is false and the cases fail loudly rather
-    // than silently testing nothing.
+    // Swap a pipe onto stdin so poll_event can receive staged bursts. `ok` fails
+    // loudly if a runner does not provide a dup-able fd 0.
     struct StdinFeed
     {
         int saved_stdin;
@@ -999,11 +912,8 @@ namespace
         bool ok = false;
         StdinFeed() : saved_stdin(test_dup(STDIN_FILENO))
         {
-            // poll_event's buffer persists across calls by design (one continuous
-            // input stream); reset it so cases cannot contaminate each other. The
-            // whole struct, not just `len`: a case that ends mid-skip leaves the skip
-            // flag and its rate-floor window set, which changes what the next case's
-            // first poll does with a stalled partial.
+            // Reset the whole persistent parser state, including skip and rate windows,
+            // so cases cannot contaminate one another.
             platform::detail::pending() = platform::detail::Pending{};
 
             int fds[2] = { -1, -1 };
@@ -1015,10 +925,7 @@ namespace
             ok = test_dup2(fds[0], STDIN_FILENO) >= 0;
             test_close(fds[0]);
         }
-        // Returns whether the whole string reached the pipe. Nothing reads the fd
-        // until the case polls, so a feed larger than the pipe capacity short-writes
-        // (or blocks); cases assert this so such a feed fails loudly instead of
-        // silently testing a truncated one.
+        // Return false on a short write so no case silently tests truncated input.
         [[nodiscard]] bool push(const std::string &bytes) const
         {
             const ssize_t n = write(write_fd, bytes.data(), bytes.size());
@@ -1100,10 +1007,8 @@ TEST(poll_event, stalled_partial_is_discarded_whole_not_dispatched)
     ASSERT_EQ(next_type(), platform::InputEvent::Type::None);
     std::this_thread::sleep_for(std::chrono::milliseconds(platform::detail::PARTIAL_TIMEOUT_MS * 2));
 
-    // The discard needs one poll that sees no new bytes. That is the contract, not
-    // an artifact: a poll which IS receiving bytes cannot tell a stalled partial
-    // from a sequence still arriving, and abandoning one mid-flight would dispatch
-    // its tail. Sleeping longer only makes this more certain, so no timing race.
+    // Discard only after a poll receives no bytes; a growing partial may still be
+    // in flight, and abandoning it would dispatch its tail.
     ASSERT_EQ(next_type(), platform::InputEvent::Type::None);
 
     ASSERT_TRUE(in.push("q"));
@@ -1115,11 +1020,8 @@ TEST(poll_event, stalled_partial_is_discarded_whole_not_dispatched)
 
 TEST(poll_event, reassembly_survives_a_frame_slower_than_the_timeout)
 {
-    // The timestamp records when bytes were last appended, which is observed at the
-    // caller's cadence rather than at arrival. If staleness were judged while bytes
-    // are arriving, any frame longer than the timeout (a heavy model, or --fps 10)
-    // would abandon every split sequence and dispatch its tail as loose keypresses:
-    // here the trailing "[A" would orbit the camera instead of reporting Up.
+    // Judge staleness only after a poll without growth. Otherwise a slow frame could
+    // abandon a sequence while bytes arrive and dispatch its tail as keys.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033"));
@@ -1134,14 +1036,8 @@ TEST(poll_event, reassembly_survives_a_frame_slower_than_the_timeout)
 
 TEST(poll_event, over_length_sequence_is_consumed_to_its_terminator)
 {
-    // The last path that could dispatch a reply's payload as keypresses. A single
-    // sequence longer than the buffer cannot be held, so the introducer is kept and
-    // the middle dropped; the parser then goes on looking for that family's
-    // terminator, and nothing dispatches until it arrives.
-    //
-    // No clock is involved, which is the point. Earlier designs guessed from timing
-    // or read size when the sequence had ended, and every such guess was wrong for
-    // some real delivery pattern.
+    // An over-length sequence keeps its introducer, drops the middle, and scans to
+    // the family terminator without dispatching payload. No timing guess is involved.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const int n = platform::detail::MAX_PENDING;
@@ -1162,15 +1058,8 @@ TEST(poll_event, over_length_sequence_is_consumed_to_its_terminator)
 
 TEST(poll_event, over_length_sequence_survives_any_delivery_pattern)
 {
-    // The same payload delivered in pieces, with polls landing between them. Chunk
-    // size and spacing are exactly what the previous volume and deadline heuristics
-    // were sensitive to: a full buffer, an ordinary 400-byte write, and a trickle
-    // smaller than any threshold. The terminator rule is indifferent to all three.
-    //
-    // Every pattern delivers the same total, comfortably past MAX_PENDING, and the
-    // skip is asserted rather than assumed. Fixing the chunk COUNT instead left the
-    // trickle case at 96 bytes, which never fills the buffer, so the one pattern the
-    // case exists to cover was the one that never entered a skip at all.
+    // Deliver the same over-length payload as a full buffer, 400-byte writes, and a
+    // trickle. All must enter skip mode and wait for the terminator, independent of chunking.
     for (int chunk : { platform::detail::MAX_PENDING, 400, 8 })
     {
         StdinFeed in;
@@ -1194,14 +1083,8 @@ TEST(poll_event, over_length_sequence_survives_any_delivery_pattern)
 
 TEST(poll_event, over_length_sequence_survives_gaps_between_chunks)
 {
-    // The dimension the other cases miss. They deliver chunks back to back, so the
-    // inter-chunk gap is always zero; a reply arriving with real gaps between its
-    // pieces is a different path, and it was the one that leaked. The staleness rule
-    // would see the skip go quiet between chunks and tear it down, after which the
-    // next chunk parses as fresh input and dispatches its payload as keypresses.
-    //
-    // Simulated by ageing last_growth past the reassembly window before each chunk,
-    // which is what a gap does, without spending real time.
+    // Simulate gaps by ageing last_growth before each chunk. Skip mode must survive
+    // quiet intervals rather than parse the next payload chunk as fresh key input.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(static_cast<size_t>(platform::detail::MAX_PENDING), 'q')));
@@ -1212,11 +1095,8 @@ TEST(poll_event, over_length_sequence_survives_gaps_between_chunks)
     {
         platform::detail::pending().last_growth =
             std::chrono::steady_clock::now() - std::chrono::milliseconds(platform::detail::PARTIAL_TIMEOUT_MS + 1);
-        // The rate floor is not what this case is about, so hold its window open too.
-        // Left on the real clock it makes the case a timing race: a scheduler stall
-        // longer than RATE_WINDOW_MS would expire the window and fail a correct
-        // implementation, since the chunks here are fed with no real time between them
-        // and so cannot meet the floor.
+        // Hold the unrelated rate window open so scheduler stalls cannot make this
+        // deterministic gap simulation flaky.
         platform::detail::pending().meter.window = std::chrono::steady_clock::now();
         ASSERT_EQ(next_type(), platform::InputEvent::Type::None);
         ASSERT_TRUE(in.push(std::string(400, 'q')));
@@ -1233,10 +1113,8 @@ TEST(poll_event, over_length_sequence_survives_gaps_between_chunks)
 
 TEST(poll_event, a_stalled_long_partial_becomes_a_skip_not_a_dispatch)
 {
-    // A payload can stall before it ever fills the buffer, so no skip has been
-    // entered. Abandoning it then would dispatch every byte already held. Anything
-    // longer than a keypress is therefore switched to a skip instead, while a short
-    // partial (a fragmented arrow key) is still abandoned as before.
+    // Promote a stalled, keypress-long partial to skip mode before discarding its
+    // buffered payload. Short fragmented keys still time out normally.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(400, 'q')));
@@ -1256,15 +1134,8 @@ TEST(poll_event, a_stalled_long_partial_becomes_a_skip_not_a_dispatch)
 
 TEST(poll_event, a_sequence_arriving_inside_a_skip_does_not_end_it)
 {
-    // A long reply does not arrive all at once, so the terminal can write an ordinary
-    // sequence between two of its chunks: a scroll notch, a drag report, any key that
-    // encodes as one. Every one of those starts with ESC, and ending the skip there
-    // reads it as "the reply is over" when the reply goes on afterwards, so the rest
-    // of it reaches the dispatch as keypresses. Measured before the fix: the drag was
-    // reported and then 'q' arrived out of the payload and quit the viewer.
-    //
-    // The interleaved sequence is swallowed instead. That is the trade this design
-    // always takes, and here it costs one scroll notch rather than the session.
+    // An ordinary ESC sequence may arrive between chunks of a long string reply.
+    // Swallow it as payload rather than ending the skip and dispatching the remainder.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const int n = platform::detail::MAX_PENDING;
@@ -1290,11 +1161,8 @@ TEST(poll_event, a_sequence_arriving_inside_a_skip_does_not_end_it)
 
 TEST(poll_event, a_sequence_arriving_inside_a_skipped_csi_parses_whole)
 {
-    // The CSI half of the boundary rule, across a skip. A CSI's alphabet cannot
-    // contain an ESC, so one ends the skip and the sequence it introduces is left to
-    // parse whole. Scanning past it instead would end the skip at that sequence's own
-    // '[' (0x5B is a legal CSI final) and strand the rest of it for the dispatch:
-    // measured, an X10 report delivered inside a skipped CSI surfaced Space and Q.
+    // ESC cannot belong to CSI payload, so it ends the skip and remains available
+    // as the next sequence's introducer.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const int n = platform::detail::MAX_PENDING;
@@ -1332,11 +1200,8 @@ TEST(poll_event, a_skipped_csi_still_ends_at_its_own_final_byte)
 
 TEST(poll_event, a_terminator_split_across_the_buffer_boundary_still_ends_the_skip)
 {
-    // ST is two bytes, so a reply long enough to overflow can put its ESC at the very
-    // last byte of the buffer. That ESC is exactly why the parse returned Incomplete,
-    // and collapsing to the bare introducer threw it away: the backslash then read as
-    // payload, the reply could never terminate, and the skip ran on to the rate floor
-    // swallowing whatever was typed meanwhile.
+    // Preserve a trailing ESC when collapsing an over-length ST sequence; its
+    // following backslash must still terminate the skip.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const auto n = static_cast<size_t>(platform::detail::MAX_PENDING);
@@ -1354,12 +1219,8 @@ TEST(poll_event, a_terminator_split_across_the_buffer_boundary_still_ends_the_sk
 
 TEST(poll_event, an_over_long_csi_does_not_resume_as_a_plain_arrow)
 {
-    // A skipped sequence must never resume as something decodable. This once failed
-    // because the collapse erased the CSI's positional context, so a payload byte in
-    // the A-D range landed at the arrow's index and orbited the camera. Both halves of
-    // that are gone now: a skip runs skip_scan, which locates and never decodes, and
-    // the resume prefix keeps no payload byte at all. The case stays as the regression
-    // pin for the property, which no longer depends on how the prefix is built.
+    // A skipped sequence may locate its terminator but must never resume decoding;
+    // payload bytes in the A-D range must not become arrows.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const auto n = static_cast<size_t>(platform::detail::MAX_PENDING);
@@ -1376,11 +1237,8 @@ TEST(poll_event, an_over_long_csi_does_not_resume_as_a_plain_arrow)
 
 TEST(poll_event, a_backlog_of_unbound_sequences_clears_at_the_rate_it_arrived)
 {
-    // Sequences with no binding resolve without producing an event, so a call that
-    // meets only those returns Type::None and ends the caller's drain. Reading once
-    // per call therefore paced ANY such backlog at one bufferful per frame, not just
-    // the over-length path round 20 fixed: 64 KB of unbound function keys took 66
-    // frames and 1.07 s before the quit key behind them was seen.
+    // Drain a backlog of unbound sequences in one pass; returning None after each
+    // bufferful would delay the live key behind it by many frames.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     std::string backlog;
@@ -1397,12 +1255,8 @@ TEST(poll_event, a_backlog_of_unbound_sequences_clears_at_the_rate_it_arrived)
 
 TEST(poll_event, a_skipped_sequence_never_reports_an_event)
 {
-    // A skip drops the middle of a sequence, so whatever the parser makes of the
-    // fragment that resumes it is not what the terminal sent. The mouse arm is the
-    // case that proves the rule has to be general: its introducer (ESC [ <) is a byte
-    // longer than every other family's, so the resume prefix keeps no payload byte of
-    // it and the tail parses as a whole report. Before the rule, this fabricated a
-    // MouseMove at coordinates nobody sent, which orbits the camera.
+    // Never decode a fragment after skip mode dropped its middle. A mouse tail can
+    // otherwise parse as a complete report with fabricated coordinates.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033[<0;" + std::string(70, '9'))); // past MAX_KEY_SEQUENCE, then stalls
@@ -1425,21 +1279,16 @@ TEST(poll_event, a_skipped_sequence_never_reports_an_event)
 
 TEST(poll_event, the_rate_floor_charges_for_every_window_that_elapsed)
 {
-    // The meter ticks when the caller polls, not on a timer, so a caller slower than
-    // the window owes several windows at once. Charging one per tick turns the floor
-    // into bytes-per-FRAME: at a frame interval past about four seconds, autorepeat
-    // clears the bar and sustains a skip for as long as the user keeps typing.
+    // Charge every elapsed rate window. Charging once per poll would make the floor
+    // depend on frame rate and let autorepeat sustain a skip.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(static_cast<size_t>(platform::detail::MAX_PENDING), 'x')));
     ASSERT_EQ(next_type(), platform::InputEvent::Type::None);
     ASSERT_TRUE(platform::detail::pending().skipping);
 
-    // One frame's worth of typing at autorepeat speed, and nothing else: the credit is
-    // set directly, because the burst that entered the skip is legitimately still
-    // credited and would otherwise be what carries it. 150 bytes clears ONE window's
-    // quota, which is exactly why charging one quota per tick sustained the skip; it
-    // cannot clear the five windows that actually elapsed.
+    // Credit one autorepeat-speed burst directly. It clears one window's quota but
+    // cannot cover all five elapsed windows.
     const int one_frame_of_typing = 30 * 5; // ~30 B/s over a 5 s frame
     ASSERT_TRUE(one_frame_of_typing > platform::detail::RATE_QUOTA);
     platform::detail::pending().meter.credit = one_frame_of_typing;
@@ -1451,11 +1300,8 @@ TEST(poll_event, the_rate_floor_charges_for_every_window_that_elapsed)
 
 TEST(poll_event, the_arrival_credit_saturates_instead_of_overflowing)
 {
-    // A pass that spends its whole read budget returns above the meter, so the credit
-    // can be added to across many passes without once being spent. Unbounded that is
-    // signed overflow, and a wrapped negative credit reads as below the floor and tears
-    // down an active skip. The ceiling has to leave room for the largest quota a tick
-    // can charge, or saturating would itself cost a fast stream its verdict.
+    // Saturate accumulated credit before it can overflow negative. Leave room for
+    // the largest quota charged by one meter update.
     static_assert(
         platform::detail::RATE_MAX_CREDIT >= platform::detail::RATE_MAX_WINDOWS * platform::detail::RATE_QUOTA,
         "saturated credit must still be able to meet the largest quota a tick charges"
@@ -1520,12 +1366,8 @@ TEST(poll_event, a_spent_read_budget_does_not_abandon_a_live_partial)
 
 TEST(poll_event, a_skip_promoted_from_a_stalled_partial_inherits_the_measured_rate)
 {
-    // The skip here is reached without the buffer ever filling, so there is no read
-    // "just before" it to seed a rate from: the read that precedes it returned nothing,
-    // which is the very condition that promoted the partial. Seeded from that, the skip
-    // began below the floor and was torn down at its first window, dispatching the rest
-    // of the reply as keypresses. The arrival meter runs regardless, so the bytes that
-    // did arrive are already counted.
+    // A stalled partial enters skip mode after an empty read. Seed its rate from the
+    // independent arrival meter, not that empty read, or the first window drops it.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(400, 'q'))); // well under MAX_PENDING: never overflows
@@ -1551,10 +1393,8 @@ TEST(poll_event, a_skip_promoted_from_a_stalled_partial_inherits_the_measured_ra
 
 TEST(poll_event, the_rate_floor_measures_a_rate_not_presence_in_each_window)
 {
-    // A reply delivered in bursts can leave a whole window empty while averaging far
-    // above the floor. Resetting the count each window measured presence rather than
-    // rate and tore such a skip down, dispatching the next burst as keypresses. The
-    // surplus is carried instead, so one burst covers the windows after it.
+    // Carry burst surplus across empty windows so the floor measures average rate,
+    // not whether every window received bytes.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(static_cast<size_t>(platform::detail::MAX_PENDING), 'q')));
@@ -1581,13 +1421,8 @@ TEST(poll_event, the_rate_floor_measures_a_rate_not_presence_in_each_window)
 
 TEST(poll_event, an_unterminated_sequence_is_given_up_on_when_it_stops_arriving)
 {
-    // The rate floor, which is the only thing that ends a skip whose sequence never
-    // terminates and deliberately the only thing. A cap on how much may be skipped
-    // was the alternative, and it is the mistake the whole design exists to avoid:
-    // whatever the cap, the first reply to exceed it has its tail dispatched.
-    //
-    // Below the floor the bytes are not a sequence arriving, they are the user's, so
-    // the skip is abandoned and typing works again.
+    // Only the rate floor ends an unterminated skip; a size cap would dispatch the
+    // first larger reply's tail. Below the floor, abandon the skip so typing resumes.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     ASSERT_TRUE(in.push("\033]52;c;" + std::string(static_cast<size_t>(platform::detail::MAX_PENDING), 'q')));
@@ -1610,10 +1445,8 @@ TEST(poll_event, an_unterminated_sequence_is_given_up_on_when_it_stops_arriving)
 
 TEST(poll_event, a_skip_advances_at_the_rate_bytes_arrive_not_one_buffer_per_call)
 {
-    // A skip that advanced one bufferful per call would advance at the frame rate,
-    // since main.cpp stops draining on Type::None: a megabyte reply measured 16.6 s
-    // of total input lockout at 60 fps, and worse at a lower --fps. Asserted on the
-    // state rather than on wall-clock, which would be a flaky proxy for it.
+    // Consume multiple bufferfuls per drain pass so a large reply does not advance
+    // at the frame rate. Assert parser state rather than wall time.
     StdinFeed in;
     ASSERT_TRUE(in.ok);
     const auto n = static_cast<size_t>(platform::detail::MAX_PENDING);
@@ -1631,14 +1464,8 @@ TEST(poll_event, a_skip_advances_at_the_rate_bytes_arrive_not_one_buffer_per_cal
 
 TEST(poll_event, never_blocks_on_an_incomplete_sequence)
 {
-    // The frame-rate contract: an ESC with nothing behind it must return at once
-    // rather than waiting for the rest. Holding Escape used to pay an inter-byte
-    // timeout every frame, which cost a third of the frame rate.
-    //
-    // Measured over many calls rather than one, deliberately: a single-call
-    // wall-clock assertion is the flaky kind this suite avoids. Blocking would cost
-    // PARTIAL_TIMEOUT_MS per call, so the budget below is an order of magnitude
-    // under a regression while leaving ample room for scheduler jitter.
+    // A lone ESC must return without an inter-byte wait. Measure many calls so the
+    // budget tolerates scheduler jitter but remains far below blocking behavior.
     constexpr int CALLS = 20;
     StdinFeed in;
     ASSERT_TRUE(in.ok);

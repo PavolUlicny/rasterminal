@@ -20,12 +20,8 @@ static Texture make_vcol_tex(int w, int h, std::initializer_list<int> rgba)
     return t;
 }
 
-// rasterize_phong() wrapper with ambient-only defaults so each test is concise.
-//   ambient=(1,1,1), n_lights=0, ao=1 at all vertices
-//   normal=(0,0,1), tangent=(1,0,0), eye=(20,10,-100)
-//   Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 framebuffer
-//
-// Caller supplies: vcol per vertex, has_vcol flag, w per vertex, mat, optional tex.
+// Ambient-only Phong wrapper over the canonical triangle. Callers supply vertex
+// colors, enable flag, clip w, material, and optional texture.
 static void rast_phong_vcol(
     Framebuffer &fb,
     vec3 vcola,
@@ -50,16 +46,12 @@ static void rast_phong_vcol(
     );
 }
 
-// vertex-color in rasterize_phong()
-//
 // Canonical triangle: sa=(4,2), sb=(36,2), sc=(20,18) on 40×20 framebuffer.
 // Key pixel centres and pre-computed screen-space barycentric weights:
 //
 //   Pixel (20,10): ba=0.21875, bb=0.25,  bc=0.53125
 //   Pixel (12,10): ba=0.46875, bb=0,     bc=0.53125
 
-// has_vcol=false: red vcol on all vertices must NOT tint a white result.
-// Catches: has_vcol flag silently ignored (always-on tinting).
 TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -82,8 +74,6 @@ TEST(rasterize_phong, has_vcol_false_ignores_vertex_colors)
     }
 }
 
-// has_vcol=true: red vcol on all vertices must produce a red pixel.
-// Catches: the has_vcol branch never executes.
 TEST(rasterize_phong, has_vcol_true_tints_ambient)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -107,9 +97,6 @@ TEST(rasterize_phong, has_vcol_true_tints_ambient)
     }
 }
 
-// white vcol with has_vcol=true must match the has_vcol=false result within ±2.
-// Catches: the has_vcol=true path introduces drift with the identity colour
-// (wrong material copy, lost specular, double-multiply, etc.).
 TEST(rasterize_phong, white_vcol_matches_no_vcol)
 {
     Material mat{};
@@ -130,7 +117,6 @@ TEST(rasterize_phong, white_vcol_matches_no_vcol)
 // RGB vcol interpolated at centroid with equal w=1.
 // At (20,10): ba=0.21875, bb=0.25, bc=0.53125.
 // Expected: vcol ≈ (0.219, 0.250, 0.531) → pixel ≈ (56, 64, 135) ±5.
-// Catches: vcol interpolation broken (constant, swapped indices, wrong weights).
 TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -149,7 +135,6 @@ TEST(rasterize_phong, vcol_per_vertex_interpolation_equal_w)
 // vcola=red, vcolb=red, vcolc=blue; wa=wb=10, wc=1.
 // Pixel (12,10): pwa=0.046875, pwb=0, pwc=0.53125 → w_corr≈1.7297
 // vcol_b = 0.53125*1.7297 ≈ 0.919 → B≥200; R≤60.
-// Catches: vcol interpolation regressed to plain barycentric (much redder result).
 TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -177,11 +162,8 @@ TEST(rasterize_phong, vcol_perspective_correct_unequal_w)
     }
 }
 
-// red vcol × green diffuse texture → black.
-// ambient*(mat.ambient*tex)*vcol = (1)*(0,1,0)*(1,0,0) = (0,0,0).
-// Also asserts was_drawn (pixel rendered, not skipped).
-// Catches: vcol applied to a fresh mat copy ignoring the tex-modified copy
-//          (the bug the `if (use_mat == &mat)` guard prevents).
+// Red vertex color times a green diffuse texture yields a drawn black pixel.
+// This catches tinting a fresh material copy instead of the texture-modified one.
 TEST(rasterize_phong, vcol_combined_with_diffuse_texture)
 {
     Framebuffer fb(40, 20, /*headless=*/true);

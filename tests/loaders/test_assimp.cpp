@@ -829,8 +829,7 @@ TEST(assimp, amf_embedded_texture_reads_channels_by_format_hint)
     ASSERT_EQ(texture.pixels[1], uint8_t{ 128 });
     ASSERT_EQ(texture.pixels[2], uint8_t{ 0 });
     ASSERT_EQ(texture.pixels[3], uint8_t{ 255 });
-    // The importer writes Tiled?1:0 into a key whose value space says 1 = Clamp, so an
-    // untiled (stretch-once) texture lands as Repeat before our swap corrects it to Clamp.
+    // Assimp inverts AMF's tiled flag relative to its mapping-mode enum.
     ASSERT_EQ(texture.wrap_s, WrapMode::Clamp);
     ASSERT_EQ(texture.wrap_t, WrapMode::Clamp);
 }
@@ -841,7 +840,6 @@ TEST(assimp, amf_tiled_texture_maps_to_repeat_wrap)
     const Mesh mesh = load_ok(file.path);
     ASSERT_EQ(mesh.textures.size(), size_t{ 1 });
     const Texture &texture = mesh.textures.front();
-    // Authored tiling means repeat; the importer's raw mapping-mode value reads as Clamp.
     ASSERT_EQ(texture.wrap_s, WrapMode::Repeat);
     ASSERT_EQ(texture.wrap_t, WrapMode::Repeat);
 }
@@ -1221,8 +1219,8 @@ TEST(assimp, blend_func_is_absent_when_no_material_key_carries_it)
     ASSERT_EQ(blend_func, -1);
 }
 
-// Some malformed files assert immediately before Assimp throws. The adapter replaces
-// that debug-only abort. Avoid the leaking 3MF case in this sanitizer test.
+// The adapter reports Assimp's debug assertion instead of aborting. The real malformed
+// 3MF fixture leaks under sanitizers, so this test triggers the handler directly.
 TEST(assimp, an_assert_violation_reports_instead_of_aborting)
 {
     // A supported extension installs the handler before this missing file fails.

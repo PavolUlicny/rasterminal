@@ -1,9 +1,7 @@
 #pragma once
 
-// This is a test-prelude header: the renderer test TUs include it and rely on
-// it to pull in the test framework and Renderer. IWYU pragma: export marks those
-// as intentionally re-exported so clangd's include-cleaner doesn't flag them as
-// unused here.
+// Renderer test prelude. IWYU exports the framework and Renderer includes that
+// test translation units consume through this header.
 #include "tests/test.h" // IWYU pragma: export
 #include "tests/rasterize_test_util.h"
 #include "src/render/renderer.h" // IWYU pragma: export
@@ -24,12 +22,8 @@ inline Camera make_test_camera()
     return c;
 }
 
-// Single-triangle mesh at z=0 facing the camera (+Z).
-// Front face: v0=(-1,-1,0), v1=(1,-1,0), v2=(0,1,0).  Normal = (0,0,1).
-// With the test camera, projects to sa≈(18,12), sb≈(22,12), sc≈(20,8) on 40×20,
-// covering centre pixel (20,10).
-// flip_winding=true swaps v1/v2 so the triangle faces -Z (back-face from camera).
-// double_sided=true marks the single material as double-sided.
+// Front-facing z=0 triangle covering center pixel (20,10) on the test camera.
+// flip_winding reverses it; double_sided marks its sole material.
 inline Mesh make_unit_triangle(bool flip_winding = false, bool double_sided = false)
 {
     Mesh m;

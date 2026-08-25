@@ -84,12 +84,8 @@ namespace
         bool is_attr = true; // attribute views carry a top-level byteStride; index views don't
     };
 
-    // Assemble a GLB from a list of buffer views (order == bufferView index). The
-    // single BIN buffer holds, for each meshopt view, a zero-filled fallback region
-    // (cgltf requires a bufferView `buffer`, and the fallback byteLength must equal
-    // the decompressed size) plus the compressed stream referenced by the extension;
-    // plain views store their raw bytes once. meshes/accessors JSON (caller-supplied)
-    // reference the bufferView indices.
+    // Assemble ordered buffer views into one BIN. Meshopt views contain the required
+    // zero fallback plus compressed bytes; plain views store raw bytes once.
     std::string assemble_views(
         const std::vector<View> &vs,
         const std::string &node_json,

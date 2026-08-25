@@ -52,8 +52,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
 
 // Group A: alpha_cutoff = 0 (disabled) is bit-identical to no cutoff
 
-// cutoff=0 with an opaque texture must produce the same pixel as cutoff=0.
-// Verifies the sentinel path doesn't silently branch differently.
+// Repeated cutoff-zero renders are bit-identical.
 TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_flat)
 {
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
@@ -67,8 +66,7 @@ TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_flat)
     ASSERT_EQ(ca.b, cb.b);
 }
 
-// cutoff=0 with opaque texture is identical between Flat and Phong paths
-// (both should produce the same texture tint when there's no lighting variation).
+// With no lighting variation, Flat and Phong produce the same texture tint.
 TEST(rasterize_alpha, cutoff_zero_flat_and_phong_both_draw)
 {
     Texture tex = make_tex(1, 1, { 255, 255, 255, 255 });
@@ -81,8 +79,6 @@ TEST(rasterize_alpha, cutoff_zero_flat_and_phong_both_draw)
 
 // Group B: cutout discards transparent pixels
 
-// fully transparent texture (alpha=0) + cutoff=0.5 → pixel not drawn (Flat).
-// Core correctness: a fully-transparent pixel must be discarded.
 TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -91,7 +87,6 @@ TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_flat)
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
 
-// fully transparent texture + cutoff=0.5 → pixel not drawn (Phong).
 TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -100,7 +95,6 @@ TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_phong)
     ASSERT_FALSE(was_drawn(fb, 20, 10));
 }
 
-// fully opaque texture (alpha=255) + cutoff=0.5 → pixel is drawn (Flat).
 TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_flat)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -109,7 +103,6 @@ TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_flat)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
 
-// fully opaque texture + cutoff=0.5 → pixel is drawn (Phong).
 TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -118,8 +111,7 @@ TEST(rasterize_alpha, opaque_pixel_drawn_with_cutoff_phong)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
 
-// opaque texture + cutoff active → drawn pixel colour matches cutoff=0 baseline.
-// The cutout path must still multiply the texture RGB correctly for passing pixels.
+// Passing cutout pixels still modulate RGB.
 TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_flat)
 {
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
@@ -133,7 +125,6 @@ TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_flat)
     ASSERT_EQ(cb.b, cc.b);
 }
 
-// opaque texture + cutoff active → drawn pixel colour matches baseline (Phong).
 TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_phong)
 {
     Texture tex = make_tex(1, 1, { 200, 100, 50, 255 });
@@ -198,7 +189,6 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_flat)
     }
 }
 
-// same depth-non-pollution test for Phong path.
 TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 {
     Framebuffer fb(40, 20, /*headless=*/true);
@@ -249,9 +239,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
 
 // Group D: no overhead on non-cutout path
 
-// texture without cutout (alpha_cutoff=0) with opaque image → same colour
-// as cutoff active but alpha=1 image. Verifies the two paths are equivalent when
-// alpha is 1 everywhere.
+// Opaque input makes the disabled and active cutout paths equivalent.
 TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_flat)
 {
     Texture tex = make_tex(1, 1, { 150, 80, 40, 255 });
@@ -265,7 +253,6 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_flat)
     ASSERT_EQ(cn.b, cw.b);
 }
 
-// same equivalence test for Phong.
 TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
 {
     Texture tex = make_tex(1, 1, { 150, 80, 40, 255 });
@@ -280,9 +267,7 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
 }
 
 // Group E: alpha exactly at cutoff boundary
-// The discard condition is strict < (alpha < cutoff), so alpha == cutoff → drawn.
-// cutoff = 128 * (1/255) matches how sample_rgba converts alpha bytes, making
-// the comparison bit-exact.
+// Discard uses strict `<`; 128/255 matches sample_rgba's conversion exactly.
 
 TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_flat)
 {
@@ -304,11 +289,8 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
 
 // Group F: has_cutout + nmap/stex combined
 
-// has_cutout=true + nmap active: the UV from the cutout pre-pass must be reused
-// for nmap sampling (the `if (!has_cutout && ...)` UV recompute is skipped).
-// nmap texel (255,128,128) → nm≈(1,0,0) → normal redirected to +x in world space.
-// Light dir=(1,0,0): without nmap dot((0,0,1),(1,0,0))=0 → R≈0; with nmap dot≈1 → R≈255.
-// alpha=255 ≥ cutoff=0.5 → pixel passes the cutout test.
+// Cutout must pass its UV to normal-map sampling. An opaque +X normal texel under
+// +X light changes red from about zero to 255.
 TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };
@@ -401,14 +383,8 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
 
 // Group H: cutout-only path (no nmap, no stex), UV lifecycle
 
-// has_cutout=true, nmap=nullptr, stex=nullptr.
-// The block `if (!has_cutout && (tex || nmap || stex))` evaluates false on both
-// halves: UV recompute is entirely skipped.  The `if (tex)` branch uses cutout_rgb
-// (RGB from the pre-pass RGBA sample fetched at the pre-pass UV).
-//
-// Discriminating setup: 2×1 texture (left=red, right=blue) with all vertex UVs at
-// (0.75, 0.5) → samples the blue half.  If the pre-pass UV is missing or defaulted
-// to vec2{} the pixel would be red, not blue.
+// Cutout skips later UV recomputation and must reuse the pre-pass sample. UV 0.75
+// selects blue from a red/blue texture; a missing pre-pass UV would select red.
 TEST(rasterize_phong, cutout_without_nmap_stex_uses_precomputed_uv)
 {
     vec3 sa{ 4.0f, 2.0f, 0.5f }, sb{ 36.0f, 2.0f, 0.5f }, sc{ 20.0f, 18.0f, 0.5f };

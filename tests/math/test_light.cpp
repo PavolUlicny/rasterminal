@@ -3,11 +3,7 @@
 
 #include <cmath>
 
-// All tests use unit-length directions. compute_lighting normalizes its normal
-// argument internally but expects light directions to already be unit. The lit
-// math is driven through the production shading-params overload
-// compute_lighting(normal, v, …, diffuse, ambient, specular, shininess, ao): the
-// same one rasterize_phong uses; a Material's fields are passed out explicitly.
+// Inputs use unit light directions and the overload called by rasterize_phong.
 
 static constexpr float EPS = 1e-5f;
 
@@ -257,8 +253,6 @@ TEST(specular_pow_sq, zero_base_returns_zero)
     ASSERT_NEAR(specular_pow_sq(0.0f, 32.0f), 0.0f, 1e-5f);
     ASSERT_NEAR(specular_pow_sq(0.0f, 1.0f), 0.0f, 1e-5f);
 }
-
-// robustness
 
 TEST(light, normal_is_normalized_internally)
 {

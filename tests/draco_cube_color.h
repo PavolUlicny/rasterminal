@@ -1,21 +1,14 @@
 #pragma once
 
-// Draco bitstream with POSITION + COLOR_0 (RGBA), used by tests/test_gltf_draco.cpp
-// to exercise the vertex-color decode path (including the RGBA->RGB alpha drop, since
-// the COLOR attribute is 4-component while Mesh::vertex_colors is RGB).
-//
-// Encoded once from an 8-vertex cube PLY with per-vertex RGBA colors via draco_encoder
-// at default settings (regenerate per vendor/README.md's Draco refresh recipe). Like
-// draco_cube_bitstream.h, the bytes are vendored rather than a model file so the repo
-// stays model-file-free; we vendor only the decoder, so this can't be produced inline.
-//
-// Encoder-assigned attribute unique-ids (verified with a decoder-side inspector):
+// Eight-vertex cube with RGBA COLOR_0, used to verify RGB decoding and alpha removal.
+// Regenerate with vendor/README.md's Draco recipe; the project vendors no encoder.
+// Attribute IDs:
 //   POSITION -> 0
 //   COLOR_0  -> 1  (4 components / RGBA)
-// num_points = 8, num_faces = 12. Position -> decoded RGB correspondence:
+// Position -> decoded RGB:
 //   (-1,-1,-1) -> (1,0,0)  red
 //   ( 1,-1, 1) -> (0,1,1)  cyan
-// (all alpha = 1, dropped on the RGB-only Mesh::vertex_colors path).
+// Alpha is 1 throughout and is dropped from Mesh::vertex_colors.
 constexpr unsigned char draco_cube_color_drc[] = {
     0x44, 0x52, 0x41, 0x43, 0x4f, 0x02, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x08, 0x0c, 0x01, 0x0b, 0x00, 0x00,
     0x03, 0x6f, 0xab, 0x0a, 0x01, 0x01, 0x10, 0xff, 0x02, 0x35, 0x41, 0x02, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00,

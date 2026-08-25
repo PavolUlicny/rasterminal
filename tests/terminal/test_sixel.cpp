@@ -177,11 +177,8 @@ TEST(sixel, partial_last_band_paints_nothing_past_height)
 
 TEST(sixel, partial_band_reuses_a_register_from_the_full_band)
 {
-    // The same register live in band 0 AND the partial band: mask bits left
-    // over from band 0 would paint rows past the declared height, which the
-    // decoder asserts on. The distinct-register test above cannot see this
-    // (no register there spans both bands); found by mutating the first-touch
-    // clear to wipe only the band's own bit positions.
+    // Reuse one register across a full and partial band. Stale mask bits would
+    // paint beyond the declared height, unlike the distinct-register case above.
     const auto plane = solid_plane(5, 8, 40);
     const SixelFrame f = sixel_decode(encode(plane, 5, 8));
     for (size_t i = 0; i < plane.size(); i++)

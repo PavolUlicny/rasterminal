@@ -1,27 +1,14 @@
 #pragma once
 
-// Draco bitstream with POSITION + COLOR_0 (RGBA, *varied* per-vertex alpha), used by
-// tests/test_gltf_draco.cpp to exercise the Draco per-vertex-opacity path: a 4-component
-// COLOR_0 under alphaMode=BLEND must reach Mesh::vertex_alpha (the existing draco_cube_color
-// fixture has all alpha = 1.0, so it cannot distinguish "alpha survived" from "alpha dropped
-// to 1.0", this one varies it). Like the other Draco fixtures, the bytes are vendored rather
-// than a model file so the repo stays model-file-free; we vendor only the decoder, so this
-// can't be produced inline.
-//
-// Encoded from an 8-vertex cube PLY (positions in [-1,1]^3, no normals) with per-vertex uchar
-// RGBA via draco_encoder at default settings, pinned to the vendored Draco version (1.5.7,
-// commit 8786740086a9f4d83f44aa83badfbea4dce7a1b5). Regenerate on a Draco bump per
-// vendor/README.md's refresh recipe (the source PLY + encode/inspect steps live in the
-// transparency PR's mint script).
-//
-// Encoder-assigned attribute unique-ids (verified with a decoder-side inspector):
+// Eight-vertex cube with varying RGBA alpha, used to verify COLOR_0 reaches vertex_alpha.
+// Encoded with vendored Draco 1.5.7. Regenerate through vendor/README.md's recipe.
+// Attribute IDs:
 //   POSITION -> 0  (3 components)
 //   COLOR_0  -> 1  (4 components / RGBA)
-// num_points = 8, num_faces = 12. uchar colour bytes decode normalized to [0,1]. Position ->
-// decoded alpha correspondence (the two anchors the test asserts are marked):
-//   (-1,-1,-1) -> 0.251   <- test anchor (red,   a 64/255)
+// Uchar alpha decodes to [0,1]; tests assert the marked anchors:
+//   (-1,-1,-1) -> 0.251   <- anchor (red, 64/255)
 //   (-1, 1, 1) -> 0.125
-//   ( 1, 1, 1) -> 0.753   <- test anchor (blue,  a 192/255)
+//   ( 1, 1, 1) -> 0.753   <- anchor (blue, 192/255)
 //   (-1,-1, 1) -> 0.878
 //   ( 1,-1, 1) -> 1.000
 //   ( 1, 1,-1) -> 0.502

@@ -4,11 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
-// The polynomial exp2/log2 that replace libm in the batch shader's specular power and tonemap
-// rolloff. What has to hold is not a tight mathematical bound but the one the renderer relies on:
-// a shaded channel must not move by a visible amount, i.e. by anything near one 8-bit step
-// (1/255 = 3.9e-3). The bounds below are the measured errors with room to spare, so a compiler or
-// target that rounds differently does not flake the suite while a real regression still trips it.
+// Pin the polynomial exp2/log2 errors well below one 8-bit channel step.
+// Bounds include headroom for compiler and target rounding.
 
 TEST(fastmath, fast_round_is_exactly_floor_of_x_plus_half)
 {
@@ -66,8 +63,7 @@ TEST(fastmath, exp2_clamps_instead_of_overflowing)
 
 TEST(fastmath, specular_power_stays_far_inside_one_8bit_step)
 {
-    // The composed form the shader actually spells: fast_exp2(y * fast_log2(x)) for pow(x, y).
-    // This is the claim the two approximations exist to support.
+    // Test the shader's composed approximation: fast_exp2(y * fast_log2(x)).
     constexpr double step = 1.0 / 255.0;
     double worst = 0.0;
     for (int i = 1; i <= 20000; i++)
@@ -86,11 +82,8 @@ TEST(fastmath, specular_power_stays_far_inside_one_8bit_step)
 
 TEST(fastmath, exp_keeps_the_tonemap_rolloff_inside_one_8bit_step)
 {
-    // fast_exp's own relative error grows with |x|, because it scales its argument by 1/ln2 and
-    // that multiply rounds: 4.6e-7 over [-5, 0] but 3.5e-6 by -50. That is not the quantity to
-    // pin, since the tonemap divides the result by its knee range and subtracts it from one, so
-    // the places where exp is least accurate are exactly the places where it contributes least.
-    // What a pixel sees is the composed channel, measured at 4.1e-8 against a step of 3.9e-3.
+    // Pin the composed tonemap channel rather than fast_exp's irrelevant far-tail
+    // relative error. Its observed error is 4.1e-8 against a 3.9e-3 channel step.
     constexpr float knee = 0.7f;
     constexpr float range = 1.0f - knee;
     constexpr double step = 1.0 / 255.0;

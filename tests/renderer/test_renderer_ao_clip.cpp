@@ -3,10 +3,8 @@
 #include <cstdint>
 
 // near-clip mesh helpers
-//
-// Camera eye=(0,0,5), near_plane=0.1.  Clip w = 5 − world_z.
-// World z=0   → w=5   (comfortably in front).
-// World z=4.95 → w=0.05 (behind near plane → clipped).
+// With eye z=5 and near 0.1, world z=0 is visible at w=5 while z=4.95
+// clips at w=0.05.
 
 // Two vertices in front (z=0), one behind (z=4.95).
 // clip_near: 2 inside, 1 outside → 2 output triangles.
@@ -100,11 +98,8 @@ static Mesh make_fully_behind_triangle()
 }
 
 // Group G: near-plane clip integration
-//
-// Camera: eye=(0,0,5), near_plane=0.1. Clip w = 5 − world_z.
-// Vertices at z=4.95 have w=0.05 → behind near plane (w < 0.1).
-// All tests verify that Renderer::render() forwards clip_near results correctly
-// for both the MT (Phong/Flat) and wireframe code paths.
+// With eye z=5 and near=0.1, world z=4.95 lies behind the plane. Check
+// clip_near forwarding through Phong, Flat, and wireframe paths.
 
 // one vertex behind near plane, two in front.
 // clip_near produces 2 output tris → pixels must be drawn (MT path).
@@ -193,9 +188,7 @@ TEST(renderer, near_clip_wireframe_fully_behind_draws_nothing)
     }
 }
 
-// raising camera.near_plane above all clip-w values rejects a front-facing
-// triangle that would otherwise render. Verifies m_near_plane is forwarded from
-// camera.near_plane in the MT dispatch path (renderer.cpp:480).
+// Raising the near plane above every clip-w rejects an otherwise visible triangle.
 TEST(renderer, near_clip_uses_camera_near_plane_value)
 {
     Renderer r(1);
@@ -216,11 +209,8 @@ TEST(renderer, near_clip_uses_camera_near_plane_value)
 
 // grid mesh helper
 
-// Build a grid_w×grid_h cell mesh over x,y ∈ [-half, +half] at z=0.
-// Each cell splits into 2 CCW front-facing triangles → 2*grid_w*grid_h tris.
-// With grid_w=grid_h=16 and half=4, the test camera (fov=π/2, aspect 2,
-// eye=(0,0,5)) projects the grid to screen rect (12..28)×(2..18) ≈ 256 px.
-// 512 triangles with 4 workers → choose_phase1_chunk=64 → ~2 chunks/worker.
+// Build a front-facing grid. At 16x16 it projects to about 256 pixels and gives
+// four workers roughly two 64-triangle claims each.
 static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
 {
     Mesh m;
@@ -267,14 +257,7 @@ static Mesh make_grid_mesh(int grid_w, int grid_h, float half = 4.0f)
     return m;
 }
 
-// Group H: multiple triangles / work-stealing at scale
-//
-// 16×16 grid = 512 triangles. With 4 workers, choose_phase1_chunk=64
-// → 8 chunks → ~2 iterations per worker in the Phase 1 steal loop.
-// Projected coverage: screen rect (12..28)×(2..18) ≈ 256 pixels.
-
-// 512-triangle grid renders with expected pixel coverage (single worker).
-// Catches: chunk-loop early exit → only ~12% of grid processed.
+// A 16x16 grid yields eight 64-triangle claims over about 256 pixels.
 TEST(renderer, many_triangles_grid_renders_expected_coverage)
 {
     Renderer r(1);
@@ -293,8 +276,6 @@ TEST(renderer, many_triangles_grid_renders_expected_coverage)
     }
 }
 
-// same grid with 1 vs 4 workers → identical pixel counts.
-// Catches: worker data race, cursor double-claim, band ordering bug.
 TEST(renderer, many_triangles_consistent_across_thread_counts)
 {
     Mesh mesh = make_grid_mesh(16, 16);
@@ -326,8 +307,6 @@ TEST(renderer, many_triangles_consistent_across_thread_counts)
     }
 }
 
-// rendering same mesh twice reuses same Renderer → second frame must match.
-// Catches: m_tri_cursor not reset before dispatch → second render claims 0 work → empty fb2.
 TEST(renderer, many_triangles_repeated_render_resets_cursor)
 {
     Renderer r(2);
@@ -355,9 +334,6 @@ TEST(renderer, many_triangles_repeated_render_resets_cursor)
     assert_pixel_near(fb2, 20, 10, fb1.get_pixel(20, 10), 1);
 }
 
-// after rendering a full grid, rendering an empty mesh must produce nothing.
-// Catches: stale framebuffer pixels not cleared between renders (fb.clear() must
-// be called by the test, and the empty mesh must not draw anything new).
 TEST(renderer, many_triangles_then_empty_mesh_clears_bands)
 {
     Renderer r(2);
@@ -451,15 +427,10 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
 }
 
 // Group I: AO end-to-end
-//
-// Strategy: n_lights=0 so compute_lighting output = ambient * mat.ambient * ao.
-// With ambient=(0.8,0,0) and default mat.ambient=(1,1,1):
-//   ao=1.0  → R ≈ 204
-//   ao=0.0  → R = 0
-//   ao=1/3  → R ≈ 68  (Flat average of 1+0+0)
+// With no lights and red ambient 0.8, AO values 1, 0, and 1/3 produce red
+// channels near 204, 0, and 68.
 
 // Flat: all ao=0 → ambient term zero → pixel is essentially black.
-// Catches: ao dropped from ClipVert construction or Flat face_ao path.
 TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
 {
     Renderer r(1);
@@ -478,9 +449,7 @@ TEST(renderer, flat_ao_uniform_zero_darkens_pixel)
     }
 }
 
-// Flat: all ao=1 → full ambient → bright baseline.
-// Counterpart to the all-ao=0 test above: ensures the n_lights=0 + ambient setup actually produces
-// a bright pixel when ao=1, making the uniform-zero tests falsifiable.
+// With no lights, ao=1 preserves full ambient and provides a bright baseline for the ao=0 tests.
 TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
 {
     Renderer r(1);
@@ -500,7 +469,6 @@ TEST(renderer, flat_ao_uniform_one_full_brightness_baseline)
 }
 
 // Flat: ao=(1,0,0) → face_ao=1/3 → R≈68, uniform across triangle.
-// Catches: Flat picking a single vertex's ao instead of averaging.
 TEST(renderer, flat_ao_averaged_across_vertices)
 {
     Renderer r(1);
@@ -521,7 +489,6 @@ TEST(renderer, flat_ao_averaged_across_vertices)
 }
 
 // Phong: all ao=0 → rasterize_phong produces 0 ambient → black.
-// Catches: ao not copied into rt.ph.aoa/b/c or not forwarded to rasterize_phong.
 TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 {
     Renderer r(1);
@@ -541,7 +508,6 @@ TEST(renderer, phong_ao_uniform_zero_darkens_pixel)
 }
 
 // Phong: ao=(1,0,0) → per-pixel AO gradient across triangle.
-// Catches: Phong using a uniform ao or hardcoding ao=1 per pixel.
 TEST(renderer, phong_ao_interpolates_per_pixel)
 {
     Renderer r(1);
@@ -574,7 +540,6 @@ TEST(renderer, phong_ao_interpolates_per_pixel)
 // AO must not affect direct diffuse (only ambient).
 // Render once with ao=0 and once with ao=1; ambient=0 so the ao×ambient
 // term is zero in both cases.  Both centre pixels must match within ±1.
-// Catches: a regression multiplying AO into the diffuse term.
 TEST(renderer, ao_does_not_affect_direct_diffuse)
 {
     Renderer r(1);

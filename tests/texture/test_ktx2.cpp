@@ -118,10 +118,8 @@ TEST(ktx2_decode, valid_magic_truncated_body_returns_false)
 
 TEST(ktx2_decode, oversized_declared_dimension_fails_loud)
 {
-    // A crafted file declaring an enormous width must be rejected, not drive an
-    // unbounded allocation. The KTX2 header stores pixelWidth as a u32 at byte offset 20;
-    // set it to 65536 (> the transcoder's 16384 dimension cap). init() must reject it and
-    // decode_ktx2_rgba must return false rather than attempt a huge allocation or crash.
+    // Set pixelWidth at byte 20 to 65536, beyond the transcoder's 16384 cap.
+    // Decoding must reject it before allocation.
     std::vector<uint8_t> bad(k_ktx2_etc1s_solid, k_ktx2_etc1s_solid + k_ktx2_etc1s_solid_len);
     bad[20] = 0x00;
     bad[21] = 0x00;
