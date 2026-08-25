@@ -25,11 +25,8 @@ namespace
         float L, a, b;
     };
 
-    // Linear sRGB -> CIELAB (D65 white), the deltaE76 space the quantizer measures in. CIELAB
-    // rather than OKLab deliberately: OKLab's lightness term dominates its chroma terms so hard
-    // in the darks that it still sends dark greens/browns to the grey ramp (measured on a real
-    // model: 90.9% of pixels grey vs 93.4% for squared RGB, where CIELAB gives 69.8% and keeps
-    // the model's hue), defeating the purpose of a perceptual metric here.
+    // CIELAB preserves dark model hues better than OKLab here: 69.8% of measured pixels
+    // mapped to gray, compared with 90.9% under OKLab.
     Lab cielab_from_linear(float r, float g, float b)
     {
         // sRGB -> XYZ (D65); X and Z rows pre-divided by the white point (Y's is 1).
@@ -44,16 +41,12 @@ namespace
         return { (116.0f * fy) - 16.0f, 500.0f * (fx - fy), 200.0f * (fy - fz) };
     }
 
-    // Builds the 64^3 quantization table documented at quant256_idx (color.h): per cell the
-    // deltaE76-nearest of the 240 addressable palette entries for the cell centre, then an exact
-    // overwrite so any cell containing a palette colour maps to it.
+    // Map each 64^3 cell center to the nearest addressable xterm color by deltaE76.
     std::array<uint8_t, QUANT256_LUT_SIZE> build_quant256_lut()
     {
         constexpr int n_pal = 240;
 
-        // Palette CIELAB as structure-of-arrays so the argmin scan below vectorizes. (An L*-sorted
-        // two-pointer prune was tried and measured slower: it visits fewer entries but its branchy
-        // walk defeats the vectorization this straight 240-entry loop gets.)
+        // Structure of arrays lets the palette scan vectorize.
         std::array<float, n_pal> pl{};
         std::array<float, n_pal> pa{};
         std::array<float, n_pal> pb{};
@@ -70,7 +63,7 @@ namespace
             pb[i] = o.b;
         }
 
-        // The 64 per-channel cell-centre values, linearized once (the centre of [4i, 4i+3] is 4i+1.5).
+        // Linear-light values at each four-level cell center.
         std::array<float, 64> centre_lin{};
         for (int i = 0; i < 64; ++i)
         {
@@ -79,9 +72,7 @@ namespace
 
         std::array<uint8_t, QUANT256_LUT_SIZE> lut{};
 
-        // Scan a range of r-slices; slices write disjoint lut ranges, so they parallelize with no
-        // shared state. Each cell is an independent argmin over the 240 entries; strict < keeps
-        // the first (lowest-index) entry on a tie, so the cube beats the ramp.
+        // Red slices write disjoint ranges. Strict comparison favors the lower index on ties.
         const auto scan = [&](int r_begin, int r_end)
         {
             for (int r = r_begin; r < r_end; ++r)
@@ -116,10 +107,8 @@ namespace
             }
         };
 
-        // The serial scan measures ~50 ms; slicing it across cores gets ~7 ms. Serial is the
-        // fallback both for hardware_concurrency() == 0 and for a thread that fails to spawn;
-        // the spawned threads are joined before the fallback runs, so its full re-scan (of
-        // ranges they may already have covered) writes identical values race-free.
+        // Parallel construction measures about 7 ms versus 50 ms serial. On spawn failure,
+        // join workers before the deterministic serial rescan.
         const unsigned n_threads = std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
         bool serial = n_threads <= 1;
         std::vector<std::thread> workers;
@@ -127,8 +116,7 @@ namespace
         {
             try
             {
-                // reserve stays inside the try: its bad_alloc must take the same serial fallback
-                // as a failed spawn (an escape would hit quant256_lut()'s noexcept and terminate).
+                // Allocation failure must use the serial path because the caller is noexcept.
                 workers.reserve(n_threads);
                 for (unsigned t = 0; t < n_threads; ++t)
                 {
@@ -151,12 +139,7 @@ namespace
             scan(0, 64);
         }
 
-        // Exact-palette overwrite: a palette colour must round-trip to itself even when its cell
-        // centre (up to ~2.6 RGB units away) is nearest a different entry. Under the current
-        // CIELAB constants this pins the guarantee rather than changing anything (under OKLab it
-        // was load-bearing: black's cell centre sat nearer grey 8 than black). Overwrites cannot collide: at
-        // 64^3 no two palette entries share a cell, the closest pairs (cube grey levels vs ramp
-        // neighbours 3 units away, e.g. 95/98) landing in adjacent cells.
+        // Palette colors must round-trip exactly. No two entries share a 64^3 cell.
         for (int j = 0; j < n_pal; ++j)
         {
             lut[quant256_idx(quant256_palette_entry(j))] = static_cast<uint8_t>(16 + j);

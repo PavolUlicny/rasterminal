@@ -22,12 +22,8 @@
 
 namespace
 {
-    // True if the OBJ contains any `s` (smoothing-group) directive with a value, e.g.
-    // `s 1` or `s off`. tinyobjloader collapses "no directive", `s 0`, and `s off` all
-    // to group id 0, so the per-face ids alone can't distinguish "no smoothing info"
-    // (→ crease-angle fallback) from "explicitly faceted" (`s off`). This scan decides
-    // whether compute_normals runs in smoothing-group mode at all; it runs only when
-    // the file lacks normals, and early-outs on the first directive.
+    // tinyobjloader maps absent smoothing and explicit `s off` to zero. Scan the source
+    // to decide whether zero means crease-angle smoothing or authored faceting.
     bool obj_has_smoothing_directive(const std::string &path)
     {
         std::ifstream in(path);
@@ -43,7 +39,7 @@ namespace
             {
                 i++;
             }
-            // First token must be exactly `s` followed by whitespace (not `surf` etc.).
+            // Match the complete `s` token, not prefixes such as `surf`.
             if (i >= line.size() || line[i] != 's')
             {
                 continue;
@@ -53,7 +49,7 @@ namespace
             {
                 continue;
             }
-            // Require a following non-whitespace value token (skip a malformed bare `s`).
+            // Ignore a malformed bare `s`.
             while (j < line.size() && (std::isspace(static_cast<unsigned char>(line[j])) != 0))
             {
                 j++;
@@ -66,18 +62,8 @@ namespace
         return false;
     }
 
-    // Bake MTL -s (scale) / -o (origin offset) into the texture slot's 2x3 affine, the same
-    // affine glTF's KHR_texture_transform feeds (TexSlot::t in light.h, applied per-sample by
-    // apply_tex_transform). MTL authors its offset/scale in OBJ's stored v-up UV space with no
-    // rotation term, so
-    // there is NO v-flip fold, unlike mesh_gltf's bake_transform (v-down authoring space).
-    // Scale-then-offset: feed.u = sx*u + ox, feed.v = sy*v + oy. The -o SIGN is deliberate: the
-    // Wavefront spec's "shifting the map origin" is ambiguous, so the offset adds to the scaled
-    // coordinate to match KHR_texture_transform and make OBJ<->glTF round-trips of the same
-    // authored transform agree (flip ox/oy here if a stricter literal reading is ever needed).
-    // The 3rd (w) component (3-D solid textures) and -t (turbulence: procedural noise
-    // displacement, not an affine) are ignored. Identity (scale 1, offset 0) leaves
-    // has_transform false so the no-transform sample fast path stays byte-identical.
+    // Bake MTL scale and offset into the shared 2x3 UV transform. OBJ UVs are already v-up,
+    // so this path needs none of glTF's flip conversion. Ignore 3-D and turbulence terms.
     void bake_obj_transform(TexSlot &slot, const tinyobj::texture_option_t &opt)
     {
         const float sx = opt.scale[0];
@@ -119,8 +105,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     const auto &shapes = reader.GetShapes();
     const auto &mats = reader.GetMaterials();
 
-    // Bounds-check all face indices. tinyobjloader is permissive (warns but succeeds)
-    // on OOB references; we reject to avoid degenerate geometry in the renderer.
+    // tinyobjloader only warns about out-of-range face indices; reject them here.
     const size_t n_pos = attrib.vertices.size() / 3;
     const size_t n_nor = attrib.normals.size() / 3;
     const size_t n_tex = attrib.texcoords.size() / 2;
@@ -137,15 +122,9 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
     }
 
-    // Default white material at index 0, always present.
     materials.push_back(Material{});
 
-    // Register a texture by name (relative to obj_dir), returning its slot index.
-    // Each distinct (name, clamp) is registered once (dedup); the actual decode is
-    // deferred and run in parallel after material parsing. Empty name -> no texture (-1).
-    // clamp is MTL's `-clamp on` (both axes -> Clamp, no mirror); it is part of the key
-    // because the same image used clamped in one material and tiled in another needs two
-    // slots with different wrap modes.
+    // Deduplicate texture requests by path and clamp mode, then decode them in parallel.
     struct ObjTexRequest
     {
         std::string path;
@@ -154,10 +133,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
     std::unordered_map<std::string, int> tex_cache;
     std::vector<ObjTexRequest> tex_requests;
 
-    // map_Bump/bump bindings to resolve after decode: the slot is bound now (as a normal
-    // map), but whether it is a true height map (→ convert) or a mislabeled normal map
-    // (→ keep) can only be decided once the pixels are decoded. Keyed by material index so
-    // it survives decode_textures' failed-decode compaction/remap.
+    // Defer bump classification until pixels are decoded. Material indices survive compaction.
     struct BumpBinding
     {
         size_t material_index;
@@ -183,25 +159,22 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         return idx;
     };
 
-    // Materials: tinyobjloader index i maps to our index i+1 (0 = default).
+    // Reserve material zero for the default.
     for (const auto &m : mats)
     {
         Material mat{};
         mat.diffuse = { m.diffuse[0], m.diffuse[1], m.diffuse[2] };
         mat.specular = { m.specular[0], m.specular[1], m.specular[2] };
         mat.shininess = m.shininess;
-        // Ka → Kd fallback: if ambient is all-zero (absent or unset), use diffuse.
+        // Use diffuse when ambient is absent or zero.
         const bool ka_zero = (m.ambient[0] == 0.0f && m.ambient[1] == 0.0f && m.ambient[2] == 0.0f);
         mat.ambient = ka_zero ? mat.diffuse : vec3{ m.ambient[0], m.ambient[1], m.ambient[2] };
         mat.diffuse_map.tex = load_tex(m.diffuse_texname, m.diffuse_texopt.clamp);
         bake_obj_transform(mat.diffuse_map, m.diffuse_texopt);
         mat.specular_map.tex = load_tex(m.specular_texname, m.specular_texopt.clamp);
         bake_obj_transform(mat.specular_map, m.specular_texopt);
-        // A real normal map (`norm` → normal_texname) wins and is bound directly. The
-        // map_Bump/bump fallback is, per the MTL spec, a grayscale *height* map, but many
-        // exporters (notably Blender's legacy OBJ exporter) ship an actual RGB normal map
-        // there. Bind it as a normal map now and record the binding; after decode we classify
-        // each bump texture and convert only the true grayscale ones (see the pass below).
+        // `norm` wins. Exporters often put RGB normal maps in map_Bump, so classify map_Bump
+        // after decoding and convert only scalar height maps.
         if (!m.normal_texname.empty())
         {
             mat.normal_map.tex = load_tex(m.normal_texname, m.normal_texopt.clamp);
@@ -209,42 +182,26 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
         else if (!m.bump_texname.empty())
         {
-            // -bm and -imfchan are carried. -bm is bounded to the same finite range
-            // height_to_normal_map clamps to, applied here too so the conversion dedup key keys on
-            // the *effective* multiplier (two out-of-range -bm that clamp equal then share one
-            // texture). The -mm base/gain brightness/contrast modifier on the bump map is
-            // intentionally not applied (rare; bump strength is controlled via -bm).
+            // Clamp -bm before deduplication so equal effective strengths share a conversion.
+            // Ignore rare -mm modulation; -bm controls bump strength.
             mat.normal_map.tex = load_tex(m.bump_texname, m.bump_texopt.clamp);
             bake_obj_transform(mat.normal_map, m.bump_texopt);
             const float bm = std::clamp(m.bump_texopt.bump_multiplier, -1e6f, 1e6f);
-            // Lower-case -imfchan once here: tinyobjloader stores the channel char verbatim, but
-            // the spec writes it lower-case, so fold an out-of-spec 'R'/'G'/… to its 'r'/'g'/…
-            // meaning rather than silently dropping it to luminance at both consumption sites.
+            // Accept uppercase -imfchan values instead of silently treating them as luminance.
             const char imfchan = static_cast<char>(std::tolower(static_cast<unsigned char>(m.bump_texopt.imfchan)));
             bump_bindings.push_back({ materials.size(), bm, imfchan });
         }
-        // Clamp Ke to [0, 1e6] per channel: emission is physically non-negative (glTF enforces
-        // the same via emissiveFactor's `minimum: 0.0`). Lower bound stops a negative from
-        // subtracting from lit colour; upper bound stops a hostile +Inf at the source, before
-        // it can produce a per-pixel NaN via `Inf * 0` on a zero texel channel (uint8_t cast on
-        // NaN is UB). Symmetric with the glTF emissiveFactor clamp.
+        // Bound emission before a zero texture channel can turn an infinite factor into NaN.
         mat.emissive = { std::clamp(m.emission[0], 0.0f, 1e6f), std::clamp(m.emission[1], 0.0f, 1e6f),
                          std::clamp(m.emission[2], 0.0f, 1e6f) };
-        // Spec-literal: emissive = Ke × map_Ke. A zero Ke means map_Ke cannot contribute
-        // (do_emissive gated on factor>0), so skip the decode: saves a stb_image_load (often
-        // multi-MB) and permanent RAM. Dedup unaffected: if the same image is bound as e.g.
-        // map_Kd, that call still registers and decodes it.
+        // A zero Ke nullifies map_Ke, so skip an otherwise unused decode.
         const bool emissive_active = (mat.emissive.x > 0.0f || mat.emissive.y > 0.0f || mat.emissive.z > 0.0f);
         if (emissive_active)
         {
             mat.emissive_map.tex = load_tex(m.emissive_texname, m.emissive_texopt.clamp);
             bake_obj_transform(mat.emissive_map, m.emissive_texopt);
         }
-        // map_d present: treat map_Kd's alpha channel as an opacity mask.
-        // map_d is not loaded as a separate texture: map_Kd's RGBA is used.
-        // Otherwise a sub-1 dissolve (MTL `d` / `Tr`, parsed into m.dissolve by
-        // tinyobjloader) routes the material to the transparent blend pass. The two are
-        // mutually exclusive: a cutout mask takes precedence over scalar opacity.
+        // map_d selects cutout using map_Kd alpha. Otherwise d/Tr selects scalar blending.
         if (!m.alpha_texname.empty())
         {
             mat.alpha_cutoff = 0.5f;
@@ -252,27 +209,19 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         else if (m.dissolve < 1.0f)
         {
             mat.blend = true;
-            // Authored dissolve passes straight through with no floor: `d 0` is a fully
-            // invisible material, which is spec-correct (0 = fully dissolved). This is a
-            // deliberate asymmetry with the glTF transmission path's GLASS_ALPHA_FLOOR --
-            // that floor exists only because transmission->alpha-blend is an approximation
-            // that would otherwise vanish a surface the asset meant to be seen; an explicit
-            // `d`/`Tr` value is the author's literal intent, so it is not second-guessed.
+            // Preserve authored d/Tr exactly, including fully invisible d=0.
             mat.alpha = m.dissolve;
         }
         materials.push_back(mat);
     }
 
-    // Vertex deduplication: identical (vertex_index, normal_index, texcoord_index)
-    // tuples share one Vertex, same semantics as the previous hand-rolled loader.
+    // Deduplicate identical position, normal and UV index tuples.
     std::unordered_map<size_t, uint32_t> vert_cache;
     vert_cache.reserve(attrib.vertices.size() / 3);
 
     bool all_have_normals = !attrib.normals.empty();
 
-    // Position-group id per created vertex (the source OBJ vertex_index), so
-    // compute_normals can smooth across UV seams that split one position into
-    // several vertices. Only consumed when the file lacks (full) normals.
+    // Preserve source position IDs so computed normals can cross UV seams.
     std::vector<uint32_t> weld;
     weld.reserve(n_pos);
 
@@ -327,7 +276,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
             const uint32_t mat_idx =
                 (mat_id >= 0 && mat_id < static_cast<int>(mats.size())) ? static_cast<uint32_t>(mat_id + 1) : 0u;
 
-            // triangulate=true guarantees fv==3; guard for safety.
+            // triangulate=true should guarantee this.
             if (fv >= 3)
             {
                 std::array<uint32_t, 3> fv3{};
@@ -386,12 +335,8 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
 
     if (attrib.normals.empty() || !all_have_normals)
     {
-        // OBJ smoothing groups, when authored, are authoritative over the crease angle: build a
-        // per-triangle group id mirroring the triangle-build loop's order exactly, and only when
-        // the file authors `s` directives (else nullptr, the byte-identical crease-angle path).
-        // Any non-zero id proves a directive exists, so the disk rescan is needed only to
-        // disambiguate the all-zero case (no directive vs explicit `s off`, both 0 in
-        // tinyobjloader): angle fallback vs faceted group mode.
+        // Authored smoothing groups override the crease angle. Rescan only when every parsed
+        // group is zero, which may mean either no directive or explicit `s off`.
         std::vector<uint32_t> smooth_groups;
         const bool any_nonzero = std::any_of(
             shapes.begin(), shapes.end(),
@@ -420,7 +365,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         compute_normals(crease_cos, &weld, n_pos, use_groups ? &smooth_groups : nullptr);
     }
 
-    // tex_requests holds obj_dir-resolved paths + the -clamp flag, decoded in parallel.
+    // Decode resolved texture requests in parallel.
     decode_textures(
         textures, materials, tex_requests.size(), n_threads,
         [&](size_t i) -> Texture
@@ -436,20 +381,12 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
         }
     );
 
-    // map_Bump/bump resolution: classify each decoded bump texture, converting true height maps
-    // to tangent-space normal maps (height_to_normal_map) while chromatic textures (mislabeled
-    // normal maps, common from Blender's legacy exporter) pass through unchanged. An explicit
-    // non-luminance -imfchan (r/g/b/m/z) forces the height path, since naming one channel only
-    // makes sense for a scalar source (-imfchan l is tinyobjloader's default with no
-    // was-it-written flag, so it correctly falls through to grayscale detection). This
-    // deliberately deviates from the MTL letter (map_Bump is unconditionally a height map): a
-    // no-human-in-the-loop viewer must not wreck the large mislabeled-normal-map corpus, and
-    // grayscale detection separates the two near-perfectly. Conversion runs serially (not on the
-    // worker pool): multiple large height maps per OBJ are rare, the dedup/classification is
-    // inherently serial, and each conversion is bounded O(w*h).
+    // Convert scalar bump maps while preserving mislabeled RGB normal maps. An explicit
+    // non-luminance channel forces height conversion. Run serially because shared bump maps
+    // require classification and conversion deduplication.
     if (!bump_bindings.empty())
     {
-        std::map<std::tuple<int, char, uint32_t>, int> converted; // (src_idx, imfchan, bm-bits) → new tex
+        std::map<std::tuple<int, char, uint32_t>, int> converted; // (source, channel, bump bits) to texture
         std::map<int, bool> grayscale_of;                         // per-source classification, scanned once
         for (const auto &bind : bump_bindings)
         {
@@ -462,8 +399,7 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
             const bool explicit_channel = (ch == 'r' || ch == 'g' || ch == 'b' || ch == 'm' || ch == 'z');
             if (!explicit_channel)
             {
-                // is_grayscale is an O(w*h) scan; cache it by source so a grayscale bump shared
-                // across many materials is classified once, not once per binding.
+                // Cache the full-image grayscale scan per source texture.
                 const auto [cit, inserted] = grayscale_of.try_emplace(src, false);
                 if (inserted)
                 {
@@ -471,16 +407,13 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
                 }
                 if (!cit->second)
                 {
-                    continue; // chromatic, no explicit channel ⇒ a normal map mislabeled as bump: keep as-is
+                    continue; // Keep a chromatic normal map mislabeled as bump.
                 }
             }
 
             uint32_t bm_bits = 0;
             std::memcpy(&bm_bits, &bind.bump_multiplier, sizeof bm_bits);
-            // Key on the raw imfchan, not its effective channel: 'z' aliases 'b' and unknown chars
-            // alias 'l' inside height_channel, so two materials sharing a source+bm but written with
-            // equivalent-yet-different letters convert twice. That collision needs hand-authored
-            // contradictory MTL and only wastes one duplicate texture, so it is not worth canonicalizing.
+            // Raw channel keys may duplicate equivalent aliases, a rare and harmless extra texture.
             const auto key = std::make_tuple(src, ch, bm_bits);
             const auto it = converted.find(key);
             if (it != converted.end())
@@ -489,13 +422,8 @@ bool Mesh::load_obj(const std::string &path, int n_threads, float crease_cos)
                 continue;
             }
 
-            // Append the converted normal map rather than overwriting textures[src] in place: the
-            // same source can need several distinct conversions (e.g. two materials, one height
-            // map, different -bm), each of which must read the original height data, so the source
-            // slot has to survive the whole pass. The consequence is that a bump-only grayscale
-            // source (not also bound as map_Kd/etc.) is left orphaned in textures[] once repointed,
-            // retaining its decoded RGBA buffer unused for the mesh lifetime. Accepted: reclaiming
-            // it needs a reference-aware mark-sweep over the texture slots, deferred as its own pass.
+            // Keep the source because different materials may require different conversions.
+            // A bump-only source may remain unreferenced; reclaiming it needs reference tracking.
             Texture nmap = height_to_normal_map(textures[static_cast<size_t>(src)], ch, bind.bump_multiplier);
             const int new_idx = static_cast<int>(textures.size());
             textures.push_back(std::move(nmap));

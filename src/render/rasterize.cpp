@@ -11,15 +11,12 @@
 #include <cstddef>
 #include <cstdint>
 
-// internal helpers
-
 namespace
 {
 
     constexpr float DEGEN_AREA_EPS = 1e-6f; // minimum |denom| to treat a triangle as non-degenerate
 
-    // Standard normal-incidence reflectance (F0) for dielectrics; metals lerp from
-    // this toward their base colour by the metalness factor.
+    // Standard dielectric normal-incidence reflectance.
     constexpr vec3 DIELECTRIC_F0{ 0.04f, 0.04f, 0.04f };
 
     // Precomputed barycentric rasterization setup for one triangle.
@@ -32,18 +29,8 @@ namespace
         float ba_row, bb_row; // ba/bb at pixel center (x0+0.5, y0+0.5)
     };
 
-    // Fill s from the three screen-space vertices (x,y,ndc_z) and clip-space w values.
-    // [x_min, x_max] x [y_min, y_max] is the inclusive pixel window (the framebuffer, or one
-    // tile of it). Returns false if the triangle is degenerate or misses the window entirely.
-    //
-    // The four float->int conversions below run BEFORE the clamp, unlike pixel_span, which is
-    // careful to clamp first. Leaving it that way is deliberate. A screen coordinate outside int
-    // range would be UB there, but it cannot arrive: clip_near leaves w > radius*0.01, which
-    // bounds |ndc| near 1e4 and screen coordinates near 2e7. Adding a guard here is not free the
-    // way it looks: this function is inlined into all three rasterizers, and touching it changes
-    // FMA contraction for every one of them, moving ba_row by an ulp and re-rounding edge pixels
-    // image-wide (measured: 58 of 96 corpus cases moved when the box was last edited). So the
-    // bound is held upstream, not here.
+    // Set up barycentrics inside an inclusive pixel window. clip_near bounds screen
+    // coordinates before these float-to-int conversions.
     bool setup_tri(
         vec3 sa, vec3 sb, vec3 sc, float wa, float wb, float wc, int x_min, int x_max, int y_min, int y_max, TriSetup &s
     )
@@ -81,23 +68,8 @@ namespace
         return true;
     }
 
-    // Conservative x-range [lo, hi] of one bbox row that can hold covered pixels: each edge
-    // function is linear in x, so its zero crossing bounds the row from one side. A long thin or
-    // diagonal triangle has a bbox many times its area (~20% of Phong instructions on Sponza went
-    // to rejecting bbox pixels), and this skips the part of the row no edge can cover.
-    //
-    // The span MUST NOT cut a pixel the loop would find covered, so each crossing is pushed out
-    // by the loop's own rounding error: the pixel loop evaluates row + t*dx (and bc as
-    // 1 - ba - bb), so its value carries a few ulps of the magnitudes involved, which converts to
-    // `eps / |dx|` pixels of uncertainty about where the edge lies. Passing the error in as
-    // `eps[]` rather than assuming a fixed pixel margin is what makes this safe for a
-    // near-scanline-parallel edge, where |dx| is so small that a few ulps move the crossing by
-    // tens of pixels and the span then correctly degenerates to the whole row. (The margin costs
-    // nothing on ordinary triangles: at |dx| ~ 1/width it is a thousandth of a pixel.)
-    //
-    // inv_dx are the reciprocal gradients (0 for an exactly x-parallel edge, where the row is
-    // all-in or all-out on the sign of the row value). Returns false for an empty row. Costs
-    // about as much as scanning eight pixels, so callers keep the plain scan below that.
+    // Conservatively narrow a bbox row by edge zero crossings. eps expands each
+    // crossing by its floating-point uncertainty, especially for near-horizontal edges.
     inline bool row_span(
         float ba_row,
         float bb_row,
@@ -153,10 +125,7 @@ namespace
         inv_dx[2] = bc_dx != 0.0f ? 1.0f / bc_dx : 0.0f;
     }
 
-    // Error bounds on the three edge values the pixel loop computes over one bbox row, for
-    // row_span above. A float carries ~1.2e-7 relative error per operation; the bound is a
-    // generous 8 ulps of the largest magnitude each value reaches across the row, and bc adds the
-    // cancellation of 1 - ba - bb, whose terms are order 1 whatever the barycentrics are.
+    // Eight-ulp bounds for edge values across one bbox row.
     inline void span_eps(const TriSetup &s, float ba_row, float bb_row, float eps[3])
     {
         constexpr float ULPS = 8.0f * 1.1920929e-7f;
@@ -168,31 +137,12 @@ namespace
 
     constexpr int SPAN_MIN_WIDTH = 8; // bbox rows narrower than this scan every pixel
 
-    // EdgeWalk: every rasterizer here EVALUATES a barycentric at a pixel, `row0 + ry*dy + rx*dx`,
-    // rather than accumulating `+= dx` along the row and `+= dy` down the rows.
-    //
-    // Accumulating drifts: each addition rounds, so after a few hundred pixels the value is off by
-    // ~100 ulps (measured 4.5e-6 at x = 271 on Sponza). That is harmless where an edge gradient is
-    // of ordinary size, but a triangle nearly parallel to the scanline has |dx| ~ 3e-7 per pixel,
-    // and there the same drift moves the apparent edge by more than ten pixels: coverage then
-    // depends on where the walk started, which is how the row-span skip (which starts the walk at
-    // x_lo) silently punched holes in surfaces and let distant geometry show through, and which
-    // also made the two opaque paths disagree by more than rounding. Evaluating makes a pixel's
-    // coverage a pure function of its coordinates, so the span cannot change what is drawn, the
-    // scalar walk and the batch shader's rebuild agree, and the values are the accurate ones.
-    //
-    // Cost is one extra multiply per barycentric per pixel, which measured in the noise: the
-    // pixel loops are memory- and branch-bound, and the vector loops fold it into an FMA.
+    // Evaluate barycentrics from pixel coordinates instead of accumulating them.
+    // Accumulation drift moves near-horizontal edges and makes coverage start-dependent.
 
 } // namespace
 
-// Clip triangle (a,b,c) against the near plane w = NEAR_W to prevent
-// division-by-near-zero in the perspective divide and the rendering artefacts
-// that occur when a triangle straddles the camera plane.
-//
-// near_w must match camera.near_plane: the clip-space w at the near plane.
-// Too small a value produces off-screen NDC coordinates whose magnitude
-// overwhelms float precision in the barycentric computation.
+// Clip before perspective division. near_w must match Camera::near_plane.
 
 int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert out[2][3], float near_w)
 {
@@ -253,7 +203,7 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
             cc = bb;
             bb = t;
         }
-        // a inside; b, c outside → one clipped triangle.
+        // a inside; b and c outside: one clipped triangle.
         out[0][0] = aa;
         out[0][1] = cross_edge(aa, bb);
         out[0][2] = cross_edge(aa, cc);
@@ -276,7 +226,7 @@ int clip_near(const ClipVert &a, const ClipVert &b, const ClipVert &c, ClipVert 
         cc = t;
     }
     // else: c outside, already last, nothing to do.
-    // a, b inside; c outside → clipped quad → two triangles.
+    // a and b inside; c outside: a clipped quad split into two triangles.
     const ClipVert ac = cross_edge(aa, cc);
     const ClipVert bc = cross_edge(bb, cc);
     out[0][0] = aa;
@@ -301,10 +251,9 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     const int dy = std::abs(y1 - y0);
     const int steps = std::max(dx, dy);
 
-    // Atomic depth-test + (depth,color) commit via CAS, so the wireframe pass can run
-    // concurrently across the worker pool (the rasterizer owns the viewport bounds check
-    // that commit_pixel itself does not). Single-threaded callers are byte-identical: the
-    // CAS loop runs once when uncontended, with a strict-< depth test (nearer wins).
+    // Atomically test depth and commit depth+color so workers may draw concurrently.
+    // The rasterizer owns viewport checks; commit_pixel uses strict < and an
+    // uncontended caller completes one CAS iteration.
     const int w = fb.width();
     const int h = fb.height();
     const auto plot = [&](int px, int py, float z)
@@ -337,13 +286,7 @@ void draw_line(Framebuffer &fb, vec3 a, vec3 b, Color color)
     }
 }
 
-// Rasterize a triangle using screen-space barycentric coordinates.
-// sa/sb/sc hold (screen_x, screen_y, ndc_z).
-// wa/wb/wc are clip-space w values for perspective-correct interpolation.
-// col_a/b/c are per-vertex base colours (uniform for Flat lighting; per-vertex for the
-// unlit path).
-// uva/uvb/uvc are per-vertex texture coordinates.
-// tex may be nullptr if no diffuse texture is active.
+// Rasterize Flat or unlit color with perspective-correct screen-space barycentrics.
 
 template <Sink S>
 void rasterize_flat(
@@ -423,30 +366,18 @@ void rasterize_flat(
     const bool do_tonemap = !(mat && mat->unlit);
     const auto stride = static_cast<size_t>(fb.width());
 
-    // Per-slot UV set (glTF TEXCOORD_n). diffuse and emissive are the only textures this
-    // (Flat/unlit) rasterizer samples; uv_set comes from mat (null ⇒ set 0, e.g. tests
-    // and non-glTF). need_uv1 gates the second perspective-correct interpolation, so when false
-    // the per-pixel uv1v compute is skipped entirely; the residue on the no-uv1 path is one
-    // loop-invariant-conditioned select (`set ? uv1v : uv`) per sampled texture, which benches in
-    // the noise (full-PBR Phong is ~0%). Loop-invariant flags, hoisted above the y-loop.
+    // Interpolate UV1 only when a sampled flat-path slot requests it.
     const uint8_t diffuse_set = mat ? mat->diffuse_map.uv_set : uint8_t{ 0 };
     const uint8_t emissive_set = mat ? mat->emissive_map.uv_set : uint8_t{ 0 };
     const bool need_uv1 =
         ((tex != nullptr) && diffuse_set != 0) || (do_emissive && (etex != nullptr) && emissive_set != 0);
-    // KHR_texture_transform (per-slot, gates the post-select affine; null mat ⇒ none). When no
+    // KHR_texture_transform is per slot; a null material has none. When no
     // slot carries one the residue is a hoisted bool + a predicted not-taken branch per sampler.
     const bool diffuse_xf = mat && mat->diffuse_map.has_transform;
     const bool emissive_xf = mat && mat->emissive_map.has_transform;
 
-    // Transparent: per-edge top-left flags so a pixel center landing exactly on a shared edge
-    // is owned by one triangle (no double-composited seam); the gradients are
-    // winding-normalized (always toward the interior) so the classification is
-    // winding-independent, and bc's gradient is -(grad ba + grad bb). Compiles out for Opaque.
-    // NOTE: this is the float-barycentric approximation of a top-left rule: an exact == 0.0f edge
-    // value almost never occurs, so ownership rests on the strict > 0 tests; rounding can give a
-    // 1px gap (tiny-negative on both sides) or a faint double-blend seam (tiny-positive on both).
-    // Cosmetic and blend-only; an exact rule needs fixed-point edge functions this rasterizer
-    // does not use.
+    // Approximate top-left ownership for transparent shared edges. Float rounding can
+    // still leave a cosmetic one-pixel gap or double-blend seam.
     [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
     [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
     [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);
@@ -454,14 +385,8 @@ void rasterize_flat(
     [[maybe_unused]] const bool tl_c = (bc_dy > 0.0f) || (bc_dy == 0.0f && bc_dx > 0.0f);
     [[maybe_unused]] constexpr float ALPHA_EPS = 1.0f / 512.0f; // skip fragments too sheer to matter
 
-    // Applied to Deferred too, unlike narrow_walk below. Safe, but for a subtler reason: span_eps
-    // bounds THIS walk's evaluation error, not the difference in ba_row between this inlining of
-    // setup_tri and raster_visibility's, and the two could drift by an ulp if their FMA
-    // contraction ever diverged. What covers that is row_span's own whole-pixel padding
-    // (floor - 1, ceil + 1), worth ~1e7 ulps of edge position, so a drift would have to be
-    // enormous to cut a claimed pixel. Verified rather than argued: 68.7M claimed pixels with the
-    // reference vertex 5000 px from the tile, none left unshaded. Keep that padding if this is
-    // ever retuned, and re-verify if the two sites stop emitting identical setup.
+    // Deferred also uses row spans. Whole-pixel padding covers setup FMA drift between
+    // visibility and shading; retain it if span tolerances change.
     const bool use_span = (s.x1 - s.x0) >= SPAN_MIN_WIDTH;
     float inv_dx[3] = { 0.0f, 0.0f, 0.0f };
     if (use_span)
@@ -469,24 +394,9 @@ void rasterize_flat(
         span_inv_dx(s, inv_dx);
     }
 
-    // Walk the pixel-centre span rather than setup_tri's floor(min)..ceil(max) box: the box carries
-    // a column and a row whose centres lie outside the triangle's own extent on one axis, so the
-    // coverage test could only ever reject them, and on the small triangles of a dense mesh that is
-    // most of the box (visited pixels per triangle 16.7 -> 5.2 on a zoomed goat skull, where ~90% of
-    // visits were rejects).
-    //
-    // Computed HERE and never inside setup_tri, and that is not cosmetic: setup_tri is inlined into
-    // all three rasterizers, and merely adding a call to it changes FMA contraction for every one of
-    // them, moving ba_row by an ulp and re-rounding edge pixels across the whole image (measured:
-    // flat shading changed on scenes the phong walk never touches). Factoring this block into a
-    // shared helper does the same thing, for the same reason, and was measured doing it. Kept inline
-    // the output is byte-identical, verified over 96 scene/size/zoom/mode cases.
-    //
-    // Deferred is excluded: it takes coverage from the visibility pass's ids rather than from the
-    // barycentric test, so a bound derived from the vertex extent is not what decides which pixels
-    // it owes and skipping one would leave a hole. Spelled as a plain bool, not `if constexpr`, so
-    // the bounds are written in every instantiation (they fold either way, and under `if constexpr`
-    // clang-tidy asks for a const it cannot have in the other one).
+    // Narrow immediate walks to pixel-centre vertex spans. Keep this outside setup_tri:
+    // moving it changes FMA contraction and edge rounding across all instantiations.
+    // Deferred coverage comes from visibility ids and must retain the full bounds.
     const bool narrow_walk = (S != Sink::Deferred);
     int walk_x0 = s.x0;
     int walk_x1 = s.x1;
@@ -508,10 +418,9 @@ void rasterize_flat(
         }
     }
 
-    // Edge values are evaluated, never accumulated (see the note on EdgeWalk).
-    // ry counts rows as a float (exact for any row index) so the row values cost one multiply-add
-    // each, with no integer conversion in front of them. It stays measured from s.y0, the
-    // barycentric anchor, so narrowing the walk cannot change a pixel's value.
+    // Evaluate edge values instead of accumulating them. Float ry is exact for row
+    // indices and stays relative to barycentric anchor s.y0, so narrowing the walk
+    // cannot change a pixel's value.
     auto ry = static_cast<float>(walk_y0 - s.y0);
     for (int y = walk_y0; y <= walk_y1; y++, ry += 1.0f)
     {
@@ -638,10 +547,8 @@ void rasterize_flat(
                 w_corr = 1.0f / (pwa + pwb + pwc);
             }
 
-            // UV needed when sampling either the diffuse or the emissive texture; skip
-            // recomputation when the cutout pre-pass already produced it. The emissive
-            // sample is gated on do_emissive (factor non-zero), so don't pay for it on
-            // factor-zero materials that happen to carry a bound emissive texture.
+            // Compute UV only for a sampled diffuse or emissive texture, and reuse the
+            // cutout pre-pass result. A zero emissive factor skips its bound texture.
             if (!has_cutout && ((tex != nullptr) || (do_emissive && (etex != nullptr))))
             {
                 uv = (uva * pwa + uvb * pwb + uvc * pwc) * w_corr;
@@ -684,10 +591,9 @@ void rasterize_flat(
                     }
                     col = col + e;
                 }
-                // Fragment opacity = material base * texture * (perspective-correct) vertex alpha.
-                // Tonemap to display space before the push so the resolve composites display-referred
-                // values and never tonemaps again (its final clamp then only guards the negative case,
-                // which lit colours never reach).
+                // Opacity combines material, texture, and perspective-correct vertex alpha.
+                // Tonemap before the push so resolve composites display-space values and
+                // only needs its final safety clamp.
                 const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
                 const float a = base_alpha * tex_a * vca;
                 if (a >= ALPHA_EPS)
@@ -709,10 +615,8 @@ void rasterize_flat(
                     col = col * (has_cutout ? cutout_rgb : tex->sample_rgb(d_uv.x, d_uv.y));
                 }
 
-                // Emissive add applies after lighting so shaded areas still glow. The sum feeds the
-                // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
-                // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
-                // the factor at load.
+                // Add emissive after lighting, then soft-knee tonemap the sum instead of
+                // hard-clipping bright surfaces. Loading bakes emissive strength into the factor.
                 if (do_emissive)
                 {
                     vec3 e = emissive;
@@ -741,16 +645,8 @@ void rasterize_flat(
     }
 }
 
-// Rasterize a triangle with per-pixel Blinn-Phong lighting (Phong shading).
-//
-// The pixel loop only decides coverage, depth and (for cutout materials) the alpha test, and
-// gathers the surviving pixels into a batch; shade_batch then runs the shading as a sequence of
-// short loops over the batch's SoA arrays, one loop per stage (perspective weights, attribute
-// interpolation, texture fetches, normal mapping, lighting, tonemap), each gated once by its
-// loop-invariant feature flag. This is what lets the compiler vectorize the arithmetic across
-// pixels (the previous per-pixel scalar body was register-starved: 48 parameters plus every
-// interpolated attribute live at once) while the texture fetches stay per-pixel. Interpolation
-// formulas are the ones the scalar body used, so the shading is the same up to rounding.
+// Gather covered pixels, then shade SoA batches so arithmetic vectorizes without
+// keeping every interpolated attribute live in one scalar loop.
 
 namespace
 {
@@ -783,12 +679,8 @@ namespace
         float u1[BATCH];
         float v1[BATCH];
         float ao[BATCH];
-        // Diffuse texel (RGB, and alpha for the Transparent sink). Written whenever a diffuse
-        // texture is bound, because `has_cutout` is always false by the time shade_batch runs:
-        // Deferred takes its coverage from the visibility pass, which already applied the cutout,
-        // and a cutout Transparent triangle is sent down the immediate path instead. A change that
-        // let a cutout reach a batched gather would leave `ta` unwritten and drop the diffuse
-        // texture from the working colour, so it has to write these here rather than rely on that.
+        // Diffuse RGBA. Deferred cutout happened in visibility; transparent cutout
+        // uses the immediate path, so batched shading always writes these together.
         float tr[BATCH];
         float tg[BATCH];
         float tb[BATCH];
@@ -888,12 +780,8 @@ namespace
         z *= inv;
     }
 
-    // Blinn-Phong for one light over the batch, accumulating into cr/cg/cb: the scalar
-    // apply_light's arithmetic (half-vector normalize skipped: ndh^2 = (n.h)^2 / (h.h)) with
-    // its two branches turned into selects so the loop vectorizes. SPEC selects the specular
-    // power at compile time: the 32/16/8 squaring chains for those uniform shininesses, the
-    // polynomial pow with a uniform exponent, or the polynomial pow with the per-pixel shin[]
-    // (MR-textured metals). One loop per variant, each branch-free.
+    // Vectorizable one-light Blinn-Phong. SPEC chooses fixed squaring chains,
+    // uniform polynomial power, or per-pixel metallic-roughness power.
     enum class SpecPow : uint8_t
     {
         Chain32,
@@ -953,10 +841,8 @@ namespace
         }
     }
 
-    // Dispatch on the batch's shininess. `per_pixel` (an MR texture supplied one per pixel) is a
-    // separate flag rather than a sentinel value of shin_uniform: MTL Ns is copied unclamped, so a
-    // negative shininess is a legal material and must not be read as "look in shin[]", which the
-    // MR path alone fills.
+    // Use a separate per_pixel flag instead of a shininess sentinel. MTL permits
+    // negative, unclamped Ns values, while only the metallic-roughness path fills shin[].
     inline void apply_light_batch(PhongBatch &b, const Light &light, float shin_uniform, bool per_pixel)
     {
         if (per_pixel)
@@ -1053,10 +939,9 @@ namespace
             }
         }
 
-        // Texture footprints: every active texture is located (and its rows prefetched) for the
-        // whole batch before any texel is read, so the fetches' cache misses overlap. The
-        // footprint blocks stay uninitialized on purpose (locate_batch fills [0, n) of the ones in
-        // use; value-initializing six 2.5 KB blocks per batch would dwarf a small batch's shading).
+        // Locate and prefetch each active texture for the whole batch before sampling so
+        // cache misses overlap. Leave footprint blocks uninitialized; locate_batch fills
+        // every used [0, n) range, and zeroing six 2.5 KB blocks would dominate small batches.
         float fu[BATCH];
         float fv[BATCH];
         Texture::FootprintBatch fp_d; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
@@ -1340,10 +1225,8 @@ namespace
             }
         }
 
-        // Tonemap (soft knee, see framebuffer.h) in display space. The rolloff's exp is only
-        // paid when some channel of the batch is above the knee (an OR-reduction of the compares
-        // first; it vectorizes where a float max reduction did not): the common well-exposed batch
-        // is a no-op, and the rolloff itself is a branch-free select so that loop vectorizes too.
+        // Apply the display-space soft knee only when any channel exceeds it. OR-reduced
+        // comparisons and a branch-free select keep both the gate and rolloff vectorizable.
         {
             unsigned over = 0;
             for (int i = 0; i < n; i++)
@@ -1497,10 +1380,8 @@ void rasterize_phong(
     // Deferred never cuts out here: the visibility pass already dropped the pixels below the
     // cutoff, so the shade pass samples the plain RGB (identical to sample_rgba's RGB).
     const bool has_cutout = (S != Sink::Deferred) && (mat.alpha_cutoff > 0.0f && tex);
-    // glTF: emissive = emissiveFactor * emissiveTexture.rgb. Factor {0,0,0} zeros the
-    // contribution regardless of texture, so the texture sample is skippable too.
-    // The factor is passed in so callers can override it (e.g. tests); the UI texture
-    // toggle only controls whether etex is sampled (see show_emissive in renderer.cpp).
+    // glTF emissive is factor * texture.rgb, so a zero factor skips sampling.
+    // Callers may override the factor; the UI texture toggle controls only etex.
     const bool do_emissive = (emissive.x > 0.0f || emissive.y > 0.0f || emissive.z > 0.0f);
     const auto stride = static_cast<size_t>(fb.width());
 
@@ -1525,11 +1406,7 @@ void rasterize_phong(
     const bool emissive_xf = mat.emissive_map.has_transform;
     // Off (false) for every dielectric and non-glTF material, so they run unchanged.
     const bool is_metallic = (mat.metallic > 0.0f);
-    // ORM packing (glTF): when occlusion and metallic-roughness reference the same image, load_tex
-    // dedups them to one Texture*: sample once and reuse the AO read for metalness. The
-    // addressing must also match: the cache key is image-only (ignores texCoord and
-    // KHR_texture_transform), so two bindings can dedup to one Texture* yet differ in UV set or
-    // transform, in which case the samples land at different texels and can't be shared.
+    // Reuse a packed ORM sample only when image and UV mapping both match.
     const bool occ_is_mr = (octex != nullptr && octex == mrtex && same_uv_mapping(mat.occlusion_map, mat.mr_map));
 
     const bool use_span = (s.x1 - s.x0) >= SPAN_MIN_WIDTH;
@@ -1539,32 +1416,18 @@ void rasterize_phong(
         span_inv_dx(s, inv_dx);
     }
 
-    // Batch the shading when this triangle is big enough to fill batches, shade in place when it
-    // is not. A batch is only ever flushed full or at the end of ONE triangle, so mean occupancy
-    // is min(covered pixels, BATCH) and a pixel-sized triangle pays every SoA loop's setup for one
-    // pixel: measured 14% slower on a 10M-triangle all-blend mesh at 1080p, against 1.7-2.5x
-    // FASTER on the large surfaces a blend tail usually holds (glass, decals, water). The bbox is
-    // the estimate available here for free and runs about twice the covered area, hence 2 * BATCH.
-    // Deferred always batches: the tiled pass already chose itself on triangle size, and its
-    // coverage comes from the visibility ids rather than a walk this could substitute for. Opaque
-    // never reaches the test, which is why it is spelled inside the discarded branch.
+    // Batch triangles likely to fill a batch; tiny blend triangles are 14% faster on
+    // the immediate path, while typical large transparent surfaces gain 1.7-2.5x.
     if constexpr (S != Sink::Opaque)
     {
-        // The !has_cutout term is belt and braces, not a live case: both loaders set alpha_cutoff
-        // and blend in an if/else, so a Transparent material never carries a cutout. If one ever
-        // did, this gather has no alpha test and shade_batch would skip the diffuse sample it
-        // expects the cutout pre-pass to have made, so send it down the immediate path instead.
+        // Keep any future transparent cutout on the immediate path, which owns its alpha test.
         const bool batch_shade =
             (S == Sink::Deferred) || (!has_cutout && static_cast<int64_t>(s.x1 - s.x0 + 1) * (s.y1 - s.y0 + 1) >=
                                                          2 * static_cast<int64_t>(BATCH));
         if (batch_shade)
         {
-            // Batched shading. Deferred (tiled path): the visibility pass already decided coverage and
-            // depth, so the walk only collects the pixels this triangle owns. Transparent: the walk
-            // does its own coverage, fill rule and depth test, then hands the pixel over with the
-            // barycentrics it already has in registers. Both are worth batching because a tile, or a
-            // large transparent surface, hands whole runs of pixels to one triangle (measured 39 per
-            // batch on a full-screen model), which is what a small triangle cannot do.
+            // Deferred gathers visibility-owned pixels; Transparent gathers after its own
+            // coverage and depth tests. Both supply long runs that justify batching.
             PhongBatch batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): filled before use
             batch.n = 0;
 
@@ -1686,10 +1549,8 @@ void rasterize_phong(
                 }
                 if constexpr (S == Sink::Deferred)
                 {
-                    // Coverage comes from the visibility pass's ids alone (its rows are a vector loop
-                    // whose edge functions round differently from this walk's, so repeating the edge
-                    // test here could reject a pixel the pass assigned to us); the batch rebuilds the
-                    // barycentrics from (x, y), so the walk stores nothing else.
+                    // Trust visibility IDs because its vectorized edge math may round differently
+                    // from this walk. Rebuild barycentrics from (x, y) without another edge test.
                     const ptrdiff_t vis_row = (static_cast<ptrdiff_t>(y - vis->y_min) * vis->stride) - vis->x_min;
                     for (int x = x_lo; x <= x_hi; ++x)
                     {
@@ -1753,11 +1614,8 @@ void rasterize_phong(
     }
     if constexpr (S != Sink::Deferred)
     {
-        // Immediate path: shade each covered pixel where it is found, with the interpolated values
-        // in registers. This is the form a small triangle wants, since it covers one pixel or a
-        // few and the batch shader's SoA arrays would cost more in cache lines touched than its
-        // vectorization saves (measured +19% on a 10M-triangle mesh).
-        // tests/renderer/test_renderer_tiled.cpp pins that this and the batched path above agree.
+        // Small triangles shade in place because SoA setup outweighs vectorization.
+        // Renderer tiled tests pin agreement with the batched path.
         [[maybe_unused]] const float bc_dx = -(ba_dx + bb_dx);
         [[maybe_unused]] const float bc_dy = -(ba_dy + bb_dy);
         [[maybe_unused]] const bool tl_a = (ba_dy > 0.0f) || (ba_dy == 0.0f && ba_dx > 0.0f);
@@ -1823,12 +1681,8 @@ void rasterize_phong(
                 const float bc = 1.0f - ba - bb;
                 if constexpr (S == Sink::Opaque)
                 {
-                    // One branch, not a short-circuit chain of three: the three edge signs are
-                    // reduced with a bitwise OR (the `|=` idiom the batch loops use) so a pixel
-                    // costs one prediction instead of three. Computing bc before the test spends
-                    // two flops on a rejected pixel to save two branches, which measured as the
-                    // right way round (29k fewer mispredicts per frame on a 38k-triangle mesh);
-                    // fusing only ba and bb, leaving bc its own test, measured WORSE than either.
+                    // Reduce three edge tests to one branch; computing bc first is
+                    // cheaper than short-circuiting each edge.
                     const unsigned outside = static_cast<unsigned>(ba < 0.0f) | static_cast<unsigned>(bb < 0.0f) |
                                              static_cast<unsigned>(bc < 0.0f);
                     if (outside != 0u)
@@ -1971,29 +1825,20 @@ void rasterize_phong(
                 // View vector for the specular term.
                 const vec3 v = normalize(eye - pos);
 
-                // Shading-params locals: avoid the ~92 B per-pixel Material copy by feeding
-                // only the four fields lighting consumes into the compute_lighting overload.
+                // Copy only the four mutable lighting fields, not the whole Material.
                 vec3 use_diffuse = mat.diffuse;
                 vec3 use_ambient = mat.ambient;
                 vec3 use_specular = mat.specular;
                 float use_shin = mat.shininess;
 
-                // Diffuse sample. Opaque keeps the plain-vec3 path (no vec4, no round-trip).
-                // Transparent additionally carries the texture alpha to the finalize push. NOLINT:
-                // tex_a is mutated only in the Transparent instantiation, so const-correctness flags
-                // it in the Opaque one where that branch is compiled out; [[maybe_unused]] covers the
-                // matching unused read there.
+                // Opaque samples RGB; Transparent also carries alpha. The Opaque
+                // instantiation leaves tex_a constant, hence the suppression.
                 [[maybe_unused]] float tex_a = 1.0f; // NOLINT(misc-const-correctness)
                 if (tex)
                 {
                     vec2 d_uv = diffuse_set ? uv1v : uv;
-                    // Skipped only where the transformed UV would go unread: Opaque reuses cutout_rgb
-                    // when has_cutout, already transformed by the pre-pass. The sink term is not
-                    // redundant even though no loader currently pairs a cutout with a blend (MASK and
-                    // BLEND are mutually exclusive): Transparent samples here unconditionally, so
-                    // gating on has_cutout alone would sample it at a UV the transform never reached
-                    // while the cutout test above used the transformed one. Folds to a constant in
-                    // both instantiations, so Opaque's codegen is unchanged.
+                    // Opaque cutout reuses a pre-transformed sample. Transparent samples
+                    // here, so it must still transform even if a future material combines modes.
                     if (diffuse_xf && (S != Sink::Opaque || !has_cutout))
                     {
                         d_uv = apply_tex_transform(mat.diffuse_map, d_uv);
@@ -2032,10 +1877,8 @@ void rasterize_phong(
                     use_ambient = use_ambient * vcol;
                 }
 
-                // Metals tint specular reflectance (F0) toward their base colour (already in
-                // use_diffuse); dielectrics keep the 4% baseline. Diffuse is deliberately NOT
-                // zeroed as strict PBR would: with no environment map a diffuse-less metal has
-                // nothing to reflect and renders near-black.
+                // Metals tint F0 toward base color; dielectrics retain 4%. Keep diffuse
+                // for metals because without an environment map, strict PBR renders them black.
                 if (is_metallic)
                 {
                     const vec3 base = use_diffuse;
@@ -2061,10 +1904,8 @@ void rasterize_phong(
                     normal, v, lights, n_lights, ambient, use_diffuse, use_ambient, use_specular, use_shin, ao
                 );
 
-                // Emissive add applies after lighting so shaded areas still glow. The sum feeds the
-                // soft-knee tonemap below, so a strong emissive on an already-bright surface rolls off
-                // toward white instead of hard-clipping. KHR_materials_emissive_strength is baked into
-                // the factor at load.
+                // Add emissive after lighting, then soft-knee tonemap the sum instead of
+                // hard-clipping bright surfaces. Loading bakes emissive strength into the factor.
                 if (do_emissive)
                 {
                     vec3 e = emissive;
@@ -2084,10 +1925,9 @@ void rasterize_phong(
                 // here), so the tonemap is unconditional.
                 if constexpr (S == Sink::Transparent)
                 {
-                    // Opacity = material base * texture * (perspective-correct) vertex alpha. Tonemap to
-                    // display space before the push so the resolve composites display-referred values and
-                    // never tonemaps again (its final clamp then only guards the negative case, which lit
-                    // colours never reach).
+                    // Opacity combines material, texture, and perspective-correct vertex alpha.
+                    // Tonemap before the push so resolve composites display-space values and
+                    // only needs its final safety clamp.
                     const float vca = ((caa * pwa) + (cab * pwb) + (cac * pwc)) * w_corr;
                     const float a = mat.alpha * tex_a * vca;
                     if (a >= ALPHA_EPS)
@@ -2104,11 +1944,8 @@ void rasterize_phong(
     }
 }
 
-// Visibility pass for one triangle of a tile: the Opaque sink's coverage and depth logic with
-// no shading, resolving into the tile-local depth + id buffers so the later Deferred shading
-// touches each pixel once. The alpha cutout must be applied HERE (a discarded texel must not
-// claim the pixel), so cutout materials sample the texture alpha per covered pixel; the shade
-// pass then reads the RGB at the same UV.
+// Resolve tile-local coverage and depth before deferred shading. Apply alpha cutout
+// here so discarded texels never claim visibility.
 
 void raster_visibility(
     vec3 sa,
@@ -2144,10 +1981,8 @@ void raster_visibility(
     const float ba_row0 = s.ba_row;
     const float bb_row0 = s.bb_row;
 
-    // Trivial reject on the clamped box: an edge function negative at all four corners of the
-    // bbox-tile intersection is negative everywhere in it (linear), so a thin or diagonal
-    // triangle whose bbox merely brushes the tile costs no rows. Conservative: exact coverage
-    // is still decided per pixel below.
+    // Reject a clamped box when one linear edge is negative at all four corners.
+    // This removes bbox-only tile touches; exact coverage remains per pixel.
     {
         const auto bw = static_cast<float>(s.x1 - s.x0);
         const auto bh = static_cast<float>(s.y1 - s.y0);
@@ -2176,9 +2011,8 @@ void raster_visibility(
         span_inv_dx(s, inv_dx);
     }
 
-    // Edge values are evaluated, never accumulated (see the note on EdgeWalk).
-    // ry counts rows as a float (exact for any row index) so the row values cost one multiply-add
-    // each, with no integer conversion in front of them.
+    // Evaluate edge values instead of accumulating them. Float ry is exact for row
+    // indices, so each row value needs one multiply-add and no integer conversion.
     float ry = 0.0f;
     for (int y = s.y0; y <= s.y1; y++, ry += 1.0f)
     {

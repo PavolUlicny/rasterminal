@@ -7,16 +7,8 @@
 #include <cstring>
 #include <string>
 
-// The word-at-a-time run scan below assumes little-endian (ctz of a XOR picks
-// the LOWEST-ADDRESSED differing byte only there); every supported target is
-// LE, and an exotic BE port just keeps the byte-loop tail. The MSVC family
-// (which never defines __BYTE_ORDER__) is decided first and on 64-bit only:
-// _BitScanForward64 is not declared under _M_IX86 (the Win32 CI job keeps the
-// byte loop). clang-cl defines _MSC_VER too but is excluded here and in the
-// branch below (its 32-bit target has no _BitScanForward64 either; it always
-// has __builtin_ctzll), so it gates through the __BYTE_ORDER__ arm, whose
-// defined() guard keeps an undefined ORDER macro from reading as a 0 == 0
-// match. A flag macro, not a constexpr bool: it guards preprocessor blocks.
+// Enable word-at-a-time run scans only on little-endian targets with a 64-bit ctz.
+// Other targets keep the byte loop. clang-cl uses its builtin path.
 #if defined(_MSC_VER) && !defined(__clang__)
 #if defined(_M_X64) || defined(_M_ARM64)
 #define SIXEL_LE_WORD_SCAN
@@ -48,12 +40,7 @@ namespace
     }
 #endif
 
-    // Digits straight into the output; RLE counts make this hot on busy bands,
-    // where a std::to_string temporary per number is measurable churn.
-    // Deliberately local despite kitty.cpp's append_uint and framebuffer.cpp's
-    // write_int: three call shapes (append hot, append cold via to_string,
-    // caller-buffer with length), and a shared header for ten lines of digit
-    // emission is not warranted.
+    // Avoid std::to_string allocations in hot RLE output.
     void append_uint(std::string &out, unsigned int v)
     {
         if (v == 0)
@@ -81,15 +68,12 @@ namespace
         return ((static_cast<unsigned int>(v) * 100u) + 127u) / 255u;
     }
 
-    // n copies of the sixel data char ch. The counted form `!<n><ch>` costs at
-    // least 3 bytes, so runs up to 3 are cheaper spelled out.
+    // Counted RLE costs at least three bytes, so spell out runs of three or fewer.
     void append_run(std::string &out, int n, char ch)
     {
         if (n == 1)
         {
-            // The overwhelming case on detailed frames; += inlines to a
-            // push_back where append(1, ch) is an out-of-line replace call
-            // (measured -26..30% whole-encode on dithered 1080p planes).
+            // += avoids an out-of-line append call in the common one-byte case.
             out += ch;
             return;
         }
@@ -112,9 +96,7 @@ namespace
 namespace sixel
 {
 
-    // All 240 register definitions, #<reg>;2;<r>;<g>;<b> in RGB percent. Redefined
-    // in every frame on purpose: registers are shared terminal state anything else
-    // could clobber, and ~4 KB is noise next to the pixel data.
+    // Redefine all registers each frame because the palette is shared terminal state.
     const std::string &palette_block()
     {
         static const std::string block = []
@@ -144,20 +126,14 @@ namespace sixel
             return;
         }
 
-        // Fixed-size prefix: DCS header + raster attributes (~32 B) + the
-        // palette block's exact size. Guarded (P0966: pre-C++20 reserve may
-        // shrink); the band data grows amortized on top.
+        // Reserve the fixed header and palette. Guard because pre-C++20 reserve may shrink.
         const size_t need = out.size() + palette_block().size() + 64u;
         if (need > out.capacity())
         {
             out.reserve(need);
         }
 
-        // P1=0 (aspect comes from the raster attributes), P2=1 so zero-bits
-        // paint nothing. The palette partitions RGB space, so every pixel is
-        // painted by exactly one colour pass per frame and holes cannot occur;
-        // P2=0/2 would make the terminal pre-fill the whole raster region with
-        // a background register first, a wasted full-frame fill.
+        // P2=1 leaves zero bits untouched. Every pixel is painted by one palette pass.
         out += "\033P0;1;0q\"1;1;";
         append_uint(out, static_cast<unsigned int>(width));
         out += ';';
@@ -179,10 +155,7 @@ namespace sixel
             return;
         }
 
-        // Per-band staging: a column bitmask per register, cleared lazily on the
-        // register's first touch in the band (stamp) so a band pays for the
-        // registers it uses, not all 240. Grow-only and uninitialized, like the
-        // framebuffer's staging arrays; see Scratch.
+        // Lazily clear masks only for palette registers used in this band.
         const auto w = static_cast<size_t>(width);
         const size_t mask_bytes = static_cast<size_t>(REGISTERS) * w;
         if (mask_bytes > scratch.cap)
@@ -192,9 +165,7 @@ namespace sixel
             scratch.cap = mask_bytes;
         }
         unsigned char *mask = scratch.mask.get();
-        // Every min_x/max_x/colors read is stamp-gated, so their {} is dead
-        // zeroing (~4 KB/frame, ~0.1 us); it stays because clang-tidy's
-        // member-init check flags the uninitialized form on all four.
+        // Reads are stamp-gated; value initialization remains for clang-tidy.
         std::array<int, REGISTERS> stamp{};
         stamp.fill(-1);
         std::array<int, REGISTERS> min_x{};
@@ -249,15 +220,13 @@ namespace sixel
                 const unsigned char *m = mask + (reg * w);
                 const int hi = max_x[reg];
                 int x = min_x[reg];
-                append_run(out, x, '?'); // leading gap; the trailing one is simply omitted
+                append_run(out, x, '?'); // Emit the leading gap; omit the trailing gap.
                 while (x <= hi)
                 {
                     const unsigned char v = m[x];
                     int run = 1;
 #ifdef SIXEL_LE_WORD_SCAN
-                    // Eight columns per compare (byte-identical output; measured
-                    // -20..40% whole-encode on the portable build, no plane
-                    // regresses); the byte loop below finishes the partial word.
+                    // Compare eight columns at once; the byte loop handles the tail.
                     const uint64_t bcast = 0x0101010101010101ull * v;
                     while (x + run + 8 <= hi + 1)
                     {

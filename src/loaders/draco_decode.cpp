@@ -1,10 +1,6 @@
 #include "src/loaders/draco_decode.h"
 
-// Draco's templated decoder trips the project's strict warnings in its own
-// headers (notably GCC -Wmaybe-uninitialized under LTO at template instantiation
-// points). We don't audit vendored code (refresh from upstream instead), so
-// suppress those here, where the Draco headers are confined. This file is the
-// Draco analogue of vendor/meshoptimizer/meshoptimizer_impl.cpp.
+// Confine Draco headers and suppress their GCC LTO warnings in this translation unit.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
@@ -57,13 +53,8 @@ bool decode_draco_mesh(
     const draco::PointAttribute *uv1 = attr_or_null(*mesh, uv1_id);
     const draco::PointAttribute *col = attr_or_null(*mesh, color_id);
 
-    // Partial file-size bound (CLAUDE.md "Loader security"): rejects decoded counts that would
-    // OOM our flat-float resize, but does NOT bound Draco's own allocations inside
-    // DecodeMeshFromBuffer: a bitstream that inflates internally and only then reports small
-    // counts can still bad_alloc inside Draco, and the public API exposes no header pre-parse
-    // of the declared point count to close that. 200x the compressed input leaves generous
-    // headroom over Draco's real-world ~5-10x expansion; the division form sidesteps overflow
-    // at huge sizes.
+    // Bound our output allocations to 200 times the input size. Draco may allocate before
+    // exposing decoded counts, and its API offers no earlier bound.
     constexpr size_t MAX_EXPANSION = 200;
     const size_t n = mesh->num_points();
     const size_t nf = mesh->num_faces();
@@ -71,9 +62,7 @@ bool decode_draco_mesh(
     {
         return false;
     }
-    // A 4-component COLOR_0 carries per-vertex opacity in its 4th channel; surface it
-    // in colors_alpha. Mirrors the accessor path's strict vec4 test: a non-RGBA color
-    // attribute (3, or a malformed >4) is not treated as carrying alpha.
+    // Only an exact RGBA COLOR_0 contributes per-vertex opacity.
     const bool col_alpha = col && col->num_components() == 4;
 
     out.num_points = n;
@@ -116,11 +105,7 @@ bool decode_draco_mesh(
         }
         if (col)
         {
-            // num_components() is an unconstrained uint8_t straight from the bitstream
-            // (1-255), and ConvertValue writes that many floats into the output. Clamp
-            // to the 4-float destination so a malformed COLOR_0 attribute declaring >4
-            // components can't overflow this stack buffer (RGB into colors, the 4th into
-            // colors_alpha when col_alpha). The clamp also keeps the int8_t cast lossless.
+            // Bitstreams can declare up to 255 components; this destination holds four.
             float c[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
             const auto nc = static_cast<int8_t>(std::min<uint32_t>(col->num_components(), 4u));
             col->ConvertValue<float>(col->mapped_index(pi), nc, c);

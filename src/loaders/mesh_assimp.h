@@ -7,11 +7,9 @@
 
 namespace assimp_detail
 {
-    // Read at most the eight-byte descriptor. Some importers do not initialize the
-    // ninth byte reserved for the terminator.
+    // Some importers leave the ninth, terminator byte uninitialized.
     std::string embedded_format_hint(const aiTexture &source);
 
-    // Assimp's prefix lookup can match Blender's longer "$mat.blend.*" keys, then write
-    // several floats through this one-int destination. Match AI_MATKEY_BLEND_FUNC exactly.
+    // Prefix lookup can match "$mat.blend.*" and overflow this one-int destination.
     bool get_blend_func(const aiMaterial &source, int &out);
 } // namespace assimp_detail

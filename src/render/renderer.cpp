@@ -24,14 +24,10 @@
 #include <utility>
 #include <vector>
 
-// internal helpers
-
 namespace
 {
 
-    // NDC → screen-space pixel coordinates.
-    // NDC x/y ∈ [-1,1]; y is flipped (NDC +1 = top, screen y=0 = top).
-    // z is kept as NDC depth for the z-buffer.
+    // Convert NDC to top-left-origin screen pixels; preserve depth.
     constexpr vec3 ndc_to_screen(vec3 ndc, int width, int height) noexcept
     {
         return { (ndc.x + 1.0f) * 0.5f * static_cast<float>(width), (1.0f - ndc.y) * 0.5f * static_cast<float>(height),
@@ -56,79 +52,33 @@ namespace
         return std::clamp(raw, MIN_CHUNK, MAX_CHUNK);
     }
 
-    // Tiled opaque path thresholds (see render()). The predictor has to answer how big the triangle
-    // under a shaded pixel is: the tiled pass rasterizes every triangle twice (visibility, then the
-    // deferred gather) and shades in batches, so it wins on large triangles and loses badly on
-    // pixel-sized ones (2.5x slower on a 38k-triangle mesh averaging 1.6 px, 1.9x faster on a 1.8k
-    // one at 348 px). The statistic is the PIXEL-WEIGHTED mean area, sum(area^2)/sum(area), not the
-    // plain mean: Sponza is bimodal (wall-sized triangles plus foliage), most shaded pixels belong
-    // to the large ones, and the plain mean reads 10 px there and picks the pass that is 2.7x
-    // slower. TILE_KEEP_TRI_PX is hysteresis, since the estimate comes from whichever pass ran.
-    //
-    // Sweeping zoom on two unrelated meshes puts the crossing at 15-25 px (DamagedHelmet reads
-    // 1.35x against the tiled pass at 14 px and 0.96x at 17; a greyhound 1.33x at 4 px and 0.95x
-    // at 30), so entry sits at 32 for margin over a cliff that is steep on the immediate side.
-    // Accepted residual: a blend-heavy scene whose opaque share is small can read a few percent
-    // the other way (a glazed vase at 38 px measures 1.02x against the tiled pass). That is the
-    // predictor's own error rather than this threshold's, and it predates the value: a potted
-    // plant at 83 px reads 1.04x and was already over the old entry threshold.
+    // The tiled path wins on large triangles. Use pixel-weighted area because it
+    // represents the triangle under a shaded pixel; measured crossover is 15-25 px.
     constexpr double TILE_MIN_TRI_PX = 32.0;  // measured crossing is 15-25; enter with margin
     constexpr double TILE_KEEP_TRI_PX = 20.0; // stay tiled down to here rather than flip per frame
     constexpr double TILE_MIN_PIXELS = 65536.0;
 
-    // Tile edge the span statistic below assumes. Mirrors Renderer::TILE_MAX rather than reading
-    // it, which is private and out of reach from this namespace; keep the two in step. Nominal on
-    // purpose even so: render() halves the real edge on a small frame, but the statistic only has
-    // to RANK scenes against one threshold, and a frame small enough to halve is already below
-    // TILE_MIN_PIXELS and never reaches the tiled pass anyway.
+    // Must match Renderer::TILE_MAX; smaller frames never qualify for tiling.
     constexpr int TILE_EDGE_PX = 32;
 
-    // Area alone is not enough: it says how BIG a triangle is, never how much of each TILE it
-    // lands in it actually covers, and the tiled pass pays per (triangle, tile) -- a bin entry, a
-    // sort key, a setup, and a visibility scan of the box clipped to that tile -- where the
-    // immediate pass pays once per triangle. So the quantity that decides is pixels covered per
-    // tile touched, area-weighted the same way the area statistic is.
-    //
-    // The Eiffel tower at 1080p is the case that breaks the area-only rule: thin diagonal struts
-    // read a pixel-weighted mean area of 44 px, comfortably "large", but each spans about 1.5
-    // tiles, so it lands at 30 px per tile and the tiled pass is 1.3x SLOWER on it. Measured over
-    // 28 scene/zoom points this ranks every area-gated case correctly, with the two nearest
-    // neighbours (that mesh at 30, a zoomed greyhound at 38) about 9% clear either side.
-    //
-    // Sampling noise is why this is a RATIO PER TILE and not the bbox fill ratio, which separates
-    // the same corpus but is measured as the fill of whichever giant triangle the 1-in-8 sampling
-    // happened to take: on Sponza at zoom 4 it swings 0.10 to 0.50 frame to frame and flaps the
-    // path every frame (17 ms -> 208 ms). This statistic puts that same scene at 240 px per tile,
-    // five times clear of the threshold, so its noise cannot reach the decision.
+    // Thin triangles pay tiled bookkeeping across many tiles, so also require enough
+    // covered pixels per tile. This ratio is more stable than sampled bbox fill.
     constexpr double TILE_MIN_TRI_PER_TILE = 34.0;
 
-    // Consecutive frames the statistics must ask for the other pass before render() switches to
-    // it. Sized against the noise rather than the frame rate: a scene sitting exactly on a
-    // threshold flips a coin each frame, so 8 in a row is a 1-in-256 event and its switches cost
-    // well under a percent, while a real change (a zoom, a resize) holds its side indefinitely and
-    // is followed after 8 frames, a quarter-second at the default cap.
+    // Eight consecutive votes suppress threshold noise without masking sustained changes.
     constexpr int PATH_SWITCH_FRAMES = 8;
 
     // Minimum tiles per worker before the tile edge is halved (see render()).
     constexpr int TILES_PER_WORKER = 4;
 
-    // Screen area of a screen-space triangle, in pixels, for the path predictor: half the edge
-    // cross product, which is the same quantity setup_tri divides by. Deliberately NOT the
-    // bounding box (a sub-pixel triangle must weigh under one pixel, and a bbox floors it at one,
-    // which is the case the predictor has to get right) and deliberately not clipped to the frame
-    // (that cost more than it corrected; a triangle hanging off the edge only ever reads BIGGER,
-    // and every scene that happens on is one the tiled pass already wins).
+    // True screen area, not a bbox floor; off-screen clipping costs more than it corrects.
     inline float tri_screen_area(const vec3 &sa, const vec3 &sb, const vec3 &sc)
     {
         return 0.5f * std::fabs(((sb.x - sa.x) * (sc.y - sa.y)) - ((sc.x - sa.x) * (sb.y - sa.y)));
     }
 
-    // How many TILE_EDGE_PX tiles a screen-space triangle's bounding box touches, for the
-    // statistic above. Always at least one: a triangle smaller than a tile still costs the tiled
-    // pass a whole tile's worth of bookkeeping, and that floor is the point. Counted from the
-    // box's SIZE rather than its position, so it ignores where the tile grid happens to fall; a
-    // triangle straddling a boundary really touches more, but that is a coin flip on placement
-    // and the statistic wants the shape.
+    // Estimate touched tiles from bbox size, independent of grid placement. The one-tile
+    // floor represents bookkeeping paid even by sub-tile triangles.
     inline float tri_tile_spans(const vec3 &sa, const vec3 &sb, const vec3 &sc)
     {
         const float w = std::max({ sa.x, sb.x, sc.x }) - std::min({ sa.x, sb.x, sc.x }) + 1.0f;
@@ -138,32 +88,16 @@ namespace
         return std::max(1.0f, tx * ty);
     }
 
-    // One in AREA_SAMPLE drawn triangles feeds the area stats. The predictor compares a ratio of
-    // two sums, so the sampling factor cancels, and a mesh dense enough for the sampling error to
-    // matter is one whose triangles are pixel-sized, far from the threshold. Sampling is what
-    // makes the estimate affordable: measured over every triangle it cost 5-6% of a frame on a
-    // 9-million-triangle mesh, which is the exact scene the predictor exists to keep fast.
+    // Ratios cancel this sampling factor; full sampling cost 5-6% on dense meshes.
     constexpr uint32_t AREA_SAMPLE = 8;
 
 } // namespace
 
-// Renderer: constructor / destructor
-
 int Renderer::resolve_thread_count(int n_threads, bool all_cores_default) noexcept
 {
-    // hardware_concurrency() may return 0 ("not computable"); the max floors that to
-    // hw = 1, so on such platforms even an explicit -j N runs single-threaded.
-    // Accepted limitation: with no hw information, honoring an arbitrary N risks
-    // oversubscription, and 1 was already the pre-existing worker-pool behavior.
+    // Unknown hardware concurrency conservatively means one worker.
     const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-    // Two callers, two defaults. min(hw, 4) was chosen for half-block rendering, where a frame is a
-    // few tens of thousands of pixels and already finishes well inside the frame cap: more threads
-    // there buy latency nobody is waiting on at about twice the total CPU, which matters on a
-    // laptop. Every core is right for the other two cases. A pixel backend at native resolution
-    // renders a hundred times as many pixels, where the same choice is 175 ms a frame against 73 on
-    // a 645k-triangle city at 3840x2160. And MODEL LOADING is a one-shot burst the user is sitting
-    // and waiting through, so there is nothing to trade latency against: all cores finish it in
-    // 571 ms instead of 780 and hand the machine back sooner.
+    // Blocks default to four workers to limit CPU; pixel rendering and loading use all cores.
     const int fallback = all_cores_default ? hw : std::min(hw, 4);
     const int req = (n_threads < 0) ? fallback : (n_threads == 0) ? hw : n_threads;
     return std::clamp(req, 1, hw);
@@ -199,16 +133,8 @@ Renderer::~Renderer()
     }
 }
 
-// Single-pass geometry + rasterize over this worker's stolen triangle chunks, committing
-// straight into the framebuffer; the CAS depth test makes the closest triangle win per pixel
-// across threads. A narrow race between a winning depth CAS and the following color write is
-// accepted: at most one wrong-coloured pixel per collision per frame, invisible interactively.
-// S == Opaque covers [0, opaque_count), codegen-identical to the pre-transparency single
-// pass; S == Transparent covers the blend tail [opaque_count, total) and pushes shaded
-// fragments into this worker's A-buffer arena for the later per-pixel resolve. M folds the
-// Flat/Phong dispatch to `if constexpr`, so each instantiation carries only its own shading
-// code. raster_wireframe runs a reduced copy of this geometry front-end (steal loop, cull,
-// near-plane clip, clip_reject, ndc_to_screen); keep the two in sync when changing those.
+// Rasterize stolen chunks through the compile-time sink and shading path. Keep the
+// shared geometry front-end in sync with raster_wireframe().
 
 template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 {
@@ -243,19 +169,15 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     [[maybe_unused]] const float *p_valpha = mesh->has_vertex_alpha ? mesh->vertex_alpha.data() : nullptr;
     const vec2 *p_uv1 = mesh->has_uv1 ? mesh->uv1.data() : nullptr;
 
-    // Transparent: this worker's private fragment arena + the shared per-pixel head
-    // array. clear() keeps capacity, acting as the per-frame high-water reserve so
-    // steady-state pushes never reallocate. The handle is built once (const); for
-    // Opaque it stays default (null) and unused.
+    // Transparent uses a private fragment arena and shared pixel heads. clear()
+    // retains the arena's high-water capacity; Opaque leaves the handle null.
     if constexpr (S == Sink::Transparent)
     {
         m_arenas[static_cast<size_t>(worker_id)].clear();
     }
-    // Worker-local touched-pixel box. push() updates this (L1-hot, no coherence traffic)
-    // rather than m_touch_box[worker_id] directly: the per-worker boxes are cache-line
-    // adjacent, so per-push writes there would false-share catastrophically under the
-    // millions of pushes a high-overdraw transparent mesh generates. Merged out once below.
-    // NOLINTNEXTLINE(misc-const-correctness), not const: mutated through abuf.box in push()
+    // widen() updates this local once per triangle, avoiding false sharing between
+    // adjacent per-worker boxes. Publish it after the worker finishes.
+    // NOLINTNEXTLINE(misc-const-correctness), mutated through abuf.box in widen()
     [[maybe_unused]] TouchBox local_box; // default-empty (NSDMI)
     const ABuffer abuf = [&]
     {
@@ -270,9 +192,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         return a;
     }();
 
-    // The transparent pass sizes its own claims: a blend tail is usually a handful of large
-    // surfaces, and load_model groups them by material, so a fixed 256-triangle claim hands one
-    // worker nearly the whole frame (see retune_trans_chunk()).
+    // Transparent claims adapt because material grouping clusters large blend surfaces.
     const int chunk = (S == Sink::Transparent) ? m_trans_chunk : choose_phase1_chunk(work, m_n_workers);
     ClipVert clipped[2][3]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init): hoisted;
                             // clip_near overwrites before read
@@ -281,23 +201,16 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     double area2 = 0.0;     // summed squared on-screen triangle area (feeds the path choice)
     double span = 0.0;      // summed area^2 / tiles touched (feeds the path choice)
 
-    // Shade and rasterize one screen-space triangle: the unlit / Phong / Flat dispatch, shared by
-    // the unclipped fast path and the near-clipped pieces. flip_normals only reaches the Flat
-    // branch here (the other modes carry it in the already-flipped ClipVert normals), so it is
-    // unreferenced in the Phong instantiation once `if constexpr` discards that branch: GCC and
-    // Clang count the use inside a discarded branch, MSVC warns C4100 and -WX makes it fatal.
+    // Shared shading dispatch for unclipped and near-clipped triangles. Only Flat uses
+    // flip_normals here; [[maybe_unused]] keeps the Phong MSVC instantiation warning-free.
     const auto emit = [&](const ClipVert &a, const ClipVert &b, const ClipVert &c, const vec3 &sa, const vec3 &sb,
                           const vec3 &sc, const Material &mat, [[maybe_unused]] bool flip_normals)
     {
         const Texture *tex = show_tex ? mesh->tex_at(mat.diffuse_map.tex) : nullptr;
         if (mesh_has_unlit && mat.unlit)
         {
-            // KHR_materials_unlit: output baseColor * vertexColor * diffuse
-            // texture directly, bypassing lighting/ambient/emissive/normal/occlusion
-            // regardless of the active shading mode. Reuses the flat rasterizer with
-            // the raw base colour as the per-vertex colour and zero emissive. a.color
-            // is {1,1,1} when the mesh has no vertex colours (set at ClipVert
-            // construction), so this reduces to mat.diffuse there.
+            // KHR_materials_unlit outputs base color, vertex color, and diffuse texture
+            // directly through the flat rasterizer, bypassing all lighting inputs.
             const vec3 ua = mat.diffuse * a.color;
             const vec3 ub = mat.diffuse * b.color;
             const vec3 uc = mat.diffuse * c.color;
@@ -400,11 +313,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         }
     };
 
-    // Project one triangle to screen space and say whether it draws anything: rejects the
-    // frustum misses and the footprints too small to hold a pixel centre, and counts and samples
-    // the survivors for the path predictor. Both the unclipped fast path (which runs it ahead of
-    // the attribute gather) and the near-clipped sub-triangles go through it, so `drawn` and the
-    // area statistic describe the same geometry either way.
+    // Project, reject empty footprints, and sample surviving geometry for the path
+    // predictor. Both unclipped and near-clipped paths use this population.
     const auto project_tri =
         [&](const vec4 &ca4, const vec4 &cb4, const vec4 &cc4, vec3 &sa, vec3 &sb, vec3 &sc) noexcept
     {
@@ -430,11 +340,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         return true;
     };
 
-    // The per-fragment arena push can throw bad_alloc under extreme overdraw +
-    // memory pressure. Catch at the loop boundary: flag truncation and stop pushing.
-    // The worker still returns and signals completion; resolve still runs and
-    // self-cleans the heads, so the next frame is uncorrupted (best-effort, never a
-    // crash). Opaque never allocates here, so it runs the loop directly.
+    // Transparent arena growth may throw. Stop that worker at the loop boundary;
+    // published chains remain valid and resolve still cleans them. Opaque does not allocate.
     const auto steal_loop = [&]()
     {
         while (true)
@@ -452,10 +359,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                 const Vertex &vb = mesh->vertices[tri.v[1]];
                 const Vertex &vc = mesh->vertices[tri.v[2]];
 
-                // Pre-projection backface cull: test the world-space face plane
-                // against the eye before any matrix transforms. Rejects ~half the
-                // triangles of a closed mesh before clip-space work. Winding
-                // assumption matches the old screen-space cull (CCW front).
+                // Cull the world-space face plane before matrix transforms. Closed
+                // meshes reject about half their triangles here; CCW remains front-facing.
                 bool flip_normals = false;
                 if (do_cull)
                 {
@@ -475,10 +380,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                 const vec4 pc = vp * vec4(vc.pos, 1.0f);
                 const bool in_front = pa.w > near_plane && pb.w > near_plane && pc.w > near_plane;
 
-                // Deciding that an unclipped triangle draws nothing needs the three clip
-                // positions and nothing else, so it runs BEFORE the attribute gather and the
-                // ClipVerts below, which cost several times more. On a mesh with more triangles
-                // than pixels that retires most of them without ever touching a tangent.
+                // Reject empty unclipped triangles from clip positions before gathering
+                // attributes. Dense meshes can discard most triangles without touching tangents.
                 const auto gather = [&](ClipVert &A, ClipVert &B, ClipVert &C) noexcept
                 {
                     const vec3 ta = p_tans ? p_tans[tri.v[0]] : vec3{ 0.0f, 0.0f, 0.0f };
@@ -559,10 +462,9 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
 
     if constexpr (S == Sink::Transparent)
     {
-        // Wall time of this worker's steal loop, for the granularity controller. Two clock reads
-        // per worker per frame; the only thing that can measure the imbalance honestly, since the
-        // work a claim carries is part fragment shading and part front-end over triangles that
-        // cull, and no counter available here weighs those against each other.
+        // Feed steal-loop wall time to the granularity controller. Claims mix
+        // fragment shading with culled front-end work, so counters cannot measure
+        // their cost as directly.
         const auto t0 = std::chrono::steady_clock::now();
         try
         {
@@ -570,13 +472,11 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
-            // Best-effort: stop pushing this worker's fragments. The chain stays consistent
-            // (push_back runs before the head swap), the worker still signals completion, and
-            // resolve still composites + self-cleans, so the frame loses a few fragments
-            // under extreme overdraw rather than crashing or corrupting the next frame.
+            // reserve_one() allocates before head publication, so a failure leaves all
+            // published chains valid. Resolve can composite and clean the partial frame.
         }
-        // Publish the accumulated extent once. On the bad_alloc path local_box still bounds
-        // exactly the heads this worker did set (push updates it only after the head swap).
+        // widen() runs before publication, so allocation failure may overestimate the
+        // touched region but can never leave a published head outside it.
         m_touch_box[static_cast<size_t>(worker_id)] = local_box;
         m_trans_ms[static_cast<size_t>(worker_id)] =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -596,11 +496,7 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     }
 }
 
-// Pick the compile-time M instantiation of raster_triangles from the runtime shading
-// mode. m_smode is a frame input (written once under the lock before workers wake),
-// so this read is as safe as the other m_* reads inside raster_triangles. Wireframe runs
-// its own Pass::Wireframe / raster_wireframe and never reaches dispatch_raster; the case
-// below is unreachable but kept so the switch stays exhaustive over ShadingMode.
+// Select the compile-time shading path. Keep Wireframe as the unreachable exhaustive case.
 
 template <Sink S> void Renderer::dispatch_raster(int worker_id)
 {
@@ -617,14 +513,8 @@ template <Sink S> void Renderer::dispatch_raster(int worker_id)
     }
 }
 
-// Tiled opaque path, phase 1. Same geometry front-end as raster_triangles (steal loop, cull,
-// near-plane fast path + clip_near, clip_reject, ndc_to_screen; INVARIANT: mirror any front-end
-// rule change in all three copies, raster_wireframe included), but each surviving triangle is
-// recorded and binned into the tiles its bbox touches instead of rasterized. Unclipped
-// triangles keep only screen verts + w and re-read their attributes from the mesh in phase 2;
-// the rare near-clipped ones stash their interpolated ClipVerts in this worker's arena. The
-// worker ends by grouping its records per tile (counting sort over the tile rectangles), so
-// phase 2 needs no further barrier or shared structure.
+// Tiled phase 1: run the shared geometry front-end, record surviving triangles,
+// and group them by touched tile. Keep front-end changes in all three copies aligned.
 
 template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
 {
@@ -644,18 +534,13 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
     const vec3 *p_vcols = mesh->has_vertex_colors ? mesh->vertex_colors.data() : nullptr;
     const vec2 *p_uv1 = mesh->has_uv1 ? mesh->uv1.data() : nullptr;
 
-    // Emptied up front, not just refilled: an allocation failure anywhere below leaves this
-    // worker's bins consistent-but-empty rather than holding the previous frame's index arrays,
-    // which shade_tiles would read against this frame's records (it checks tile_start's size).
+    // Clear first so allocation failure cannot expose last frame's bins.
     WorkerBins &wb = m_bins[static_cast<size_t>(worker_id)];
     wb.recs.clear();
     wb.clip.clear();
     wb.tile_start.clear();
     wb.sorted.clear();
-    // Zeroed before the loop that fills them, not only written after it: a worker that gives up
-    // part-way would otherwise leave last frame's numbers in its slots, and render() sums the
-    // slots unconditionally. On a blend mesh those are the TRANSPARENT pass's, which would mix
-    // two populations into the statistic the opaque path choice reads.
+    // Clear statistics before work because render() sums every worker unconditionally.
     m_area[static_cast<size_t>(worker_id)] = 0.0;
     m_area2[static_cast<size_t>(worker_id)] = 0.0;
     m_area_span[static_cast<size_t>(worker_id)] = 0.0;
@@ -794,14 +679,8 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
     m_area2[static_cast<size_t>(worker_id)] = area2;
     m_area_span[static_cast<size_t>(worker_id)] = span;
 
-    // Group this worker's records by tile: count per tile over each record's tile rectangle,
-    // prefix-sum, scatter. Records stay in claim order within a tile.
-    //
-    // A throw from the assign leaves tile_start empty, which shade_tiles reads as "this worker
-    // contributed nothing" and skips. The resize below is the one call that does NOT land in that
-    // state: by then tile_start is already full size and holding a valid prefix sum, so a throw
-    // there would pass the size check and send shade_tiles indexing an empty `sorted`. Hence the
-    // guard on that call alone, which also keeps the loops out of a try block.
+    // Counting-sort records by tile. Keep tile_start empty on allocation failure so
+    // shade_tiles treats this worker as having no contribution.
     wb.tile_start.assign(static_cast<size_t>(n_tiles) + 1, 0);
     for (const RasterTri &r : wb.recs)
     {
@@ -813,18 +692,8 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
             }
         }
     }
-    // Summed in uint64_t: not the uint32_t the array holds, and not size_t either, which is 32
-    // bits on the ILP32 targets and would wrap just the same. The total counts TILE RECTANGLES
-    // rather than triangles, so the triangle count does not bound it: long thin diagonals each
-    // take a rectangle spanning much of the grid while their AREA stays small, and area is what
-    // puts a frame on this path at all. A wrapped total would undersize `sorted` below and send
-    // the scatter past its end, the one failure here that is silent; an unwrapped total that
-    // large throws out of the resize instead. The catch below takes std::exception and not
-    // bad_alloc for that: on ILP32 a vector<uint32_t> tops out at PTRDIFF_MAX/4 (536870911), well
-    // under the UINT32_MAX this loop allows, and resize past max_size throws LENGTH_ERROR without
-    // ever attempting an allocation. Clearing tile_start is what makes shade_tiles skip this
-    // worker; letting the throw past this frame would leave the prefix sized against a `sorted`
-    // still holding the previous frame's contents, and the scatter would read off its end.
+    // Tile touches can exceed the triangle count. Sum in uint64_t to prevent an ILP32
+    // wrap from undersizing sorted; length_error is handled like allocation failure.
     uint64_t touches = 0;
     for (int t = 0; t < n_tiles; t++)
     {
@@ -867,12 +736,8 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
     wb.tile_start[0] = 0;
 }
 
-// Tiled opaque path, phase 2: steal tiles; per tile gather every worker's records, run the
-// visibility pass into the tile-local depth (seeded from the framebuffer, so pre-existing
-// content still wins where nearer) + id buffers, then shade each triangle that owns at least
-// one pixel through the Deferred sink, which writes the framebuffer directly. The shading call
-// mirrors raster_triangles' dispatch (unlit / Phong / Flat) with the same arguments, so both
-// paths render identically; keep them in sync.
+// Tiled phase 2: gather records per tile, resolve visibility, then shade each
+// visible triangle through the Deferred sink. Keep shading arguments aligned.
 
 template <ShadingMode M> void Renderer::shade_tiles(int worker_id)
 {
@@ -931,20 +796,8 @@ template <ShadingMode M> void Renderer::shade_tiles(int worker_id)
         {
             continue;
         }
-        // Front-to-back by nearest vertex depth: the visibility pass then rejects most later
-        // pixels on the depth test, and once the tile is fully covered whole triangles are
-        // skipped against the tile's farthest depth (below). Only the tie order changes.
-        //
-        // That tie order is NOT reproducible across runs, and deliberately so. Nearest-vertex
-        // depth ties constantly (two triangles of one quad share vertices) and the entries were
-        // gathered in binning-worker order, which the work stealing decides afresh each frame, so
-        // a z-fight can resolve either way from one run to the next: measured one pixel of 580000
-        // on a 645k-triangle city, on coplanar geometry the model itself leaves ambiguous. Adding
-        // the source triangle as a tiebreak does fix it and costs 1.1-2.5% on every tiled scene
-        // measured (sponza, city, helmet, 4K city), because a two-key comparator optimizes far
-        // worse inside std::sort than a single float compare; that is a bad trade for a pixel
-        // nobody can see, so the frame is fast rather than bit-reproducible. Note this when
-        // diffing two builds' output: expect a handful of z-fighting pixels to disagree.
+        // Sort front-to-back for early depth rejection. Equal-depth z-fights are not
+        // reproducible because adding a source-triangle tiebreak costs 1.1-2.5%.
         wb.tile_order.resize(wb.tile_list.size());
         for (size_t li = 0; li < wb.tile_list.size(); li++)
         {
@@ -983,15 +836,9 @@ template <ShadingMode M> void Renderer::shade_tiles(int worker_id)
 
         const auto n_list = static_cast<uint32_t>(wb.tile_list.size());
         wb.tile_claims.assign(n_list, 0);
-        // Farthest depth in the tile: a triangle whose nearest vertex is not nearer than it cannot
-        // claim a pixel (strict < test) and is skipped whole. Starts at +inf whenever any pixel is
-        // still uncovered, so the skip only bites once the near geometry (sorted first) has covered
-        // the tile. A stale value is only ever LARGER, so the cadence is a pure speed knob: it can
-        // cost skips, never make an unsafe one.
-        // Bound the refresh COUNT, not their spacing: a refresh costs a full tile scan, so even
-        // spacing makes the cost scale with list length while the benefit scales with triangle
-        // SIZE, and the tradeoff then reverses with density. Against a fixed 16, a fixed 64 is
-        // 1.06x on audi_r8 but 0.95x on Sponza at zoom 4; this form takes both sides.
+        // Once near geometry covers the tile, skip triangles whose nearest vertex is
+        // behind its farthest depth. Bound refresh count because each refresh scans the tile;
+        // a stale, larger limit can only miss a skip, never reject visible geometry.
         constexpr uint32_t ZMAX_MIN_SPACING = 8;
         constexpr uint32_t ZMAX_MAX_REFRESH = 8;
         const uint32_t zmax_spacing = std::max(ZMAX_MIN_SPACING, n_list / ZMAX_MAX_REFRESH);
@@ -1222,15 +1069,9 @@ void Renderer::dispatch_tiles(int worker_id)
     }
 }
 
-// Work-stealing wireframe pass: each worker claims triangle chunks over [0, total) and draws
-// their three edges as DDA lines in m_wireframe_color; one shared colour plus draw_line's
-// atomic CAS depth min make the output identical to a serial draw for any worker count. The
-// geometry front-end (chunked steal loop, world-space backface cull incl. the double-sided bypass,
-// near-plane fast path + clip_near straddle fallback, clip_reject, ndc_to_screen) is a
-// deliberately reduced copy of raster_triangles': wireframe carries no material/texture/
-// tangent/vcol/uv1 attributes and no normal flip, so the two are not worth unifying.
-// INVARIANT: if a shared front-end rule changes (cull winding, near_plane semantics, chunk
-// sizing), mirror it in BOTH this function and raster_triangles.
+// Workers steal triangles and draw three depth-tested edges. This reduced geometry
+// front-end omits material attributes; keep culling, clipping, and chunk rules aligned
+// with raster_triangles().
 
 void Renderer::raster_wireframe()
 {
@@ -1323,17 +1164,9 @@ void Renderer::raster_wireframe()
     }
 }
 
-// Transparent resolve pass: each worker steals disjoint row bands within the merged
-// transparent bounding box (set by render()) and composites each pixel's fragment list
-// back-to-front over the opaque colour already in the framebuffer; pixels outside the box
-// were never touched (heads still SENTINEL). One- and two-deep pixels composite inline, which
-// covers all but a fraction of a percent of a typical frame (6% and 93% of covered pixels on a
-// 645k-triangle city at 4K) and needs neither a gather nor a sort; deeper pixels are collected
-// into a group and walked together, since a chain walk is a chain of DEPENDENT loads and doing
-// one pixel at a time serialises a cache miss per layer. Disjoint pixels plus the
-// post-accumulate barrier make the single-threaded color_at/set_color_at safe here (no two
-// workers touch one slot; the half-block 2-px-per-cell packing is a present()-only concern).
-// Each resolved head is reset to SENTINEL so the array self-cleans for the next frame.
+// Resolve disjoint row bands back-to-front. One- and two-deep chains stay inline;
+// deeper chains advance in groups to overlap dependent loads. Each resolved head
+// returns to SENTINEL for the next frame.
 
 namespace
 {
@@ -1345,13 +1178,8 @@ namespace
         uint64_t ref;
     };
 
-    // Composite order for two fragments of one pixel: true when `lhs` goes first, i.e. is the
-    // farther one. The depth ties break on the fragment payload so the composite is reproducible:
-    // the A-buffer chain order is nondeterministic (cross-worker atomic exchanges) and alpha-OVER
-    // is not commutative, so without a deterministic tie-break two coplanar fragments at one pixel
-    // would flicker frame to frame. Fragments equal on every field are identical, so their relative
-    // order then cannot affect the result. Shared by the two-deep fast path and the general sort so
-    // the two orderings cannot drift apart.
+    // Sort farther fragments first. Payload tie-breaks make coplanar alpha compositing
+    // reproducible despite nondeterministic cross-worker insertion order.
     bool frag_before(const Fragment &lhs, const Fragment &rhs) noexcept
     {
         if (lhs.depth != rhs.depth)
@@ -1408,11 +1236,7 @@ void Renderer::resolve_pixels()
             int x = x0;
             while (x <= x1)
             {
-                // Collect the next group of covered pixels, then walk their chains IN LOCKSTEP.
-                // A chain walk is a dependent load per node (each fragment holds the next ref), so
-                // resolving one pixel at a time serialises a cache miss per layer: a 32-pane glass
-                // stack averages 17 fragments a pixel and spends the pass waiting. Stepping GROUP
-                // chains together makes those loads independent, so the misses overlap.
+                // Walk several dependent fragment chains together so their cache misses overlap.
                 int gn = 0;
                 while (x <= x1 && gn < GROUP)
                 {
@@ -1423,11 +1247,7 @@ void Renderer::resolve_pixels()
                     {
                         continue;
                     }
-                    // One and two deep are resolved right here, without the group buffers: they
-                    // are the overwhelming majority away from stacked glass (6% and 93% of covered
-                    // pixels on a 645k-triangle city at 4K), they need no ordering work beyond a
-                    // single compare, and queueing them would pay a vector push per fragment for
-                    // nothing.
+                    // Resolve one- and two-deep chains inline; deeper chains use the group buffers.
                     const Fragment &f0 = frag_at(ref);
                     if (f0.next != ABuffer::SENTINEL)
                     {
@@ -1464,11 +1284,8 @@ void Renderer::resolve_pixels()
                     continue;
                 }
 
-                // push_back is the only allocating call in resolve; guard it like the accumulate
-                // pass so an OOM here cannot escape worker_func (a std::thread entry) into
-                // std::terminate. On OOM the affected pixels keep their opaque colour, but the head
-                // reset below still runs UNCONDITIONALLY, so no stale non-SENTINEL head survives to
-                // corrupt the next frame (the self-cleaning invariant the design relies on).
+                // Guard the only allocating resolve operation. On failure, keep opaque
+                // colors but still reset every affected head.
                 try
                 {
                     bool more = true;
@@ -1500,8 +1317,8 @@ void Renderer::resolve_pixels()
                 {
                     const size_t pidx = slot_px[k];
                     std::vector<FragKey> &chain = chains[k];
-                    // Composite over the opaque colour already in the framebuffer. color_at is just
-                    // a load (order-independent), so read the base first and fold into dst.
+                    // Composite over the opaque framebuffer colour. color_at only loads,
+                    // so read the order-independent base first and fold into dst.
                     const Color base = fb->color_at(pidx);
                     vec3 dst{ static_cast<float>(base.r) * inv255, static_cast<float>(base.g) * inv255,
                               static_cast<float>(base.b) * inv255 };
@@ -1583,14 +1400,8 @@ void Renderer::worker_func(int worker_id)
             pass = m_pass;
         }
 
-        // Only Task and Tiled catch at this level; TransAccum and Resolve guard their own
-        // allocating calls further in. Opaque and Wireframe are unguarded because nothing they
-        // reach allocates at all: rasterize.cpp itself holds no vector, no new and no throw, and
-        // the one growing container the rasterizer headers do hold (FragArena) belongs to the
-        // A-buffer, which only the Transparent sink touches. Treat that as an invariant rather
-        // than a coincidence, since this is a thread entry point and giving the opaque rasterizer
-        // a heap scratch buffer would turn an OOM into terminate instead of the lost geometry
-        // every guarded pass degrades to.
+        // Opaque and Wireframe must remain non-allocating because exceptions cannot leave
+        // this thread entry point. Allocating passes catch without skipping their barriers.
         switch (pass)
         {
         case Pass::Opaque:
@@ -1618,14 +1429,8 @@ void Renderer::worker_func(int worker_id)
             }
             break;
         case Pass::Tiled:
-            // Both phases allocate (the bins, and the per-tile scratch), and this is a thread
-            // entry point, so nothing may escape. std::exception rather than bad_alloc because a
-            // vector growth past max_size throws length_error instead, which ILP32 reaches long
-            // before it runs out of memory. Each catch is INSIDE its phase: a throw
-            // that skipped the barrier below would hang every other worker, and one that skipped
-            // m_active would hang render(). A worker that gives up leaves its bins empty or its
-            // tiles unshaded, so the frame loses geometry rather than crashing, and the next frame
-            // is unaffected (nothing persists but capacity).
+            // Catch each allocating tiled phase separately so neither the in-pass barrier
+            // nor final completion signal can be skipped. length_error matters on ILP32 too.
             try
             {
                 dispatch_bin(worker_id);
@@ -1633,10 +1438,8 @@ void Renderer::worker_func(int worker_id)
             catch (const std::exception &) // NOLINT(bugprone-empty-catch)
             {
             }
-            // In-pass barrier: tiles may only be shaded once every worker's bins are complete.
-            // A spin (with yield) rather than a second condition-variable dispatch: the whole
-            // pool is awake and about to continue, so the wake-up round trip would only add
-            // latency, which dominates small frames (measured on Duck at 200x120).
+            // Shade only after every worker finishes binning. The already-awake pool
+            // yields here instead of paying a second condition-variable dispatch.
             if (m_bin_done.fetch_add(1, std::memory_order_acq_rel) + 1 < m_n_workers)
             {
                 while (m_bin_done.load(std::memory_order_acquire) < m_n_workers)
@@ -1663,25 +1466,8 @@ void Renderer::worker_func(int worker_id)
     }
 }
 
-// Resize the transparent pass's steal granularity from the imbalance the last one produced.
-//
-// A blend tail is a handful of large surfaces far more often than a field of small ones (glass,
-// decals, water, foliage cards), and load_model partitions the tail by material, so those surfaces
-// sit CONTIGUOUS in it: at the opaque pass's 256-triangle claim one worker takes nearly the whole
-// frame's fragment work while the rest idle. Measured on a 645k-triangle city at 1080p, where 1000
-// of 59000 drawn transparent triangles carry 96.5% of the fragments, the busiest worker held 317k
-// of 1.06M and the pass ran 41 ms against a 17 ms balanced ideal.
-//
-// A smaller claim is not simply better: the steal range covers every tail triangle including the
-// ones that cull, and the claim is a contended fetch_add (~14 ns, serialized across the pool), so
-// on a 10M-triangle all-blend mesh chunk 16 costs 76% over chunk 256 while buying no balance at
-// all (its work is already even). Nothing computable before the pass separates those two cases:
-// triangle counts, fragment counts and screen areas were each tried as a predictor and each reads
-// the wrong way round on one of them, because a claim's cost is part shading and part front-end
-// over culled triangles and the mix is what differs. The imbalance itself is the one quantity that
-// says which regime the frame is in, so the controller measures it and steers, rather than
-// predicting it: shrink proportionally when the pool is uneven, double back up when it is even,
-// and hold inside the band so a settled scene stops moving.
+// Retune transparent steal granularity from measured worker imbalance. Small claims
+// balance clustered surfaces but add contention on evenly distributed meshes.
 void Renderer::retune_trans_chunk()
 {
     double sum = 0.0;
@@ -1725,27 +1511,13 @@ void Renderer::ensure_abuffer(int width, int height)
         return;
     }
     const size_t n = static_cast<size_t>(width) * static_cast<size_t>(height);
-    // The buffer is REUSED while the frame is within half of it, rather than rebuilt every
-    // time. A vector of atomics cannot be resized in place (they are neither copyable nor
-    // movable), so a rebuild reallocates AND value-initializes the whole thing before the
-    // sentinel fill writes it a second time, and every page is then first-touched: 7.8 ms
-    // at 1080p, which a blend scene paid on EVERY resize (a glazed vase went 3.0 ms to
-    // 11.2 ms a frame, and interactive resizing delivers a stream of resize events).
-    // Reuse is safe because every reader indexes by a pixel index derived from width and
-    // height, never by size(), so a buffer larger than the frame is inert. A shrink past
-    // half still reallocates so the memory comes back, matching Framebuffer::resize's
-    // policy of releasing frame-sized buffers; retention is bounded at 2x the frame.
+    // Atomics cannot resize in place. Retain at most twice the current frame to avoid
+    // repeated allocation and first-touch during interactive resizing.
     if (n > m_frag_head.size() || n < m_frag_head.size() / 2)
     {
         m_frag_head = std::vector<std::atomic<uint64_t>>(n);
     }
-    // Filled on reuse too, rather than trusting the resolve pass to have left every head at
-    // SENTINEL. That invariant does hold (a mutation that skipped this fill still passed
-    // the resize test), but leaning on it would make a resize silently depend on it, and
-    // the cost of not doing so is one store pass (~0.8 ms at 1080p) against the 7.8 ms
-    // saved above. Removing the fill ENTIRELY is not merely wrong but unsafe: a fresh
-    // vector is value-initialized to zero, and zero is a valid-looking fragment ref, so
-    // the resolve pass then chases garbage (the test binary crashes).
+    // Always sentinel-fill: a fresh atomic vector contains zero, a valid fragment ref.
     for (size_t i = 0; i < n; i++)
     {
         m_frag_head[i].store(ABuffer::SENTINEL, std::memory_order_relaxed);
@@ -1797,32 +1569,11 @@ void Renderer::render(
         return;
     }
 
-    // Phase 1: opaque geometry over [0, opaque_count). Two implementations: the immediate pass
-    // (each stolen triangle rasterized straight into the framebuffer through the depth CAS) and
-    // the tiled pass (bin, then per-tile visibility + deferred shading). The tiled pass wins on
-    // big triangles: it removes the framebuffer atomics, shades each pixel once instead of once
-    // per overdraw layer, balances a wall-sized triangle across the pool, and shades in batches.
-    // It loses on small ones: every recorded triangle costs a 64-byte record round trip, a second
-    // setup and a second rasterization, and its batches then hold a pixel or two. See
-    // TILE_MIN_TRI_PX for the statistic that separates the two and the measurements behind it.
-    // The split needs the on-screen size of the triangles that survive culling and clipping,
-    // which is only known after the front-end runs, so it is taken from the previous frame of the
-    // same mesh at the same size (frames are temporally coherent; both passes report it through
-    // m_area/m_area2). With no such frame there is nothing to predict from, and the immediate
-    // pass is the safe guess: it is never catastrophic, while the tiled pass is on a dense mesh.
+    // Choose immediate or tiled opaque rendering from the previous coherent frame.
+    // Tiling wins on large triangles but its extra setup is costly on dense meshes.
     const auto n_px = static_cast<double>(width) * static_cast<double>(height);
-    // A RESIZE does not invalidate the statistic, it rescales it, so the predictor keeps
-    // working across one. The statistic is an on-screen AREA and the projection is
-    // vertical-fov: m[0][0] carries 1/aspect with aspect = width/height, so ndc.x is
-    // proportional to height/width and ndc_to_screen's multiply by width leaves screen x
-    // proportional to HEIGHT; screen y is too. Both axes therefore scale with the frame
-    // height, and a triangle's area with its square.
-    //
-    // Without this every resize spent one frame on the immediate pass, which on the very
-    // scenes the tiled pass exists for is not a rounding error: measured 170 ms against a
-    // settled 7.8 ms on Sponza at zoom 4 (21.8x), 27 ms against 3.5 ms at zoom 1.
-    // Interactive resizing delivers a stream of resize events, so that was a stream of
-    // those frames.
+    // Under vertical-FOV projection both screen axes scale with framebuffer height,
+    // so rescale previous triangle area by the squared height ratio.
     const bool same_mesh = m_prev_mesh == &mesh && m_prev_tris == mesh.triangles.size();
     double pxw_tri = m_prev_area > 0.0 ? m_prev_area2 / m_prev_area : 0.0;
     if (same_mesh && m_prev_height > 0 && m_prev_height != height)
@@ -1833,50 +1584,19 @@ void Renderer::render(
     // Pixels per tile touched. A ratio of two areas, so a resize scales both and it needs no
     // rescale of its own, unlike pxw_tri above.
     const double pxw_per_tile = m_prev_area > 0.0 ? m_prev_span / m_prev_area : 0.0;
-    // Split deliberately: the frame-size test is a HARD constraint and is obeyed the moment it
-    // changes, while the two triangle statistics are sampled estimates and are damped below. A
-    // resize below TILE_MIN_PIXELS must fall back on the same frame, not several frames later.
-    //
-    // KNOWN ASYMMETRY, accepted rather than fixed: the fall is instant but the climb back is not.
-    // m_prev_tiled records what actually RAN, so a frame forced immediate by size sets it false
-    // while the statistics keep asking for tiles; the vote counter then cycles for the whole small
-    // period and, when the frame grows back, holds the immediate pass for whatever votes remain
-    // (measured up to 5 frames after 3 small ones). Reachable by dragging a kitty or sixel window
-    // under 65536 px and back; blocks-mode frames are always below the threshold and never tile,
-    // so they cannot hit it. Fixing it means tracking the damped statistical preference separately
-    // from the pass that ran, which is new predictor state, and every past change to this
-    // predictor that looked safe on medians cost 12-21x on some scene's WORST frame. So it wants
-    // the full max-frame-time campaign, not a drive-by.
+    // Frame size is a hard same-frame gate; sampled geometry preferences are damped.
+    // After growing above the threshold, leftover votes may delay tiling by up to five frames.
     const bool size_ok = same_mesh && n_px >= TILE_MIN_PIXELS;
     const bool stats_want_tiles =
         pxw_tri >= (m_prev_tiled ? TILE_KEEP_TRI_PX : TILE_MIN_TRI_PX) && pxw_per_tile >= TILE_MIN_TRI_PER_TILE;
 
-    // Switching paths costs a frame at the wrong pass's price, so the statistics deciding it must
-    // be believed only when they PERSIST. Both are sampled ratios over a spinning view, and their
-    // tails are wide (the per-tile one reads a p90/p10 of 6 on Sponza at zoom 4), so a single
-    // frame's dip across a threshold means nothing while several in a row mean the scene really
-    // moved. Requiring PATH_SWITCH_FRAMES consecutive frames of disagreement turns a lone outlier
-    // into no switch at all.
-    //
-    // Deliberately damping in TIME rather than widening the thresholds into a value band, which
-    // was tried first and is worse in two ways: a band is a dead zone where a scene keeps whatever
-    // path it happened to start on (a zoomed greyhound sits there and wants tiles by 1.44x), and
-    // it stalls a mesh in the tiled pass when a 4K-to-1080p resize drops it into the band. Time
-    // damping has no dead zone: it delays a real move by a few frames and rejects noise outright.
-    //
-    // The first stats-backed decision is taken at once (`m_path_settled`). Damping it instead
-    // would spend PATH_SWITCH_FRAMES frames on the immediate pass whenever the mesh changes,
-    // which on the scenes the tiled pass exists for is 58 ms a frame against 10.
+    // Require persistent disagreement before switching paths. Time damping rejects
+    // sampled noise without creating a value dead zone; the first informed choice is immediate.
     bool stats_verdict = stats_want_tiles;
     if (!same_mesh)
     {
-        // A different mesh is a different question; do not carry the old scene's evidence. The
-        // STATISTICS have to go with the flag, not just the flag: m_prev_area is only rewritten
-        // after this frame's dispatch, so leaving it set re-latches m_path_settled from the old
-        // mesh on this very frame, and the new mesh's first stats-backed choice is then damped
-        // like any other, which is the 8 slow frames the flag exists to avoid. Clearing here and
-        // not earlier is deliberate: pxw_tri and pxw_per_tile were already read above, and
-        // size_ok requires same_mesh, so this frame takes the immediate pass either way.
+        // Clear both verdict and statistics when the mesh changes. Otherwise stale area
+        // data immediately re-settles the new scene and delays its first informed choice.
         m_path_settled = false;
         m_prev_area = 0.0;
         m_prev_area2 = 0.0;
@@ -1904,11 +1624,8 @@ void Renderer::render(
         m_path_votes = 0;
     }
     const bool auto_tiles = size_ok && stats_verdict;
-    // RasterTri holds a triangle's tile rectangle in uint16_t, so a grid with more than 65536
-    // tiles on an axis would wrap it and bin triangles into the wrong tiles (or, when only one
-    // end wraps, into none at all). Bound the frame by the smallest tile edge, 8 px: an
-    // interactive frame cannot come close (main.cpp caps a side at 8192), and --bench-size, which
-    // can, falls back to the immediate pass.
+    // RasterTri stores tile bounds in uint16_t. Oversized benchmark frames must use
+    // the immediate path instead of wrapping a tile axis.
     const bool tiles_fit = std::max(width, height) <= 8 * 65536;
     const bool use_tiles = m_opaque_count > 0 && tiles_fit &&
                            (opaque_path == OpaquePath::Tiled || (opaque_path == OpaquePath::Auto && auto_tiles));
@@ -1948,25 +1665,14 @@ void Renderer::render(
         m_prev_span += m_area_span[static_cast<size_t>(w)];
     }
 
-    // Phases 2-3: only meshes that actually have a blend tail. Accumulate transparent
-    // fragments into the per-pixel A-buffer, then resolve (sort + composite) over the opaque
-    // framebuffer. The opaque_count < total guard skips both barrier round-trips (and the
-    // O(pixels) resolve sweep) when has_transparent is set by a declared-but-unused blend
-    // material: no triangle reached the tail, so there is nothing to accumulate or resolve.
+    // Run transparency only for a nonempty blend tail. A declared but unused blend
+    // material must not pay either barrier or the resolve sweep.
     if (mesh.has_transparent && m_opaque_count < static_cast<uint32_t>(mesh.triangles.size()))
     {
         ensure_abuffer(width, height);
 
-        // The controller steers from the previous frame of the same mesh, for the reason the
-        // opaque path choice does: frames are temporally coherent, and the measurement only exists
-        // once a pass has run. A different MESH starts again from the coarse claim.
-        //
-        // A resize deliberately does NOT reset it. The claim size is about how the blend tail's
-        // work spreads across claims, which is a property of the geometry and materials: a resize
-        // scales every triangle's fragment count by the same factor, so the max/mean imbalance the
-        // controller steers on is unchanged. Resetting on one cost a frame at the coarse claim
-        // every resize, measured 10.98 ms against a settled 3.33 ms on a glazed vase (3.3x) and
-        // 11.95 vs 4.71 on a glass candle, and interactive resizing delivers a stream of them.
+        // Reuse transparent claim tuning for the same mesh across resizes; uniform pixel
+        // scaling does not change its worker imbalance.
         if (!same_mesh)
         {
             m_trans_chunk = TRANS_CHUNK_MAX;
@@ -1975,19 +1681,8 @@ void Renderer::render(
         dispatch_pass(Pass::TransAccum);
         retune_trans_chunk();
 
-        // Merge the per-worker touched-pixel boxes so the Resolve sweep covers only the
-        // transparent region. Merge straight into m_res_box (the member resolve_pixels()
-        // reads; workers cannot see a render() stack local), resetting it first since it
-        // persists across frames. An empty merged box means zero pushes (a box only grows
-        // inside push, after the head is published), so every head is still SENTINEL and the
-        // whole pass is skipped, subsuming the fully-occluded / fully-culled case. A single
-        // AABB degrades toward full-frame when transparency occupies separated screen
-        // regions; that is the floor, not a regression: the sweep is never larger than the old
-        // unconditional full-frame one and measured neutral-to-faster even in that worst
-        // case, while a multi-box / per-tile dirty mask would add per-frame cost that loses
-        // on the common single-region case, so it is deliberately not done. An empty box
-        // ({INT_MAX, INT_MIN}) is the min/max identity, so workers that pushed nothing fold
-        // in without a guard.
+        // Merge worker bounds into the member read by resolve workers. Empty inverted
+        // bounds are the min/max identity and skip fully occluded or culled passes.
         m_res_box = TouchBox{};
         for (int w = 0; w < m_n_workers; w++)
         {
@@ -1999,13 +1694,8 @@ void Renderer::render(
         }
         if (!m_res_box.empty())
         {
-            // Steal in row bands: enough bands for balance, capped so a tall box doesn't
-            // over-fragment the cursor. At least one row so a short box still dispatches.
-            // A wide-but-short box (bh < workers) under-parallelizes (some workers idle), but
-            // benched faster than the old full-frame sweep even at 1-2 rows × deep overdraw:
-            // those few rows' pixels are contiguous (≈one old chunk → already ≈serial there),
-            // and the box skips the rest of the frame's SENTINEL scan. Not worth an aspect-aware
-            // column-band fallback.
+            // Steal bounded row bands, with at least one row per claim. Wide, short
+            // boxes may idle workers, but still avoid a full-frame sentinel scan.
             const int bh = m_res_box.y1 - m_res_box.y0 + 1;
             m_res_row_chunk = std::clamp(bh / (m_n_workers * 8), 1, 64);
             // Seed the row cursor to the box top; resolve_pixels() reads the y-start from here.

@@ -10,10 +10,7 @@ namespace
 
     constexpr char B64_ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-    // Chunk granularity in INPUT bytes. 3072 bytes encode to exactly 4096 base64
-    // chars, the protocol's per-chunk ceiling; being a multiple of 3 it never
-    // produces padding mid-stream, so every chunk but the last is a multiple of 4
-    // as the protocol requires and the encoder needs no cross-chunk carry state.
+    // 3072 input bytes encode to kitty's 4096-character chunk limit without padding.
     constexpr size_t BYTES_PER_CHUNK = 3072;
 
     void append_uint(std::string &out, unsigned int v)
@@ -21,11 +18,7 @@ namespace
         out += std::to_string(v);
     }
 
-    // Control keys shared by both transmit mediums. q=2 suppresses the OK and
-    // error responses, which would otherwise land in stdin for the input parser
-    // to swallow. C=1 keeps the cursor where it is: the placement spans the whole
-    // render area, and the default cursor advance would land it off-screen at the
-    // bottom of a full-height image.
+    // Suppress frame replies and keep full-height placements from advancing the cursor.
     void append_transmit_keys(std::string &out, char medium, int width, int height, int cols, int rows)
     {
         out += "q=2,i=";
@@ -58,10 +51,7 @@ namespace kitty
 
     void append_base64(std::string &out, const unsigned char *data, size_t n)
     {
-        // Sized once, then written through a raw pointer: the length is exact, so append()'s
-        // per-group checks and memcpy are pure overhead here. 788 MB/s that way against 2322 on
-        // byte-identical output, resize()'s zeroing of the new tail included. resize() and not
-        // reserve(), which leaves size() unchanged so the writes would land past the end.
+        // Resize once and write the exact output length. This measured 3x faster than append().
         const size_t base = out.size();
         out.resize(base + (((n + 2) / 3) * 4));
         char *o = out.data() + base;
@@ -109,22 +99,13 @@ namespace kitty
     )
     {
         const size_t chunks = std::max<size_t>(1, (data_len + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK);
-        // One reservation for the whole run, keys included: the per-chunk
-        // append_base64 reserves only its own output, which would leave the
-        // frame's total growth to the library's policy (a doubling chain on
-        // libstdc++, measured 11 reallocations at 8 MB; possibly one exact
-        // reallocation PER CHUNK on a library that honors reserve literally).
-        // 32 B per chunk + 128 B flat covers the framing (a continuation header
-        // is ~13 B, the first chunk's key run ~90 B). Guarded like append_base64:
-        // from the second frame on, the persisting capacity already covers the
-        // need, and an unguarded pre-C++20 reserve may SHRINK to it (P0966).
+        // Reserve the full chunk run once. Guard it because pre-C++20 reserve may shrink.
         const size_t need = out.size() + (((data_len + 2) / 3) * 4) + (chunks * 32) + 128;
         if (need > out.capacity())
         {
             out.reserve(need);
         }
-        // The whole image must go out as one uninterrupted run of chunks: the
-        // protocol forbids any other graphics escape between them.
+        // Kitty forbids interleaving graphics commands within a chunk run.
         for (size_t c = 0; c < chunks; c++)
         {
             const size_t off = c * BYTES_PER_CHUNK;

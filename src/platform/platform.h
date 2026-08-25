@@ -17,15 +17,7 @@
 #include <conio.h>
 #include <io.h>
 #include <windows.h>
-// minwindef.h defines these two as EMPTY macros (16-bit segment leftovers) and, unlike
-// min/max, no NOMINMAX-style opt-out exists. Any header parsed after this one then loses
-// every `near`/`far` identifier, which is a syntax error wherever one is used. Undef here
-// rather than relying on include order: this is the only header that pulls in <windows.h>,
-// so anything it could poison is parsed after this point. A CI-only breakage, invisible to
-// every POSIX build.
-// The one thing this forecloses: under the MSVC SDK (not mingw-w64) FAR/NEAR are defined AS
-// these macros, so they break here too. Nothing uses them, but an SDK or zlib-style vendor
-// header included after this point in the same TU would need the undefs moved past it.
+// Windows defines near/far as empty macros with no opt-out; contain the pollution here.
 #undef near
 #undef far
 #else
@@ -41,10 +33,7 @@
 namespace platform
 {
 
-    // 64-bit size of an open binary stream, or -1 on failure. std::ftell returns long,
-    // which is 32-bit on Windows (LLP64) and ILP32, so files >= 2 GB need the platform's
-    // 64-bit seek/tell. On success the stream position is left at end-of-file; callers
-    // that go on to read seek back themselves.
+    // Return a 64-bit stream size and leave the stream at EOF, or -1 on failure.
     inline int64_t file_size(std::FILE *f)
     {
 #ifdef _WIN32
@@ -54,11 +43,7 @@ namespace platform
         }
         return _ftelli64(f);
 #else
-        // ftello returns off_t; no cast, because on LP64 the types coincide and the cast
-        // would trip -Wuseless-cast. The assert makes the -D_FILE_OFFSET_BITS=64 build
-        // contract (CMakeLists.txt defines it at directory scope) self-enforcing: no CI test can catch
-        // losing it (multi-GB fixtures are uncreatable on runners), so a dropped define
-        // becomes a cross32-job compile error instead of a silent 2 GB EOVERFLOW regression.
+        // Enforce the global large-file ABI on ILP32 at compile time.
         static_assert(sizeof(off_t) == 8, "64-bit off_t required; build with -D_FILE_OFFSET_BITS=64");
         if (fseeko(f, 0, SEEK_END) != 0)
         {
@@ -71,10 +56,7 @@ namespace platform
     inline void get_terminal_size(int &cols, int &rows)
     {
 #ifdef _WIN32
-        // Zero-initialized and the call checked, so a failure lands on the same
-        // fallback as POSIX rather than on whatever the stack held. Callers treat
-        // these as positive (the framebuffer is sized from them, and main.cpp measures
-        // a drag delta against them), and a redirected or closed stdout fails the call.
+        // Reject failed and empty console geometry.
         CONSOLE_SCREEN_BUFFER_INFO csbi = {};
         cols = 0; // never read the caller's incoming value on the failure path
         rows = 0;
@@ -92,9 +74,7 @@ namespace platform
         }
 #else
         struct winsize ws = {};
-        // The primary ioctl can fail or report ws_col==0 (some terminals and
-        // multiplexers) even on a real tty; fall back across the other fds, then
-        // to a sane default below.
+        // Some ttys omit geometry on one fd; try the others before the default.
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
         {
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
@@ -108,21 +88,14 @@ namespace platform
 #endif
     }
 
-    // Terminal window size in pixels from TIOCGWINSZ's ws_xpixel/ws_ypixel, 0/0 when
-    // the terminal does not report them (many do not; kitty/ghostty/foot/wezterm do).
-    // Re-read on every resize: a font zoom changes the cell size mid-session, and this
-    // is the one source that reports it without an escape round trip.
+    // Return TIOCGWINSZ pixel geometry, or 0/0 when absent.
     inline void get_terminal_pixel_size(int &px_w, int &px_h)
     {
         px_w = 0;
         px_h = 0;
 #ifndef _WIN32
         struct winsize ws = {};
-        // The SAME fd chain as get_terminal_size, advancing on the GRID fields,
-        // so the pixels always come from the fd the grid came from: a chain that
-        // advanced on the pixel fields could pair one tty's grid with another
-        // tty's pixels (stdin and stdout need not be the same terminal). A chosen
-        // fd without pixel fields reports absent and the cell-size tiers move on.
+        // Select by grid validity so grid and pixels always come from the same tty.
         if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) != 0 || ws.ws_col == 0)
         {
             ioctl(STDIN_FILENO, TIOCGWINSZ, &ws);
@@ -131,10 +104,7 @@ namespace platform
         {
             ioctl(STDERR_FILENO, TIOCGWINSZ, &ws);
         }
-        // Both grid axes must be real, not just ws_col: callers divide the
-        // pixels by the grid, and get_terminal_size fabricates a missing axis
-        // (80/24), so real pixels over a fabricated axis would derive a garbage
-        // cell size instead of falling through to the next tier.
+        // Never combine real pixels with a fabricated grid axis.
         if (ws.ws_col > 0 && ws.ws_row > 0 && ws.ws_xpixel > 0 && ws.ws_ypixel > 0)
         {
             px_w = ws.ws_xpixel;
@@ -144,30 +114,8 @@ namespace platform
     }
 
 #ifndef _WIN32
-    // Shared-memory frame sink for the kitty t=s medium. Each frame is one fresh
-    // POSIX shm object: opened and filled here, then named in the escape, then read
-    // AND UNLINKED by the terminal. shm_frame_open unlinks the name first (ENOENT is
-    // the normal case) so a stale object the terminal never got to read is reclaimed
-    // rather than leaked, and O_EXCL then cannot collide. Accepted residual: a
-    // same-named object this uid cannot unlink (a squatter from another uid) fails
-    // the unlink and then the O_EXCL create every time, so that name's frames
-    // permanently take the direct fallback; identical pixels, no diagnostic.
-    //
-    // Filled by repeated append() rather than handed out as a pointer, so the two platform
-    // fills can differ without the caller branching. They must: a fresh object's pages are
-    // untouched, so filling it THROUGH A MAPPING takes a minor fault per 4 KB (1537 per 1080p
-    // frame, 3.03 of the 5.33 ms that present cost). Linux can write() to a shm fd (they are
-    // tmpfs files), which copies in-kernel with no mapping and no faults, 1.94x faster end to
-    // end at 1080p and 4K. POSIX guarantees only mmap/ftruncate/fstat on this fd, so every
-    // other platform keeps the mapping form.
-    // OWNS its fd (or mapping) but has no destructor, so exactly one shm_frame_close must run per
-    // successful open. It is an aggregate and therefore copyable, and a copy would close the same
-    // fd twice, which on a busy process closes an unrelated descriptor. Both call sites take it
-    // straight from shm_frame_open into a local that nothing copies, so the invariant holds by
-    // construction today. Keep it that way: never store one in a container or pass it by value.
-    // Making the type enforce this means a real RAII wrapper (destructor, plus a move that clears
-    // the source), which the open/append/close shape exists to avoid, since the two platform fills
-    // want different members.
+    // Kitty shm frame. Linux writes to the fd; other POSIX systems fill a mapping.
+    // The aggregate owns its handle but is copyable: keep it local and close it exactly once.
     struct ShmFrame
     {
         int fd = -1;
@@ -195,11 +143,7 @@ namespace platform
         }
         f.size = size;
 #ifdef __linux__
-        // Streamed with write(), so an exhausted /dev/shm reports ENOSPC from the write itself:
-        // the clean failure the old posix_fallocate reservation bought, without its zero-fill
-        // pass. That reservation was Linux-only anyway, since a mapped store into an unbacked
-        // page raises SIGBUS instead of returning an error, and macOS (which takes the mapping
-        // fill) puts shm objects in plain VM with no partition quota to exhaust.
+        // Linux write() reports a full /dev/shm as ENOSPC instead of SIGBUS.
         f.fd = fd;
         return f;
 #else
@@ -275,10 +219,7 @@ namespace platform
         return static_cast<unsigned long>(getpid());
     }
 #else
-    // Windows stubs so the shm call sites compile without #ifdef blocks of their
-    // own (platform.h owns all platform conditionals). No Windows terminal
-    // answers the kitty query today; if one ever does, the invalid frame reads
-    // as "shm frame unavailable" and the transport falls back to t=d.
+    // Windows stubs keep shm conditionals inside this header and select kitty direct mode.
     struct ShmFrame
     {
         [[nodiscard]] bool valid() const noexcept { return false; }
@@ -304,20 +245,13 @@ namespace platform
     }
 #endif
 
-    // Lets the console translate the terminal's escape sequences (query replies,
-    // mouse reports) into readable input bytes on Windows; without it they never
-    // arrive. Idempotent (a flag OR) and a POSIX no-op. Called by the graphics
-    // query itself, since enable_mouse (the other caller) only runs after the
-    // query window closes. Never cleared, like init_console_output's output
-    // flags and codepage: persistent console-state mutation on the render path
-    // (post-load) is the accepted pattern on Windows.
+    // Enable Windows VT input so query and mouse escapes arrive as bytes.
     inline void enable_vt_input()
     {
 #ifdef _WIN32
         HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
         DWORD mode = 0;
-        // Probe-guarded like init_console_output: OR-ing into a mode the probe
-        // never filled would clear every other input flag.
+        // Never OR flags into a mode value from a failed probe.
         if (GetConsoleMode(hin, &mode) != 0)
         {
             SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
@@ -327,35 +261,21 @@ namespace platform
 
     namespace detail
     {
-        // Ceiling on the graphics-detection read. The replies total well under a
-        // hundred bytes; the headroom absorbs keystrokes typed into the window.
+        // Query replies are small; leave headroom for incidental input.
         constexpr int GRAPHICS_REPLY_BUF = 512;
-        // The two re-requestable query escapes, shared by the startup batch and
-        // the request_* functions below so the two forms cannot diverge (the
-        // reply validators are written against these exact parameters).
+        // Shared startup and resize query forms.
         inline constexpr char QUERY_CELL_SIZE[] = "\033[16t";
         inline constexpr char QUERY_SIXEL_GEOMETRY[] = "\033[?2;1;0S";
-        // Outer bound on waiting for the DSR sentinel. Terminals answer queries
-        // ahead of other processing, so the normal case is one round trip;
-        // the bound only matters for a terminal that never answers DSR at all.
+        // Bound terminals that never answer the DSR sentinel.
         constexpr int GRAPHICS_QUERY_TIMEOUT_MS = 1000;
 
-        // One bounded wait-and-read of query-reply bytes, the platform-split
-        // read primitive of the query loop. Returns the byte count read; 0
-        // means "nothing decodable this round, keep waiting" (the caller's
-        // deadline loop re-checks its quit flag and the deadline); negative
-        // means stop (closed stream, error, or on POSIX a quit signal caught
-        // at an EINTR retry).
+        // Bounded query read: positive bytes, zero to retry, negative to stop.
 #ifdef _WIN32
         inline int
         read_query_bytes(char *out, int cap, int timeout_ms, const volatile std::sig_atomic_t * /*interrupted*/)
         {
             HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
-            // The wait is capped at one slice so a quit signal is noticed
-            // within it (on Windows the Ctrl+C handler runs on another thread,
-            // so unlike POSIX's EINTR nothing interrupts a blocking wait): a
-            // timed-out slice returns 0 and the caller's deadline loop
-            // re-enters, re-checking the quit flag at its own top.
+            // Slice Windows waits so another thread's Ctrl+C flag is noticed promptly.
             constexpr DWORD SLICE_MS = 50;
             const auto want = static_cast<DWORD>(timeout_ms);
             const DWORD rc = WaitForSingleObject(hin, std::min(want, SLICE_MS));
@@ -374,12 +294,7 @@ namespace platform
             }
             if (n == 0)
             {
-                // The wait signals on ANY input record, including the focus and
-                // window events _kbhit rejects; discard one such record or the
-                // signaled-but-empty wait repeats until the deadline. A discard
-                // that cannot even read one record is a dead console (redirected
-                // handle, closed conhost): stop, or the still-signaled wait plus
-                // the failing read busy-spin the loop to the deadline.
+                // Discard non-byte console records that would keep the handle signaled.
                 INPUT_RECORD rec;
                 DWORD got = 0;
                 if (ReadConsoleInput(hin, &rec, 1, &got) == 0 || got == 0)
@@ -400,11 +315,8 @@ namespace platform
                 {
                     return -1; // a quit signal ends the wait
                 }
-                // Not a quit: let the caller recompute the deadline and retry. No
-                // non-quit handler is installed (resize is polled, so no SIGWINCH
-                // handler exists to interrupt anything); the real case is Linux's
-                // stop-and-SIGCONT, which fails poll with EINTR even with no
-                // handler (man 7 signal).
+                // Linux stop and SIGCONT can interrupt poll without a handler; retry
+                // against the caller's deadline.
                 return 0;
             }
             if (pr < 0)
@@ -429,39 +341,16 @@ namespace platform
 #endif
     } // namespace detail
 
-    // Leaves the alternate screen that query_term_graphics entered. INVARIANT:
-    // once the query has run, only this call or the Framebuffer dtor ever gets
-    // the terminal off the alternate screen, so EVERY path that returns between
-    // the query and the Framebuffer ctor (today: the quit-signal bail, the
-    // forced pixel-backend bail, and the ctor-throw handler) must call this
-    // first, or it strands the user there with the shell invisible. On the
-    // normal path the ctor adopts the screen (adopt_alt_screen) and its dtor
-    // leaves it.
+    // Bail paths after graphics detection must leave the alternate screen here;
+    // the normal path transfers ownership to Framebuffer.
     inline void exit_alt_screen()
     {
         std::fputs("\033[?1049l", stdout);
         std::fflush(stdout);
     }
 
-    // Writes the graphics capability batch (kitty query + cell-size report +
-    // DA1 for sixel + XTSMGRAPHICS sixel geometry + DSR sentinel) and reads
-    // the replies synchronously, on every platform (the platform-split pieces
-    // it drives are detail::read_query_bytes, enable_vt_input, and the
-    // shm_frame_* probe helpers). Preconditions: raw mode is on
-    // and the interactive input loop does not own stdin yet, so the replies never
-    // reach the input state machine. The DSR is what bounds the wait: every
-    // terminal answers it, and replies arrive in request order, so its arrival
-    // means everything the terminal will say has been said. Bytes the scanner
-    // does not recognize are dropped, which loses keystrokes typed inside the
-    // window (about one round trip; accepted).
-    // Postcondition: the terminal is left ON the alternate screen (see the
-    // comment at the enter escape); the caller either constructs the Framebuffer
-    // with adopt_alt_screen or calls exit_alt_screen() before bailing.
-    // `interrupted` is the caller's signal flag (main.cpp's SIGINT/SIGTERM
-    // handler target), consulted at the top of every deadline-loop iteration
-    // (so at least once per 50 ms Windows wait slice) and at every POSIX
-    // EINTR retry, so a quit signal ends the wait instead of being retried
-    // into the deadline.
+    // Query graphics, cell, and sixel capabilities before the input loop starts.
+    // DSR terminates the ordered reply batch. The terminal remains on the alternate screen.
     inline TermGraphics query_term_graphics(const volatile std::sig_atomic_t *interrupted = nullptr)
     {
         TermGraphics tg;
@@ -469,32 +358,15 @@ namespace platform
         // bytes, and enable_mouse (the other place the flag is set) runs only
         // after the query window closes.
         enable_vt_input();
-        // The whole exchange happens on the ALTERNATE screen: a terminal that
-        // does not consume APC would otherwise print the query bytes into the
-        // user's scrollback. Deliberately NOT left on return: the Framebuffer
-        // ctor adopts it for the session (adopt_alt_screen), because a
-        // leave-and-re-enter pair here flashed the normal screen between the
-        // query and the first frame, and a second 1049h would clobber the saved
-        // cursor with an alternate-screen position. Bail paths that never reach
-        // the ctor call exit_alt_screen() instead.
+        // Keep unconsumed query escapes out of scrollback; Framebuffer adopts this screen.
         std::fputs("\033[?1049h", stdout);
 
-        // Probe object for the t=s query: one white RGB pixel. If it cannot be
-        // created (always the case on Windows, whose shm_frame_open stub returns
-        // an invalid frame) the query is simply not sent and the transport stays
-        // unverified, which reads as unavailable, the correct answer on a host
-        // without working shm. The probe verifies the MEDIUM, not capacity (the
-        // frame size is not even known yet): a /dev/shm too small for real
-        // frames degrades to the per-frame direct fallback, silent by design.
-        // It also exercises the same append path a real frame uses, so a host
-        // where the fill itself fails is caught here rather than per frame.
+        // Probe kitty shm end-to-end with one pixel; real-frame capacity can still fall back.
         char shm_name[64];
         std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%lu-q", process_id());
         bool shm_probe = false;
-        // cppcheck suppressions (here and at the shm_probe test below):
-        // shm_frame_open returns the invalid stub in the _WIN32 configuration, so
-        // the multi-config scan reads the probe as constantly false. Same FP
-        // class as framebuffer.cpp's transmit_shm/present_kitty suppressions.
+        // On Windows, the invalid shm stub makes both probes statically false in
+        // cppcheck's multi-config scan.
         ShmFrame probe = shm_frame_open(shm_name, 3);
         // cppcheck-suppress knownConditionTrueFalse
         if (probe.valid())
@@ -531,14 +403,8 @@ namespace platform
             std::chrono::steady_clock::now() + std::chrono::milliseconds(detail::GRAPHICS_QUERY_TIMEOUT_MS);
         for (;;)
         {
-            // One shared quit check for both platforms, at the loop top so a
-            // signal that landed between waits is seen before the next wait
-            // starts. On Windows the slice wait is not signal-interruptible,
-            // so this check IS the quit mechanism (~50 ms latency); on POSIX
-            // it covers a flag raised outside a wait, which the EINTR arms
-            // alone cannot see. Quitting mid-query can abandon replies still
-            // in flight, which then print in the shell; accepted (the EINTR
-            // quit path always had this), quit latency wins.
+            // Check before each wait. Windows waits are sliced because Ctrl+C does
+            // not interrupt them; POSIX may set the flag outside an EINTR path.
             if (interrupted != nullptr && *interrupted != 0)
             {
                 break;
@@ -580,21 +446,12 @@ namespace platform
             }
         }
 
-        // Anything typed inside the query window is dropped with the junk
-        // (accepted, the window is one round trip). That includes draining what
-        // the kernel has buffered but this loop never read: a typed escape
-        // sequence straddling the reply buffer would otherwise leak its tail to
-        // the input loop as keypresses. A tail still in flight can still leak.
-        // The iteration cap bounds the loop (a process flooding the tty must not
-        // spin startup here); 16 KB covers any realistic buffered backlog.
+        // Drain the bounded startup backlog so partial replies cannot enter input parsing.
         for (int i = 0; i < 64; i++)
         {
             char junk[256];
-            // 0 must NOT end the drain: on Windows it is the common timed-out
-            // slice, or one non-key record discarded with byte input possibly
-            // still queued behind it. The cost of continuing is the cap's
-            // worth of zero-timeout polls on POSIX (microseconds); only a
-            // dead stream (< 0) stops early.
+            // Zero may be a Windows timeout or discarded non-key record; only a
+            // dead stream stops the bounded drain early.
             if (detail::read_query_bytes(junk, sizeof junk, 0, nullptr) < 0)
             {
                 break;
@@ -610,41 +467,21 @@ namespace platform
         return tg;
     }
 
-    // Asks the terminal for its cell size in pixels (XTWINOPS 16). Fired by the
-    // resize path when TIOCGWINSZ reports no pixel size; the reply travels the
-    // ordinary input stream, parse_input reports it as a CellSize event a frame
-    // or so later, and a terminal that does not answer simply produces no event.
-    // Nothing ever waits on it, which is what lets this run mid-session without
-    // touching the input machinery's rules.
+    // Request cell pixels asynchronously; parse_input emits the eventual reply.
     inline void request_cell_size()
     {
         std::fputs(detail::QUERY_CELL_SIZE, stdout);
         std::fflush(stdout);
     }
 
-    // Asks the terminal for its maximum sixel image size (XTSMGRAPHICS item 2,
-    // read). Fired by the resize path on a grid change under the sixel backend
-    // when the startup query got an answer: the reported max is window-tied on
-    // xterm and foot, so it must be refreshed as the window moves. Same
-    // fire-and-forget contract as request_cell_size above; the reply arrives
-    // as a SixelGeometry event.
+    // Refresh the window-dependent sixel geometry limit asynchronously.
     inline void request_sixel_geometry()
     {
         std::fputs(detail::QUERY_SIXEL_GEOMETRY, stdout);
         std::fflush(stdout);
     }
 
-    // True when the CRT/POSIX fd (0 = stdin, 1 = stdout) refers to a terminal. Windows
-    // probes the console API, not _isatty: _isatty accepts ANY character device (NUL, COM
-    // ports), GetConsoleMode only a real console handle. A mintty/MSYS pty (a named pipe)
-    // is rejected on purpose: interactive input (_kbhit/_getch) cannot work on it either,
-    // so failing up front beats silently broken input; Windows Terminal / conhost / winpty
-    // all pass. _get_osfhandle (not GetStdHandle) so any CRT fd works, not only a std
-    // stream; on a no-console launch a std fd yields the -2 sentinel and GetConsoleMode
-    // fails cleanly to false (a closed fd would trip the CRT invalid-parameter handler, but
-    // no caller passes one). Accepted limitation: GetConsoleMode needs GENERIC_READ, so a
-    // console std handle a launcher opened write-only would misreport as false; every
-    // normal shell hands out read+write console handles, so this does not arise.
+    // Windows requires a real console because input uses console APIs; POSIX accepts a tty.
     inline bool is_tty(int fd)
     {
 #ifdef _WIN32
@@ -655,9 +492,7 @@ namespace platform
 #endif
     }
 
-    // color capability
-
-    // Terminal color capability, classified from the environment at startup.
+    // Terminal color capability classified once at startup.
     enum class TermColor : std::uint8_t
     {
         Dumb,       // TERM=dumb: cannot render escape sequences at all (caller fails loud)
@@ -725,66 +560,15 @@ namespace platform
             return true;
         }
 
-        // The most common terminals whose TERM name is set exclusively by a truecolor
-        // terminal, matched as substrings so variants hit too (xterm-kitty, xterm-ghostty).
-        // Exists for the ssh case: COLORTERM is not forwarded but TERM is, so without this
-        // these terminals would be downgraded to 256 colors. Deliberately a curated common
-        // set, not exhaustive (a less common truecolor terminal such as rio is intentionally
-        // omitted): an unlisted terminal falls to the safe 256 floor, and its user forces
-        // 24-bit with --color truecolor. Keeping the list short keeps a false positive from a
-        // short substring unlikely.
+        // Common TERM names that remain useful when ssh drops COLORTERM.
         inline constexpr const char *TRUECOLOR_TERMS[] = {
             "kitty", "wezterm", "alacritty", "ghostty", "foot", "contour",
         };
     } // namespace detail
 
-    // Pure classifier over the COLORTERM/TERM env values (either may be null) plus
-    // the two multiplexer signals (under_tmux from a non-empty TMUX, in_screen
-    // from a non-empty STY; the wrapper below reads them). All comparisons are
-    // ASCII case-insensitive. Decision order:
-    //   1. TERM=dumb wins over everything, even a contradictory COLORTERM: a dumb
-    //      terminal cannot render escape sequences regardless of what claims color.
-    //      Only the literal "dumb" is fatal, by choice: terminfo's wider non-addressable
-    //      family (unknown = use=dumb+gn, etc.) is left on the 256 floor rather than
-    //      fatal, since in practice such a TERM is usually a misconfig inside a real
-    //      terminal that renders fine, and the policy is "never fatal except dumb".
-    //   2. Real GNU screen is floored to 256 before COLORTERM is even consulted,
-    //      detected by screen's own STY session variable (exported to every
-    //      child; catches a .screenrc/`screen -T` TERM rewrite and screen nested
-    //      inside tmux) OR a screen-family TERM without tmux (covers the ssh
-    //      hop out of screen, which forwards TERM but not STY). Rationale:
-    //      COLORTERM inside screen is inherited from the OUTER terminal and
-    //      describes it, not screen, and screen 4.x (every distro's default)
-    //      misparses 24-bit SGR by applying the channel bytes as INDEPENDENT
-    //      SGR codes (measured: cells come out faint, black, or arbitrarily
-    //      colored per cell, and truecolor backgrounds are dropped outright),
-    //      while 38;5;n palette output passes through verbatim, which is the
-    //      fact the floor rests on. tmux is exempt (it always sets TMUX, even
-    //      under its older TERM=screen-256color configs) because it resolves
-    //      output depth from the OUTER terminal's terminfo, translating or
-    //      quantizing 24-bit SGR; that is also why tmux nested inside screen
-    //      floors correctly here via STY. A screen 5 session configured for
-    //      truecolor opts back up with --color truecolor. Accepted residuals,
-    //      depth-only and --color-recoverable, never garbled: ssh out of tmux
-    //      with a legacy screen-family TERM and an explicitly forwarded
-    //      COLORTERM floors needlessly (default ssh does not forward COLORTERM
-    //      at all), and a GUI terminal launched from inside screen inherits
-    //      STY and floors needlessly. This supersedes the screen half of a
-    //      2026-07-10 review decline that trusted COLORTERM here on tmux-only
-    //      evidence. negotiate_graphics' multiplexer gate deliberately answers
-    //      a different question (escape passthrough, where tmux blocks too)
-    //      with its own predicate.
-    //   3. COLORTERM in {truecolor, 24bit} is the canonical truecolor signal.
-    //   4. TERM unset/empty: platform default (unset_default), parameterized so
-    //      both platform branches are unit-testable everywhere.
-    //   5. TERM hints (the -direct terminfo family, truecolor, 24bit) and the
-    //      TRUECOLOR_TERMS known-terminal names cover terminals whose sessions carry
-    //      no COLORTERM (not exported, or stripped by ssh). No screen.* terminfo
-    //      entry embeds a hint or a TRUECOLOR_TERMS name (swept repeatedly in
-    //      review), which matters for the under-tmux case, where a screen-family
-    //      TERM does reach this step.
-    //   6. Everything else gets the conservative 256-color floor; never fatal even
-    //      for sub-256-color terminfo entries (16-color output is not supported).
+    // TERM=dumb is fatal. GNU screen 4.x is capped at 256 colors because it
+    // misparses truecolor SGR; tmux is exempt. Otherwise prefer COLORTERM, then
+    // known TERM hints, with a conservative 256-color floor.
     constexpr TermColor classify_term_color(
         const char *colorterm, const char *term, TermColor unset_default, bool under_tmux, bool in_screen
     ) noexcept
@@ -823,21 +607,13 @@ namespace platform
         return TermColor::Palette256;
     }
 
-    // Env-reading wrapper around classify_term_color. The platform default applies when
-    // TERM is unset/empty and COLORTERM carries no truecolor signal (see the classifier's
-    // step order). Windows defaults it to truecolor (the native Windows Terminal / conhost
-    // norm; both render 24-bit once VT processing is on). A Windows ssh session runs over a
-    // real ConPTY console, so is_tty accepts it and it sets TERM, reaching the classifier
-    // proper; a mintty/MSYS pty is a named pipe that is_tty rejects before detection runs, so
-    // it never gets here. POSIX defaults to the conservative 256-color floor.
+    // Read the environment; unset TERM defaults to truecolor on Windows and 256 on POSIX.
     inline TermColor detect_term_color() noexcept
     {
         // Single-threaded startup; nothing in the program calls setenv.
         const char *colorterm = std::getenv("COLORTERM"); // NOLINT(concurrency-mt-unsafe)
         const char *term = std::getenv("TERM");           // NOLINT(concurrency-mt-unsafe)
-        // Non-empty, not mere presence: tmux itself treats an empty TMUX as
-        // "not under tmux" (the documented nesting workaround); STY gets the
-        // same reading for symmetry.
+        // Empty multiplexer variables mean inactive.
         const char *tmux = std::getenv("TMUX"); // NOLINT(concurrency-mt-unsafe)
         const char *sty = std::getenv("STY");   // NOLINT(concurrency-mt-unsafe)
         const bool under_tmux = tmux != nullptr && *tmux != '\0';
@@ -850,8 +626,6 @@ namespace platform
         return classify_term_color(colorterm, term, unset_default, under_tmux, in_screen);
     }
 
-    // raw mode
-
 #ifndef _WIN32
     namespace detail
     {
@@ -863,28 +637,13 @@ namespace platform
     } // namespace detail
 #endif
 
-    // Output-side console setup (UTF-8 + ANSI). Idempotent. Split out of enable_raw_mode
-    // so it can run before any output, incl. the UTF-8 in --version, which on Windows
-    // happens before the main loop and thus before raw mode would otherwise set the CP.
-    // Returns whether the console accepts VT escape sequences: a legacy Windows console
-    // can lack ENABLE_VIRTUAL_TERMINAL_PROCESSING, making ANSI output impossible, and
-    // the render path must fail loud rather than print escape garbage. POSIX always
-    // returns true (escape handling is the terminal emulator's job, not the kernel's).
-    // Deliberately not [[nodiscard]]: the enable_raw_mode and --version call sites
-    // legitimately ignore it; only the render path needs the verdict.
+    // Idempotently enable UTF-8 and VT output. POSIX terminals handle escapes themselves.
     inline bool init_console_output()
     {
 #ifdef _WIN32
-        // Probes GetStdHandle(STD_OUTPUT_HANDLE), like get_terminal_size/enable_mouse, whereas
-        // is_tty(1) probes _get_osfhandle(1). Both reference the same console object under any
-        // normal launch (divergence needs a deliberate SetStdHandle), and VT is a property of
-        // that shared object, so enabling it here reaches the output fd 1 writes through.
         HANDLE hout = GetStdHandle(STD_OUTPUT_HANDLE);
         DWORD mode = 0;
-        // Probe before mutating: a failed GetConsoleMode leaves mode at 0, and ORing into that
-        // would clear the console's other bits. ENABLE_PROCESSED_OUTPUT rides along because
-        // Microsoft documents it as a prerequisite for the VT flag. SetConsoleMode changes
-        // nothing when it fails, so either bail leaves the console exactly as found.
+        // Processed output is a documented prerequisite for VT output.
         if (GetConsoleMode(hout, &mode) == 0)
         {
             return false;
@@ -893,13 +652,7 @@ namespace platform
         {
             return false;
         }
-        // Code page last, so a VT failure never leaves the console switched. Its return is
-        // deliberately unchecked: CP 65001 ships with every supported Windows and the handle is
-        // already a proven live console (the two calls above), so a failure has no realistic
-        // trigger, and a false "VT ok" here would only mean the ▀ half-blocks garble rather
-        // than not render. Accepted too: neither mode bit is restored on exit (Windows has no
-        // disable_raw_mode counterpart), harmless since both are default-on, though a host that
-        // had cleared PROCESSED_OUTPUT for raw byte output would find it left on.
+        // Switch code page only after VT setup succeeds. Console flags persist on exit.
         SetConsoleOutputCP(65001);
         return true;
 #else
@@ -922,9 +675,7 @@ namespace platform
         raw.c_cc[VMIN] = 0;
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-        // Do NOT set O_NONBLOCK on stdin: in a terminal fd 0/1/2 share the same
-        // open file description, so O_NONBLOCK on fd 0 also makes stdout
-        // non-blocking, causing large fwrites to silently truncate.
+        // Do not set O_NONBLOCK: tty stdio fds may share an open description.
 #endif
     }
 
@@ -935,10 +686,7 @@ namespace platform
 #endif
     }
 
-    // mouse support
-    // Uses SGR extended mouse mode (\033[?1006h), supported by all modern terminals
-    // including Windows Terminal. Reports: scroll wheel, and button drags (the
-    // button number is not decoded, so any button drags).
+    // Enable SGR mouse reports for wheel and button-drag input.
 
     inline void enable_mouse()
     {
@@ -957,94 +705,31 @@ namespace platform
         std::fflush(stdout);
     }
 
-    // Input event vocabulary and the escape-sequence grammar live in input.h,
-    // included above; poll_event below is the reading half, along with the buffer
-    // it reads into and the policy governing how long it waits for the rest of a
-    // sequence. That policy is stated in terms of clocks and read sizes, so it is
-    // the reader's, not the grammar's.
+    // Buffered, timed input reader; input.h owns the stateless grammar.
 
     namespace detail
     {
-        // Pending-input buffer size. Comfortably holds every sequence a key or a
-        // mouse report can produce, which is what the parser needs to reassemble.
-        // It does NOT hold every possible terminal reply: an OSC 52 clipboard answer
-        // carries the whole selection and routinely runs longer, which is exactly
-        // why the skip path below exists rather than being a corner case.
+        // Holds key and mouse sequences; longer terminal replies use the skip path.
         constexpr int MAX_PENDING = 1024;
 
-        // How long a partial sequence may sit without growing before it is abandoned.
-        // This is an inter-byte gap, not a total budget: bytes of one sequence arrive
-        // in a single write, while keystrokes are tens of ms apart even under
-        // autorepeat, so the gap separates "rest of this sequence" from "next key".
+        // Maximum inter-byte gap, not total sequence time.
         constexpr int PARTIAL_TIMEOUT_MS = 50;
 
-        // Longest a partial sequence can get and still plausibly be a keypress. The
-        // longest a key or mouse report produces is on the order of twenty bytes (a
-        // full SGR report, a device-attributes reply), so a stalled partial past this
-        // is a payload, not something someone pressed.
-        //
-        // Used to decide what a stalled partial means. Below it, the sequence is
-        // abandoned and its bytes are gone, which is right for a fragmented arrow key.
-        // Above it, abandoning would dispatch hundreds of payload bytes as keypresses,
-        // so the skip is entered instead and the rate floor takes over.
+        // A stalled prefix beyond this is terminal payload, not a keypress.
         constexpr int MAX_KEY_SEQUENCE = 64;
 
-        // arrival rate meter
-        // How fast bytes are arriving, measured continuously as a token bucket. Its one
-        // consumer is the skip below: a sequence being skipped to its terminator is given up
-        // on once arrivals fall under RATE_QUOTA bytes per RATE_WINDOW_MS, about 256 B/s.
-        // The meter runs unconditionally, which is why none of these names says "skip": a
-        // skip that had to start the meter would have to seed it with a guess, and no number
-        // available at that moment is meaningful (tried; it leaked). A RATE,
-        // not a per-read size, is what makes it safe: the fastest a person can produce is
-        // key autorepeat, around 30 B/s, so the floor sits roughly eight times above
-        // anything a human can sustain and well below any program, and the margin that
-        // matters is the one over typing, not the one under a stream (a floor near a slow
-        // link's delivery rate turns ordinary jitter into a leak). A per-read byte count was
-        // tried instead and cannot work, because the terminal writes on the user's behalf
-        // and a mouse drag delivers reads as large and fast as a program does. This is
-        // deliberately the ONLY thing that ends a skip whose sequence never terminates: a
-        // cap on how much may be skipped was tried and is exactly the mistake this design
-        // exists to avoid, since every bounded-consumption rule dispatches whatever falls
-        // past its bound, and raising it only moves the boundary.
+        // Continuously measured rate floor for abandoning an unterminated skipped reply.
+        // It sits above human typing but below program output.
         constexpr int RATE_WINDOW_MS = 500;
         constexpr int RATE_QUOTA = 128;
 
-        // How much unspent credit carries between windows, so the floor measures a
-        // rate and not merely presence-per-window. A window that resets to zero is
-        // phase-sensitive: a reply delivered in 1 KB bursts every 700 ms averages more
-        // than five times the floor, yet whichever window happens to fall between two
-        // bursts sees nothing and tears the skip down (measured). Carrying the surplus
-        // fixes that; the cap is what
-        // stops it turning into an unbounded hold, since a stream that has really
-        // stopped must still be given up on. At two windows' worth, a burst covers
-        // about a second of silence, and arrivals that fall below the floor are given
-        // up on within about two seconds (up to half a second of window phase, then
-        // three windows to spend a full carry; measured 1.9 s). ALL arrivals count,
-        // not just the skipped sequence's, so input arriving fast enough to clear the
-        // floor holds a skip open. Typing cannot (it is ~8x under); a mouse drag can.
-        // See skip_scan for why that is the accepted side of the trade.
+        // Carry credit across bursty windows, but bound recovery after a stream stops.
         constexpr int RATE_MAX_CARRY = 2 * RATE_QUOTA;
 
-        // Most windows one tick may charge for at once. The tick runs when the caller
-        // polls, not on a timer, so a caller slower than RATE_WINDOW_MS owes several
-        // windows by the time it arrives and must be charged for all of them; charging
-        // one per tick makes the floor bytes-per-FRAME instead of a rate, and at a
-        // frame interval past about four seconds ordinary typing clears the bar and
-        // sustains a skip for as long as the user keeps typing (measured). Capped so an
-        // arbitrarily long gap cannot demand an
-        // arbitrary burst to survive, and so the multiply cannot overflow.
+        // Charge elapsed windows, capped so a long pause cannot demand an arbitrary burst.
         constexpr int RATE_MAX_WINDOWS = 4;
 
-        // Ceiling the credit saturates at, so a sustained flood cannot overflow it
-        // (signed overflow is UB, and a wrapped negative credit reads as below the
-        // floor and tears down an active skip). Needed because a pass that spends its
-        // whole read budget returns before ticking the meter, so credit can grow
-        // across many passes without once being spent.
-        //
-        // Sized to cover the largest quota a tick can charge plus a full carry, so
-        // saturating never costs a stream its verdict: a ceiling below that would tear
-        // down a fast stream purely for having been measured across a long gap.
+        // Saturate before signed overflow while retaining one maximum charge plus carry.
         constexpr int RATE_MAX_CREDIT = (RATE_MAX_WINDOWS * RATE_QUOTA) + RATE_MAX_CARRY;
 
         struct ArrivalMeter
@@ -1054,10 +739,7 @@ namespace platform
 
             void record(int bytes) { credit = std::min(credit + bytes, RATE_MAX_CREDIT); }
 
-            // Spends every window that has closed since the last tick and reports
-            // whether the arrivals covered what they owed. Returns false until a
-            // window actually closes, so a caller polling faster than the window sees
-            // no verdict rather than a premature one.
+            // Report starvation only after at least one full window closes.
             bool below_floor(std::chrono::steady_clock::time_point now)
             {
                 const auto span = std::chrono::milliseconds(RATE_WINDOW_MS);
@@ -1082,39 +764,17 @@ namespace platform
             }
         };
 
-        // Fairness bound on one drain pass, not a limit on the input. poll_event refills
-        // the buffer as often as bytes keep coming rather than once per call, because
-        // anything that resolves without producing an event (a skip, a backlog of unbound
-        // sequences) would otherwise advance one bufferful per rendered frame: the caller
-        // drains until Type::None, so one fill per call paces input at the frame rate
-        // instead of the arrival rate. Counted per PASS and reset only at the Type::None
-        // return, precisely because that is what ends the caller's drain; per call it would
-        // bound nothing (the caller is free to call again) and would not compose with the
-        // caller's event cap into a bound on one frame. Nothing is dropped on reaching it;
-        // the next pass resumes where this one left off. Roughly a megabyte per pass, which
-        // no ordinary reply comes near: POSIX pays about a thousand bulk reads (well under
-        // a millisecond) while the Windows console API yields one byte per CRT round-trip
-        // and so pays a million; not lowered there anyway, since the only alternative is
-        // the frame-rate pacing above, and a console that could actually deliver a megabyte
-        // this way would be the more surprising thing.
+        // Fairness bound per caller drain pass; reaching it drops nothing.
         constexpr int MAX_REFILLS_PER_PASS = 1024;
 
-        // Bytes read but not yet parsed, carried across poll_event calls so a
-        // sequence split over several frames is reassembled instead of decided on
-        // partial evidence. `last_growth` stamps the most recent append.
+        // Pending bytes persist across calls; last_growth times partial reassembly.
         struct Pending
         {
             char buf[MAX_PENDING] = {};
             int len = 0;
             std::chrono::steady_clock::time_point last_growth;
-            // Whether the sequence at the front is being skipped, i.e. is too long
-            // to hold in full: either it filled the buffer, or it stalled past
-            // MAX_KEY_SEQUENCE, which is longer than any keypress. enter_skip keeps a
-            // resume prefix (the introducer, plus a trailing ESC when the buffer ends
-            // on one) and detail::skip_scan looks through what follows for that
-            // family's end. While set, parse_input is not called at all, so the flag is
-            // cleared only by skip_scan finding that end or by the rate floor giving
-            // up.
+            // A long sequence keeps only its introducer and possible ST-prefix ESC;
+            // skip_scan, never parse_input, consumes it to its terminator or rate floor.
             bool skipping = false;
             // Runs whether or not a skip is in progress, so a skip never has to be
             // seeded with a guess at the rate.
@@ -1131,15 +791,7 @@ namespace platform
             return p;
         }
 
-        // Reads whatever has already arrived, without waiting for what has not, and
-        // returns the count. Self-guarding on both platforms so callers need no
-        // separate readiness probe: a second probe would be a wasted syscall on POSIX
-        // and a second _kbhit on Windows, and having two places encode "is a byte
-        // available" invites them to disagree.
-        //
-        // A zero return ends the drain, and it has to mean "nothing arrived" rather
-        // than "not ready": at end of stream poll() reports POLLHUP as ready forever
-        // while read() returns 0, which would otherwise pack the buffer with NULs.
+        // Read available bytes without blocking; zero means the drain is idle or closed.
         inline int read_available(char *out, int cap)
         {
 #ifdef _WIN32
@@ -1151,9 +803,7 @@ namespace platform
             }
             return n;
 #else
-            // One read for the whole burst rather than one per byte. The poll() is
-            // what keeps it from blocking on a pipe (raw-mode stdin would not block,
-            // but the tests feed a pipe).
+            // poll() keeps test pipes non-blocking; read the whole available burst.
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             if (poll(&pfd, 1, 0) <= 0)
             {
@@ -1163,14 +813,7 @@ namespace platform
 #endif
         }
 
-        // Appends whatever has arrived to the tail of the buffer and returns how much.
-        // One read per call, not a loop: it is capped by the space left, so a large
-        // reply does leave bytes queued, and poll_event is what comes back for them
-        // (bounded by MAX_REFILLS_PER_PASS). Looping here instead would move that bound
-        // out of the caller's reach, which is the distinction MAX_REFILLS_PER_PASS
-        // exists to keep. No full-buffer guard, because there is no path here with a
-        // full buffer: poll_event collapses an overflowing sequence to its resume
-        // prefix before ever looping back.
+        // Append one bounded read; poll_event owns the refill loop and fairness limit.
         inline int refill(Pending &p)
         {
             const int got = read_available(p.buf + p.len, MAX_PENDING - p.len);
@@ -1183,25 +826,8 @@ namespace platform
             return got;
         }
 
-        // Starts a skip of the sequence at the front, or carries one on: the buffer
-        // collapses to a prefix skip_scan can resume the SAME sequence from. Two things have
-        // to survive the collapse: the two-byte introducer, which names the family and so its
-        // terminator; and a trailing ESC when the buffer ends on one, since the scan
-        // stopped there precisely because that ESC may be the first half of an ST, and
-        // dropping it leaves the reply unterminatable, so the skip runs to the rate floor
-        // and swallows the typing in between (measured). No payload
-        // byte is kept: skip_scan reads only the introducer and then scans (an earlier
-        // version held one for the decoding grammar's sake, and that grammar no longer runs
-        // during a skip). Both entry points hold far more than three bytes, so the appended
-        // ESC never overwrites the introducer.
-        //
-        // Deliberately does not touch the rate floor's accounting: the meter has been
-        // running all along, so a skip inherits a rate that was actually measured. Seeding
-        // at entry was tried and cannot be made to work, because no number available
-        // there is meaningful (the read that crosses the buffer is capped by the space left
-        // in it, and a skip reached from a stalled partial has no such read at all), so a
-        // seeded entry sits below the floor and is torn down at the first window,
-        // dispatching the reply as keypresses (measured).
+        // Retain only the introducer and a trailing ESC that may begin ST. Keep the
+        // continuously measured arrival rate instead of seeding a guess.
         inline void enter_skip(Pending &p)
         {
             const bool ends_on_esc = p.buf[p.len - 1] == '\033';
@@ -1215,49 +841,10 @@ namespace platform
         }
     } // namespace detail
 
-    // Returns the next keyboard or mouse event, or InputEvent{Type::None} when no complete
-    // event is available. On POSIX it never blocks (readiness probe and read are both
-    // zero-timeout). On Windows the _kbhit()/_getch() pairing is the CRT's only non-blocking
-    // idiom and not a hard guarantee, since _kbhit() can report a queued console event that
-    // _getch() then waits on; this predates the buffered design and would need the
-    // ReadConsoleInput API to close.
-    //
-    // Bytes drain into a pending buffer and are parsed from there by detail::parse_input, so
-    // a sequence split across frames is reassembled rather than decided on partial evidence.
-    // A partial that stops growing for PARTIAL_TIMEOUT_MS is discarded, because an
-    // unparsable fragment must not reach the dispatch as keypresses ('q' quits; losing the
-    // user's next keystroke is the deliberate trade), unless it has grown past
-    // MAX_KEY_SEQUENCE, too long to be a keypress at all, in which case it is skipped to its
-    // terminator on the same terms as a sequence too long for the buffer. What a discard
-    // drops is the buffered prefix, not the sequence: bytes of it arriving after the gap are
-    // indistinguishable from fresh input and parse as such, so its tail can dispatch. That
-    // is a property of the input, not a gap here: a sequence spaced wider than the timeout
-    // cannot be told from someone typing those bytes, and reassembling it anyway would
-    // abandon live sequences on every slow frame.
-    //
-    // A sequence too long for the buffer has no such ambiguity: its introducer is kept, the
-    // middle dropped, and detail::skip_scan keeps looking for that family's terminator,
-    // indifferent to how fast or in what pieces the rest arrives. Such a skip ends in
-    // exactly two ways: the family's terminator, or the rate floor giving up on one that
-    // never terminates. An ESC is deliberately NOT one of them, unlike everywhere else in
-    // the grammar: the bare-ESC-aborts-a-string rule is a terminal parser's rule, and
-    // applying it here reads "this reply is over" when the terminal actually wrote an
-    // ordinary sequence between two chunks of it; the reply goes on afterwards, and ending
-    // the skip hands its tail to the dispatch as keypresses, quit key included (measured).
-    // Those bytes are nobody's input either way, so they are swallowed. See detail::skip_scan.
-    //
-    // Only 7-bit ESC-prefixed forms are recognized. An 8-bit C1 introducer (0x9B CSI, 0x9D
-    // OSC) is not: on the UTF-8 terminal the half-block output already requires, those bytes
-    // are continuation bytes, never standalone controls, so treating them as introducers
-    // would corrupt input rather than fix anything.
+    // Reassemble split events. Discard short stale prefixes; skip long replies to their
+    // terminator or rate-floor timeout. Only UTF-8-safe 7-bit ESC forms are recognized.
 
-    // Ends a drain pass, releasing the read budget poll_event spends within one (see
-    // MAX_REFILLS_PER_PASS). poll_event releases it itself when it returns Type::None,
-    // which is how a drain ordinarily ends; a caller that leaves its loop for any other
-    // reason has to say so here, because only the caller knows where its pass ended.
-    // Without it the budget carries into the next frame and can be found already spent,
-    // with input still queued. Idempotent, so calling it unconditionally after a drain
-    // is both correct and the simplest thing to write.
+    // Reset the refill budget when a caller stops draining before Type::None.
     inline void end_input_pass()
     {
         detail::pending().refills = 0;
@@ -1267,26 +854,10 @@ namespace platform
     {
         detail::Pending &p = detail::pending();
 
-        // Whether any read in THIS CALL returned bytes. Call-scoped, unlike the read
-        // budget beside it, and deliberately: it exists only so the staleness rule
-        // below never judges a partial on a call that did not look for its rest, and
-        // a call is the unit that either looked or did not.
+        // Prevent staleness checks on a call that just extended the prefix.
         bool read_this_call = false;
 
-        // Drops `n` bytes from the front, keeping whatever follows them.
-        //
-        // Compacts rather than carrying a read offset, which makes a backlog of short
-        // sequences quadratic in how full the buffer is: a bufferful of four-byte
-        // sequences moves about 100 KB to consume 1 KB. Left alone deliberately, and
-        // measured rather than assumed: one whole drain pass of nothing but four-byte
-        // unbound sequences, the shape that maximises the amplification, costs 3.1 ms
-        // for 900 KB, against a 16.6 ms frame at 60 fps. The same volume as one skipped
-        // reply costs 1.1 ms (a skip holds only its resume prefix, so it has no
-        // amplification at all), and a flood of mouse reports 0.12 ms. A read offset
-        // would put a second index into the buffer invariant that the compaction, the
-        // resume-prefix collapse and the refill capacity would all have to agree on,
-        // and mis-agreeing invariants in exactly this buffer are what most of this
-        // file's history consists of.
+        // Compact the small fixed buffer instead of maintaining a second offset invariant.
         auto consume = [&p](int n)
         {
             p.len -= n;
@@ -1296,25 +867,12 @@ namespace platform
             }
         };
 
-        // Parse before reading: when the buffer already holds a complete event this
-        // returns without a syscall or a clock read at all, which matters during a
-        // mouse drag where one burst yields many events.
-        //
-        // Every iteration either consumes at least one byte of a bounded buffer or
-        // spends one of a bounded number of reads, so this terminates. Dropped
-        // sequences do not end the pass, so Type::None reliably means "nothing more to
-        // report this frame".
+        // Parse buffered events before reading. Each loop consumes bytes or one bounded refill.
         for (;;)
         {
             if (p.skipping)
             {
-                // A sequence being skipped is located, never decoded, so it reports
-                // nothing whatever its bytes look like: the middle is missing, and any
-                // decode of the fragment that resumed it would be a fabrication (probe:
-                // the tail of a skipped mouse report parsed as a whole report and
-                // orbited the camera by coordinates nobody sent). Keeping the skip on
-                // its own scanner is what makes that structural rather than a rule the
-                // reporting path has to remember.
+                // A skipped sequence has a missing middle and must never be decoded.
                 const int end = detail::skip_scan(p.buf, p.len);
                 if (end > 0)
                 {
@@ -1339,36 +897,15 @@ namespace platform
                 }
             }
 
-            // A full buffer that still does not parse means one sequence is longer
-            // than the buffer. Keep a resume prefix and drop the middle: the parser
-            // then goes on scanning the bytes still to come for that family's
-            // terminator, which is the one signal that says where the sequence ends.
-            //
-            // Neither this branch nor the stalled-partial one below has to check for
-            // that introducer: any first byte other than ESC parses as a key, so an
-            // incomplete buffer always begins with one.
-            //
-            // Deliberately not a guess about who is producing the bytes. Volume and
-            // timing were both tried and neither can separate a program writing from
-            // a person typing, because the terminal writes on the person's behalf: a
-            // mouse drag delivers machine-sized reads at machine speed and locked the
-            // viewer out entirely, quit key included. The terminator is a property of
-            // the protocol, so it holds at any delivery rate and needs no such guess.
+            // A full incomplete buffer is one long ESC sequence; retain its family prefix
+            // and scan future bytes for the protocol terminator.
             if (p.len >= detail::MAX_PENDING)
             {
                 detail::enter_skip(p);
                 continue; // the read below carries the skip on, within the pass budget
             }
 
-            // Read whatever has arrived and parse again. Bounded per pass, not per
-            // call: see MAX_REFILLS_PER_PASS for why one read per call paces input at
-            // the frame rate (measured at 16.6 s of lockout on a megabyte reply, and
-            // 1.07 s on 64 KB of sequences with no binding).
-            //
-            // With the budget spent, end the pass here rather than falling through.
-            // Nothing below may run: every rule down there reads "no bytes arrived" off
-            // a read that did not happen, and would abandon a live partial whose rest
-            // is already queued in the kernel.
+            // Refill within the pass budget. A spent budget is not evidence of staleness.
             if (p.refills >= detail::MAX_REFILLS_PER_PASS)
             {
                 end_input_pass();
@@ -1387,39 +924,12 @@ namespace platform
             // idle path: a poll that finds nothing reaches exactly here.
             const auto now = std::chrono::steady_clock::now();
 
-            // The partial is abandoned only when THIS CALL saw no new bytes. last_growth is
-            // observed at the caller's cadence, not at arrival: judging staleness while
-            // bytes still arrive would abandon a perfectly good sequence whenever the frame
-            // interval exceeds the timeout (a heavy model, or --fps 10) and dispatch its
-            // tail as loose keypresses. The inherent cost: keys struck close enough
-            // together are indistinguishable from a fragmented sequence, so typing Escape
-            // then [ then A reports one arrow. The window is wider than PARTIAL_TIMEOUT_MS
-            // in two ways, and the read-this-call guard is why: bytes arriving during a
-            // long frame are all read by one drain, which then never takes this branch, so
-            // the window is at least max(timeout, frame interval) (at fps 10 two keys 80 ms
-            // apart still merge); and since ANY arriving byte both refreshes last_growth
-            // and sets the guard, a partial survives for as long as input keeps coming
-            // faster than the timeout, whatever it is: a key held at the usual ~25/s
-            // autorepeat in front of a truncated ESC [ (also what alt+[ sends) has its
-            // keystrokes swallowed for as long as it is held, none of them being a CSI
-            // final. It self-heals on
-            // release, which is what makes it the accepted side of the trade rather than a
-            // lockout; the alternative is abandoning live sequences on every slow frame,
-            // and fragmented delivery is far more common than hand-typing an escape
-            // sequence this fast.
-            // Not applied to a skip in progress. A skip holds only its resume prefix
-            // between chunks, so this rule would see it go quiet on any inter-chunk gap
-            // wider than the timeout and tear the skip down, the next chunk then parsing as
-            // fresh input and dispatching the payload. That is what the rate floor below is
-            // for, and it never got the chance because this fired first.
+            // Judge a short prefix stale only after a call that received no bytes. Long
+            // payload skips use the rate floor because ordinary inter-chunk gaps are expected.
             if (!p.skipping && !read_this_call && p.len > 0 &&
                 now - p.last_growth > std::chrono::milliseconds(detail::PARTIAL_TIMEOUT_MS))
             {
-                // Too long to be a keypress means it is a payload arriving in pieces
-                // wider apart than the reassembly window. Abandoning it would dispatch
-                // every byte already held, so switch to skipping instead and let the
-                // rate floor decide when it has really stopped. Shorter partials are
-                // abandoned as before, which is what a fragmented arrow key needs.
+                // Skip stale payload-sized prefixes; discard stale key-sized prefixes.
                 if (p.len >= detail::MAX_KEY_SEQUENCE)
                 {
                     detail::enter_skip(p);
@@ -1429,12 +939,7 @@ namespace platform
                 continue;
             }
 
-            // The rate floor. A skip whose window closes below the quota is given up
-            // on, because the sequence is not really arriving any more and the bytes
-            // still coming are the user's. The staleness rule above cannot cover that
-            // case: typing faster than its gap keeps the buffer growing, so it never
-            // fires. The meter is ticked unconditionally and only its verdict is
-            // conditional, so it always reports a rate it has measured itself.
+            // Abandon an unterminated skip once measured arrivals fall below the floor.
             const bool starved = p.meter.below_floor(now);
             if (p.skipping && starved)
             {

@@ -17,12 +17,7 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
-    // Pre-validate: read 80-byte header + 4-byte tri_count, then verify the file
-    // is large enough to hold the declared triangles. The vendored binary reader
-    // streams per-triangle with no upfront allocation, so this is not an
-    // allocation guard: it fail-fasts a crafted or truncated tri_count without a
-    // parse attempt (defense-in-depth should the vendor code ever pre-reserve),
-    // and the same size test drives the ASCII-vs-binary disambiguation below.
+    // Read the binary header up front for truncation checks and ASCII disambiguation.
     const auto f = std::unique_ptr<FILE, int (*)(FILE *)>(std::fopen(path.c_str(), "rb"), std::fclose);
     if (!f)
     {
@@ -36,15 +31,8 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
         return false;
     }
 
-    // ASCII detection: header starts with "solid" (ignoring a UTF-8 BOM and leading
-    // whitespace, including a blank first line or CRLF). The scan is bounded by
-    // n_read, not 80: a 5-79 byte file leaves the tail of the buffer uninitialized
-    // (valgrind-caught). Index arithmetic, not a walking pointer: `p + 5 <= end`
-    // can form a pointer past one-past-the-end ([expr.add] UB). The skip loop
-    // deliberately breaks mid-body instead of testing the character in the loop
-    // condition: the condition form makes cppcheck 2.13 assume the loop exits at
-    // pos == n_read, a path-analysis false positive that cascades
-    // knownConditionTrueFalse through every later is_ascii test and fails CI.
+    // Detect `solid` after a BOM and leading whitespace. Bound the scan by bytes read;
+    // short files leave the rest of the header buffer uninitialized.
     size_t pos = 0;
     if (std::memcmp(header, "\xEF\xBB\xBF", 3) == 0) // in bounds: n_read >= 5
     {
@@ -59,18 +47,12 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
         }
         pos++;
     }
-    // "solid" is matched ASCII-case-insensitively: a capitalized keyword ("SOLID
-    // part") still classifies as ASCII, and the vendored parser loads such a file
-    // fine, since the solid line's own tokens are never required (facet/vertex
-    // keywords stay case-sensitive in the parser, as in the spec). Case folds via
-    // |0x20, valid because all five expected bytes are letters.
+    // The vendored parser accepts case-insensitive `solid`; other keywords remain spec-case.
     const auto lower = [](char c) { return static_cast<char>(static_cast<unsigned char>(c) | 0x20U); };
     bool is_ascii = n_read - pos >= 5 && lower(header[pos]) == 's' && lower(header[pos + 1]) == 'o' &&
                     lower(header[pos + 2]) == 'l' && lower(header[pos + 3]) == 'i' && lower(header[pos + 4]) == 'd';
 
-    // Read tri_count (bytes 80-83). Explicit fseek resets the stream to a
-    // defined position: the prior fread accepts partial reads (5-79 bytes),
-    // after which the C standard says the position is indeterminate.
+    // Reset after a partial fread because its resulting position may be indeterminate.
     uint8_t tcb[4];
     const bool have_tri_count = (std::fseek(f.get(), 80, SEEK_SET) == 0 && std::fread(tcb, 1, 4, f.get()) == 4);
     const uint32_t tri_count = have_tri_count
@@ -78,41 +60,23 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
                                       (static_cast<uint32_t>(tcb[2]) << 16U) | (static_cast<uint32_t>(tcb[3]) << 24U))
                                    : 0u;
 
-    // 64-bit size: plain ftell's long is 32-bit on Windows/ILP32, which rejected
-    // every binary STL of >= 2 GB (~43M triangles, real for scanned meshes).
+    // Use the platform's 64-bit file size for multi-gigabyte scans.
     const int64_t file_size = platform::file_size(f.get());
 
     const uint64_t expected_binary = 84ULL + (50ULL * static_cast<uint64_t>(tri_count));
 
-    // Single source for the binary-layout size test: the solid-header
-    // disambiguation and the binary reject guard below are complements of this
-    // one predicate, so the two cannot drift apart.
+    // Share one binary-size predicate between classification and validation.
     const bool fits_binary = have_tri_count && file_size >= 0 && static_cast<uint64_t>(file_size) >= expected_binary;
 
-    // A binary STL whose header happens to start with "solid" is disambiguated by size:
-    // >= expected_binary, not ==, matching the binary guard's own surplus-trailing-bytes
-    // policy so such a file with trailing bytes still loads. >= cannot misfire on a real
-    // ASCII file: bytes 80-83 of ASCII text are all >= 0x09, so the little-endian tri_count
-    // is >= 9 * 2^24 (~151M) and expected_binary >= ~7.5 GB. A misfire would NOT reject
-    // cleanly (the binary reader would parse text bytes as floats into garbage geometry);
-    // the safety rests entirely on no real ASCII file being that large. Accepted reverse
-    // ambiguity: a TRUNCATED solid-headed binary (declared count exceeding the file) is
-    // indistinguishable from genuine ASCII here, so it keeps is_ascii and reaches the ASCII
-    // parser's rejection: slower than the binary size guard but the same outcome, with memory
-    // bounded by the line guard below.
+    // A solid-prefixed binary file is identified by satisfying its declared binary size.
+    // Allow trailing bytes. Truncated ambiguous files fall through to bounded ASCII rejection.
     if (is_ascii && fits_binary)
     {
         is_ascii = false;
     }
 
-    // Reject binary files whose size doesn't satisfy 84 + 50 × tri_count bytes. Accepted
-    // TOCTOU covering BOTH pre-parse guards (this size check and the ASCII line bound below):
-    // they read this FILE handle while stl_reader reopens the file by path, so a concurrent
-    // swap bypasses them. The consequence is a failed parse (the binary reader streams
-    // per-triangle with no upfront reserve, so a crafted count cannot force a large
-    // allocation) or, for the line bound, one unbounded-line parse at the vendored parser's
-    // ~20x transient-allocation cost; the threat model is malformed files, not an adversary
-    // racing the local filesystem.
+    // stl_reader reopens the path after these checks, so a racing file replacement can bypass
+    // them. The threat model covers malformed input, not a hostile local filesystem race.
     if (!is_ascii)
     {
         if (!fits_binary)
@@ -122,17 +86,8 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
     }
     else
     {
-        // The ASCII branch gets the complementary guard, a line-length bound: the vendored
-        // parser is line-based and materializes one heap string per token of the current
-        // line, so a multi-megabyte line costs a large multiple of its size in transient
-        // allocations (measured 1.17 GB peak on a 52 MB single-line file). Bounding the
-        // LINE, not the file or the mesh, rejects no real STL: the grammar puts one
-        // `solid <name>` or facet/vertex statement per line, so legitimate lines are tens
-        // of bytes and 64 KB is orders of magnitude of headroom; any number of lines
-        // remains fine, since that is mesh data. A file no larger than the bound cannot
-        // contain a longer line, so the extra read pass is skipped for it; larger files pay one full
-        // sequential pass before stl_reader's own read, accepted since ASCII files are the
-        // small ones in practice and the pass warms the page cache for the parse.
+        // Bound ASCII line length because the vendored token parser amplifies one huge line
+        // into many temporary allocations. STL grammar needs nowhere near 64 KB per line.
         constexpr size_t MAX_ASCII_LINE_BYTES = size_t{ 64 } * 1024;
         if (file_size < 0 || static_cast<uint64_t>(file_size) > MAX_ASCII_LINE_BYTES)
         {
@@ -140,9 +95,7 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
             {
                 return false;
             }
-            // fseek clears only the EOF indicator; a stale ERROR indicator from
-            // the earlier header/tri_count reads would otherwise be charged to
-            // this scan by the ferror check below.
+            // Clear any stale stream error before attributing failures to this scan.
             std::clearerr(f.get());
             char buf[4096];
             size_t line_len = 0;
@@ -171,8 +124,7 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
                     break; // short read: EOF, or a read error caught just below
                 }
             }
-            // Fail loud on a read error: treating it as EOF would leave the
-            // file's tail unscanned and the bound fail-open.
+            // A read error must not turn the line bound into a partial scan.
             if (std::ferror(f.get()) != 0)
             {
                 return false;
@@ -180,13 +132,7 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
         }
     }
 
-    // Delegate parsing to stl_reader. STL_READER_NO_EXCEPTIONS converts internal
-    // parse errors to return false instead of throwing. Call the format-explicit
-    // readers, never ReadStlFile: its own sniffer disagrees with the classification
-    // above in both directions (it requires a '\n' within the first 256 bytes, so a
-    // long solid name reads as binary; and it substring-matches "solid"/"facet"/
-    // "normal" anywhere in those bytes, so a chatty binary header reads as ASCII),
-    // and the size guard must bind the path actually parsed.
+    // Use explicit vendor readers because its sniffer disagrees with the guarded classification.
     std::vector<float> coords;        // 3 floats per deduplicated vertex
     std::vector<float> face_norms;    // 3 floats per triangle face normal (ignored)
     std::vector<unsigned int> tris;   // 3 vertex indices per triangle
@@ -207,20 +153,13 @@ bool Mesh::load_stl(const std::string &path, float crease_cos)
 
     materials.push_back(Material{});
 
-    // Consume stl_reader's deduplicated output directly: coords holds one entry per unique
-    // position and tris indexes into it, so shared corners become shared vertex indices.
-    // This is what lets compute_normals smooth across sub-crease edges (OBJ/PLY parity);
-    // re-expanding to unshared corners, as this loader once did, discarded the weld and
-    // forced STL to render permanently faceted, with --smooth-angle a silent no-op.
+    // Preserve stl_reader's shared vertices so crease-angle smoothing can cross edges.
     const size_t n_verts = coords.size() / 3;
     vertices.reserve(n_verts);
     for (size_t v = 0; v < n_verts; v++)
     {
         Vertex vert{};
-        // STL carries no orientation metadata and its ecosystem (CAD/3D printing, mainstream
-        // viewers) is Z-up, while the renderer is Y-up: remap (x,y,z) -> (x,z,-y), a -90 deg X
-        // rotation (det +1, so winding and culling are unaffected). Done before compute_normals
-        // so all derived data (normals, tangents, AO) lands upright.
+        // Treat STL as Z-up and rotate to Y-up before deriving normals, tangents or AO.
         vert.pos = { coords[3 * v], coords[(3 * v) + 2], -coords[(3 * v) + 1] };
         vert.ao = 1.0f;
         vertices.push_back(vert);

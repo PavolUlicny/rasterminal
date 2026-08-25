@@ -15,9 +15,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
     {
         if (buf[i] != '\033')
         {
-            // A loose byte is a keystroke typed inside the query window; it is
-            // dropped with everything else here (accepted: the window is ~one
-            // round trip, and the batch ends in a DSR precisely to keep it short).
+            // Drop keystrokes typed during the one-round-trip query window.
             i++;
             r.consumed = i;
             continue;
@@ -30,8 +28,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
 
         if (platform::detail::is_string_introducer(c1))
         {
-            // Locate the terminator first (BEL ends OSC only, ST ends all five;
-            // the same family rule as parse_input). The kitty reply is an APC.
+            // BEL ends OSC; ST ends every string family. Kitty replies use APC.
             const bool bel_terminates = c1 == ']';
             int end = -1;      // one past the terminator
             int body = -1;     // last body byte + 1
@@ -56,15 +53,8 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                         body = j;
                         break;
                     }
-                    // An embedded ESC that does not start ST ends this sequence
-                    // (stop short of it). Deliberately the OPPOSITE of
-                    // parse_input's string arm: its payload rule exists because
-                    // ending a string at an ESC hands the tail to the KEY
-                    // dispatch, and this scanner dispatches nothing, so that risk
-                    // does not exist here; the payload rule instead lets a stray
-                    // typed introducer swallow a real reply and take the reply's
-                    // ST as its own terminator. Our replies are short single
-                    // terminal writes, so nothing can interleave inside one.
+                    // Treat a non-ST ESC as the next sequence boundary. Unlike input parsing,
+                    // this scanner dispatches no keys, so doing so cannot leak a string tail.
                     boundary = j;
                     break;
                 }
@@ -79,9 +69,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             {
                 break; // incomplete; wait for the rest
             }
-            // \033_G...: a kitty graphics reply. Ours carry our query ids and
-            // the payload "OK" exactly; an error reply (or someone else's id)
-            // leaves the queried capability unsupported.
+            // Accept only exact OK replies carrying one of our query IDs.
             if (c1 == '_' && i + 2 < body && buf[i + 2] == 'G')
             {
                 const std::string s(buf + i + 3, buf + body);
@@ -128,8 +116,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             }
             if (s.kind == platform::detail::Scan::Kind::Boundary)
             {
-                // Truncated CSI chased by another sequence: drop what we have,
-                // leave the chasing introducer for the next iteration.
+                // Drop a truncated CSI but preserve the next introducer.
                 i = s.index;
                 r.consumed = i;
                 continue;
@@ -137,22 +124,15 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             const char fin = buf[s.index];
             if (fin == 'n' && buf[i + 2] != '?')
             {
-                // The DSR sentinel. The terminal answers requests in order, so
-                // every reply it will send is already in the buffer: done. A
-                // '?'-led n-final is a private DECDSR reply, the most plausible
-                // stale leftover another program could leave in the tty queue;
-                // taking it as the sentinel would end detection before any
-                // capability reply arrives, so it is located-and-skipped
-                // instead (our \033[5n is always answered without the marker).
+                // Replies are ordered, so our non-private DSR ends detection. Ignore private
+                // DECDSR replies that another program may have left in the input queue.
                 r.done = true;
                 r.consumed = s.index + 1;
                 return r;
             }
             if (fin == 't')
             {
-                // \033[6;<height>;<width>t, the cell-size report (XTWINOPS 16),
-                // validated by the same parse_cell_size_body as the mid-session
-                // input arm so the two cannot drift.
+                // Reuse the mid-session XTWINOPS cell-size parser.
                 int w = 0;
                 int h = 0;
                 if (platform::detail::parse_cell_size_body(buf, i + 2, s.index, w, h))
@@ -163,10 +143,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             }
             else if (fin == 'S')
             {
-                // XTSMGRAPHICS sixel-geometry reply, validated by the same
-                // parse_sixel_geometry_body as the mid-session input arm. A
-                // failure status or another item (1 = colour registers) is
-                // located-and-ignored like any other unrecognized CSI.
+                // Reuse the mid-session XTSMGRAPHICS parser; ignore other items and failures.
                 int w = 0;
                 int h = 0;
                 if (platform::detail::parse_sixel_geometry_body(buf, i + 2, s.index, w, h))
@@ -177,19 +154,13 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             }
             else if (fin == 'c' && buf[i + 2] == '?')
             {
-                // DA1, \033[?<params>c: parameter 4 (whole token) advertises
-                // sixel. Any other c-final CSI (DA2/DA3 replies lead with '>'
-                // or '=') stays located-and-skipped by the fallthrough below.
-                // A non-digit byte (a ':' sub-parameter, an intermediate the
-                // final-scan walked past) taints only ITS token: a sub-
-                // parametered or annotated 4 is not the plain capability, but
-                // the rest of the reply must still be honoured, or one odd
-                // byte anywhere would silently drop sixel support.
+                // Plain DA1 parameter 4 advertises sixel. A malformed token taints only
+                // itself so later valid capabilities remain visible.
                 bool tainted = false;
                 int v = 0;
                 for (int k = i + 3; k <= s.index; k++)
                 {
-                    // The final acts as the last token's break.
+                    // Treat the final as the last separator.
                     const char ch = (k == s.index) ? ';' : buf[k];
                     if (ch == ';')
                     {
@@ -217,9 +188,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             continue;
         }
 
-        // ESC + anything else: an alt chord or SS3 fragment typed into the
-        // window; skip both bytes. A second ESC is the NEXT sequence's
-        // introducer (the boundary rule), so only the stray one is skipped.
+        // Skip an Alt chord or SS3 fragment, but preserve a second ESC as a new introducer.
         i += (c1 == '\033') ? 1 : 2;
         r.consumed = i;
     }

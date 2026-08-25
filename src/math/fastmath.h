@@ -4,22 +4,11 @@
 #include <cstdint>
 #include <cstring>
 
-// Polynomial exp2 / log2 for the per-pixel specular power and tonemap rolloff, replacing the
-// libm calls (~100 instructions each; log2f + exp2f were ~10% of a Phong frame on Sponza).
-// Written as branch-free arithmetic and bit casts so the batch shader's loops vectorize them.
-// Accuracy, measured against libm: exp2 within 2.4e-7 relative over [-126, 126], log2 within
-// 9.4e-7 absolute on (0, 1], the range the one caller uses (over the whole normal range its
-// error is 3 ulps of its own result, which is what a float answer can hold, not polynomial
-// error). fast_exp's relative error grows with |x| to 3.5e-6 by -50, since scaling by 1/ln2
-// rounds. None of that reaches a pixel: composed as the shader spells them, the specular power
-// lands 1.9e-7 from libm's and the tonemapped channel 4.1e-8, against 3.9e-3 for one 8-bit
-// step. Pinned by tests/math/test_fastmath.cpp. Inputs are the shader's own (finite, log2
-// argument > 0); nothing here handles NaN, inf or a non-positive log2 argument.
+// Vectorizable exp2/log2 approximations for per-pixel shading. Measured error is below
+// 2.4e-7 for exp2 and 9.4e-7 for log2 over their shader ranges, well below one 8-bit step.
+// Tests pin the error bounds. Inputs must be finite, and fast_log2 requires x > 0.
 
-// Round to nearest as floor(x + 0.5), the floor spelled as truncate-then-adjust: that form
-// vectorizes on every target (std::floor needs SSE4.1's roundps to vectorize, a
-// sign-dependent half step blocked the lighting loop's if-conversion, and the magic-constant
-// trick is folded away under -ffast-math). Valid for |x| < 2^31.
+// floor(x + 0.5) in a form that vectorizes without SSE4.1. Requires |x| < 2^31.
 inline float fast_round(float x) noexcept
 {
     const float y = x + 0.5f;
@@ -29,9 +18,7 @@ inline float fast_round(float x) noexcept
 
 inline float fast_exp2(float x) noexcept
 {
-    // std::min/max, not hand-written conditionals: under -fno-finite-math-only GCC does not
-    // if-convert the `x < c ? c : x` spelling, which blocked the vectorization of every loop
-    // this sits in.
+    // GCC vectorizes std::min/max here but not equivalent hand-written conditionals.
     x = std::max(-126.0f, std::min(126.0f, x));
     const float n = fast_round(x);
     const float f = x - n; // [-0.5, 0.5]
@@ -54,8 +41,7 @@ inline float fast_log2(float x) noexcept
 {
     uint32_t bits; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it
     std::memcpy(&bits, &x, sizeof bits);
-    // Split into 2^e * m with m in [1, 2), then fold m above sqrt(2) down so the series argument
-    // t = (m - 1) / (m + 1) stays within +-0.172.
+    // Fold the mantissa above sqrt(2) to keep the series argument within +-0.172.
     int32_t e = static_cast<int32_t>(bits >> 23u) - 127;
     const uint32_t mbits = (bits & 0x7FFFFFu) | 0x3F800000u;
     float m; // NOLINT(cppcoreguidelines-init-variables): memcpy fills it

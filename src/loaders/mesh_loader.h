@@ -9,19 +9,15 @@
 #include <thread>
 #include <vector>
 
-// Directory portion of a model path, including the trailing separator, or ""
-// when the path has none (file in CWD). Used by loaders to resolve sibling
-// files (textures, external buffers) relative to the model. Splits on both
-// '/' and '\\' so Windows-style paths in cross-platform assets resolve too.
+// Model directory with its trailing separator, or empty for the current directory.
+// Accepts both path separators.
 inline std::string dir_of(const std::string &path)
 {
     const size_t slash = path.find_last_of("/\\");
     return (slash == std::string::npos) ? std::string() : path.substr(0, slash + 1);
 }
 
-// RAII snapshot of Mesh state for transactional loader rollback.
-// Construct at the top of a loader; call commit() on the success path.
-// Destruction without commit() restores all vectors and flags to their entry state.
+// Rolls Mesh back to its entry state unless commit() is called.
 struct MeshSnapshot
 {
     explicit MeshSnapshot(Mesh &m)
@@ -71,12 +67,9 @@ struct MeshSnapshot
     bool m_done = false;
 };
 
-// Decode `count` textures into `textures` (must be empty on entry), parallel across
-// n_threads when count >= 2. decode(i) returns the i-th Texture independently (an invalid
-// Texture = failed decode); successes populate in request order, failed slots are dropped
-// and material *_tex indices remapped through the compaction (failed -> -1) so only valid
-// entries remain. Workers write disjoint pre-sized slots and read only immutable inputs,
-// so no locking; decode(i) must not mutate shared loader state.
+// Decode independent texture requests in parallel. Successful results keep request order;
+// failures are removed and material indices are remapped to -1. `textures` must be empty,
+// and decode(i) must not mutate shared state.
 template <class Decode>
 inline void decode_textures(
     std::vector<Texture> &textures, std::vector<Material> &materials, size_t count, int n_threads, Decode decode
@@ -88,10 +81,7 @@ inline void decode_textures(
         return;
     }
 
-    // Failed decodes are silently dropped (compacted out + material *_tex
-    // remapped to -1). The helper is format-agnostic and has no per-texture
-    // identity string to log here; loaders that need user-facing diagnostics
-    // would have to surface them at registration time.
+    // This format-agnostic layer has no texture name to include in a diagnostic.
     std::vector<Texture> decoded(count);
 
     const int eff =
@@ -130,7 +120,7 @@ inline void decode_textures(
     const bool any_failed = std::any_of(decoded.begin(), decoded.end(), [](const Texture &t) { return !t.valid(); });
     if (!any_failed)
     {
-        // Provisional indices already match final slots; no remap needed.
+        // No failures means provisional indices are final.
         textures = std::move(decoded);
         return;
     }

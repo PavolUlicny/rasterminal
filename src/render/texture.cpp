@@ -22,16 +22,14 @@ bool Texture::load(const std::string &path)
     int w = 0;
     int h = 0;
     int channels = 0;
-    // Force 4 output channels (RGBA) regardless of source format.
+    // Normalize all sources to RGBA.
     uint8_t *data = stbi_load(path.c_str(), &w, &h, &channels, 4);
     if (!data)
     {
         return false;
     }
 
-    // Copy into a local buffer first: decode runs on worker threads with no exception
-    // boundary at the load site, so an unguarded heap copy would terminate the process on
-    // OOM. Fail loud instead, and only touch members on success (leave-unchanged contract).
+    // Worker decode has no exception boundary. Preserve the object and report OOM as failure.
     std::vector<uint8_t> buf;
     try
     {
@@ -63,8 +61,7 @@ bool Texture::load_from_memory(const uint8_t *data, size_t size)
     {
         return false;
     }
-    // See load(): guard the heap copy so a worker-thread OOM fails loud instead of
-    // terminating, and only touch members on success.
+    // Preserve the object and report worker-thread OOM as failure.
     std::vector<uint8_t> buf;
     try
     {
@@ -103,11 +100,7 @@ bool is_grayscale(const Texture &t)
     {
         return false;
     }
-    // Tolerance, not exact equality: a grayscale height map saved in a lossy format (JPEG chroma
-    // subsampling/ringing nudges R/G/B apart by a few levels) must still be recognised. The bound
-    // sits far below a tangent-space normal map's channel spread (blue ≈255 vs R/G ≈128, ~100+),
-    // so a real normal map mislabeled into map_Bump is never misread as grayscale. Early-outs on
-    // the first chromatic texel.
+    // Lossy grayscale images may differ by a few channel levels. Normal maps differ far more.
     constexpr int kChromaTol = 8;
     for (size_t i = 0; i + 4 <= t.pixels.size(); i += 4)
     {
@@ -124,12 +117,9 @@ bool is_grayscale(const Texture &t)
     return true;
 }
 
-// height_to_normal_map
-
 namespace
 {
-    // Fold an out-of-range integer texel coordinate back in range per the wrap mode.
-    // Only the central-difference edge taps ever go out of range; interior taps are exact.
+    // Fold an edge tap according to the texture's wrap mode.
     int wrap_index(int c, int n, WrapMode m) noexcept
     {
         if (n <= 1)
@@ -190,23 +180,13 @@ namespace
 
 Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
 {
-    // Bitangent sign for the green channel. The TBN path samples the v-flipped texture
-    // (sample_rgb: v = 1 - v) and builds B = cross(N, T) over the raw +v tangent, which
-    // matches the OpenGL +Y normal-map convention, so the texture-space slope n.y is +dy
-    // of the image-space central difference. Empirically validated against a reference
-    // render; flip this one constant if relief inverts.
+    // The flipped-v sampling path uses the OpenGL +Y normal-map convention.
     constexpr float dy_sign = 1.0f;
 
-    // Per-texel height step → slope. Renderer-defined (MTL specifies only -bm); tuned so a
-    // normalized height map reads as clear relief at bm=1 without high-frequency detail blowing
-    // the normal flat against the surface. -bm scales depth on top.
+    // MTL defines -bm but no height unit, so this renderer supplies a fixed per-texel scale.
     constexpr float kHeightScale = 16.0f;
 
-    // Bound -bm before it scales the gradient: a hostile finite-but-absurd multiplier (e.g.
-    // `-bm 1e38`) would otherwise overflow bm*kHeightScale*dx to +inf, and normalize() would
-    // emit NaN texels, the Inf/NaN class -ffinite-math-only treats as UB (cf. the loader's Ke
-    // [0,1e6] clamp). A finite-vs-finite clamp survives fast-math; literal inf/nan tokens are
-    // already rejected by the MTL number parser upstream. Negative is preserved (it inverts relief).
+    // Bound finite but hostile -bm values before fast-math can turn overflow into undefined behavior.
     const float bm_s = clamp(bm, -1e6f, 1e6f);
 
     Texture out;
@@ -224,8 +204,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
     const size_t n_texels = static_cast<size_t>(w) * static_cast<size_t>(h);
     out.pixels.resize(n_texels * 4);
 
-    // Extract the scalar height field once per texel up front: each value is read up to 8× by the
-    // Sobel taps of neighbouring texels, so precomputing avoids re-running height_channel per tap.
+    // Cache scalar heights because neighboring Sobel kernels reuse each texel.
     std::vector<float> height(n_texels);
     for (size_t i = 0; i < n_texels; i++)
     {
@@ -234,10 +213,7 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
 
     const auto height_at = [&](int x, int y) -> float
     {
-        // (unsigned)c < (unsigned)n is true iff 0 ≤ c < n: one compare rules out both bounds, so
-        // an in-range tap (every tap of an interior texel, i.e. nearly all of them) skips
-        // wrap_index's modulo. For an in-range coordinate every wrap mode is the identity, so the
-        // fast path is bit-identical; only the genuine edge taps pay the fold.
+        // One unsigned comparison covers both bounds; only edge taps pay for wrapping.
         const int xx = (static_cast<unsigned>(x) < static_cast<unsigned>(w)) ? x : wrap_index(x, w, src.wrap_s);
         const int yy = (static_cast<unsigned>(y) < static_cast<unsigned>(h)) ? y : wrap_index(y, h, src.wrap_t);
         return height[(static_cast<size_t>(yy) * static_cast<size_t>(w)) + static_cast<size_t>(xx)];
@@ -247,13 +223,8 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
     {
         for (int x = 0; x < w; x++)
         {
-            // Heightfield z=h(u,v) ⇒ tangent-space normal (-∂h/∂u, -∂h/∂v, 1), gradient via a
-            // Sobel 3×3 (÷8 ⇒ central-difference magnitude; the cross-axis 1-2-1 averaging
-            // suppresses the derivative spikes an 8-bit height map's quantization steps produce).
-            // MTL leaves the height unit undefined (only -bm scales it), so kHeightScale is
-            // renderer-defined: a fixed per-texel strength, matching bakers (xNormal/Substance/
-            // GIMP), unlike the true texture-space derivative dx·width, which explodes on
-            // high-res maps.
+            // Sobel derivatives suppress spikes from 8-bit quantization. Fixed per-texel
+            // strength avoids resolution-dependent relief.
             const float tl = height_at(x - 1, y - 1);
             const float tc = height_at(x, y - 1);
             const float tr = height_at(x + 1, y - 1);

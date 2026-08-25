@@ -38,14 +38,10 @@ const char *program_name(const char *argv0)
 namespace
 {
 
-    // Frames a bare --bench/-B runs (both the long-form and cluster paths read this).
+    // Measured frames for a bare --bench or -B.
     constexpr int BENCH_DEFAULT_FRAMES = 200;
 
-    // Lowercase-copy for case-insensitive value matching. unsigned char avoids the
-    // std::tolower UB on a negative char; the flag values it sees are plain ASCII.
-    // Deliberately NOT platform.h's ascii_lower/ieq: those live in platform::detail
-    // (private to the terminal classifier), and a cold parse path doesn't justify
-    // the first cross-file use of that namespace.
+    // Cast through unsigned char because std::tolower is undefined for negative char values.
     std::string to_lower(const char *val)
     {
         std::string v = val;
@@ -55,10 +51,7 @@ namespace
         return v;
     }
 
-    // Shared matcher for the named-value flags:
-    // case-insensitive lookup of val in names (aliases are just extra entries); on
-    // miss prints the standard invalid-value diagnostic with the flag's
-    // expected-values string.
+    // Case-insensitive parser shared by named-value flags. Aliases are extra table entries.
     template <typename E>
     bool parse_enum(
         const char *prog,
@@ -87,7 +80,7 @@ ParseResult parse_args(int argc, char *argv[])
     ParseResult result;
     ParsedArgs &args = result.args;
 
-    // Diagnostic prefix: the name the program was invoked as (basename of argv[0]).
+    // Use the invoked basename in diagnostics.
     const char *prog = program_name(argc > 0 ? argv[0] : nullptr);
 
     auto fail = [&](int code) -> ParseResult &
@@ -97,8 +90,7 @@ ParseResult parse_args(int argc, char *argv[])
         return result;
     };
 
-    // Returns the next argv token for a flag that requires a value.
-    // Prints an error and returns nullptr if there is none.
+    // Consume a required value, or diagnose its absence.
     auto require_val = [&](int &i, const char *flag) -> const char *
     {
         if (i + 1 >= argc)
@@ -109,7 +101,7 @@ ParseResult parse_args(int argc, char *argv[])
         return argv[++i];
     };
 
-    // Positive-integer value shared by --threads/--fps/--bench (and their short forms).
+    // Positive integer parser shared by threads, fps and bench.
     auto parse_pos_int = [prog](const char *flag, const char *val, int &out) -> bool
     {
         char *end = nullptr;
@@ -163,11 +155,7 @@ ParseResult parse_args(int argc, char *argv[])
         {
             return err();
         }
-        // Cap the pixel count so w*h can't overflow size_t in the framebuffer (on ILP32
-        // size_t is 32-bit and the product would silently wrap to a tiny buffer, then
-        // rasterization writes out of bounds). Multiply in int64 because long is itself
-        // 32-bit on ILP32. INT_MAX pixels is already absurd for a bench framebuffer; a
-        // valid but large value just fails loud in the allocation instead.
+        // Bound the product before the framebuffer multiplies in 32-bit size_t.
         if (static_cast<int64_t>(ww) * hh > INT_MAX)
         {
             return err();
@@ -177,7 +165,7 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    // Returns true if s is a non-empty string of ASCII digits only.
+    // True for a non-empty string of ASCII digits.
     auto is_all_digits = [](const char *s) -> bool
     {
         if (!s || !*s)
@@ -195,11 +183,7 @@ ParseResult parse_args(int argc, char *argv[])
         return true;
     };
 
-    // Optional-integer flags (--threads/--fps/--bench and -j/-f/-B), one decision for
-    // both spellings: attached is the =value (long form; present-but-empty still
-    // parses, so "--fps=" errors) or the rest of the cluster token (nullptr when
-    // none). With no attached value, the next argv token is consumed only if it is a
-    // positive integer; otherwise the flag is bare and means bare_value.
+    // Parse an attached value, or consume the next token only when it is a positive integer.
     auto parse_opt_int = [&](int &arg_i, const char *flag, const char *attached, int &out, int bare_value) -> bool
     {
         if (attached != nullptr)
@@ -282,11 +266,7 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
-    // Shared strtof skeleton for float value flags; each flag supplies only its
-    // range predicate and expected-values string (the parse_shading/parse_enum split).
-    // errno == ERANGE also fires on subnormal underflow (e.g. 1e-40), rejecting a
-    // technically in-range value: accepted, magnitudes that small are meaningless
-    // for every float flag.
+    // ERANGE also rejects subnormal values, which are useless for these flags.
     auto parse_float =
         [prog](const char *flag, const char *val, bool (*valid)(float), const char *expected, float &out) -> bool
     {
@@ -308,24 +288,18 @@ ParseResult parse_args(int argc, char *argv[])
     auto parse_spin_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
     { return parse_float(flag, val, [](float v) { return v > 0.0f; }, "a positive number", out); };
 
-    // --yaw/--pitch share one wrapper: both are turntable orbit angles with the
-    // same full-turn range (pitch past +-90 is the upside-down half of the family).
+    // Yaw and pitch share the same full-turn range.
     auto parse_orbit_angle = [&parse_float](const char *flag, const char *val, float &out) -> bool {
         return parse_float(
             flag, val, [](float v) { return v >= -180.0f && v <= 180.0f; }, "a number in [-180, 180]", out
         );
     };
 
-    // Bounds are the interactive scroll clamp [near*2, far*0.5] expressed as zoom
-    // factors of the auto-fit framing (near = 0.01r, far = 20r, default distance 2r
-    // in main.cpp's auto_fit_camera), so the flag covers exactly the reachable range.
+    // These bounds match the interactive zoom range around the auto-fit distance.
     auto parse_zoom = [&parse_float](const char *flag, const char *val, float &out) -> bool
     { return parse_float(flag, val, [](float v) { return v >= 0.2f && v <= 100.0f; }, "a number in [0.2, 100]", out); };
 
-    // The predicate reads Camera's bounds rather than restating them, so the flag and
-    // the +/- keys can never disagree about which speeds are reachable. The message
-    // below and the --help text do spell the numbers out, there being no way to build
-    // the string from a constexpr float here, so those two have to follow by hand.
+    // Read Camera's bounds so the CLI and interactive controls cannot drift apart.
     auto parse_fp_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
     {
         return parse_float(
@@ -343,19 +317,10 @@ ParseResult parse_args(int argc, char *argv[])
 
     auto print_version = []()
     {
-        // UTF-8 author bytes need the console CP set, and this path exits before the main
-        // loop's enable_raw_mode would do it; the other early exits (--help, --bench, errors)
-        // are pure ASCII and leave console state alone. The return (VT support) is ignored:
-        // --version wants only the code page, and init_console_output sets it solely when
-        // stdout is a VT-capable console, so redirected/piped or VT-incapable output keeps its
-        // CP. The bytes are UTF-8 regardless, so only display through a non-UTF-8 console (a
-        // legacy console, or a console pager like `... | more`) shows the author name as
-        // mojibake; accepted rather than forcing a persistent console-wide CP change for
-        // --version.
+        // --version exits before raw-mode setup, so initialize the Windows UTF-8 code page here.
+        // Ignore VT failure: redirected output must still print the version block.
         platform::init_console_output();
-        // GNU-standard --version block (cf. gnulib version-etc): canonical name +
-        // version, copyright, license, generic free-software/no-warranty blurb,
-        // then a blank line and the author. Name is a constant, never argv[0].
+        // GNU-style version block. Program identity is canonical, not argv[0].
         std::printf(
             "rasterminal %s\n"
             "Copyright (C) %s %s\n"
@@ -368,10 +333,7 @@ ParseResult parse_args(int argc, char *argv[])
         );
     };
 
-    // Paired booleans use git's presentation ("-q, --[no-]quiet"): a short flag
-    // next to a --[no-] pair is the short form of the positive polarity only.
-    // The man page spells out all forms in full (the same terse-help/full-man
-    // split git makes).
+    // As in git, a short flag beside --[no-]name means only the positive form.
     auto print_help = [prog]()
     {
         std::printf(
@@ -467,8 +429,7 @@ ParseResult parse_args(int argc, char *argv[])
 
     for (int i = 1; i < argc; i++)
     {
-        // POSIX Guideline 10: the first "--" terminates option parsing; every
-        // token after it is a positional operand, even one beginning with '-'.
+        // POSIX Guideline 10: "--" ends option parsing.
         if (!end_of_options && std::strcmp(argv[i], "--") == 0)
         {
             end_of_options = true;
@@ -485,8 +446,7 @@ ParseResult parse_args(int argc, char *argv[])
             continue;
         }
 
-        // Split --flag=value → flag name + value pointer.
-        // For --flag value or -f value forms, eq_val stays nullptr.
+        // Split --flag=value. Other forms leave eq_val null.
         const char *eq_val = nullptr;
         std::string arg = argv[i];
         if (arg.size() > 2 && arg[0] == '-' && arg[1] == '-')
@@ -500,7 +460,7 @@ ParseResult parse_args(int argc, char *argv[])
         }
         const char *flag = arg.c_str();
 
-        // Get value: inline =value, else consume next argv token.
+        // Prefer =value, otherwise consume the next token.
         auto get_val = [&](int &arg_i) -> const char *
         {
             if (eq_val != nullptr)
@@ -510,7 +470,7 @@ ParseResult parse_args(int argc, char *argv[])
             return require_val(arg_i, flag);
         };
 
-        // Boolean long flags take no value: "--flag=anything" is an error.
+        // Boolean long flags reject =value.
         auto no_value = [&]() -> bool
         {
             if (eq_val != nullptr)
@@ -523,7 +483,7 @@ ParseResult parse_args(int argc, char *argv[])
 
         if (arg == "--threads")
         {
-            // Bare = all threads (0).
+            // Zero means all threads.
             if (!parse_opt_int(i, flag, eq_val, args.n_threads, 0))
             {
                 return fail(1);
@@ -531,7 +491,7 @@ ParseResult parse_args(int argc, char *argv[])
         }
         else if (arg == "--fps")
         {
-            // Bare = uncapped (0).
+            // Zero means uncapped.
             if (!parse_opt_int(i, flag, eq_val, args.fps, 0))
             {
                 return fail(1);
@@ -797,11 +757,8 @@ ParseResult parse_args(int argc, char *argv[])
                 return fail(1);
             }
         }
-        // Short-option cluster (POSIX Guideline 5): a run of no-argument options
-        // bundled behind one '-', with at most one value-taking option last. A
-        // single short flag ("-s", "-j8") is just a length-one cluster. The value
-        // flag takes the rest of the token, or the next argv token if none follows
-        // (getopt-style: "-s=phong" passes "=phong" as the value).
+        // POSIX Guideline 5: cluster boolean options and put a value-taking option last.
+        // Like getopt, -s=phong passes "=phong" as the value.
         else if (argv[i][0] == '-' && argv[i][1] != '\0' && argv[i][1] != '-')
         {
             const char *tok = argv[i];
@@ -877,9 +834,7 @@ ParseResult parse_args(int argc, char *argv[])
                 }
             }
         }
-        // A lone "-" is an operand (POSIX stdin sentinel), not a flag: it has no
-        // char after the dash, so it falls through to positional handling. What
-        // reaches here with a leading '-' is an unknown long flag ("--foo").
+        // A lone "-" is an operand. Any other leading dash here is an unknown flag.
         else if (argv[i][0] == '-' && argv[i][1] != '\0')
         {
             std::fprintf(stderr, "%s: unknown flag '%s'\n", prog, argv[i]);
@@ -901,9 +856,7 @@ ParseResult parse_args(int argc, char *argv[])
         std::fprintf(stderr, "%s: --bench-size requires --bench\n", prog);
         return fail(1);
     }
-    // --first-person is session-fixed, so without it this value can never come into
-    // play: reject rather than accept a flag that would silently do nothing. (Unlike
-    // --spin-speed, which stands alone because Space can start spinning later.)
+    // First-person mode is session-fixed, so reject a speed that could never take effect.
     if (saw_fp_speed && !args.first_person)
     {
         std::fprintf(stderr, "%s: --first-person-speed requires --first-person\n", prog);

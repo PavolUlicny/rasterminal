@@ -15,8 +15,6 @@ struct vec2
     constexpr vec2 operator/(float t) const noexcept { return { x / t, y / t }; }
 };
 
-// vec3
-
 struct vec3
 {
     float x, y, z;
@@ -88,7 +86,7 @@ struct vec4
     constexpr vec4 operator-(const vec4 &o) const noexcept { return { x - o.x, y - o.y, z - o.z, w - o.w }; }
     constexpr vec4 operator*(float t) const noexcept { return { x * t, y * t, z * t, w * t }; }
 
-    // perspective divide: clip space → NDC
+    // Perspective divide from clip space to NDC.
     [[nodiscard]] constexpr vec3 xyz() const noexcept { return { x, y, z }; }
     [[nodiscard]] constexpr vec3 perspective_divide() const noexcept
     {
@@ -137,8 +135,6 @@ struct mat4
     }
 };
 
-// view / projection
-
 inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up) noexcept
 {
     const vec3 f = normalize(target - eye); // forward
@@ -161,10 +157,9 @@ inline mat4 look_at(const vec3 &eye, const vec3 &target, const vec3 &up) noexcep
     return m;
 }
 
-// fov_y in radians, the plane distances are positive.
-// NOT named `near`/`far`: <windows.h> defines both as empty macros (minwindef.h, and NOMINMAX
-// does not cover them), so those names compile here only while every Windows TU happens to
-// include this header before platform.h. An include reorder broke exactly that in CI.
+// fov_y is in radians; plane distances are positive. Avoid `near` and `far`:
+// <windows.h> defines both as empty macros even with NOMINMAX. CI caught this
+// when an include reorder exposed them.
 inline mat4 perspective(float fov_y, float aspect, float near_plane, float far_plane) noexcept
 {
     const float tan_half = std::tan(fov_y / 2.0f);
@@ -177,8 +172,6 @@ inline mat4 perspective(float fov_y, float aspect, float near_plane, float far_p
     m.m[2][3] = -1.0f;
     return m;
 }
-
-// quat
 
 struct quat
 {
@@ -220,8 +213,6 @@ inline quat normalize(const quat &q) noexcept
     const float inv = 1.0f / std::sqrt(len_sq);
     return { q.x * inv, q.y * inv, q.z * inv, q.w * inv };
 }
-
-// scalar utilities
 
 constexpr float clamp(float v, float lo, float hi) noexcept
 {

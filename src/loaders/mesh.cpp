@@ -60,13 +60,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         }
     }
 
-    // load_obj/ply/stl/gltf signal malformed input by returning false (rolling back via
-    // MeshSnapshot), but a failure can also surface as an exception: bad_alloc (in the parse or
-    // in the post-load compute_ao / optimize_vertex_cache work on a huge mesh), std::system_error
-    // when a worker thread cannot spawn, or compute_normals' uint32-index length_error sentinel.
-    // The wrap must span the post-load steps too, not just the loader dispatch (they allocate
-    // large buffers and spawn threads),
-    // so any of these becomes a fail-loud "could not load" instead of std::terminate out of main().
+    // Convert allocation, thread and post-processing exceptions into a clean load failure.
     try
     {
         bool ok = false;
@@ -97,19 +91,8 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             return false;
         }
 
-        // Reject non-finite vertex positions and UVs before any post-load work. No format loader
-        // validates finiteness, and a NaN/Inf position would otherwise poison normals, the
-        // bounding box, and the camera auto-fit (which frames to the bbox sphere): a single
-        // junk vertex blows up the whole view. One scan here covers every format uniformly.
-        //
-        // The UV terms are a memory-safety guard, not just a cosmetic one: a non-finite UV
-        // survives wrap_uv (floor(NaN) is NaN, and Mirror's inf - inf is too), so the sampler's
-        // `static_cast<int>(u * (width - 1))` converts a NaN, which is UB and yields INT_MIN on
-        // x86; the texel offset built from it then reads far outside the image. Rejecting the
-        // load is the fail-loud answer and costs two compares per vertex once, where a guard in
-        // the sampler would cost them per pixel. Reachable today only from a binary format that
-        // can carry raw float bits (a binary PLY does; tinyobjloader's parser rejects the text
-        // "nan"), which is why the check belongs here rather than in one loader.
+        // Non-finite positions poison camera fitting; non-finite UV-to-int conversion is undefined
+        // and can create out-of-bounds texel offsets. Check once here instead of per sample.
         if (std::any_of(
                 vertices.begin(), vertices.end(),
                 [](const Vertex &v)
@@ -122,8 +105,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             clear();
             return false;
         }
-        // The second UV set reaches the same sampler, so it needs the same guard. Separate scan
-        // because it is a parallel array populated by glTF and Assimp-backed formats.
+        // The parallel second UV set reaches the same sampler.
         if (std::any_of(
                 uv1.begin(), uv1.end(), [](const vec2 &t) { return !std::isfinite(t.x) || !std::isfinite(t.y); }
             ))
@@ -145,22 +127,13 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         has_unlit = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.unlit; });
         has_transparent = std::any_of(materials.begin(), materials.end(), [](const Material &m) { return m.blend; });
 
-        // Spec-literal: emissive = factor * texture (glTF) / Ke * map_Ke (OBJ). A zero factor
-        // zeros the contribution regardless of any bound texture (matches three.js GLTFLoader).
-        // Mesh-level flag drops materials whose factor is zero: emissive_map without a non-zero
-        // factor cannot contribute and would only waste per-frame setup work.
+        // A zero emissive factor nullifies any emissive texture.
         has_emissive = std::any_of(
             materials.begin(), materials.end(),
             [](const Material &m) { return m.emissive.x > 0.0f || m.emissive.y > 0.0f || m.emissive.z > 0.0f; }
         );
 
-        // Per-vertex alpha only matters when some vertex is actually translucent. An all-opaque
-        // alpha array is very common (vec4 COLOR_0 with every w == 1) and would otherwise be dragged
-        // through compute_normals' welding split and optimize_vertex_cache's remap for nothing, and
-        // read per-fragment in the transparent pass, all to multiply by 1. Drop it so opaque models
-        // (and opaque vertices of blend models) pay zero; the transparent path treats a missing array
-        // as alpha 1. The loader has already finished its normal-split, so the array is length-matched
-        // here; clearing keeps the parallel-array invariant (size 0) consistent for the passes below.
+        // Drop all-opaque vertex alpha so later remaps and fragments do not multiply by one.
         if (has_vertex_alpha &&
             std::none_of(vertex_alpha.begin(), vertex_alpha.end(), [](float a) { return a < 1.0f; }))
         {
@@ -168,9 +141,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             has_vertex_alpha = false;
         }
 
-        // Per-vertex alpha that survived the clear guard carries at least one translucent vertex, so it
-        // makes the mesh transparent even when no material declares blend: this is how PLY (which has
-        // no per-material opacity mode) routes its translucent triangles to the transparent pass.
+        // Translucent vertex colors require the transparent path even without a blend material.
         has_transparent = has_transparent || has_vertex_alpha;
 
         compute_tangents();
@@ -181,15 +152,8 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
 
         optimize_vertex_cache(n_threads);
 
-        // Transparency partition: split triangles into an opaque prefix [0, opaque_count) and a
-        // blend tail. Classification is PER-TRIANGLE, not per-material: a triangle is transparent
-        // if its material blends or (for PLY, whose opacity is per-vertex) any of its vertices is
-        // translucent, so a mostly-opaque mesh keeps its opaque triangles on the fast CAS pass and
-        // only the genuinely transparent ones pay accumulate+resolve. stable_partition preserves
-        // optimize_vertex_cache's within-group order (its cache locality survives) and runs after
-        // it, when vertex indices are
-        // final (it only moves whole Triangle structs). Opaque meshes (has_transparent == false)
-        // skip it unchanged.
+        // Partition by triangle, not material, so opaque regions retain the fast pass.
+        // stable_partition preserves meshoptimizer's within-group order.
         opaque_count = static_cast<uint32_t>(triangles.size());
         if (has_transparent)
         {
@@ -214,10 +178,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
     }
     catch (const std::exception &e)
     {
-        // Any load/post-process exception ends here: surface the reason (this distinguishes
-        // resource exhaustion or an internal error from a normal malformed-file rejection, which
-        // returns false without throwing), then fail loud with a clean rollback. main() prints the
-        // user-facing "failed to load" summary on the false return.
+        // Preserve the exception detail; main prints the common load-failure summary.
         std::fprintf(stderr, "note: loading '%s' threw an exception: %s\n", path.c_str(), e.what());
         clear();
         return false;
@@ -235,25 +196,13 @@ void Mesh::compute_normals(
         return;
     }
 
-    // smooth_groups holds one id per triangle. The loader builds it by mirroring its
-    // triangle-build loop exactly (per-face, gated on the same fv >= 3); this guards
-    // against a future desync if that mirroring ever breaks (e.g. manual fan splits).
+    // Parallel arrays must match the geometry they describe.
     assert(smooth_groups == nullptr || smooth_groups->size() == n_tris);
 
-    // weld holds one group id per output vertex. Every loader path that supplies
-    // it pushes a weld entry adjacent to each vertex push, so the lengths match;
-    // this guards against a future path that appends a vertex without its group
-    // id, which would otherwise read OOB silently when group_of is built below.
     assert(weld == nullptr || weld->size() == n_verts);
 
-    // Adjacency is built in welded space: group_of[v] folds vertices sharing a position
-    // group (OBJ UV-seam halves) onto one id so they smooth as one surface while staying
-    // distinct output vertices. The map is held locally so it stays valid while Pass B
-    // appends split copies, each inheriting its source's group id (a split is another wedge
-    // of the same position, not a new group). The identity path (weld == nullptr;
-    // PLY/STL/glTF) skips the array: grp(v) returns v, and appended indices used as sort
-    // keys cluster on their own. Manual copy (not vector copy-assign or range-ctor) so
-    // GCC's LTO -Wnull-dereference pass doesn't false-positive deep inside std::copy.
+    // Fold OBJ seam vertices into welded adjacency while keeping separate output vertices.
+    // Copy manually to avoid a GCC LTO false positive inside std::copy.
     std::vector<uint32_t> group_of;
     if (weld != nullptr)
     {
@@ -270,13 +219,10 @@ void Mesh::compute_normals(
     const bool has_weld = (weld != nullptr);
     auto grp = [has_weld, &group_of](uint32_t v) -> uint32_t { return has_weld ? group_of[v] : v; };
 
-    // When smoothing groups are present they are authoritative: two faces smooth
-    // iff they share the same non-zero group id, and crease_cos is not consulted.
-    // Loop-invariant, hoisted above the per-group clustering below.
+    // Nonzero smoothing groups override the crease angle.
     const bool has_groups = (smooth_groups != nullptr);
 
-    // Per-face raw normal (cross product magnitude == 2x area, so summing gives
-    // area-weighted averaging for free) and reciprocal length (0 = degenerate).
+    // Raw cross products provide area weighting; zero reciprocal marks degenerates.
     std::vector<vec3> face_n(n_tris);
     std::vector<float> face_inv_len(n_tris);
     for (size_t t = 0; t < n_tris; t++)
@@ -318,16 +264,13 @@ void Mesh::compute_normals(
         }
     }
 
-    // Per-group clustering: incident faces sharing a sub-threshold edge through
-    // the group are unioned into one "wedge" (one normal); the rest split off.
+    // Union incident faces into smooth wedges.
     std::vector<uint32_t> parent; // union-find over local incident indices
     std::vector<uint32_t> roots;  // find(k) cached after Pass A so Pass B reuses
-    // (endpoint group, local corner) pairs: the two edges each corner forms at
-    // the group. Sorted per group so corners sharing an edge land in one run.
+    // Sorting endpoint/corner pairs groups corners that share an edge.
     std::vector<std::pair<uint32_t, uint32_t>> edges;
     std::vector<vec3> wedge_n; // local root -> summed (area-weighted) normal
-    // (original vertex, local root) -> output vertex; one entry per emitted
-    // wedge-vertex. Group output count is tiny (1 normally), so linear scan.
+    // Map each original vertex and wedge root to one output vertex. Groups are usually tiny.
     struct OutSlot
     {
         uint32_t ov;
@@ -345,9 +288,7 @@ void Mesh::compute_normals(
         return x;
     };
 
-    // Loaders that populate vertex_colors must keep it length-matched to vertices
-    // (pad missing entries before calling); compute_normals only propagates colors
-    // when the parallel-array invariant already holds. vertex_alpha mirrors it.
+    // Propagate only length-matched parallel attributes.
     const bool has_vcol = (vertex_colors.size() == n_verts);
     const bool has_valpha = (vertex_alpha.size() == n_verts);
     const bool has_uv1_arr = (uv1.size() == n_verts);
@@ -380,13 +321,8 @@ void Mesh::compute_normals(
             edges.emplace_back(grp(tri.v[(c + 2u) % 3u]), k);
         }
 
-        // Group corners by shared endpoint, then union those whose dihedral stays
-        // below the crease threshold. Each run is one edge through the group;
-        // runs are size ~2 on manifold meshes, so this is O(deg log deg) (sort)
-        // rather than the O(deg^2) of comparing all corner pairs, which spikes
-        // on high-valence fan apices (cone tips, UV-sphere poles). A run only
-        // grows large for a non-manifold edge shared by many faces, where the
-        // pairwise work matches what the all-pairs scan did anyway.
+        // Compare only corners sharing an edge. Sorting makes manifold groups O(deg log deg)
+        // instead of quadratic at high-valence vertices.
         std::sort(edges.begin(), edges.end());
         for (size_t a = 0; a < edges.size();)
         {
@@ -428,11 +364,7 @@ void Mesh::compute_normals(
             a = b;
         }
 
-        // Pass A: sum each wedge's area-weighted normal across all its corners.
-        // The wedge may span several original vertices (welded seam halves); all
-        // of them must receive this same summed normal so the seam stays smooth.
-        // find() roots are cached for Pass B (otherwise we'd traverse the same
-        // union-find chains twice per corner).
+        // Sum each wedge normal and cache roots for materialization.
         wedge_n.assign(deg, vec3{});
         roots.resize(deg);
         for (uint32_t k = 0; k < deg; k++)
@@ -442,10 +374,7 @@ void Mesh::compute_normals(
             wedge_n[r] += face_n[corner_tri[start + k]];
         }
 
-        // Pass B: materialize one output vertex per (original vertex, wedge). Each
-        // original vertex reuses its own slot for its first wedge and appends a
-        // split copy (syncing vertex_colors) for any further wedge; both halves of
-        // a welded seam keep their own UV but share the wedge normal.
+        // Materialize one vertex per original-vertex/wedge pair, preserving parallel attributes.
         out_map.clear();
         for (uint32_t k = 0; k < deg; k++)
         {
@@ -493,9 +422,7 @@ void Mesh::compute_normals(
                     }
                     if (has_weld)
                     {
-                        // A split inherits its source's group id so any later
-                        // group that revisits this corner reads a valid, stable
-                        // group key. Identity path skips the array (grp(v)==v).
+                        // A split remains in its source's weld group.
                         group_of.push_back(group_of[ov]);
                     }
                 }
@@ -520,10 +447,8 @@ void Mesh::compute_tangents()
 {
     tangents.assign(vertices.size(), vec3{});
 
-    // Tangents must be built from the UV set the normal map samples. This is well-defined per
-    // vertex even with mixed UV sets: loaders do not share vertices across primitives or meshes
-    // with different material bindings, so every triangle incident to a vertex carries one
-    // material and normal-map set. The accumulation therefore never mixes sets at a vertex.
+    // Loaders do not share vertices across different material UV bindings, so each vertex has
+    // one normal-map UV set.
     const vec2 *p_uv1 = has_uv1 ? uv1.data() : nullptr;
 
     // Accumulate tangent vectors from each triangle's UV layout.
@@ -535,12 +460,8 @@ void Mesh::compute_tangents()
         const Vertex &v1 = vertices[tri.v[1]];
         const Vertex &v2 = vertices[tri.v[2]];
 
-        // Tangents are built from the raw normal-map UV set; a KHR_texture_transform on that
-        // binding is deliberately NOT folded in here. The transform is applied only at sample
-        // time (rasterize_phong), matching three.js / the glTF Sample Viewer: the spec is
-        // silent on rotating the tangent frame. A rotated/sheared normal-map transform thus
-        // leaves the TBN basis un-rotated relative to the sampled normal (mis-lit bumps in
-        // that edge case); pure translation / uniform scale is unaffected.
+        // Do not fold KHR_texture_transform into TBN. The glTF spec does not define rotating
+        // the tangent frame, and reference viewers apply the transform only while sampling.
         const bool s1 = p_uv1 && mat_at(tri.material_idx).normal_map.uv_set != 0;
         const vec2 uv0 = s1 ? p_uv1[tri.v[0]] : v0.uv;
         const vec2 uv1v = s1 ? p_uv1[tri.v[1]] : v1.uv;
@@ -587,20 +508,15 @@ void Mesh::compute_tangents()
     }
 }
 
-// Bakes per-vertex ambient occlusion from local curvature, at load time so it costs nothing
-// per frame: the vertex-to-neighbor-centroid vector projected onto the vertex normal gives
-// the curvature sign (positive = concave, darken; negative = convex, keep 1), divided by the
-// local RMS edge length so the measure is a scale-invariant depth/width ratio. An earlier
-// version normalized the offset instead, which discarded depth: sub-edge surface noise on
-// scanned meshes read as full-strength cavities and speckled the result. Don't revert.
+// Bake scale-independent curvature AO from centroid depth divided by local RMS edge length.
+// Normalizing the offset loses cavity depth and exaggerates scan noise.
 
 void Mesh::compute_ao(int n_threads)
 {
     const size_t n = vertices.size();
 
-    // Build CSR edge-adjacency: for each vertex, collect all vertices it shares a
-    // triangle edge with (duplicates are harmless; they just weight denser areas).
-    // CSR avoids N separate heap allocations and keeps neighbor indices contiguous.
+    // CSR keeps edge neighbors contiguous without one allocation per vertex. Duplicates
+    // intentionally weight denser connectivity.
     std::vector<int> adj_count(n, 0);
     for (const auto &tri : triangles)
     {
@@ -674,7 +590,7 @@ void Mesh::compute_ao(int n_threads)
                 continue;
             }
 
-            // Signed depth/width ratio. Positive = concave = cavity → reduce AO.
+            // Positive signed depth/width means a concave cavity; reduce AO.
             // Clamp so convex surfaces stay at 1 and deep cavities don't go fully black.
             const float curvature = dot(centroid - p, N) / mean_edge;
             vertices[i].ao = 1.0f - clamp(curvature * 0.5f, 0.0f, 0.15f);
@@ -714,13 +630,8 @@ void Mesh::optimize_vertex_cache(int n_threads)
     const size_t nt = triangles.size();
     const size_t ni = nt * 3;
 
-    // meshopt's vertex-cache and overdraw passes reorder triangles within the
-    // index range we hand them but expose no permutation, so per-triangle
-    // metadata (here material_idx) gets stranded. Group triangles by material
-    // so each occupies a contiguous range, then call meshopt per range;
-    // reordering within a single-material range is safe. Single-material
-    // meshes skip grouping entirely. Loaders never write material_idx >=
-    // materials.size(), so that's a safe bucket count.
+    // meshopt exposes no triangle permutation. Optimize one material range at a time so
+    // reordering cannot detach material_idx from its triangle.
     const bool multi_material = materials.size() > 1;
     const size_t n_buckets = std::max<size_t>(materials.size(), 1);
     std::vector<uint32_t> bucket_start;
@@ -741,8 +652,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
             bucket_start[i] += bucket_start[i - 1];
         }
 
-        // glTF arrives in material order; OBJ may interleave. Skip the scatter
-        // when triangles are already grouped.
+        // Skip regrouping when the loader already produced material order.
         if (!already_sorted)
         {
             std::vector<Triangle> sorted(nt);
@@ -776,9 +686,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
 
     if (multi_material)
     {
-        // Per-group calls touch disjoint idx slices and read vertices[] only,
-        // so they parallelize cleanly, which claws back the per-call allocator
-        // overhead meshopt pays on every entry.
+        // Material groups touch disjoint index slices and can run in parallel.
         const auto run_group = [&](size_t m)
         {
             const size_t g_start = bucket_start[m];
@@ -808,8 +716,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
                     run_group(m);
                 }
             };
-            // Main thread runs worker() too, so spawn one fewer; cap at n_buckets
-            // since surplus workers would just hit the fetch_add guard and exit.
+            // The main thread participates; never spawn more workers than groups.
             const size_t spawn = std::min<size_t>(static_cast<size_t>(n_threads), n_buckets) - 1;
             std::vector<std::thread> threads;
             threads.reserve(spawn);
@@ -841,8 +748,7 @@ void Mesh::optimize_vertex_cache(int n_threads)
     {
         vertex_alpha.resize(nv, 1.0f);
     }
-    // uv1 has no constant fill (its degrade value is each vertex's own uv0), so pad the
-    // loop form rather than resize(); defensive: the loader/compute_normals keep it matched.
+    // Missing uv1 entries inherit each vertex's uv0, so resize cannot supply the fill value.
     if (has_uv1 && uv1.size() < nv)
     {
         for (size_t v = uv1.size(); v < nv; v++)

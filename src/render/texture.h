@@ -10,28 +10,21 @@
 #include <string>
 #include <vector>
 
-// Bilinear texel blend in SSE2 where the target has it (every x86-64, and x86-32 built with
-// -msse2 / /arch:SSE2); the scalar fallback covers everything else. Same arithmetic order in
-// both, only the byte-to-float conversion moves before or after the blend.
+// Use SSE2 for bilinear blending where available; keep the same arithmetic order elsewhere.
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #define RASTERMINAL_TEXTURE_SSE2
 #include <emmintrin.h>
 #endif
 
-// Forces blend_batch into its callers. Not a style preference: GCC declines to inline it at some
-// of shade_batch's six call sites, and the out-of-line copy LTO then keeps is compiled SCALAR (46
-// scalar FP ops and not one packed instruction) even though the identical source vectorises to
-// 64-byte vectors wherever it is inlined. That one copy measured 36% of a Sponza frame; forcing
-// the inline is worth 1.30x there and 1.07x on a glass scene. Deliberately GCC/Clang only: MSVC's
-// __forceinline warns (C4714) when it cannot honour the request, which /WX would make fatal, and
-// the codegen decision this works around is GCC's.
+// GCC vectorizes blend_batch only after inlining. Forcing it improved Sponza by 1.30x.
+// Do not use __forceinline on MSVC because an unfulfilled request fails the /WX build.
 #if defined(__GNUC__) || defined(__clang__)
 #define RASTERMINAL_FORCE_INLINE inline __attribute__((always_inline))
 #else
 #define RASTERMINAL_FORCE_INLINE inline
 #endif
 
-// Software prefetch for the batch shader's texel fetches (a hint; a no-op where unknown).
+// Software prefetch hint; a no-op on unsupported compilers.
 inline void prefetch_line([[maybe_unused]] const void *p) noexcept
 {
 #if defined(__GNUC__) || defined(__clang__)
@@ -41,9 +34,7 @@ inline void prefetch_line([[maybe_unused]] const void *p) noexcept
 #endif
 }
 
-// How out-of-[0,1] UV coordinates fold back into the texture. Closed set: glTF defines
-// exactly these three, MTL only Repeat/Clamp, and Assimp maps its common modes here.
-// Default Repeat keeps every loader that does not set it (and all historical output) unchanged.
+// Supported UV wrapping. Loaders map their format-specific modes to this set.
 enum class WrapMode : uint8_t
 {
     Repeat,
@@ -51,8 +42,7 @@ enum class WrapMode : uint8_t
     Mirror
 };
 
-// A 2-D RGBA texture loaded from an image file.
-// Supports JPEG, PNG, BMP, TGA, GIF, and more via stb_image.
+// Row-major RGBA texture decoded by stb_image or a format-specific decoder.
 struct Texture
 {
     int width = 0;
@@ -61,22 +51,16 @@ struct Texture
     WrapMode wrap_s = WrapMode::Repeat;
     WrapMode wrap_t = WrapMode::Repeat;
 
-    // Load a texture from disk.  Returns false and leaves the object unchanged on error.
+    // Failure leaves the object unchanged.
     [[nodiscard]] bool load(const std::string &path);
 
-    // Load a texture from a memory buffer (e.g. embedded GLB image data).
-    // Returns false and leaves the object unchanged on error.
+    // Load an stb_image format from memory. Failure leaves the object unchanged.
     [[nodiscard]] bool load_from_memory(const uint8_t *data, size_t size);
 
-    // Load a KTX2 / Basis Universal texture from a memory buffer (glTF
-    // KHR_texture_basisu). stb_image cannot decode KTX2, so this is a separate entry
-    // point that transcodes via the basis_universal transcoder (see ktx2_decode.h).
-    // Returns false and leaves the object unchanged on error.
+    // Load KTX2 through basisu. Failure leaves the object unchanged.
     [[nodiscard]] bool load_ktx2_from_memory(const uint8_t *data, size_t size);
 
-    // Load a WebP texture from a memory buffer (glTF EXT_texture_webp). stb_image cannot
-    // decode WebP, so this is a separate entry point that decodes via libwebp (see
-    // webp_decode.h). Returns false and leaves the object unchanged on error.
+    // Load WebP through libwebp. Failure leaves the object unchanged.
     [[nodiscard]] bool load_webp_from_memory(const uint8_t *data, size_t size);
 
     [[nodiscard]] bool valid() const { return width > 0 && height > 0; }
@@ -99,13 +83,8 @@ struct Texture
         }
     }
 
-    // Fold (u, v) into [0, 1] per the texture's wrap modes. The all-Repeat case (the
-    // overwhelming majority) runs the historical fract() verbatim behind one
-    // perfectly-predicted branch (the mode is constant per texture), so it stays
-    // byte-identical at the cost of that single branch; non-repeat textures take the
-    // cold general path. The bilinear tap downstream stays
-    // min(x0+1, width-1): that clamped tap is exactly today's Repeat behaviour (the
-    // seam-column blend is left unchanged) and is correct for Clamp and at the Mirror fold.
+    // Keep the common Repeat/Repeat path branch-free per coordinate. Bilinear neighbors
+    // remain clamped, preserving the existing seam behavior.
     void wrap_uv(float &u, float &v) const noexcept
     {
         if (wrap_s == WrapMode::Repeat && wrap_t == WrapMode::Repeat)
@@ -150,13 +129,8 @@ struct Texture
         return { out[0], out[1], out[2], out[3] };
         // NOLINTEND(portability-simd-intrinsics)
 #else
-        // Scaled to [0,1] after the blend, matching the SSE2 path and sample_a: same operations
-        // in the same order, so this fallback and the SSE2 path agree bit for bit. sample_a does
-        // NOT: it blends one scalar channel where the SSE2 path blends four lanes, which lands an
-        // ulp apart on ~30% of samples (measured). Only the alpha cutout reads both, and only a
-        // sample landing within that ulp of the cutoff could mask differently between the tiled
-        // and immediate paths: zero flips in 100M measured comparisons, accepted as one pixel of
-        // a cutout edge at worst.
+        // Match the SSE2 operation order. sample_a may differ by one ulp, but 100 million
+        // comparisons produced no alpha-cutout decision changes.
         const auto texel = [](const uint8_t *p) noexcept -> vec4 {
             return { static_cast<float>(p[0]), static_cast<float>(p[1]), static_cast<float>(p[2]),
                      static_cast<float>(p[3]) };
@@ -167,9 +141,7 @@ struct Texture
 #endif
     }
 
-    // The four texels of a bilinear footprint as byte offsets into pixels (o00 top-left, o10
-    // right, o01 below, o11 diagonal) plus the fractional weights: the sample split into locate
-    // and blend. FootprintBatch below is the batch shader's SoA form of the same thing.
+    // Byte offsets and weights for one bilinear sample.
     struct Footprint
     {
         size_t o00, o10, o01, o11;
@@ -209,24 +181,9 @@ struct Texture
     // Bilinear sample at normalised (u, v), RGBA in [0, 1] (locate + blend).
     [[nodiscard]] vec4 sample_rgba(float u, float v) const { return blend(locate(u, v)); }
 
-    // The batch shader's form of Footprint: one SoA block for up to BATCH_MAX samples, filled
-    // by locate_batch in loops the compiler vectorizes (locate's per-sample struct store did
-    // not), prefetched together, then blended one at a time. Locating and prefetching a whole
-    // batch before reading any texel is what makes the fetches overlap: they are the shader's
-    // dominant memory stalls (three textures per pixel on a PBR model, and minified regions
-    // miss cache on nearly every texel).
-    //
-    // locate_batch is NOT bit-exact with locate, and cannot be relied on to be. It spells the
-    // v-flip as `(1 - v) * sy` where locate flips then multiplies, and GCC contracts the former
-    // into an FMA and not the latter, so `ty` differs by an ulp on ~13% of samples under
-    // `-march=native` (measured; zero under the portable build and under clang, and zero on both
-    // for `tx`, which has no such subtraction). Almost always that is a rounding difference in
-    // the blend weight, but where `ty` sits on a bin boundary the two pick texel rows one apart
-    // (2 samples in 320000): the one place the tiled and immediate paths sample DIFFERENT texels
-    // rather than blending the same ones differently. Harmless, because the blend is continuous
-    // across that boundary, so the colours differ by ~1e-5 of a channel. It is why
-    // tests/renderer/test_renderer_tiled.cpp compares the two paths with a tolerance instead of
-    // exactly; do not tighten that to zero expecting it to hold on GCC.
+    // SoA footprints let the compiler vectorize location and overlap texture misses.
+    // GCC may contract the batch v-flip into an FMA, so batch and scalar sampling can differ
+    // by about 1e-5 at row boundaries. Tiled-path tests therefore require a tolerance.
     static constexpr int BATCH_MAX = 64;
     struct FootprintBatch
     {
@@ -241,8 +198,7 @@ struct Texture
         const int xmax = width - 1;
         const int ymax = height - 1;
         const size_t w4 = static_cast<size_t>(width) * 4;
-        // Repeat/Repeat is the common case and a plain fract; the other modes take the per-sample
-        // wrap_coord switch (rare, per texture).
+        // Avoid a per-sample wrap-mode switch for the common Repeat case.
         const bool plain = wrap_s == WrapMode::Repeat && wrap_t == WrapMode::Repeat;
         for (int i = 0; i < n; i++)
         {
@@ -275,8 +231,7 @@ struct Texture
         }
     }
 
-    // Touch each footprint's two rows (its right texels are on the same line as the left ones
-    // except at a line boundary, not worth a third hint).
+    // Prefetch the two rows; right texels normally share their cache lines.
     void prefetch_batch(const FootprintBatch &f, int n) const noexcept
     {
         const uint8_t *base = pixels.data();
@@ -287,19 +242,13 @@ struct Texture
         }
     }
 
-    // Blend a whole batch into SoA channel arrays. Every texel is loaded before any is blended:
-    // blending a sample at a time interleaves ~15 flops between each group of four loads, which
-    // caps how many misses the core can have in flight, and this shader is memory-stalled (the same
-    // scene at 4K textures instead of 1K runs at IPC 0.78 against 1.07 on identical geometry and
-    // fragment counts). The 1 KB of staging stays L1-resident; chunking it into groups of 16 to
-    // shrink it further measured worse at both ends (4K city 1.14x against 1.18x, Duck 0.94x
-    // against 0.97x).
+    // Load every texel before blending so the CPU can overlap cache misses. The 1 KB staging
+    // block outperformed smaller chunks on both large and small scenes.
     RASTERMINAL_FORCE_INLINE void
     blend_batch(const FootprintBatch &f, int n, float *out_r, float *out_g, float *out_b, float *out_a) const noexcept
     {
         const uint8_t *base = pixels.data();
-        // Bytes, not a uint32 whose channels are shifted out: RGBA order in memory is fixed, a
-        // word's channel order is not, and this keeps the load width at four bytes either way.
+        // Bytes preserve RGBA order across endianness while retaining four-byte loads.
         uint8_t t00[BATCH_MAX][4];
         uint8_t t10[BATCH_MAX][4];
         uint8_t t01[BATCH_MAX][4];
@@ -311,12 +260,7 @@ struct Texture
             std::memcpy(t01[i], base + f.o01[i], 4);
             std::memcpy(t11[i], base + f.o11[i], 4);
         }
-        // Spelled out per channel rather than calling blend_texels on the staged bytes, even
-        // though that would reuse one blend implementation: this form lets the compiler vectorise
-        // ACROSS SAMPLES, where blend_texels' SSE2 body is four channels of ONE sample and stays
-        // four lanes wide however much vector width the target has. Measured 5% faster on Sponza
-        // and 3% on the 4K city. The arithmetic and its order are blend_texels' exactly, so the
-        // two still agree bar the last bit of any reassociation the vectoriser applies.
+        // Blend per channel so the compiler vectorizes across samples, not RGBA lanes.
         constexpr float inv255 = 1.0f / 255.0f;
         for (int i = 0; i < n; i++)
         {
@@ -377,13 +321,9 @@ struct Texture
     }
 };
 
-// True if every texel is achromatic (R==G==B). Early-outs on the first chromatic texel,
-// so an RGB normal map mislabeled into map_Bump costs ~O(1); a real grayscale height map
-// pays one full scan (then gets converted, which dwarfs the scan). An empty texture → false.
+// True when every texel is achromatic within the decoder's tolerance. Empty is false.
 [[nodiscard]] bool is_grayscale(const Texture &t);
 
-// Convert an MTL bump/height map to the tangent-space normal map the TBN rasterizer path
-// consumes. `imfchan` (-imfchan, default 'l' = luminance) selects the scalar height channel;
-// `bm` (-bm, default 1.0) scales the gradient. Honours the source texture's wrap modes at
-// the central-difference edges. Used for OBJ map_Bump/bump; see mesh_obj.cpp.
+// Convert an MTL height map to a tangent-space normal map. `imfchan` selects the height
+// channel, `bm` scales the gradient, and edge taps honor the texture's wrap modes.
 [[nodiscard]] Texture height_to_normal_map(const Texture &src, char imfchan, float bm);

@@ -13,19 +13,13 @@
 namespace
 {
 
-    // Brightness hierarchy on the {18,18,18} bar, plus one accent. In Palette256 mode each fg
-    // maps through quantize_256(), so the two depths agree by construction and no second colour
-    // table exists to drift.
+    // One brightness hierarchy for both truecolor and quantized output.
     constexpr Color FG_VALUE = HUD_BAR_FG;         // primary values: name, numbers, mode names
     constexpr Color FG_LABEL = { 140, 140, 140 };  // units and separators
     constexpr Color FG_ACCENT = { 110, 190, 220 }; // active states: shading mode, lit toggles
     constexpr Color FG_DIM = { 90, 90, 90 };       // inactive toggles: visible but receding
 
-    // A styled run of text. `cols` is the rendered width in terminal columns, which is not the
-    // byte count: the separator is one column in two bytes, and a model name in a non-Latin
-    // script routinely differs in both directions (display_width measures it). The view points
-    // either at a string literal or at one of compose_hud's own buffers, both of which outlive
-    // the segment array, so nothing here owns or copies a string.
+    // A non-owning styled run with its rendered column width.
     struct Seg
     {
         std::string_view text;
@@ -33,15 +27,8 @@ namespace
         int cols;
     };
 
-    // " · " (U+00B7 MIDDLE DOT): 4 bytes, counted as 3 columns. U+00B7 is East Asian
-    // Ambiguous, so a CJK-configured terminal may render it two columns wide and over-run the bar;
-    // not a new assumption, since ▀ (U+2580), which every rendered pixel cell is made of, is
-    // Ambiguous too: ambiguous-as-narrow is a precondition of the whole viewer, and a terminal
-    // that breaks it turns the render into stripes long before the bar's alignment matters.
-    // Stated generally because it licenses any bar glyph to be Ambiguous and counted narrow
-    // with no separate argument; a new glyph still has to clear cp_width's rule that a
-    // doubtful width rounds UP, and the font bar: nothing beyond ASCII plus the handful of
-    // characters (▀ and this dot) that predate every font a terminal ships.
+    // Middle dot is East Asian Ambiguous, as is the renderer's half-block. Both require
+    // terminals to display ambiguous characters narrowly.
     constexpr std::string_view SEPARATOR = " \xc2\xb7 ";
     constexpr int SEPARATOR_COLS = 3;
 
@@ -58,37 +45,24 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
         return {};
     }
 
-    // Cumulative drop levels, tried in order until the line fits, so a narrow terminal loses
-    // fields deliberately instead of clipping them at the edge. Ordered by how redundant each
-    // field is with the picture itself: the background is visible behind the model, the lighting
-    // mode shows in the shading, the toggles all have visible effects, the wireframe colour is
-    // literally on screen. The fps reading is last because it has no visual stand-in at all,
-    // and the first-person speed second-to-last for the same reason (the HUD is its only
-    // display); the model name outranks neither, being static identity the user just typed.
+    // Cumulative drop levels remove visually redundant fields first and preserve live numbers.
     constexpr int DROP_BG = 1;
     constexpr int DROP_LIGHT = 2;
     constexpr int DROP_TAGS = 3;
     constexpr int DROP_WF = 4;
     constexpr int SHRINK_NAME = 5;
     constexpr int DROP_CENTRE = 6;
-    // Past the centred group the ladder keeps going, because the right zone is right-aligned:
-    // stopping here and letting the line run off the edge means the TERMINAL chooses what to
-    // drop, and what it clips is the rightmost field, which is the fps reading this floor exists
-    // to protect. So the name gives way instead, and last of all the first-person speed.
+    // Keep dropping fields after the center disappears so right-edge clipping does not eat fps.
     constexpr int SHRINK_NAME_TINY = 7;
     constexpr int DROP_NAME = 8;
     constexpr int DROP_FP = 9;
-    // Not NAME_MAX/NAME_MIN: POSIX <limits.h> defines NAME_MAX as a macro, and any toolchain
-    // whose C++ headers pull that in transitively would rewrite the declaration below into a
-    // numeric literal and fail to compile. Reached this file's TU on no platform we build for,
-    // which is exactly why it would surface as someone else's broken build.
+    // Avoid POSIX's NAME_MAX macro.
     constexpr size_t NAME_BUDGET_MAX = 24;
     constexpr size_t NAME_BUDGET_MIN = 12;
     constexpr size_t NAME_BUDGET_TINY = 8;
     constexpr int ZONE_GAP = 2;
 
-    // Formatted once: neither depends on the drop level, and the loop below may rebuild the
-    // segment list several times before one fits.
+    // These values do not change across fit attempts.
     char fp_buf[24] = "";
     if (info.first_person)
     {
@@ -97,19 +71,13 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
     char fps_buf[16];
     std::snprintf(fps_buf, sizeof(fps_buf), "%d", info.fps);
 
-    // The name is re-cut only when the budget actually changes (at most twice on the way down,
-    // at SHRINK_NAME and SHRINK_NAME_TINY), and a name already within budget is viewed in place
-    // rather than copied, so the common call builds no string at all. A name over budget costs
-    // one cut result per budget it passes through. (That is why truncate_middle takes a
-    // string_view; taking a std::string made every one of those two allocations.)
+    // Recut the name only when its budget changes; short names remain non-owning views.
     std::string name_store;
     std::string_view name = info.model_name;
     int name_cols = 0;
     size_t name_budget = 0;
 
-    // One fixed array rather than three vectors: the zones are built in order, so two boundary
-    // indices describe them, and a compose then allocates only its output string (plus the cut
-    // name above, when the name is over budget).
+    // One fixed array holds three contiguous zones without per-zone allocations.
     std::array<Seg, MAX_SEGS> segs{};
     size_t n_seg = 0;
     size_t left_end = 0;
@@ -151,11 +119,7 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
                 name_store = truncate_middle(info.model_name, budget);
                 name = name_store;
             }
-            // A leading emoji presentation selector has to go before the name is measured. Its
-            // width is the one that depends on the character BEFORE it, and each segment here is
-            // measured alone and the widths summed, so a segment that starts with it resolves to
-            // a different number than the assembled line renders. It is meaningless anyway: it
-            // either lost its base to the cut above or never had one.
+            // A detached VS16 has context-dependent width and no base, so remove it before measuring.
             constexpr std::string_view VS16 = "\xef\xb8\x8f";
             while (name.size() >= VS16.size() && name.compare(0, VS16.size(), VS16) == 0)
             {
@@ -191,12 +155,7 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
             if (level < DROP_BG)
             {
                 push(SEPARATOR, FG_LABEL, SEPARATOR_COLS);
-                // Dimmer than the fields before it, for two reasons that agree. It is the first
-                // field dropped when the bar runs out of room, so the styling matches the
-                // priority the layout already assigns it; and with the captions gone, the only
-                // pair of fields that can render the same word is the wireframe colour and this
-                // one (both can be "white", two fields apart in near-identical greys), which
-                // the brightness difference separates without bringing a caption back.
+                // Dim the first dropped field and distinguish it from a same-named wireframe color.
                 push_ascii(info.bg_name, FG_LABEL);
             }
         }
@@ -234,16 +193,12 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
         }
     }
 
-    // Padding. The centre zone sits truly centred when the slack allows and is nudged inward
-    // otherwise; the fit check above passed whenever the zone exists, which is exactly the
-    // condition making both clamps satisfiable, so both pads land at ZONE_GAP or wider.
+    // Center the middle zone when possible, otherwise keep both gaps at ZONE_GAP.
     int pad1 = 0;
     int pad2 = 0;
     if (centre_end == left_end)
     {
-        // Never narrower than the gap. Below the floor width the line runs past the right edge
-        // and the terminal clips it (auto-wrap is off), and losing the tail of the fps reading
-        // is far better than the model name running straight into the digits with no separator.
+        // Preserve a separator even below the minimum fit width; auto-wrap is disabled.
         pad1 = std::max(cols - w_left - w_right, ZONE_GAP);
     }
     else
@@ -254,8 +209,7 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
         pad1 = start - w_left;
         pad2 = cols - w_right - start - w_centre;
     }
-    // Defensive only, per the argument above: a negative count would convert to a huge size_t
-    // at the append below rather than simply producing a short line.
+    // Prevent a negative pad from becoming a huge size_t.
     pad1 = std::max(pad1, 0);
     pad2 = std::max(pad2, 0);
 
@@ -269,8 +223,7 @@ std::string compose_hud(const HudInfo &info, int cols, ColorMode mode)
         for (size_t i = begin; i < end; ++i)
         {
             const Seg &s = segs[i];
-            // A run of spaces shows only the bar background; emitting no SGR for it (and leaving
-            // the dedup state alone) keeps padding free of escape bytes.
+            // Padding needs no foreground escape.
             if (s.text.find_first_not_of(' ') == std::string_view::npos)
             {
                 out += s.text;

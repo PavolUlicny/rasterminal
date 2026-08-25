@@ -5,10 +5,8 @@
 #include <cstdint>
 #include <string>
 
-// CLI-level enumerations for the value flags. Defined here (not in the renderer
-// headers) so ParsedArgs stays free of renderer dependencies; main.cpp maps them
-// to colours/lights/framebuffer modes. The *_COUNT constants back the runtime
-// cycling keybindings (B/L/C wrap through the enumerators in declaration order).
+// CLI enums stay here to keep ParsedArgs independent of the renderer. *_COUNT values
+// support runtime cycling in declaration order.
 
 enum class Background : std::uint8_t
 {
@@ -37,8 +35,7 @@ enum class WireframeColor : std::uint8_t
 };
 constexpr int WIREFRAME_COLOR_COUNT = static_cast<int>(WireframeColor::Magenta) + 1;
 
-// --color choice: Auto defers to platform::detect_term_color(); the other two
-// force the framebuffer mode (the TERM=dumb fatal and Windows VT gate still apply).
+// Auto detects color support. Forced modes still obey the TERM=dumb and Windows VT checks.
 enum class ColorChoice : std::uint8_t
 {
     Auto,
@@ -46,11 +43,8 @@ enum class ColorChoice : std::uint8_t
     Palette256
 };
 
-// --graphics choice: Auto uses kitty graphics when the terminal answers the
-// startup capability query, then sixel when its DA1 reply advertises it, else
-// half-block cells; Kitty and Sixel force the backend but still require the
-// detection to succeed (an unsupported terminal silently swallows the escapes
-// and would show nothing at all); Blocks skips the query entirely.
+// Auto prefers detected kitty, then sixel, then blocks. Forced pixel backends still
+// require detection because unsupported terminals may swallow their escapes silently.
 enum class GraphicsChoice : std::uint8_t
 {
     Auto,
@@ -59,17 +53,14 @@ enum class GraphicsChoice : std::uint8_t
     Blocks
 };
 
-// --spin-direction: the way the model's front face moves on screen while
-// spinning. Left is the historical direction (no COUNT constant: like
-// ColorChoice, there is no cycling keybinding for it).
+// Direction describes the model's on-screen movement. There is no runtime cycle.
 enum class SpinDirection : std::uint8_t
 {
     Left,
     Right
 };
 
-// Parsed command-line arguments.  All values are plain types with no renderer
-// dependencies, so this header can be included by the test binary cheaply.
+// Parsed arguments use plain types and do not depend on renderer headers.
 struct ParsedArgs
 {
     std::string model_path; // required positional
@@ -98,17 +89,13 @@ struct ParsedArgs
     bool ao = true;
     bool hud = true;
     bool input = true; // false = --no-input: keyboard and mouse bindings ignored (Q and Ctrl+C still quit)
-    // true = --first-person: free-flying camera (no gravity, collision or ground plane)
-    // instead of the turntable; WASD moves, the arrows and the mouse look, E/V rise and fall
+    // Free-flying camera without gravity, collision or a ground plane.
     bool first_person = false;
-    // Initial --first-person movement speed, as a multiplier of the model-scaled default.
-    // Range is Camera::FP_SPEED_{MIN,MAX}, the same one +/- and the wheel move within.
+    // Initial first-person speed, relative to the model-scaled default.
     float first_person_speed = 1.0f;
 };
 
-// Result of parse_args().
-// ok=false → caller should return exit_code immediately (error or --help).
-// ok=true  → args is fully populated and valid.
+// A failed result carries the process exit code; a successful one carries valid arguments.
 struct ParseResult
 {
     bool ok = true;
@@ -118,8 +105,5 @@ struct ParseResult
 
 [[nodiscard]] ParseResult parse_args(int argc, char *argv[]);
 
-// Basename of argv[0], the name the program was invoked as, for use as the
-// diagnostic prefix ("progname: message", the standard Unix convention).
-// Splits on '/' or '\\' (Windows paths); falls back to "rasterminal" when
-// argv0 is null, empty, or ends in a separator.
+// Invoked basename for diagnostics. Accepts either path separator and defaults to rasterminal.
 [[nodiscard]] const char *program_name(const char *argv0);

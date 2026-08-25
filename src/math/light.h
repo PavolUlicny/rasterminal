@@ -5,9 +5,7 @@
 #include <cmath>
 #include <cstdint>
 
-// ndh^shininess given ndh² as input: lets the caller skip a sqrt in the
-// half-vector normalize. For the squaring-chain cases (32/16/8) ndh^N = (ndh²)^(N/2),
-// so we start one step further along the chain with no precision loss.
+// Compute ndh^shininess from ndh squared, avoiding half-vector normalization.
 inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
 {
     if (shininess == 32.0f)
@@ -31,22 +29,14 @@ inline float specular_pow_sq(float ndh_sq, float shininess) noexcept
     return std::exp2f(shininess * 0.5f * std::log2f(ndh_sq));
 }
 
-// Map glTF roughness [0,1] to a Blinn-Phong shininess exponent. Used by the loader
-// (scalar roughnessFactor) and the Phong rasterizer (per-texel roughness from the MR
-// texture), so the mapping is defined once.
+// Shared conversion for scalar and per-texel glTF roughness.
 inline float roughness_to_shininess(float roughness) noexcept
 {
     return ((1.0f - roughness) * 126.0f) + 2.0f;
 }
 
-// One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it samples
-// (glTF textureInfo.texCoord and equivalent Assimp metadata, clamped to {0,1} at load with
-// an absent set degrading to 0), and an optional KHR_texture_transform: t is a 2x3 affine on the
-// interpolated UV before sampling (feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5).
-// The spec defines the transform on v-down UVs but we store UVs v-flipped, so the loader
-// bakes the flip in: the spec transform with its ROTATION NEGATED (flipY convention; full
-// derivation at bake_transform in mesh_gltf.cpp). Identity by default; callers gate the
-// per-pixel apply on has_transform.
+// Texture index, UV set and optional baked 2x3 UV transform. Loaders clamp UV sets to 0 or 1.
+// glTF loaders bake the project's flipped-v convention into the transform.
 struct TexSlot
 {
     int tex = -1;
@@ -55,18 +45,14 @@ struct TexSlot
     float t[6] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f };
 };
 
-// Apply a TexSlot's baked KHR_texture_transform affine to an interpolated UV. Identity
-// when the slot has no transform, but callers gate on has_transform to skip it entirely.
+// Apply a baked texture transform. Callers skip this when has_transform is false.
 inline vec2 apply_tex_transform(const TexSlot &s, vec2 uv) noexcept
 {
     return { (s.t[0] * uv.x) + (s.t[1] * uv.y) + s.t[2], (s.t[3] * uv.x) + (s.t[4] * uv.y) + s.t[5] };
 }
 
-// Two slots address the texture identically (same UV set and same KHR_texture_transform), so a
-// sample taken for one can be reused for the other. Used by the ORM fast path: the texture cache
-// dedups by image only (not texCoord/transform), so two bindings sharing a Texture* may still
-// differ in either. The baked t[] is bit-identical for equal authored transforms (same arithmetic
-// on the same inputs), so exact comparison is correct here.
+// True when two bindings can reuse one sample. Image deduplication alone is insufficient
+// because bindings may select different UV sets or transforms.
 inline bool same_uv_mapping(const TexSlot &a, const TexSlot &b) noexcept
 {
     if (a.uv_set != b.uv_set || a.has_transform != b.has_transform)
@@ -86,51 +72,34 @@ inline bool same_uv_mapping(const TexSlot &a, const TexSlot &b) noexcept
     return true;
 }
 
-// Per-surface material properties (from MTL Ka/Kd/Ks/Ns/map_Kd or defaults).
-// NOTE: when adding a new *_map TexSlot, also update the remap loop in
-// decode_textures() (mesh_loader.h): it enumerates each one explicitly.
+// When adding a texture slot, also update decode_textures()'s explicit remap list.
 struct Material
 {
     vec3 diffuse = { 1.0f, 1.0f, 1.0f };
     vec3 ambient = { 1.0f, 1.0f, 1.0f }; // Ka; defaults to Kd when Ka absent in MTL
     vec3 specular = { 0.4f, 0.4f, 0.4f };
     float shininess = 32.0f;
-    // Self-illumination added post-lighting so shaded areas still glow.
-    // Modulated by emissive_map when present. A zero factor skips the per-pixel add and the
-    // emissive_map sample (per glTF spec: emissive = factor * texture, so factor 0 ⇒ 0). For
-    // glTF, mesh_gltf bakes KHR_materials_emissive_strength into this factor at load.
+    // Added after lighting. glTF loaders bake emissive strength into this factor.
     vec3 emissive = { 0.0f, 0.0f, 0.0f };
-    // Texture bindings (slot index into Mesh::textures + per-slot UV set; -1 tex = none).
     TexSlot diffuse_map;
     TexSlot specular_map;
     TexSlot normal_map;
     TexSlot emissive_map;
-    // glTF normalTexture.scale: scales the X/Y components of the sampled tangent-space normal
-    // before TBN transformation (spec: scaledNormal = normalize((sample*2-1) * vec3(scale,scale,1))).
-    // Default 1.0 = no-op; non-glTF loaders never touch this. Mesh::has_normal_scale gates the
-    // per-pixel multiply so the common case (scale==1 or no normal map) pays zero.
+    // Scales tangent-space X/Y before TBN transformation.
     float normal_scale = 1.0f;
-    // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
-    // per-pixel metallic work; Assimp-backed formats may provide the same common PBR properties).
+    // Metallic-roughness inputs used by Phong shading.
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
     TexSlot mr_map;         // metallic-roughness (G=roughness, B=metallic)
-    // glTF occlusionTexture (Phong path only). The R channel is authored ambient occlusion; it
-    // REPLACES the baked per-vertex AO per-pixel (both target the same scale; multiplying would
-    // double-darken). occlusion_strength is occlusionTexture.strength: ao = 1 + strength*(R-1).
-    // Mesh::has_occlusion gates the per-pixel sample; Assimp-backed formats may provide this property.
+    // The occlusion map's R channel replaces baked vertex AO to avoid double-darkening.
     TexSlot occlusion_map;
     float occlusion_strength = 1.0f;
     bool double_sided = false;
     float alpha_cutoff = 0.0f; // 0 = disabled; >0 = discard pixels with diffuse-tex alpha below this
-    // Alpha blending (distinct from alpha_cutoff / MASK, which is a binary-discard opaque path).
-    // blend = true routes the material's triangles to the transparent pass (alpha-OVER compositing);
-    // alpha is the base opacity (glTF baseColorFactor.a / MTL d). Per-fragment opacity is
-    // alpha * diffuse-texture.a * vertex-color.a. Mesh::has_transparent gates the whole path.
+    // Blend routes the material through alpha-over compositing; alpha_cutoff remains opaque.
     bool blend = false;
     float alpha = 1.0f;
-    // KHR_materials_unlit: bypass lighting/emissive/normal/occlusion and output
-    // baseColor * diffuse texture * vertex color directly (alpha cutout still applies).
+    // Unlit materials bypass lighting but still apply alpha cutout.
     bool unlit = false;
 };
 
@@ -141,14 +110,13 @@ struct Light
     vec3 color = { 1.0f, 1.0f, 1.0f };
 };
 
-// Tag for callers that guarantee the normal is already unit-length.
-// Skips the internal normalize(): saves one sqrt per call.
+// Tag for callers that guarantee a unit normal.
 struct assume_unit_t
 {
 };
 inline constexpr assume_unit_t assume_unit{};
 
-// Half-vector normalize skipped: ndh² = (n·h)² / (h·h), saves one sqrt per light.
+// Compute ndh squared directly to avoid normalizing the half-vector.
 inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v, const Light &light, const Material &mat) noexcept
 {
     const float diff = dot(n, light.direction);
@@ -167,8 +135,7 @@ inline void apply_light(vec3 &result, const vec3 &n, const vec3 &v, const Light 
     }
 }
 
-// Shading-params overload: takes only the four fields used by lighting, avoiding the
-// ~92 B Material copy the Phong inner loop would otherwise pay per pixel.
+// Avoid copying a full Material in the Phong inner loop.
 inline void apply_light(
     vec3 &result,
     const vec3 &n,
@@ -195,11 +162,8 @@ inline void apply_light(
     }
 }
 
-// Blinn-Phong illumination summed over an array of directional lights, taking the four
-// shading-params fields lighting consumes (diffuse/ambient/specular/shininess) rather than a
-// Material; this lets rasterize_phong skip the per-pixel Material copy. ambient_scene is added
-// once (not per light). v must be the unit view vector (normalize(eye - pos)), precomputed by the
-// caller; normal is normalized internally. Returns RGB in [0, ~1+]; caller clamps before display.
+// Sum directional Blinn-Phong lighting without copying Material. `v` must be unit length;
+// this function normalizes `normal`. The caller clamps the result for display.
 inline vec3 compute_lighting(
     vec3 normal,
     const vec3 &v,
@@ -222,9 +186,7 @@ inline vec3 compute_lighting(
     return result;
 }
 
-// assume_unit overloads: caller guarantees normal is already unit-length.
-// Flat face normals are always unit after load (and Phong vertex normals);
-// skipping normalize() saves one sqrt per Flat triangle.
+// Flat and loaded vertex normals are already unit length, so these overloads skip a sqrt.
 inline vec3 compute_lighting(
     [[maybe_unused]] assume_unit_t tag,
     const vec3 &n,

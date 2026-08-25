@@ -21,7 +21,7 @@ namespace
 {
 
     // UTF-8 encoding of ▀ (U+2580 UPPER HALF BLOCK)
-    // Top pixel → foreground color, bottom pixel → background color.
+    // Top pixel is foreground; bottom pixel is background.
     const char UPPER_HALF[] = "\xe2\x96\x80";
 
     struct ByteLut
@@ -93,28 +93,11 @@ namespace
 
 namespace
 {
-    // Ring of shm object names, one per in-flight frame. The terminal unlinks an
-    // object after reading it, so by the time a slot comes around again its old
-    // object is normally gone; the pre-create unlink in shm_frame_open reclaims
-    // one that never got read. The ring is slack, not backpressure: the pty
-    // carries only tiny escapes, so a stalled terminal can have more than four of
-    // them queued, and a slot then wraps while its escape is unread. The terminal,
-    // reaching the stale escape, opens the slot's newer object (at worst mid-write:
-    // one torn or dropped frame, replaced by the very next transmit). If a RESIZE
-    // came between, the new object is a different inode of a different size, so the
-    // stale escape's s=/v= describe more pixels than it holds; a terminal that sizes
-    // the object before reading (kitty does) drops that frame rather than reading
-    // past the end, and q=2 suppresses the error reply it would send back. A create
-    // that fails AFTER its pre-unlink costs the unread predecessor the same way,
-    // and the same-frame direct fallback repaints. Accepted:
-    // real backpressure would need reading per-frame replies, which q=2 suppresses
-    // on purpose so they cannot interleave with interactive input.
+    // Rotate shm names to avoid overwriting normally in-flight frames. This is slack,
+    // not backpressure; a stalled terminal may drop one frame before the next repaint.
     constexpr unsigned SHM_RING = 4;
 
-    // Keyed on the pid alone, which assumes ONE kitty Framebuffer per process: a second live one
-    // would recreate the very names the first has named in unread escapes, and its destructor
-    // would unlink all four of the first's slots. The app builds one; only the tests construct
-    // more, and they do so one at a time.
+    // Names assume one live kitty Framebuffer per process.
     void shm_ring_name(char *buf, size_t cap, unsigned slot)
     {
         std::snprintf(buf, cap, "/rasterminal-%lu-%u", platform::process_id(), slot);
@@ -137,15 +120,7 @@ namespace
     // check on this literal's length.
     constexpr char SYNC_BEGIN[] = "\033[?2026h";
 
-    // Run fn(lo, hi) over an even split of [0, total) across the borrowed pool, then redo
-    // serially any range whose worker did not report back.
-    //
-    // The bookkeeping is not paranoia: both callers below fill a buffer that something else
-    // then reads as pixels, and neither loop allocates, so a worker that never ran leaves no
-    // trace of itself. A skipped range would ship uninitialized bytes, which for the sixel
-    // plane is a memory-safety hole rather than merely wrong colours (see quantize_to_palette).
-    // fn by const reference, not a forwarding reference: it is called once per worker and again
-    // for any range the pool did not cover, so it must not be consumed by the first call.
+    // Split a range across borrowed workers, then redo any unreported range serially.
     template <typename F>
     void split_ranges(const Framebuffer::ParallelRunner &par, std::vector<uint8_t> &covered, size_t total, const F &fn)
     {
@@ -159,11 +134,7 @@ namespace
         par.run(
             [&fn, &start_of, cov](int worker_id, int n_workers)
             {
-                // Sit the round out unless the pool is the size the flags were made for. The
-                // flags say which ranges the SERIAL redo below can skip, and it derives those
-                // ranges from its own count, so a worker splitting by a different one would
-                // mark a flag for a range it did not fill: a silent hole rather than a redo.
-                // Bailing here instead leaves every flag clear and the redo covers the frame.
+                // A mismatched pool size invalidates the range map; let serial redo cover it.
                 const auto w = static_cast<size_t>(worker_id);
                 if (static_cast<size_t>(n_workers) != cov->size() || w >= cov->size())
                 {
@@ -183,11 +154,7 @@ namespace
         }
     }
 
-    // The adler32 of a concatenation, from the two halves' own adler32s and the length of
-    // the second (zlib's adler32_combine, which miniz does not export). It lets the
-    // parallel deflate fold in the checksum of each chunk as that chunk is compressed
-    // instead of making a second serial pass over the whole frame, which measured 1.40 ms
-    // at 1080p and 5.53 ms at 4K, a quarter of the direct transport's remaining cost.
+    // zlib's adler32_combine, absent from miniz, avoids a second full-frame pass.
     constexpr uint32_t ADLER_BASE = 65521u;
     // uint64_t throughout: rem * sum1 reaches 65520 * 65535, which overflows 32 bits.
     // No cast on the modulo, which would be useless at LP64 (size_t is unsigned long
@@ -266,13 +233,10 @@ Framebuffer::~Framebuffer()
         std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
         std::fflush(stdout);
     }
-    // Outside the headless guard on purpose: headless only suppresses terminal
-    // escapes, but a headless kitty framebuffer that called present() (tests)
-    // still created ring objects, and unlinking is not terminal output.
+    // Headless mode suppresses escapes, not cleanup of shared-memory frames.
     if (m_gfx.backend == GraphicsBackend::Kitty)
     {
-        // The terminal unlinks what it reads, but frames it never read (and
-        // anything left by an earlier crash of this pid) are ours to reclaim.
+        // Reclaim unread frames and any stale entries left by this pid.
         for (unsigned slot = 0; slot < SHM_RING; slot++)
         {
             char name[64];
@@ -290,13 +254,8 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_pixel = std::vector<std::atomic<uint64_t>>(npx);
     m_prev_color = std::vector<uint32_t>(is_pixel_backend() ? 0u : npx, 0u);
     fill_cleared(0u);
-    // The output and staging buffers are sized to the frame; a resize is where
-    // releasing them is free (everything reallocates to the new size either
-    // way), so a shrunk window gives their memory back: shrink m_buf before
-    // re-reserving (reserve alone never shrinks, and in kitty direct mode the
-    // old capacity, grown by the first transmit, is the largest allocation in
-    // the process). The staging buffers' session-long retention at a CONSTANT
-    // size after a transient shm fallback stays deliberate (see buf_reserve_bytes).
+    // Release frame-sized buffers here so shrinking the window also returns
+    // their memory. reserve() alone would retain the old capacity.
     m_buf.clear();
     m_buf.shrink_to_fit();
     m_buf.reserve(buf_reserve_bytes());
@@ -307,10 +266,7 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_idx.reset();
     m_idx_cap = 0;
     m_sixel_scratch = {};
-    // The parallel staging is frame-sized too and must follow the same policy: the
-    // deflate chunk blocks are ~1.1x the frame, and the sixel parts and per-worker
-    // scratch together hold a whole encoded frame plus a mask per worker. Without
-    // this a shrunk 4K window keeps tens of megabytes for the rest of the session.
+    // Parallel staging is also frame-sized and must shrink with the window.
     m_zchunk.reset();
     m_zchunk_cap = 0;
     m_zchunk_len = std::vector<size_t>();
@@ -320,8 +276,7 @@ void Framebuffer::resize(int pixel_width, int pixel_height)
     m_par_covered = std::vector<uint8_t>();
     m_force_redraw = true;
     m_image_dirty = true;
-    // Leftover content from the previous (possibly larger) terminal is wiped
-    // by the next present, inside its synchronized bracket (see the member).
+    // Clear content from the previous dimensions in the next synchronized frame.
     m_pending_clear = true;
 }
 
@@ -355,12 +310,8 @@ void Framebuffer::begin_frame()
 
 void Framebuffer::end_frame()
 {
-    // Nothing composed past the opening bracket: write zero bytes, so an idle
-    // present on any backend stays literally silent (no bare 2026 pairs at the
-    // idle pacing rate; blocks composes nothing when every cell is clean).
-    // Compared against the bare bracket, NOT a base captured after
-    // begin_frame(): that base would include a deferred \033[2J, and an
-    // erase-only frame (sixel shrunk to zero rows) must still be written.
+    // Skip an empty synchronized frame, but still write a deferred erase-only
+    // frame after resize.
     if (m_buf.size() == sizeof(SYNC_BEGIN) - 1)
     {
         return;
@@ -394,16 +345,12 @@ void Framebuffer::present()
     }
 }
 
-// Whole-frame serialization into a plain buffer, split across the borrowed pool. This is
-// the DIRECT transport's staging fill, which is ordinary user-space work and does scale;
-// the shm path deliberately does NOT come through here (it streams per chunk through
-// write_rgb_range, and parallelizing that was measured useless because the kernel
-// serializes the tmpfs write behind page allocation and the inode lock).
+// Serialize a direct-transport frame across the borrowed worker pool. The shm
+// path streams chunks separately and gains nothing from this parallel stage.
 void Framebuffer::write_rgb(unsigned char *out)
 {
     const size_t npx = m_pixel.size();
-    // Below this the dispatch round trip costs more than the loop it saves, the same
-    // threshold quantize_to_palette uses.
+    // Below this, dispatch costs more than the work it saves.
     constexpr size_t MIN_PARALLEL_PIXELS = size_t{ 1 } << 18u;
     if (!m_par.usable() || npx < MIN_PARALLEL_PIXELS)
     {
@@ -437,25 +384,15 @@ bool Framebuffer::transmit_shm()
     shm_ring_name(name, sizeof name, m_shm_seq % SHM_RING);
     m_shm_seq++;
 
-    // Converted and handed over a chunk at a time rather than as one frame-sized
-    // buffer: the chunk stays L2-resident across the unpack and the append, and
-    // nothing frame-sized has to be allocated (256 KB against 24 MB at 4K). The
-    // size is flat across 64 KB - 1 MB (2.25 / 2.21 / 2.24 ms at 1080p), so it is
-    // picked for the cache residency rather than tuned.
-    //
-    // Reserved BEFORE the object is opened, and deliberately so: ShmFrame holds a raw
-    // fd with no destructor, so a throw between open and close would leak both the fd
-    // and a frame-sized /dev/shm object (the ftruncate has already reserved it). This
-    // is the only allocating call in the body, so hoisting it keeps the open..close
-    // span nothrow, which is what the old mapping form got for free.
+    // Convert in an L2-sized chunk. Allocate before opening the non-RAII ShmFrame so
+    // the open-to-close span cannot throw and leak the object.
     constexpr size_t CHUNK_BYTES = size_t{ 256 } * 1024;
     constexpr size_t CHUNK_PX = CHUNK_BYTES / 3u;
     ensure_capacity(m_rgb, m_rgb_cap, CHUNK_PX * 3u);
 
     platform::ShmFrame frame = platform::shm_frame_open(name, npx * 3u);
-    // cppcheck suppression: in the _WIN32 configuration the open is the stub
-    // that always returns an invalid frame, so the multi-config scan reads this
-    // condition as constant. Same false-positive class as present_kitty's.
+    // Windows uses an always-invalid open stub, so cppcheck's multi-config scan
+    // treats this condition as constant.
     // cppcheck-suppress knownConditionTrueFalse
     if (!frame.valid())
     {
@@ -471,10 +408,8 @@ bool Framebuffer::transmit_shm()
     platform::shm_frame_close(frame);
     if (!ok)
     {
-        // A partially written object would be transmitted as a torn frame, so it
-        // is reclaimed and this frame takes the direct transport instead. Reached
-        // when /dev/shm fills mid-frame; shm is retried next frame, since the
-        // medium itself was verified at startup.
+        // Reclaim a partial object instead of transmitting a torn frame. Use direct
+        // transport now and retry the startup-verified shm path next frame.
         platform::shm_frame_remove(name);
         return false;
     }
@@ -482,17 +417,8 @@ bool Framebuffer::transmit_shm()
     return true;
 }
 
-// Deflate one frame across the borrowed pool, as pigz does it: each chunk is compressed
-// independently into raw DEFLATE and closed with TDEFL_SYNC_FLUSH, which emits an empty
-// stored block and so leaves the chunk byte-aligned with no BFINAL bit set. The pieces
-// therefore concatenate into one legal DEFLATE stream, and a zlib header, a final empty
-// block and the adler32 of the WHOLE input make it the ordinary zlib stream the terminal
-// already knows how to inflate (o=z). Returns the stream length, or 0 if any chunk failed.
-//
-// Splitting costs ratio in principle, because each chunk starts with an empty
-// back-reference window, but a chunk here is hundreds of KB against deflate's 32 KB
-// window: measured on real frames the output moves under 0.4% and in the cases tried it
-// came out slightly SMALLER than the one-shot form, so there is no size paid for the speed.
+// Compress independent raw-DEFLATE chunks ending in sync flushes, then wrap their
+// concatenation as one zlib stream. Return zero if any chunk fails.
 size_t Framebuffer::deflate_frame_parallel(size_t len, int chunks)
 {
     const size_t per = (len + static_cast<size_t>(chunks) - 1) / static_cast<size_t>(chunks);
@@ -510,9 +436,7 @@ size_t Framebuffer::deflate_frame_parallel(size_t len, int chunks)
     std::vector<size_t> *lens = &m_zchunk_len;
     std::vector<uint32_t> *adlers = &m_zchunk_adler;
 
-    // One tdefl_compressor is ~300 KB, too large for the stack of a worker; each worker
-    // allocates its own, which is why the callback can throw bad_alloc (run_on_workers
-    // swallows it per worker and the zero length left behind fails the frame cleanly).
+    // A compressor is about 300 KB, so allocate it off the worker stack.
     m_par.run(
         [src, blocks, lens, adlers, len, per, stride, chunks](int worker_id, int n_workers)
         {
@@ -541,15 +465,8 @@ size_t Framebuffer::deflate_frame_parallel(size_t len, int chunks)
                 const tdefl_status st = tdefl_compress(
                     z.get(), src + lo, &in_n, blocks + (stride * static_cast<size_t>(c)), &out_n, TDEFL_SYNC_FLUSH
                 );
-                // out_n < stride as well as the status: tdefl reports OKAY with all
-                // input consumed even when the output buffer filled, parking the tail
-                // (the 00 00 FF FF sync marker among it) in its internal flush
-                // remainder. Such a chunk would splice a truncated deflate block into
-                // the middle of the stream, which the terminal's inflate cannot
-                // recover from, whereas a rejected chunk degrades cleanly to raw.
-                // Not reachable at today's ~10% stride margin against a measured 0.02%
-                // worst-case expansion, but the margin is an undocumented miniz
-                // property that a version bump could change.
+                // miniz may report OKAY with a pending flush tail when output fills.
+                // Reject that truncated chunk and send the frame raw.
                 if (st == TDEFL_STATUS_OKAY && in_n == hi - lo && out_n < stride)
                 {
                     (*lens)[static_cast<size_t>(c)] = out_n;
@@ -586,10 +503,8 @@ size_t Framebuffer::deflate_frame_parallel(size_t len, int chunks)
     // BFINAL=1, BTYPE=fixed, immediately the end-of-block symbol, zero-padded.
     out[at++] = 0x03;
     out[at++] = 0x00;
-    // Folded from the per-chunk checksums in band order; equals the whole-frame adler32
-    // exactly (pinned by test, and by the terminal's own inflate rejecting it otherwise).
-    // Seeded with the adler32 of the empty input, which combine treats as an identity, so a
-    // zero-length frame still emits a legal stream rather than a trailer of four zero bytes.
+    // Fold per-chunk checksums in band order to reproduce whole-frame Adler-32.
+    // The empty-input seed is the combine identity and keeps zero-length streams valid.
     uint32_t adler = 1;
     for (int c = 0; c < chunks; c++)
     {
@@ -615,13 +530,7 @@ size_t Framebuffer::deflate_frame(size_t len)
     constexpr size_t MIN_PARALLEL_BYTES = size_t{ 1 } << 20u;
     if (m_par.usable() && len >= MIN_PARALLEL_BYTES)
     {
-        // Four chunks per worker, not one. The split is uniform in INPUT size but not in
-        // work: how long a chunk takes depends on how compressible it is, so with exactly
-        // one chunk each the frame waits on the least compressible one. Oversubscribing
-        // lets the steal loop even that out, worth 1.20x at 1080p and 1.14x at 4K over one
-        // chunk per worker, for 0.35% more wire bytes (each chunk starts with an empty
-        // 32 KB back-reference window). Measured 8 per worker as the turn: 0.98x the time
-        // of 4 AND 0.83% more bytes, both directions worse.
+        // Four chunks per worker balance variable compressibility with little ratio loss.
         constexpr size_t MIN_CHUNK_BYTES = size_t{ 64 } << 10u;
         const int chunks = std::min(m_par.n_workers * 4, static_cast<int>(len / MIN_CHUNK_BYTES));
         if (chunks > 1)
@@ -652,15 +561,7 @@ void Framebuffer::transmit_direct()
     const size_t rgb_len = m_pixel.size() * 3u;
     ensure_capacity(m_rgb, m_rgb_cap, rgb_len);
     write_rgb(m_rgb.get());
-    // zlib level 1: rendered frames (large flat background, smooth gradients)
-    // compress several-fold even at the fastest level, and the levels above it buy
-    // ~2% of size for 3x the time. It is worth doing at all because it removes ~5.4 MB
-    // from a typical 1080p frame, which any real link takes far longer to carry than
-    // the deflate takes to run. It is not cheap, though: 16 ms of a 1080p frame and
-    // 72 ms of a 4K one, measured, which is why deflate_frame splits it across the
-    // renderer's idle pool when one is wired in (3.2x, and marginally SMALLER output).
-    // A compression failure falls back to the raw form (identical pixels, bigger
-    // payload), which is also what a partly-failed parallel deflate degrades to.
+    // Level 1 captures most frame redundancy; failures fall back to identical raw pixels.
     const size_t z_len = deflate_frame(rgb_len);
     if (z_len != 0)
     {
@@ -676,13 +577,8 @@ void Framebuffer::present_kitty()
     const bool full_redraw = m_force_redraw;
     m_force_redraw = false;
 
-    // A one-row terminal with the HUD shown leaves zero image rows, and nothing to show is
-    // nothing to transmit. This guard is the only thing enforcing that now: the shm transport
-    // used to refuse a zero-length frame by itself, since the mapping could not be created,
-    // but the Linux fill streams to an fd and a zero-length object opens perfectly well.
-    // The resident frame from before the shrink is still displayed (a retransmit no longer
-    // replaces it, and nothing else touches it), covering the HUD row, so it is deleted
-    // terminal-side once.
+    // A one-row terminal with a HUD has no image rows. Delete the previously
+    // displayed image once; a zero-length shm frame would not replace it.
     if (m_pixel.empty())
     {
         if (m_image_shown)
@@ -696,17 +592,8 @@ void Framebuffer::present_kitty()
         // The placement renders at the cursor cell; home it first. C=1 in the
         // transmit keys then leaves the cursor untouched for the HUD block.
         m_buf += "\033[1;1H";
-        // A failed shm frame falls back to the direct transport for THIS frame
-        // only and shm is retried next frame: the medium itself was verified end
-        // to end by the startup probe, so a failure here is transient (EMFILE, a
-        // momentarily full /dev/shm) and must not demote the transport for the
-        // rest of the session. The retry costs one failed syscall on a frame
-        // that is about to spend milliseconds rendering.
-        //
-        // cppcheck suppression: transmit_shm() is constantly false in the _WIN32
-        // configuration (shm_frame_open is the invalid-frame stub there), so the
-        // multi-config scan reads !sent as always true. Same class of false
-        // positive as main.cpp's VT-gate suppression.
+        // Use direct transport for this frame, then retry startup-verified shm.
+        // On Windows, the shm stub makes !sent statically true in cppcheck's multi-config scan.
         bool sent = false;
         if (m_gfx.shm)
         {
@@ -725,10 +612,8 @@ void Framebuffer::present_kitty()
     end_frame();
 }
 
-// Map the frame's colour halves onto the fixed 240-entry palette, into m_idx.
-// One hoisted-LUT load per pixel, and every pixel independent of every other, so it
-// splits across the borrowed pool by range. Unlike the shm fill (which is bounded by
-// in-kernel page allocation and did not benefit), this is plain user-space work.
+// Map pixels onto the fixed 240-entry palette, splitting independent ranges
+// across the borrowed worker pool.
 void Framebuffer::quantize_to_palette(size_t npx)
 {
     const uint8_t *lut = quant256_lut().data();
@@ -752,28 +637,19 @@ void Framebuffer::quantize_to_palette(size_t npx)
         quantize_range(0, npx);
         return;
     }
-    // An uncovered range leaves m_idx uninitialized, and that is a MEMORY-SAFETY hole, not
-    // merely wrong pixels: the encoder derives a colour register as `index - 16` and uses it to
-    // subscript a 240-entry stack array, so any stale byte below 16 indexes negatively
-    // (reproduced under ASan). Hence split_ranges' covered bookkeeping rather than a bare split.
+    // An uncovered range leaves indices uninitialized; values below 16 would
+    // underflow the encoder's `index - 16` register lookup.
     split_ranges(m_par, m_par_covered, npx, quantize_range);
 }
 
-// Encode the quantized plane as one sixel frame. The bands are independent, so with a
-// borrowed pool each worker encodes a contiguous range into its own buffer and the pieces
-// are concatenated in band order, which is byte-for-byte what the serial encoder emits.
-// Unlike the shm fill this is pure user-space work with no kernel serialization, so it
-// scales; the encode was 2.6 ms of a 1080p frame and ~10 ms of a 4K one.
+// Encode independent sixel band ranges in parallel, then concatenate them in
+// order to reproduce the serial frame.
 void Framebuffer::encode_sixel_frame()
 {
     const int bands = sixel::band_count(m_height);
     const int workers = m_par.n_workers;
-    // Two bands per worker minimum: below that the split cannot balance and the extra
-    // per-worker staging (one register-by-width mask each) is not worth allocating.
-    // A degenerate width goes serial as well: append_header and append_bands both decline
-    // it, but append_footer does not, so the split would emit a bare ST with no DCS to end
-    // (a zero height cannot reach that, having no bands). Unreachable from present_sixel,
-    // which runs only on a non-empty frame; kept so the two paths agree for any caller.
+    // Require two bands per worker. Degenerate widths also use the serial path
+    // so header, bands, and footer agree on whether a frame exists.
     if (m_width <= 0 || !m_par.usable() || bands < workers * 2)
     {
         sixel::append_frame(m_buf, idx_plane(), m_width, m_height, m_sixel_scratch);
@@ -782,9 +658,7 @@ void Framebuffer::encode_sixel_frame()
 
     m_sixel_parts.resize(static_cast<size_t>(workers));
     m_sixel_par_scratch.resize(static_cast<size_t>(workers));
-    // Cleared HERE, not inside the worker: a worker that never runs would otherwise
-    // leave the PREVIOUS frame's bytes in its buffer, and the concatenation below would
-    // splice them into the middle of this frame.
+    // Clear before dispatch so a worker that never runs cannot contribute stale bytes.
     for (std::string &part : m_sixel_parts)
     {
         part.clear();
@@ -803,10 +677,8 @@ void Framebuffer::encode_sixel_frame()
     m_par.run(
         [parts, scratch, covered, idx, px_w, px_h, bands](int worker_id, int n_workers)
         {
-            // Same rule as split_ranges: a pool of a different size than the buffers were made
-            // for would band up the frame differently, and marking a flag for it would let the
-            // completeness check below pass over the bands nobody encoded, splicing a truncated
-            // (but perfectly well-formed) frame. Sitting the round out forces the serial encode.
+            // A pool-size mismatch invalidates the range split; leave the worker
+            // uncovered so the completeness check selects serial encoding.
             const auto w = static_cast<size_t>(worker_id);
             if (static_cast<size_t>(n_workers) != covered->size() || w >= covered->size())
             {
@@ -822,12 +694,8 @@ void Framebuffer::encode_sixel_frame()
         }
     );
 
-    // Unlike the quantize and the staging fill, this worker CAN fail: append_bands grows
-    // a per-worker mask and a per-worker string that reaches megabytes on a 4K frame, so
-    // bad_alloc is reachable and run_on_workers swallows it per worker. A partial range
-    // would splice a truncated band (plausibly a half-written RLE token) into the middle
-    // of the DCS string, which no length check downstream would notice, so any gap throws
-    // the whole parallel attempt away and re-encodes serially.
+    // A worker allocation failure is swallowed by run_on_workers. Any uncovered
+    // range therefore discards the parallel result and re-encodes serially.
     const bool complete = std::all_of(m_par_covered.begin(), m_par_covered.end(), [](uint8_t c) { return c != 0u; });
     if (!complete)
     {
@@ -848,16 +716,12 @@ void Framebuffer::present_sixel()
     const bool full_redraw = m_force_redraw;
     m_force_redraw = false;
 
-    // Zero image rows (a one-row terminal; sixel reserves the last row even
-    // without the HUD): nothing to paint, and unlike kitty nothing resident
-    // terminal-side to delete; the erase the shrinking resize deferred into
-    // this frame wipes the painted cells (\033[2J in begin_frame).
+    // Sixel reserves the final terminal row, leaving a one-row terminal no image.
+    // Nothing is resident to delete; begin_frame's deferred erase clears old cells.
     if (!m_pixel.empty() && (m_image_dirty || full_redraw))
     {
-        // Sixel paints at the cursor; position it first ((1, 1) unless a
-        // geometry-capped image is being centered, see GraphicsConfig). Where
-        // the terminal leaves the cursor afterwards varies, which is fine:
-        // the HUD block positions absolutely.
+        // Position the cursor before sixel paints, accounting for centered capped
+        // images. Its final cursor position is irrelevant because the HUD uses absolute positioning.
         append_cursor_pos(m_gfx.origin_row, m_gfx.origin_col);
         const size_t npx = m_pixel.size();
         ensure_capacity(m_idx, m_idx_cap, npx);
@@ -877,8 +741,8 @@ template <bool TC> void Framebuffer::present_impl()
     // the trailing SGR reset below keys on it.
     const size_t pixel_base = m_buf.size();
 
-    // Captured before the pixel section consumes the flag: the HUD must also be re-emitted on
-    // any frame that repaints every cell (first frame, resize), since \033[2J wiped its row.
+    // Capture before the pixel section consumes the flag; a full redraw must
+    // also restore the HUD erased by \033[2J.
     const bool full_redraw = m_force_redraw;
 
     const int term_rows = m_height / 2;
@@ -886,19 +750,15 @@ template <bool TC> void Framebuffer::present_impl()
     char tmp[48]; // 36 bytes worst case for combined fg+bg SGR sequence
     int n = 0;
 
-    // Table pointer hoisted out of the pixel loops so quant256_lut()'s magic-static init guard is
-    // paid once per frame, not per load_color call. Never read in the truecolor instantiation.
+    // Hoist the lookup table and its static-init guard out of the pixel loop.
     const uint8_t *qlut = nullptr;
     if constexpr (!TC)
     {
         qlut = quant256_lut().data();
     }
 
-    // fg_known / bg_known track whether the terminal's current fg/bg are
-    // reflected by prev_fg / prev_bg.  Both start false because \033[0m at
-    // the end of the previous frame reset SGR to an unknown terminal default.
-    // prev_fg / prev_bg hold the raw cell value (packed RGB in truecolor, palette
-    // index in 256; see load_color), compared directly against the incoming raw.
+    // The previous frame ended with \033[0m, so the terminal's initial colours
+    // are unknown. Values are packed RGB or palette indices according to mode.
     uint32_t prev_fg = 0;
     uint32_t prev_bg = 0;
     bool fg_known = false;
@@ -920,15 +780,8 @@ template <bool TC> void Framebuffer::present_impl()
         m_buf.append(tmp, static_cast<size_t>(n));
     };
 
-    // Append one SGR colour body (no leading ESC[ or trailing m) into tmp at n. Deliberately not
-    // color.h's append_fg_sgr (the shared spelling for styling a string): this one emits a BODY so
-    // a changed fg and bg combine into one escape, writes into a fixed buffer, and uses
-    // write_byte's LUT to avoid a division; it runs per cell per frame, where those differences
-    // are the point, while append_fg_sgr runs a dozen times a frame, where clarity is. The two
-    // colour modes differ only here (38;2;r;g;b vs 38;5;idx, 48;... for bg); `if constexpr` gives
-    // each present_impl instantiation only its own body, keeping the truecolor bytes exactly the
-    // historical output. `raw` is load_color's cell value (packed RGB in truecolor, palette index
-    // in the low byte in 256); `lead` is '3' (fg) or '4' (bg).
+    // Append an SGR color body so changed foreground and background share one escape.
+    // Compile-time color mode keeps this per-cell path branch-free.
     auto write_color = [&](char lead, uint32_t raw)
     {
         tmp[n++] = lead;
@@ -953,10 +806,9 @@ template <bool TC> void Framebuffer::present_impl()
         }
     };
 
-    // Cell emission, shared across modes. When top == bot a space with bg-only SGR is visually
-    // identical to ▀ with fg==bg, saving the fg SGR and 2+ bytes; otherwise emit ▀ with one combined
-    // SGR covering whichever of fg/bg changed (combining avoids a redundant ESC[ header and closing m).
-    // top/bot are raw cell values compared directly (raw-equal == colour/index-equal in both modes).
+    // Equal halves use a background-only space instead of ▀ with matching colours.
+    // Otherwise emit ▀ with one combined SGR for changed colours. Raw equality matches
+    // colour or palette-index equality in both modes.
     auto emit_cell = [&](uint32_t top, uint32_t bot)
     {
         if (top == bot)
@@ -1093,11 +945,8 @@ template <bool TC> void Framebuffer::present_impl()
                         skip++;
                     }
                     col += skip;
-                    // A clean run reaching the row end needs no advance: the cursor is hidden
-                    // and never read back, and anything written after it (a later dirty row,
-                    // the HUD, or the next frame) positions absolutely. With --no-hud on the
-                    // last row nothing follows at all. Emitting one would be dead bytes on
-                    // every row that ends in background.
+                    // Do not advance past a clean row tail; all later output uses
+                    // absolute positioning.
                     if (col < m_width)
                     {
                         append_cursor_advance(skip);
@@ -1107,12 +956,8 @@ template <bool TC> void Framebuffer::present_impl()
         }
     }
 
-    // Reset SGR once at the end of the pixel section: keeps the terminal clean
-    // when the HUD is empty and prevents bleed into HUD's own colour escapes.
-    // Only when the section emitted anything: an entirely-clean frame must
-    // compose nothing, so end_frame's zero-byte skip covers blocks idle frames
-    // too (the terminal's SGR state is already reset from the last frame that
-    // did emit, and the HUD block sets its own colours in full).
+    // Reset SGR after emitted pixels, but keep a fully clean frame empty so
+    // end_frame can skip it.
     if (m_buf.size() > pixel_base)
     {
         m_buf += "\033[0m";
@@ -1137,20 +982,11 @@ void Framebuffer::append_cursor_pos(int row, int col)
 
 void Framebuffer::append_hud_line(bool full_redraw)
 {
-    // The HUD changes at the fps latch rate or on a keypress, far below the frame rate, so an
-    // unchanged line is skipped outright (most frames emit zero HUD bytes); a full redraw always
-    // re-emits, since \033[2J wiped the row. This deliberately gives up the old incidental
-    // self-healing of re-writing the row every frame: the pixel rows above never had that
-    // property (diffed against m_prev_color the same way), so unconditional HUD output could
-    // only restore one row of a screen corrupted as a whole, and the recovery for both is the
-    // same full redraw any resize already triggers.
+    // Skip an unchanged HUD unless a full redraw erased its row.
     if (m_hud.empty())
     {
-        // Nothing is drawn, so nothing is on the row that a later frame could match against.
-        // Without this the pair (empty HUD, full redraw) would leave m_prev_hud naming a line
-        // the \033[2J just wiped, and restoring that same line afterwards would be skipped as
-        // unchanged, forever. Not reachable from main.cpp, which sets a non-empty line every
-        // frame or none at all, but the skip must not depend on that.
+        // A full redraw may erase the remembered line; an empty HUD must forget it
+        // so restoring the same text later is not skipped.
         m_prev_hud.clear();
         return;
     }
@@ -1169,13 +1005,8 @@ void Framebuffer::append_hud_line(bool full_redraw)
     m_buf += "\033[?7l";
     if (m_mode == ColorMode::TrueColor)
     {
-        // bg {18,18,18} and a default fg {220,220,220}; keep both in sync with the Palette256
-        // branch and the test pins (quantize_256_grey_ramp_exact ties 233 and 253 below to
-        // the quantizer of these same RGBs). A composed line overrides the fg immediately
-        // with its own per-segment SGRs, so this exists for the other kind of caller: set_hud
-        // takes an arbitrary string, and an unstyled one would otherwise draw in whatever
-        // foreground the terminal happened to be left with. {220,220,220} is hud.cpp's
-        // FG_VALUE, so an unstyled line matches the styled line's primary text.
+        // Keep these literals, the Palette256 branch, and its quantizer tests in
+        // sync. The default foreground also styles raw set_hud() strings.
         static_assert(
             HUD_BAR_BG.r == 18 && HUD_BAR_BG.g == 18 && HUD_BAR_BG.b == 18 && HUD_BAR_FG.r == 220 &&
                 HUD_BAR_FG.g == 220 && HUD_BAR_FG.b == 220,
@@ -1187,13 +1018,8 @@ void Framebuffer::append_hud_line(bool full_redraw)
     {
         m_buf += "\033[48;5;233m\033[38;5;253m";
     }
-    // Erase BEFORE drawing, never after: the line runs the full width, and with auto-wrap
-    // off the cursor finishes ON the last column, so a trailing EL0 would erase from that
-    // column inclusive and eat the final character (invisible to byte-level tests and to
-    // pyte; only a real terminal shows it, see the tmux recipe in CLAUDE.md). Erasing first
-    // also clears residue from a previously wider line, and on BCE terminals paints the row
-    // in the bar background, covering the few columns the composer can underfill when it
-    // rounds a doubtful glyph width up; non-BCE terminals get the bar from its own padding.
+    // Erase before drawing: with wrapping off, a trailing EL0 would erase the final
+    // column. This also clears residue from a previously wider HUD line.
     m_buf += "\033[K";
     m_buf += m_hud;
     m_buf += "\033[0m";

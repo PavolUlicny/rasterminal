@@ -1599,8 +1599,8 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         int blend_func = 0;
         const bool has_blend_func = assimp_detail::get_blend_func(*source, blend_func);
         ai_real scalar = 0.0f;
-        // LWO's additive surfaces carry their ADTR glow amount in OPACITY; applied as
-        // alpha-OVER opacity it just renders them wrongly translucent.
+        // LWO additive surfaces carry their ADTR glow amount in OPACITY. Treating it
+        // as alpha-OVER opacity renders them incorrectly translucent.
         const bool additive_opacity = (extension == ".lwo" || extension == ".lxo" || extension == ".lws") &&
                                       has_blend_func && blend_func == aiBlendMode_Additive;
         // HMP/MDL7 write OPACITY from an often-uninitialized ambient alpha.
@@ -1613,9 +1613,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         bool have_shininess = false;
         if (source->Get(AI_MATKEY_SHININESS, scalar) == AI_SUCCESS && finite(scalar) && scalar >= 0.0f)
         {
-            // Collada stamps its template SHININESS of 10 into every material that authors
-            // none; treating it as absent keeps such materials at our exponent. The gate
-            // must sit AFTER the read above overwrites scalar, or it judges stale OPACITY.
+            // Collada's template shininess 10 means absent. Test after reading this key.
             const bool collada_template_shininess = extension == ".dae" && scalar == 10.0f;
             if (!collada_template_shininess)
             {
@@ -1626,10 +1624,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         if ((extension == ".ifc" || extension == ".ifczip" || extension == ".step" || extension == ".stp") &&
             have_shininess && material.shininess < 2.0f)
         {
-            // IFC reads IfcSpecularExponent and IfcSpecularRoughness into the same float,
-            // so a roughness-style value like 0.2 arrives as a near-zero exponent and
-            // shades the whole surface uniformly. A real exponent that small is useless
-            // anyway; interpret sub-2 values as roughness.
+            // IFC conflates exponent and roughness; sub-2 values are useful only as roughness.
             material.shininess = roughness_to_shininess(unit(material.shininess));
         }
         if (have_shininess)
@@ -1802,9 +1797,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
 
     bool any_colors = false;
     bool any_alpha = false;
-    // Legacy Blender MCol vertex colors arrive as raw SIGNED chars, so opaque 255 reads
-    // as -1 and the whole mesh would route into the blend pass invisible. Signed values
-    // carry no usable data; drop colors entirely when one shows up.
+    // Legacy Blender MCol may expose signed bytes; discard that unusable color stream.
     bool blend_colors_garbage = false;
     bool off_integer_colors = false;
     uint64_t total_vertices = 0;
@@ -1898,8 +1891,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         {
             const aiVector3D position = source->mVertices[v];
             const aiVector3D normal = source->HasNormals() ? source->mNormals[v] : aiVector3D(0.0f, 1.0f, 0.0f);
-            // Assimp leaves zero or non-finite normals at degenerate and sharp vertices.
-            // Refill them below, while still rejecting invalid positions and UVs.
+            // Refill invalid normals below, but reject invalid positions and UVs.
             const bool usable_normal = source->HasNormals() && finite(normal) &&
                                        (normal.x * normal.x) + (normal.y * normal.y) + (normal.z * normal.z) > 0.0f;
             if (!usable_normal)

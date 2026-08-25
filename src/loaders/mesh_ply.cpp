@@ -16,10 +16,8 @@
 #include <vector>
 
 #define TINYPLY_IMPLEMENTATION
-// GCC at ILP32 + -O3 inlines tinyply's ASCII reader and mis-sees an 8-byte double write into a
-// 4-byte slot on a path unreachable for valid data (-Warray-bounds false positive in tinyply.h,
-// middle-end so -isystem can't filter it). The warning is attributed to the header line, so the
-// suppression must wrap the include, not the call site.
+// GCC ILP32 reports a false array-bounds warning inside tinyply after inlining. The warning
+// points at the header, so the suppression must wrap the include.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
@@ -29,13 +27,10 @@
 #pragma GCC diagnostic pop
 #endif
 
-// typed-buffer helpers
-
 namespace
 {
 
-    // tinyply treats every unknown format as ASCII. Reject it before tinyply parses the
-    // body, but retain tinyply's permissive handling of the rest of the header.
+    // tinyply treats unknown formats as ASCII; reject them before body parsing.
     bool has_supported_format(std::istream &is)
     {
         std::string line;
@@ -98,10 +93,7 @@ namespace
         return f;
     }
 
-    // rd_col decodes only these three layouts (UINT8 normalized, FLOAT32, FLOAT64).
-    // Any other declared type would hit rd_col's 4-byte fall-through read, which both
-    // misinterprets the bytes and runs past a 1- or 2-byte-per-element buffer. Loaders
-    // validate against this before using rd_col, then fail loud.
+    // rd_col supports only normalized uint8, float32 and float64.
     bool rd_col_supported(tinyply::Type t)
     {
         return t == tinyply::Type::UINT8 || t == tinyply::Type::FLOAT32 || t == tinyply::Type::FLOAT64;
@@ -166,11 +158,7 @@ namespace
         return b;
     }
 
-    // Vertex-dedup key for the PLY split-by-UV path: source position index plus
-    // bit-exact U and V. Stored as the map key (not just its hash) so that on a
-    // hash collision unordered_map falls back to operator== and the distinct
-    // tuples stay separate: silent merging on collision would be a one-vertex
-    // texturing artifact at 1/2^64 probability per pair, which we don't accept.
+    // Bit-exact source-position and UV key for seam-aware deduplication.
     struct UVKey
     {
         uint32_t pos;
@@ -190,11 +178,7 @@ namespace
         }
     };
 
-    // Returns the filename from the first `TextureFile <name>` PLY header comment
-    // (tinyply strips the leading "comment "), or "" if none. The whole remainder
-    // after the token is taken verbatim so names with spaces survive; only
-    // surrounding whitespace is trimmed. Match is case-sensitive (MeshLab's exact
-    // spelling) to avoid false hits on unrelated comments.
+    // Extract the first case-sensitive MeshLab `TextureFile` comment, preserving spaces.
     std::string ply_texture_file(const std::vector<std::string> &comments)
     {
         auto is_ws = [](char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; };
@@ -210,8 +194,7 @@ namespace
             {
                 continue;
             }
-            // The token must end here (whitespace or end-of-string), not be the
-            // prefix of a longer word like `TextureFileFoo`.
+            // Reject longer tokens such as TextureFileFoo.
             size_t j = i + token.size();
             if (j < c.size() && !is_ws(c[j]))
             {
@@ -240,8 +223,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 {
     MeshSnapshot snap(*this);
 
-    // A `comment TextureFile <name>` filename is resolved relative to the PLY
-    // file's directory.
+    // Resolve TextureFile relative to the PLY.
     const std::string ply_dir = dir_of(path);
 
     std::ifstream ss(path, std::ios::binary);
@@ -267,8 +249,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
-    // Security: validate element counts vs remaining file size before tinyply
-    // allocates any buffers. Guards against maliciously large element counts.
+    // Bound declared element counts by the remaining file before tinyply allocates.
     {
         const auto data_start = ss.tellg();
         ss.seekg(0, std::ios::end);
@@ -308,7 +289,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     {
     }
 
-    // UV aliases tried in priority order.
+    // Try common UV aliases in priority order.
     if (!uvs)
     {
         try
@@ -359,13 +340,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
-    // Optional per-vertex opacity (separate property so a file without it still loads).
-    // Consumed by both the shared-vertex and welded (split-by-UV) paths below; a sub-1
-    // value marks the mesh blended (PLY has no material system, so opacity rides on the
-    // default mat). Gated on vcolors by design: PLY's `alpha` is conventionally the 4th
-    // channel of RGB vertex color, not a standalone opacity property, so a file with alpha
-    // but no RGB is not treated as translucent (CloudCompare likewise reads alpha only
-    // alongside RGB).
+    // Treat alpha as the fourth vertex-color channel, not standalone opacity.
     if (vcolors)
     {
         try
@@ -404,11 +379,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
-    // Face-list texcoords (per-corner UVs). Photogrammetry / scanner PLYs put
-    // UVs here, not on vertices, because face-list UVs can represent UV seams
-    // (one position with distinct UVs on different faces) and per-vertex UVs
-    // cannot. When present, they win over any per-vertex UV aliases, matching
-    // MeshLab. `texcoord` is the canonical name; `texture_uv` is an older alias.
+    // Per-corner UV lists represent seams and take precedence over vertex UVs.
     std::shared_ptr<tinyply::PlyData> tc;
     try
     {
@@ -459,10 +430,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
-    // Every color/alpha property below is decoded with rd_col, which only handles
-    // UINT8/FLOAT32/FLOAT64. A different declared type would make rd_col read past
-    // the buffer (its 4-byte stride exceeds a 1- or 2-byte element): the file-size
-    // guard above checks counts, not rd_col's stride assumption. Reject up front.
+    // Reject color types whose stride rd_col cannot decode safely.
     if ((vcolors && !rd_col_supported(vcolors->t)) || (valpha && !rd_col_supported(valpha->t)) ||
         (fcolors && !rd_col_supported(fcolors->t)))
     {
@@ -476,16 +444,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
-    // Mixed n-gon faces (tinyply populates list_sizes only when per-face index
-    // counts differ) leave ipf undefined: total_idx / n_faces rounds and every
-    // per-face stride below is then wrong. Reject rather than silently mis-index,
-    // consistent with the loader's fail-loud strictness.
+    // Mixed face sizes make the uniform per-face stride ambiguous.
     if (!faces->list_sizes.empty())
     {
         return false;
     }
 
-    // Uniform list length is now guaranteed, so ipf = total_idx / n_faces is exact.
+    // Uniform face length makes this division exact.
     const size_t idx_stride = type_stride(faces->t);
     const size_t total_idx = faces->buffer.size_bytes() / idx_stride;
     const size_t ipf = total_idx / n_faces;
@@ -494,10 +459,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         return false;
     }
 
-    // Validate face-list texcoord against the uniform-ipf assumption the index
-    // path also relies on. Mixed n-gon counts (non-empty list_sizes), wrong
-    // float count per face, or a non-float element type make per-corner indexing
-    // ambiguous: hard-reject the file, consistent with the loader's strictness.
+    // Per-corner UV lists must match the uniform face stride and use float elements.
     if (tc)
     {
         const bool float_type = (tc->t == tinyply::Type::FLOAT32 || tc->t == tinyply::Type::FLOAT64);
@@ -505,11 +467,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         {
             return false;
         }
-        // Per-face float count must be exactly 2 * ipf. Checked via division, not
-        // a `n_faces * ipf * 2 * tc_stride` multiply: that product is computed in
-        // size_t and on a crafted multi-GB file could wrap to match the actual
-        // buffer size, letting later rd_f() reads run past the buffer. The file's
-        // security model is file-size-based bounds, so the gate must not overflow.
+        // Divide before comparing to avoid overflow in a crafted total-size product.
         const size_t tc_stride = type_stride(tc->t);
         const size_t tc_bytes = tc->buffer.size_bytes();
         if (tc_bytes % tc_stride != 0)
@@ -528,17 +486,11 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 
     materials.push_back(Material{});
 
-    // Captured by the split-by-UV path; consumed by the post-load compute_normals
-    // call so UV-seam halves smooth across the seam (mirrors the OBJ loader).
+    // Weld seam halves for computed normals.
     std::vector<uint32_t> ply_weld;
     bool use_weld = false;
 
-    // Split-by-UV path: per-face texcoord lists, no face colors
-    // Hash-dedups vertices by (pos_idx, u, v) so corners that genuinely share
-    // position+UV collapse to one vertex, but distinct UVs at the same position
-    // (UV seams) become separate vertices. The weld map records the source
-    // position id per output vertex so compute_normals smooths seams as one
-    // surface. Mirrors the OBJ loader.
+    // Deduplicate per-corner UVs by position and UV while welding seam normals by position.
     if (use_face_texcoord && !use_face_colors)
     {
         const uint8_t *pb = positions->buffer.get();
@@ -549,13 +501,8 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         const tinyply::Type tct = tc->t;
         const uint8_t *fb = faces->buffer.get();
 
-        // Reserve to the realistic floor (n_verts), not the no-sharing worst case (n_faces *
-        // ipf): a typical photogrammetry scan has one UV seam per ~20 positions, so the
-        // unique-tuple count is close to n_verts, while worst-case sizing wastes 3-6x memory
-        // for the program lifetime (vertices keeps its capacity). Growth absorbs the
-        // seam-split overshoot in amortized O(1). The weld map is consumed only by
-        // compute_normals, which is skipped when the file authored normals, so skip the
-        // allocate-and-fill then too: ~20 MB of throwaway work on a multi-million-vertex scan.
+        // Reserve near the usual unique count, not the much larger no-sharing bound.
+        // Build weld IDs only when normals need computing.
         const bool need_weld = !normals;
 
         std::unordered_map<UVKey, uint32_t, UVKeyHash> vert_cache;
@@ -578,9 +525,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         {
             const float u = rd_f(tcb, tct, corner_float_off);
             const float v = rd_f(tcb, tct, corner_float_off + 1);
-            // Bit-exact float dedup: legitimately-shared corners are written with
-            // identical bytes by every exporter; any non-bit-equal pair is a
-            // genuine seam and stays split.
+            // Exporters repeat shared corner UVs bit-exactly; unequal bits mark a seam.
             const UVKey key{ pos_idx, float_bits(u), float_bits(v) };
             const auto [it, inserted] = vert_cache.emplace(key, static_cast<uint32_t>(vertices.size()));
             if (!inserted)
@@ -645,9 +590,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
         if (ab)
         {
-            // PLY has no per-material opacity mode, so per-vertex alpha is the opacity signal.
-            // load_model's per-triangle partition routes only the genuinely-translucent triangles
-            // to the transparent pass (so an opaque region keeps the fast opaque path).
+            // PLY vertex alpha is its only opacity signal.
             has_vertex_alpha = true;
         }
         use_weld = need_weld;
@@ -691,8 +634,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
 
             if (valpha)
             {
-                // Per-vertex alpha is PLY's only opacity signal; load_model's per-triangle
-                // partition routes just the translucent triangles to the transparent pass.
+                // PLY vertex alpha is its only opacity signal.
                 const uint8_t *ab = valpha->buffer.get();
                 vertex_alpha.resize(n_verts);
                 for (size_t i = 0; i < n_verts; i++)
@@ -727,7 +669,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
     // Face-color path: expand to unshared vertices
     else
     {
-        // Build a vertex pool, then expand per triangle with face color.
+        // Expand a shared pool into face-colored triangle vertices.
         struct PoolVert
         {
             vec3 pos, normal;
@@ -759,13 +701,7 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         triangles.reserve(n_faces * (ipf - 2));
         vertices.reserve(n_faces * (ipf - 2) * 3);
         vertex_colors.reserve(n_faces * (ipf - 2) * 3);
-        // When face-list texcoord is bundled with face colors, the path stays
-        // fully-unshared (3 verts per triangle) but every emitted vertex still
-        // has a source position id (`pi`). Threading a weld map keeps seam-shared
-        // positions smoothing across the seam in compute_normals: without it,
-        // every corner would be its own group and the surface would render
-        // faceted. Plain face-color PLYs (no `tc`) keep their previous faceted
-        // behavior: `tcb == nullptr` skips the weld.
+        // Face-colored UV corners remain unshared, but weld by source position for smooth normals.
         if (tcb)
         {
             ply_weld.reserve(n_faces * (ipf - 2) * 3);
@@ -844,22 +780,13 @@ bool Mesh::load_ply(const std::string &path, float crease_cos)
         }
     }
 
-    // PLY albedo binding: `comment TextureFile <name>` (MeshLab / photogrammetry convention;
-    // PLY has no material system). Only meaningful with UVs, so a UV-less file skips the
-    // potentially multi-MB decode; the single default material covers every triangle; a
-    // missing or undecodable file drops silently (textures stays empty, diffuse_map stays -1),
-    // consistent with OBJ/glTF. The name is resolved relative to ply_dir unconditionally, so
-    // an absolute name yields a broken path and drops: matches load_obj's MTL handling and the
-    // bare-relative-filename convention every PLY exporter actually uses; not special-cased.
+    // Bind MeshLab's TextureFile to the default material only when UVs exist. Missing or
+    // undecodable textures are ignored, as in the other loaders.
     const bool has_uv = (uvs != nullptr) || (tc != nullptr);
     const std::string tex_name = has_uv ? ply_texture_file(file.get_comments()) : std::string();
     if (!tex_name.empty())
     {
-        // Routed through decode_textures even though PLY only ever has this one
-        // fixed texture (so the helper's parallel dispatch and index compaction are
-        // dead here). Deliberate: it keeps the "failed decode -> drop, leave the
-        // *_map.tex index at -1" policy in one place shared with the OBJ/glTF loaders,
-        // rather than reimplementing the drop inline. The count==1 cost is nil.
+        // Reuse shared decode failure and index-remapping policy even for one texture.
         decode_textures(
             textures, materials, 1, /*n_threads=*/1,
             [&](size_t) -> Texture
