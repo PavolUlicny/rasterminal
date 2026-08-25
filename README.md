@@ -69,6 +69,11 @@ chmod +x rasterminal
 ./rasterminal <model>
 ```
 
+The macOS binary is not signed or notarized. If Gatekeeper blocks it, try to
+open it once, then go to **System Settings → Privacy & Security** and click
+**Open Anyway**. Verify the archive's SHA-256 checksum before overriding the
+warning. See [Apple's instructions](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
+
 On Windows, extract the `.zip` and run `rasterminal.exe` in Windows Terminal or another terminal with UTF-8 and ANSI escape support. Legacy `cmd.exe` is unsupported. Each release also includes SHA-256 checksums for its archives.
 
 ## Build
