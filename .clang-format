@@ -2,67 +2,51 @@
 BasedOnStyle: LLVM
 Language: Cpp
 
-# Allman: opening brace on its own line for functions, structs, namespaces
 BreakBeforeBraces: Allman
 
-# Indentation
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
 NamespaceIndentation: All
 
-# Column limit: code regularly reaches ~115 chars
+# Existing rendering expressions often approach 120 columns.
 ColumnLimit: 120
 
-# Pointer/reference attached to the variable name (const vec3 &o, not const vec3& o);
-# DerivePointerAlignment off so the setting above is always honoured, never guessed from the file
+# Keep pointer and reference markers with the variable name.
 PointerAlignment: Right
 DerivePointerAlignment: false
 
-# Braced init lists: elements on separate lines, block-indented, closing brace on its own line
 AlignAfterOpenBracket: BlockIndent
 Cpp11BracedListStyle: false
 
-# Short member functions stay on one line; free functions do not
 AllowShortFunctionsOnASingleLine: Inline
 AllowShortIfStatementsOnASingleLine: Never
 AllowShortLoopsOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortBlocksOnASingleLine: Never
 
-# Include order is maintained manually (main header → project headers → system headers)
+# Include groups are maintained manually.
 SortIncludes: false
 
-# const on the left (const T, not T const)
 QualifierAlignment: Left
 
-# Reject stray redundant semicolons after definitions
 RemoveSemicolon: true
 
-# Trailing comments aligned within a block
 AlignTrailingComments: true
 
-# Wrapped ternaries break before ? and :
 BreakBeforeTernaryOperators: true
 
-# Preprocessor directives stay flush left (flat): matches existing style and the LLVM default
 IndentPPDirectives: None
 
-# No space after C-style casts: (int)x; matches existing style and the LLVM/Google default
 SpaceAfterCStyleCast: false
 
-# Pin the parser to the project's actual standard (C++17), not Latest
 Standard: c++17
 
-# File hygiene: ensure a trailing newline, no runs of blank lines
 InsertNewlineAtEOF: true
 MaxEmptyLinesToKeep: 1
 
-# Keep // namespace <name> closing comments on long namespace bodies
 FixNamespaceComments: true
 
-# When a call/decl wraps, put each parameter on its own line (no bin-packing)
 BinPackParameters: false
 
-# Mandatory braces on all control statements: no single-statement if/for/while bodies
 InsertBraces: true

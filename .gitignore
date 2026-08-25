@@ -1,62 +1,46 @@
-# Prerequisites
 *.d
 
-# Compiled Object files
 *.slo
 *.lo
 *.o
 *.obj
 
-# CI bench models (downloaded by the sanitizers job, never committed)
+# Downloaded models
 bench/
-
-# Quick-start sample models (downloaded into the repo root, never committed)
 Duck.glb
 bunny.stl
 
-# Precompiled Headers
 *.gch
 *.pch
 
-# Linker files
 *.ilk
 
-# Debugger Files
 *.pdb
 
-# Compiled Dynamic libraries
 *.so
 *.dylib
 *.dll
 
-# Fortran module files
 *.mod
 *.smod
 
-# Compiled Static libraries
 *.lai
 *.la
 *.a
 *.lib
 
-# Executables
 *.exe
 *.out
 *.app
 
-# debug information files
 *.dwo
 
-# compiled binary
 rasterminal
 rasterminal_tests
 
-# CMake out-of-tree build directories
 build*/
 
-# editor
 .vscode/
 
-# profiling
 perf.data
 perf.data.old

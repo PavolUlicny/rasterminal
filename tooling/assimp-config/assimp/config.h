@@ -3,10 +3,8 @@
 #ifndef AI_CONFIG_H_INC
 #define AI_CONFIG_H_INC
 
-// CMake generates this header under the build directory. This small, project-owned
-// equivalent lets compile_flags.txt parse Assimp headers before a build exists. Keep
-// it in sync with the CMake configuration: Assimp's defaults, plus the AI_CONFIG_*
-// keys mesh_assimp.cpp sets.
+// Lets compile_flags.txt parse Assimp before CMake generates config.h. Keep these defaults
+// and the keys used by mesh_assimp.cpp in sync with the CMake build.
 #define AI_CONFIG_CHECK_IDENTITY_MATRIX_EPSILON_DEFAULT 10e-3f
 #define AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE "PP_GSN_MAX_SMOOTHING_ANGLE"
 #define AI_CONFIG_IMPORT_NO_SKELETON_MESHES "IMPORT_NO_SKELETON_MESHES"

@@ -13,8 +13,7 @@ permissions:
   contents: read
 
 jobs:
-  # The tagged commit is expected to have already passed CI on its branch/PR (ci.yml skips
-  # tag pushes), so this workflow only builds, smoke-tests, packages, and publishes binaries.
+  # ci.yml skips tag pushes, so the tagged commit must already have passed branch or PR CI.
   check:
     name: Verify tag matches version.h
     runs-on: ubuntu-latest
@@ -53,13 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # Linux ships the dist configuration: portable codegen + static libstdc++/libgcc (no host
-      # GLIBCXX dependency). On macOS dist == portable (system libc++ is ABI-stable), so it just
-      # drops the static flag. -j bounded to the runner core count so the heavy LTO vendor TUs
-      # (basisu/draco/libwebp) can't OOM. Configured into build/ explicitly rather than through
-      # the dist/portable presets, which use their own binaryDirs: one output path keeps the
-      # verify, smoke-test and packaging steps below free of per-platform branching. No --target
-      # is needed, since rasterminal_tests is EXCLUDE_FROM_ALL and a release wants the viewer.
+      # Use build/ on every platform so verification and packaging share one artifact path.
+      # The test target is EXCLUDE_FROM_ALL and is not part of release archives.
       - name: Build (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -72,16 +66,13 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON
           cmake --build build -j"$(getconf _NPROCESSORS_ONLN)"
 
-      # Windows: portable codegen (no /arch:AVX2) + static CRT so the .exe is self-contained
-      # (no VC++ redist). MultiThreaded runtime is selectable at configure time because
-      # CMP0091 is NEW under the project's cmake_minimum_required (>= 3.21).
+      # Use portable code generation and the static CRT so the executable needs no VC++ redistributable.
       - name: Build (Windows)
         if: runner.os == 'Windows'
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DRASTERMINAL_PORTABLE=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
           cmake --build build --config Release -j
 
-      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
       - name: Verify static link (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -94,7 +85,7 @@ jobs:
           set -euo pipefail
           ./build/rasterminal --version
           ./build/rasterminal --help
-          # Real-pipeline smoke: render a tiny cube headlessly (no terminal I/O in --bench).
+          # Exercise the renderer headlessly, not only argument parsing.
           cat > cube.obj <<'EOF'
           v -1 -1 -1
           v  1 -1 -1
@@ -122,9 +113,7 @@ jobs:
           ./build/Release/rasterminal.exe --help
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      # Stage binary + license/notice files under a top-level dir so the archive extracts cleanly.
-      # THIRD_PARTY_NOTICES is mandatory: the vendored libraries' licenses require it alongside
-      # the executable.
+      # Vendor licenses require THIRD_PARTY_NOTICES beside the executable.
       - name: Package (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -188,7 +177,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          # A SemVer prerelease tag (contains a hyphen, e.g. v0.1.0-alpha.1) is flagged accordingly.
+          # SemVer prerelease tags contain a hyphen.
           PRE=""
           case "$TAG_NAME" in *-*) PRE="--prerelease";; esac
           gh release create "$TAG_NAME" $PRE \

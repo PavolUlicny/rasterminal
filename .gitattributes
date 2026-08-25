@@ -2,12 +2,12 @@ vendor/** linguist-vendored=true
 vendor/** -diff
 vendor/** -merge
 
-# Project-authored (or locally modified) files under vendor/ keep normal diff/merge.
+# Keep project-owned vendor files diffable.
 vendor/README.md diff merge
 vendor/.clang-format diff merge
 vendor/.clang-tidy diff merge
 vendor/basisu/basisu_impl.cpp diff merge
 vendor/draco/draco_impl.cpp diff merge
 vendor/meshoptimizer/meshoptimizer_impl.cpp diff merge
-# Generated upstream but hand-stripped per the refresh recipe, so its diffs carry meaning.
+# The refresh recipe strips this generated header by hand, so its diffs carry meaning.
 vendor/draco/src/draco/draco_features.h diff merge

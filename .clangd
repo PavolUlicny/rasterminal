@@ -1,5 +1,4 @@
 CompileFlags:
-  # Force C++ for standalone-opened .h files; otherwise clangd guesses
-  # Objective-C++ for them and fires google-objc-* naming checks on C++ helpers.
+  # Prevent clangd from treating standalone headers as Objective-C++.
   Add:
     - -xc++

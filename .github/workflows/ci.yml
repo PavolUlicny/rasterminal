@@ -1,8 +1,7 @@
 name: CI
 
 on:
-  # Branch pushes and PRs only; tag pushes are handled by release.yml (a `branches`
-  # filter excludes tags), so a release tag does not also trigger the full CI matrix.
+  # This workflow excludes tags; release.yml handles v* tags.
   push:
     branches: ['**']
   pull_request:
@@ -12,7 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ── Build + test: all platforms, compilers, build types, portable toggle ─────
   build:
     name: ${{ matrix.os }} ${{ matrix.label }} ${{ matrix.build_type }}
       portable=${{ matrix.portable }}
@@ -21,7 +19,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux, GCC
           - {
               os: ubuntu-latest,
               label: gcc,
@@ -46,7 +43,6 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Linux, Clang
           - {
               os: ubuntu-latest,
               label: clang,
@@ -71,9 +67,7 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Linux, dist (portable codegen + static libstdc++/libgcc; the release artifact).
-          # Linux-only: static-libstdc++ is a no-op on macOS and unsupported on MSVC. The
-          # extra "Verify static link" step below asserts the binary's defining invariant.
+          # Linux release artifacts use portable code generation and static GNU runtimes.
           - {
               os: ubuntu-latest,
               label: gcc dist,
@@ -92,10 +86,8 @@ jobs:
               portable: ON,
               static_libstdcxx: ON,
             }
-          # Only CMAKE_CXX_COMPILER set, so C falls back to `cc` (gcc here). Before the
-          # vendored C sources moved to their own no-LTO object library this combination
-          # produced GIMPLE C objects that a clang link could not read. `cc` is left out of
-          # the matrix entry on purpose: the configure step omits the flag when it is unset.
+          # Exercise Clang C++ with the default C compiler. The vendored C object library must
+          # remain linkable without cross-compiler LTO objects.
           - {
               os: ubuntu-latest,
               label: clang++ only,
@@ -103,7 +95,6 @@ jobs:
               build_type: Release,
               portable: ON,
             }
-          # macOS, AppleClang (platform default; Debug x Portable=ON omitted, same flags as OFF)
           - {
               os: macos-latest,
               label: appleclang,
@@ -122,7 +113,6 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
-          # Windows, MSVC (multi-config VS generator; CMAKE_BUILD_TYPE ignored at configure time)
           - {
               os: windows-latest,
               label: msvc,
@@ -153,9 +143,7 @@ jobs:
           ${{ matrix.cc  && format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
           && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
 
-      # Both targets by name: rasterminal_tests is EXCLUDE_FROM_ALL, so a plain
-      # `cmake --build` builds the viewer alone and ctest would find no binary.
-      # Bare -j launches every Assimp TU at once. Cap the build for small macOS runners.
+      # The test target is EXCLUDE_FROM_ALL. Limit parallelism for smaller macOS runners.
       - name: Build
         run: >
           cmake --build build --config ${{ matrix.build_type }} -j4
@@ -164,16 +152,13 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
 
-      # dist's defining invariant: the binary must not pull in libstdc++/libgcc at runtime.
       - name: Verify static link (dist)
         if: matrix.static_libstdcxx == 'ON'
         run: |
           ldd build/rasterminal
           ! ldd build/rasterminal | grep -E 'libstdc\+\+|libgcc_s'
 
-      # The same smoke test and packaging release.yml runs, which a tag push is otherwise the
-      # only way to exercise. Deliberately duplicated rather than shared: if the two drift,
-      # this is what notices, on a normal push instead of on a release.
+      # Cover the release smoke and packaging path before a tag is pushed.
       - name: Smoke test and package (dist)
         if: matrix.static_libstdcxx == 'ON'
         run: |
@@ -189,13 +174,7 @@ jobs:
           tar tzf "$stage.tar.gz"
           test "$(tar tzf "$stage.tar.gz" | grep -c '[^/]$')" -eq 4
 
-  # ── 32-bit (ILP32) verification ──────────────────────────────────────────────
-  # No 32-bit OS runner exists, but 32-bit binaries run natively on the 64-bit runners
-  # (Linux multilib / Windows WOW64), so we build and test 32-bit in place. Linux i686 uses
-  # -m32 + gcc/g++-multilib; the build system auto-pins SSE math (the i686 x87 default would
-  # diverge from the SSE/x86-64 results the renderer and tests assume) and relaxes the
-  # word-size-dependent -Wuseless-cast on ILP32. Windows uses the MSVC Win32 toolchain via
-  # -A Win32 (SSE2 is its default; no extra flags).
+  # Run 32-bit binaries on 64-bit hosts through multilib or WOW64.
   cross32:
     name: 32-bit / ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
@@ -214,8 +193,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y gcc-multilib g++-multilib
 
-      # -m32 via env (mirrors the sanitizer jobs) + portable codegen (drops
-      # -march=native). The build system adds -msse2 and drops -Wuseless-cast on ILP32.
+      # Portable mode drops -march=native, which can conflict with -m32 on a 64-bit host.
       - name: Build + ctest (i686)
         if: matrix.kind == 'linux'
         env:
@@ -228,8 +206,7 @@ jobs:
           cmake --build build -j"$(nproc)" --target rasterminal rasterminal_tests
           ctest --test-dir build --output-on-failure
 
-      # MSVC multi-config VS generator; -A Win32 selects the 32-bit toolchain. Always pass
-      # --config/-C (the generator ignores CMAKE_BUILD_TYPE at configure time).
+      # The Visual Studio generator requires the configuration at build and test time.
       - name: Build + ctest (Win32)
         if: matrix.kind == 'win32'
         run: |
@@ -237,21 +214,15 @@ jobs:
           cmake --build build --config Release -j --target rasterminal rasterminal_tests
           ctest --test-dir build -C Release --output-on-failure
 
-  # ── Documented workflows (Linux) ─────────────────────────────────────────────
-  # Every step here is a sequence README.md or CONTRIBUTING.md tells a user to run, or a
-  # target nothing else exercises. Both of the first two were broken at some point by a
-  # change that looked local: the preset flow by making the test binary EXCLUDE_FROM_ALL,
-  # and the uninstall docdir by an install-time --prefix. One build serves all of them.
+  # Exercise commands documented for users and packagers.
   workflows:
     name: documented workflows
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
-      # Every configure preset needs a build preset that names the test binary and a test
-      # preset to run it, or `cmake --build --preset X && ctest --preset X` dies with
-      # "Not Run" the way release did before fe7a39e. Structural, so it covers all six
-      # without paying for six builds; the step below actually runs one of them.
+      # Every configure preset needs matching build and test presets. Build presets must name
+      # the EXCLUDE_FROM_ALL test target before ctest runs.
       - name: Presets are complete
         run: |
           python3 - <<'EOF'
@@ -274,24 +245,18 @@ jobs:
           sys.exit(1 if bad else 0)
           EOF
 
-      # Verbatim from the README. `ctest --preset` needs the test binary, which is
-      # EXCLUDE_FROM_ALL, so the build preset has to name it.
       - name: Preset flow
         run: |
           cmake --preset release
           cmake --build --preset release -j"$(nproc)"
           ctest --preset release
 
-      # The one-command build-and-run CONTRIBUTING.md documents.
       - name: check target
         run: cmake --build build --target check -j"$(nproc)"
 
-      # The quick start ends in ./build/rasterminal, so that path has to exist.
       - name: Quick-start binary path
         run: test -x build/rasterminal
 
-      # Staged install for packagers: the files, their modes, then a clean uninstall that
-      # leaves the shared directories alone and takes its own docdir with it.
       - name: Install and uninstall (DESTDIR)
         run: |
           set -euo pipefail
@@ -305,8 +270,6 @@ jobs:
           test ! -d stage/usr/local/share/doc/rasterminal
           test -d stage/usr/local/share/man/man1
 
-      # An install-time --prefix, which the README documents. The docdir cleanup has to
-      # follow the prefix actually installed to, not whatever configure happened to see.
       - name: Install and uninstall (--prefix)
         run: |
           set -euo pipefail
@@ -316,7 +279,6 @@ jobs:
           test -z "$(find pfx -type f)"
           test ! -d pfx/share/doc/rasterminal
 
-      # A docdir holding anything we did not install is not ours to delete.
       - name: Uninstall leaves a shared docdir alone
         run: |
           set -euo pipefail
@@ -325,7 +287,6 @@ jobs:
           cmake --build build --target uninstall
           test -f pfx2/share/doc/rasterminal/NOTES.txt
 
-      # Uninstalling where nothing was installed must fail loud, never quietly succeed.
       - name: Uninstall without a manifest fails
         run: |
           cmake -B build-empty -DCMAKE_BUILD_TYPE=Release
@@ -334,7 +295,6 @@ jobs:
             exit 1
           fi
 
-  # ── clang-format (Linux) ─────────────────────────────────────────────────────
   clang-format:
     name: clang-format
     runs-on: ubuntu-latest
@@ -346,7 +306,6 @@ jobs:
           find src tests \( -name '*.cpp' -o -name '*.h' \)
           | xargs -r clang-format --dry-run --Werror
 
-  # ── clang-tidy (Linux Clang, CMake Debug with compile_commands.json) ────────
   clang-tidy:
     name: clang-tidy
     runs-on: ubuntu-latest
@@ -364,12 +323,8 @@ jobs:
           wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 22
           sudo apt-get install -y clang-tidy-22
 
-      # clang-tidy has no -j; fan the file list across cores with xargs -P (each
-      # invocation re-parses one TU, so this scales near-linearly). All src TUs are
-      # linted, including the ktx2/webp vendor-header isolation wrappers, which pass
-      # under the clang-analyzer suppressions already in .clang-tidy. A file failing
-      # under --warnings-as-errors makes xargs exit non-zero (123). `find`, never a
-      # src/*.cpp glob: a glob silently skips the subdirectories and still reports green.
+      # clang-tidy has no parallel flag. find includes nested sources; xargs supplies workers
+      # and propagates failed invocations.
       - name: Run clang-tidy (src)
         run: >
           find src -name '*.cpp'
@@ -382,7 +337,6 @@ jobs:
           | xargs -r -P "$(nproc)" -n1
           clang-tidy-22 --warnings-as-errors='*' -p build --header-filter='(src|tests)/.*'
 
-  # ── cppcheck (Linux) ──────────────────────────────────────────────────────
   cppcheck:
     name: cppcheck
     runs-on: ubuntu-latest
@@ -414,7 +368,6 @@ jobs:
           -I vendor/miniz
           $(find src -name '*.cpp')
 
-  # ── Sanitizers: ASan+UBSan and TSan (Linux Clang, CMake Debug) ───────────
   sanitizers:
     name: sanitizer / ${{ matrix.label }}
     runs-on: ubuntu-latest
@@ -469,7 +422,5 @@ jobs:
         run: |
           ./build/rasterminal --bench 500 --bench-warmup 50 bench/Duck.glb
           ./build/rasterminal --bench 500 --bench-warmup 50 bench/Stanford_Bunny.stl
-          # The runs above are small frames of small meshes, so they only ever take the immediate
-          # opaque pass. Duck at 1080p has the big triangles the predictor picks tiles for; the
-          # frame count is low because a sanitized 1080p frame costs ~100x a 200x120 one.
+          # The 1080p Duck frame exercises the tiled opaque path. Keep its sanitized frame count low.
           ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 1920x1080 bench/Duck.glb

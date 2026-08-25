@@ -1,36 +1,23 @@
-// Suppress all warnings from vendored third-party headers.
+// Vendored headers are outside project analysis.
 *:vendor/*
 
-// stb_image.h has many #ifdef configurations; cppcheck only checks a subset.
+// cppcheck cannot cover every stb_image configuration.
 toomanyconfigs
 
-// Utility functions intentionally kept for completeness; exercised by tests.
+// Tests exercise these header utilities.
 unusedFunction:src/terminal/framebuffer.h
 unusedFunction:src/math/linalg.h
-// main.cpp carries one inline `cppcheck-suppress knownConditionTrueFalse` (the VT-gate
-// condition, constant only because <windows.h> is absent on the Linux runner so the _WIN32
-// body can't be analysed). Under --inline-suppr that inline directive is a two-sided
-// constraint: if a future cppcheck version stops emitting the finding, the now-unmatched
-// inline suppression would itself fail CI. Let it age out harmlessly instead. Scoped to the
-// file, which holds no other suppression, so this masks nothing else.
+
+// The Linux scan sees the Windows VT gate as constant. Permit its inline suppression to
+// become unmatched if a later cppcheck version stops reporting it.
 unmatchedSuppression:src/main.cpp
 
-// framebuffer.cpp carries two inline knownConditionTrueFalse suppressions,
-// in transmit_shm and present_kitty: under _WIN32 the shm create is the
-// nullptr stub, so their shm-failure conditions read as constant to the
-// multi-config scan. Same aging-out rationale as the main.cpp entry above.
+// The Windows shared-memory stub makes two framebuffer conditions appear constant.
 unmatchedSuppression:src/terminal/framebuffer.cpp
 
-// platform.h's two inline knownConditionTrueFalse suppressions (both in the
-// graphics query's shm-probe block, whose create is the nullptr stub in the
-// _WIN32 configuration) need no unmatchedSuppression pairing: cppcheck
-// reports unmatched suppressions for
-// primary inputs only, and a header is never one (verified empirically on
-// 2.13.0 with the CI-verbatim command; an earlier claim here that the
-// unmatched half silently set the exit code did not reproduce).
+// Headers are not primary inputs, so platform.h's inline suppressions need no unmatched pair.
 
-// Raw loops kept where an STL-algorithm rewrite would need a lambda and read worse. The
-// platform.h entry is a separate case (a constexpr context); its reason lives at the code site.
+// These loops are clearer than the equivalent algorithms. platform.h also requires constexpr.
 useStlAlgorithm:src/loaders/mesh.cpp
 useStlAlgorithm:src/loaders/mesh_obj.cpp
 useStlAlgorithm:src/loaders/mesh_ply.cpp
