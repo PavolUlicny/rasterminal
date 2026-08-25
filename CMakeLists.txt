@@ -105,7 +105,7 @@ set_source_files_properties(
   vendor/basisu/basisu_impl.cpp
   PROPERTIES COMPILE_OPTIONS "$<IF:$<CXX_COMPILER_ID:MSVC>,/w,-w>")
 
-# Static, import-only fallback for formats without native loaders. OBJ, PLY, STL, and
+# Static, import-only Assimp loader for formats without native loaders. OBJ, PLY, STL, and
 # glTF remain native-only. The function keeps Assimp's ordinary variables out of the
 # parent scope. It must precede the directory-wide MINIZ_NO_* definitions.
 function(rasterminal_add_assimp)

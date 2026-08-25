@@ -700,7 +700,7 @@ TEST(assimp, embedded_texel_layout_gates_raw_bytes_on_amf_origin)
     ASSERT_EQ(embedded_texel_layout("rgba8828", true), TexelLayout::ArgbTexels);
 }
 
-TEST(assimp, off_quad_uses_fallback_and_triangulates)
+TEST(assimp, off_quad_uses_assimp_and_triangulates)
 {
     TmpFile file(tmp_path("rast_assimp_quad.OFF"), "OFF\n4 1 0\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n4 0 1 2 3\n");
     const Mesh mesh = load_ok(file.path);

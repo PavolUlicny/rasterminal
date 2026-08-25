@@ -40,7 +40,7 @@ inline float roughness_to_shininess(float roughness) noexcept
 }
 
 // One texture binding: the slot index into Mesh::textures (-1 = none), the UV set it samples
-// (glTF textureInfo.texCoord and equivalent fallback metadata, clamped to {0,1} at load with
+// (glTF textureInfo.texCoord and equivalent Assimp metadata, clamped to {0,1} at load with
 // an absent set degrading to 0), and an optional KHR_texture_transform: t is a 2x3 affine on the
 // interpolated UV before sampling (feed.x = t0*u + t1*v + t2; feed.y = t3*u + t4*v + t5).
 // The spec defines the transform on v-down UVs but we store UVs v-flipped, so the loader
@@ -111,14 +111,14 @@ struct Material
     // per-pixel multiply so the common case (scale==1 or no normal map) pays zero.
     float normal_scale = 1.0f;
     // glTF metallic-roughness (Phong path only; 0/-1 defaults = dielectric, no
-    // per-pixel metallic work; fallback formats may provide the same common PBR properties).
+    // per-pixel metallic work; Assimp-backed formats may provide the same common PBR properties).
     float metallic = 0.0f;  // metallicFactor; >0 enables the Phong specular-tint metallic remap
     float roughness = 1.0f; // roughnessFactor; baked into shininess at load, re-read per-texel only with an MR texture
     TexSlot mr_map;         // metallic-roughness (G=roughness, B=metallic)
     // glTF occlusionTexture (Phong path only). The R channel is authored ambient occlusion; it
     // REPLACES the baked per-vertex AO per-pixel (both target the same scale; multiplying would
     // double-darken). occlusion_strength is occlusionTexture.strength: ao = 1 + strength*(R-1).
-    // Mesh::has_occlusion gates the per-pixel sample; fallback formats may provide this property.
+    // Mesh::has_occlusion gates the per-pixel sample; Assimp-backed formats may provide this property.
     TexSlot occlusion_map;
     float occlusion_strength = 1.0f;
     bool double_sided = false;

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Native-resolution graphics through the kitty and sixel protocols. `--graphics kitty|sixel|blocks|auto` selects the backend; `auto` prefers kitty, then sixel, and falls back to half-blocks. Local kitty sessions use shared memory, remote sessions send compressed frames, and sixel uses its fixed 240-color palette. Capability detection prevents a forced pixel backend from failing silently. Pixel graphics are unavailable under tmux and GNU screen.
 - Synchronized output on terminals that support it, so complete frames appear at once.
-- An Assimp 6.0.5 fallback for more than 40 additional model formats. It imports static geometry, scene transforms, common materials and textures. OBJ, PLY, STL and glTF/GLB continue to use only their native loaders.
+- Built-in support through Assimp 6.0.5 for more than 40 additional model formats. It imports static geometry, scene transforms, common materials and textures. OBJ, PLY, STL and glTF/GLB continue to use only their native loaders.
 - A free-flying camera selected with `--first-person`. WASD moves, `E` and `V` move along world up, arrows and mouse drag look around, and `+`, `-` and the wheel adjust speed. `--first-person-speed` sets the initial speed. The camera has no gravity or collision and can pass through geometry.
 - `--yaw`, `--pitch` and `--zoom` for the initial camera pose. They also set the benchmark camera and the state restored by `R`.
 - Automatic 24-bit or 256-color output, with perceptual palette matching for 256-color terminals. `--color truecolor|256|auto` overrides detection. Kitty images remain 24-bit and sixel images use 240 colors, so the option affects only the HUD with those backends.

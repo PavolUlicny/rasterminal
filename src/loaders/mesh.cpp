@@ -123,7 +123,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
             return false;
         }
         // The second UV set reaches the same sampler, so it needs the same guard. Separate scan
-        // because it is a parallel array populated by glTF and compatible fallback formats.
+        // because it is a parallel array populated by glTF and Assimp-backed formats.
         if (std::any_of(
                 uv1.begin(), uv1.end(), [](const vec2 &t) { return !std::isfinite(t.x) || !std::isfinite(t.y); }
             ))

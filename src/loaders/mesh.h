@@ -59,7 +59,7 @@ struct Mesh
     }
 
     // Dispatch loader: native loaders own OBJ, PLY, STL, and glTF/GLB. Other extensions
-    // advertised by the vendored Assimp build use the compatibility fallback.
+    // advertised by the vendored Assimp build use the Assimp loader.
     // Clears all mesh state before loading. Returns false on failure or unknown extension.
     // crease_angle_deg is the smoothing threshold used when a file provides no normals:
     // adjacent faces are smoothed together below this angle and hard-edged above it.

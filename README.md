@@ -204,9 +204,9 @@ Terminals do not report key releases, so only the most recently pressed movement
 | PLY | Native | ASCII and binary (LE/BE); vertex and face colors |
 | STL | Native | ASCII and binary; Z-up coordinates are remapped to Y-up; ASCII lines are limited to 64 KB |
 | glTF 2.0 | Native | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
-| AMF, 3DS, AC, ASE, Assbin, B3D, BVH, Collada, DXF, CSM, HMP, IrrMesh, IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX, MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen, Unreal 3D, DirectX X, X3D, 3MF, MMD | Assimp fallback | Static geometry, scene transforms, common materials and textures |
+| AMF, 3DS, AC, ASE, Assbin, B3D, BVH, Collada, DXF, CSM, HMP, IrrMesh, IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX, MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen, Unreal 3D, DirectX X, X3D, 3MF, MMD | Assimp | Static geometry, scene transforms, common materials and textures |
 
-Native extensions do not fall back to Assimp after a parse failure. The Assimp loader flattens scene transforms and instances. It does not import animation, skinning, cameras, lights or format-specific metadata. It uses the first texture for each supported material role, and caps `--smooth-angle 180` to Assimp's 175-degree limit.
+OBJ, PLY, STL and glTF/GLB always use their native loaders, including when parsing fails. The Assimp loader flattens scene transforms and instances. It does not import animation, skinning, cameras, lights or format-specific metadata. It uses the first texture for each supported material role, and caps `--smooth-angle 180` to Assimp's 175-degree limit.
 
 ## Requirements
 
@@ -228,7 +228,7 @@ Vendored under `vendor/`; see `THIRD_PARTY_NOTICES` for full license texts.
 
 | Library | Version | License | Use |
 | --- | --- | --- | --- |
-| [Assimp](https://github.com/assimp/assimp) | v6.0.5 | BSD-3-Clause plus bundled-component licenses | Import-only fallback for formats without a native loader |
+| [Assimp](https://github.com/assimp/assimp) | v6.0.5 | BSD-3-Clause plus bundled-component licenses | Import-only loader for formats without a native loader |
 | [cgltf](https://github.com/jkuhlmann/cgltf) | master (post-v1.15) | MIT | glTF / GLB parsing |
 | [stb_image](https://github.com/nothings/stb) | v2.30 | MIT / Unlicense | Image loading |
 | [stl_reader](https://github.com/sreiter/stl_reader) | v2.0 | BSD-2 | STL parsing |

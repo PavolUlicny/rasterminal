@@ -386,7 +386,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  .ply        ASCII or binary (little/big-endian)\n"
             "  .stl        ASCII or binary\n"
             "  .gltf/.glb  glTF 2.0 (PBR materials, textures, node transforms)\n"
-            "  others      Assimp fallback (FBX, Collada, 3DS, Blender, IFC, OFF, X, ...)\n"
+            "  others      Assimp-backed (FBX, Collada, 3DS, Blender, IFC, OFF, X, ...)\n"
             "\n"
             "Options:\n"
             "  -s,     --shading <mode>       Initial shading mode (default: phong)\n"
