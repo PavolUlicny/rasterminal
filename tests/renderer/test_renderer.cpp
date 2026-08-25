@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-// Group A: constructor / lifecycle
+// Construction and lifecycle
 
 TEST(renderer, constructor_default_threads)
 {
@@ -34,7 +34,7 @@ TEST(renderer, constructor_thread_count_clamping)
     ASSERT_TRUE(true);
 }
 
-// Group B: wireframe path
+// Wireframe rendering
 
 TEST(renderer, wireframe_visible_triangle_drawn)
 {
@@ -112,7 +112,7 @@ TEST(renderer, wireframe_uses_wireframe_color)
     }
 }
 
-// Group B2: parallel wireframe
+// Parallel wireframe rendering
 // Uniform edge color and atomic minimum depth must make output independent of worker
 // count. Exercise culling, clipping, off-screen, and degenerate edges under TSan.
 
@@ -287,7 +287,7 @@ TEST(renderer, wireframe_multiworker_empty_mesh_no_crash)
     ASSERT_TRUE(count_drawn_pixels(fb) == 0);
 }
 
-// Group C: shading dispatch
+// Shading dispatch
 //
 // Scene: front-facing unit triangle, red light from +Z, tiny ambient.
 // Normal (0,0,1) · light (0,0,1) = 1 → full diffuse → R≥150 at centre pixel.
@@ -376,7 +376,7 @@ TEST(renderer, untextured_overbright_phong_rolls_off_below_white)
     }
 }
 
-// Group D: backface culling in MT path
+// Multithreaded backface culling
 
 TEST(renderer, mt_backface_culled)
 {
@@ -412,7 +412,7 @@ TEST(renderer, mt_double_sided_renders_backface)
     }
 }
 
-// Group E: MT correctness / multi-frame
+// Multithreaded and multi-frame correctness
 
 TEST(renderer, empty_mesh_completes)
 {
@@ -481,7 +481,7 @@ TEST(renderer, large_triangle_spans_all_bands)
     }
 }
 
-// Group F: lights, texture toggle
+// Lights and texture toggling
 
 TEST(renderer, zero_lights_renders_ambient_only)
 {
@@ -816,7 +816,7 @@ TEST(renderer, show_tex_false_suppresses_stex_and_nmap)
     }
 }
 
-// Group J: double-sided lighting
+// Double-sided lighting
 // Directional light exposes failures in the three normal-flip paths.
 
 // CW-from-+z winding → back-face from camera at +z.

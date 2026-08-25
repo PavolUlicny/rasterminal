@@ -135,8 +135,7 @@ TEST(platform, classify_colorterm_truecolor)
 
 TEST(platform, classify_colorterm_unrecognized_falls_through)
 {
-    // The historical COLORTERM=1/yes (rxvt-era "has color at all") is not a
-    // truecolor signal; classification falls through to the TERM rules.
+    // COLORTERM=1/yes means only "has color," so TERM still decides the color depth.
     ASSERT_EQ(platform::classify_term_color("yes", "xterm-256color", TC, false, false), P256);
     ASSERT_EQ(platform::classify_term_color("1", "xterm", TC, false, false), P256);
     ASSERT_EQ(platform::classify_term_color("yes", nullptr, TC, false, false), TC);

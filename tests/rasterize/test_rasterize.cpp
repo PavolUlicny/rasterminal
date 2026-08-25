@@ -357,7 +357,7 @@ static void rast_colored(
     );
 }
 
-// Group A: equal-w invariance
+// Equal-w invariance
 
 // With wa=wb=wc (uniform), perspective-correct reduces to plain barycentric.
 // Scaling all three w's by the same factor must not change pixel colours.
@@ -424,7 +424,7 @@ TEST(rasterize, equal_w_does_not_change_depth)
     assert_depth_near(fb, 20, 10, 0.5f, 0.01f);
 }
 
-// Group B: unequal w biases attributes toward the smaller-w (nearer) vertex
+// Unequal w biases attributes toward the nearer vertex
 
 // a=(red), b=(red), c=(blue); wa=wb=10 (far), wc=1 (near).
 // Pixel (12,10) is at the screen midpoint of edge a→c.
@@ -552,7 +552,7 @@ TEST(rasterize, extreme_w_ratio_numerical_stability)
     }
 }
 
-// Group C: depth interpolation is linear (not perspective-corrected)
+// Linear depth interpolation
 
 // z_ndc varies: sa.z=0.2, sc.z=0.8; wa=wb=10, wc=1.
 // At pixel (12,10): linear depth = 0.46875*0.2 + 0*0.2 + 0.53125*0.8 = 0.51875.
@@ -587,7 +587,7 @@ TEST(rasterize_phong, unequal_w_depth_still_linear)
     assert_depth_near(fb, 12, 10, 0.519f, 0.015f);
 }
 
-// Group D: y_band clipping is unaffected by w values
+// y_band clipping is independent of w
 
 // Repeats the band-clipping test with wa=wb=10, wc=1 to confirm perspective
 // correction does not bleed into the row-exclusion decision.

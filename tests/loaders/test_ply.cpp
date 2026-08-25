@@ -1482,8 +1482,7 @@ TEST(ply_valid, crease_shallow_fold_stays_smooth)
 
 TEST(ply_valid, crease_threshold_controls_split)
 {
-    // Same 90 deg fold; the forwarded crease angle decides the outcome, mirroring the OBJ
-    // coverage. PLY had only the default-crease hard-edge case before.
+    // This 90 deg fold verifies that PLY forwards a non-default crease angle.
     const char *ply = "ply\nformat ascii 1.0\n"
                       "element vertex 4\n"
                       "property float x\nproperty float y\nproperty float z\n"

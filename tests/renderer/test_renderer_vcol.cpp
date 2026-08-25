@@ -1,6 +1,6 @@
 #include "tests/renderer_test_util.h"
 
-// Group M: renderer vertex-color dispatch
+// Vertex-color dispatch
 // Cover ClipVert loading, Phong interpolation, Flat averaging, white fallback,
 // and wireframe independence. A white material and frontal light isolate the tint:
 // red vertex color yields red, while absent color yields white.

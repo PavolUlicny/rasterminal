@@ -215,9 +215,8 @@ TEST(renderer_tiled, phong_grid_matches_immediate)
     check_both_paths(s, "phong grid");
 }
 
-// MTL copies Ns unclamped, so a negative shininess is a material the loaders can produce. The
-// batch shader must still shade it from the material value (it once read an uninitialised
-// per-pixel array here, making the picture depend on stack residue).
+// MTL can produce negative shininess. The batch shader must read the material value rather
+// than per-pixel storage that this path does not initialize.
 TEST(renderer_tiled, negative_shininess_is_deterministic)
 {
     Scene s;

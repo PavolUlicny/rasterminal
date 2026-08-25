@@ -309,7 +309,7 @@ static std::string strip_attr_glb(bool normal, bool uv, int color_dim, int mat)
     return make_glb(json, bin);
 }
 
-// Group A: non-triangle primitive types rejected
+// Rejected non-triangle primitive types
 
 TEST(reject, gltf_points_only_mesh)
 {
@@ -615,7 +615,7 @@ TEST(gltf_valid, default_mode_is_triangles)
     ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
 }
 
-// Group B: mixed primitive types
+// Mixed primitive types
 
 TEST(gltf_valid, mixed_mesh_triangles_and_points_only_loads_triangles)
 {

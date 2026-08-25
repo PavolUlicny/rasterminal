@@ -50,7 +50,7 @@ static void rast_phong(Framebuffer &fb, const Texture *tex, float alpha_cutoff, 
     );
 }
 
-// Group A: alpha_cutoff = 0 (disabled) is bit-identical to no cutoff
+// Disabled alpha cutoff is bit-identical to no cutoff
 
 // Repeated cutoff-zero renders are bit-identical.
 TEST(rasterize_alpha, cutoff_zero_matches_no_cutoff_flat)
@@ -77,7 +77,7 @@ TEST(rasterize_alpha, cutoff_zero_flat_and_phong_both_draw)
     ASSERT_TRUE(was_drawn(fb_p, 20, 10));
 }
 
-// Group B: cutout discards transparent pixels
+// Cutout discards transparent pixels
 
 TEST(rasterize_alpha, fully_transparent_pixel_not_drawn_flat)
 {
@@ -138,7 +138,7 @@ TEST(rasterize_alpha, opaque_cutoff_pixel_colour_matches_baseline_phong)
     ASSERT_EQ(cb.b, cc.b);
 }
 
-// Group C: discarded pixels must not write the depth buffer
+// Discarded pixels do not write depth
 
 // transparent foreground triangle must not occlude an opaque triangle behind it.
 // If discarded pixels claim z-buffer entries, the rear triangle would be invisible.
@@ -237,7 +237,7 @@ TEST(rasterize_alpha, discarded_pixel_does_not_occlude_geometry_behind_phong)
     }
 }
 
-// Group D: no overhead on non-cutout path
+// Non-cutout path overhead
 
 // Opaque input makes the disabled and active cutout paths equivalent.
 TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_flat)
@@ -266,7 +266,7 @@ TEST(rasterize_alpha, opaque_image_same_result_with_or_without_cutoff_phong)
     ASSERT_EQ(cn.b, cw.b);
 }
 
-// Group E: alpha exactly at cutoff boundary
+// Alpha at the cutoff boundary
 // Discard uses strict `<`; 128/255 matches sample_rgba's conversion exactly.
 
 TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_flat)
@@ -287,7 +287,7 @@ TEST(rasterize_alpha, alpha_exactly_at_cutoff_drawn_phong)
     ASSERT_TRUE(was_drawn(fb, 20, 10));
 }
 
-// Group F: has_cutout + nmap/stex combined
+// Cutout with normal and specular textures
 
 // Cutout must pass its UV to normal-map sampling. An opaque +X normal texel under
 // +X light changes red from about zero to 255.
@@ -339,7 +339,7 @@ TEST(rasterize_phong, cutout_and_nmap_combined_nmap_still_applied)
     }
 }
 
-// Group G: has_vcol + alpha_cutoff combined
+// Vertex color with alpha cutoff
 
 // has_vcol=true + alpha_cutoff active, both compose correctly: pixel passes
 // alpha test AND is tinted red by vcol.
@@ -381,7 +381,7 @@ TEST(rasterize_phong, vcol_and_alpha_cutout_combined)
     }
 }
 
-// Group H: cutout-only path (no nmap, no stex), UV lifecycle
+// Cutout-only UV lifecycle
 
 // Cutout skips later UV recomputation and must reuse the pre-pass sample. UV 0.75
 // selects blue from a red/blue texture; a missing pre-pass UV would select red.

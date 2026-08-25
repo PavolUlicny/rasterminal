@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 
-// Group H: COLOR_0 vertex colors
+// COLOR_0 vertex colors
 
 TEST(gltf_valid, color0_sets_has_vertex_colors_and_loads_rgb)
 {
@@ -210,7 +210,7 @@ TEST(gltf_valid, partial_color0_uncolored_primitive_first)
     }
 }
 
-// Group P: vertex_colors white-fill on second primitive
+// White fill for primitives without vertex colors
 
 TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
 {
@@ -267,7 +267,7 @@ TEST(gltf_valid, second_primitive_color0_white_fills_first_primitive_verts)
     ASSERT_NEAR(m.vertex_colors[5].z, 1.0f, 1e-5f); // blue
 }
 
-// Group T: first primitive COLOR_0, second has no color
+// Mixed primitives with and without COLOR_0
 
 TEST(gltf_valid, first_primitive_color0_second_has_no_color)
 {

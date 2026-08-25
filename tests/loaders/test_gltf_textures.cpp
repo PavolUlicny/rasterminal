@@ -4,7 +4,7 @@
 #include <cmath>
 #include <vector>
 
-// Group N: load_tex path coverage
+// Texture loading paths
 
 TEST(gltf_valid, normal_tex_via_buffer_view_sets_normal_tex_index)
 {
@@ -73,7 +73,7 @@ TEST(gltf_valid, zero_emissive_factor_with_texture_skips_decode)
     ASSERT_FALSE(m.has_emissive);
 }
 
-// Group N+: glTF normalTexture.scale parsing + has_normal_scale gate
+// normalTexture.scale and has_normal_scale
 
 TEST(gltf_valid, normal_scale_read_and_sets_has_flag)
 {
@@ -339,7 +339,7 @@ TEST(gltf_valid, diffuse_tex_via_external_uri_load_failure_sets_diffuse_tex_neg)
     ASSERT_TRUE(m.materials[1].diffuse_map.tex < 0);
 }
 
-// Group V: embedded texture load success
+// Embedded textures
 
 TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
 {
@@ -370,7 +370,7 @@ TEST(gltf_valid, diffuse_tex_via_embedded_buffer_view_loads_successfully)
     ASSERT_FALSE(m.textures.empty());
 }
 
-// Group V+: shared image deduplicates texture
+// Shared-image deduplication
 
 TEST(gltf_valid, shared_image_deduplicates_texture)
 {
@@ -412,7 +412,7 @@ TEST(gltf_valid, shared_image_deduplicates_texture)
     ASSERT_TRUE(found);
 }
 
-// Group V++: parallel texture decode (n_threads > 1)
+// Parallel texture decoding
 
 TEST(gltf_valid, parallel_decode_two_distinct_textures)
 {

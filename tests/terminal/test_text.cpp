@@ -148,9 +148,7 @@ TEST(text, sanitize_controls_replaces_invalid_utf8)
 
 TEST(text, sanitize_controls_replaces_every_listed_format_control)
 {
-    // The doc comment and the CHANGELOG both claim the invisible and direction-changing
-    // characters are covered, so the list has to be exhaustive rather than representative:
-    // the ones below were each missing from an earlier version of it.
+    // The documented invisible and direction-changing character set must be exhaustive.
     ASSERT_TRUE(sanitize_controls("\xc2\xad") == "??");           // U+00AD soft hyphen
     ASSERT_TRUE(sanitize_controls("\xd8\x9c") == "??");           // U+061C Arabic letter mark
     ASSERT_TRUE(sanitize_controls("\xe1\xa0\x8e") == "???");      // U+180E Mongolian vowel sep
@@ -238,9 +236,8 @@ TEST(text, display_width_emoji_outside_the_common_blocks_are_two_columns)
 
 TEST(text, display_width_bmp_wide_symbols_are_two_columns)
 {
-    // The Wide code points that live INSIDE the BMP, which the above-BMP blanket rule does not
-    // reach. Each of these was measured as one column by an earlier version of the table, and
-    // under-measuring is what pushes the fps field off the right edge.
+    // These wide BMP code points sit outside the blanket rule for code points above the BMP.
+    // Under-measuring them pushes the fps field past the right edge.
     ASSERT_EQ(display_width("\xe2\x8c\x9a"), static_cast<size_t>(2)); // U+231A watch
     ASSERT_EQ(display_width("\xe2\x8c\xa9"), static_cast<size_t>(2)); // U+2329 angle bracket
     ASSERT_EQ(display_width("\xe2\x9a\xa1"), static_cast<size_t>(2)); // U+26A1 high voltage

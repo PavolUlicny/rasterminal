@@ -97,7 +97,7 @@ static Mesh make_fully_behind_triangle()
     return m;
 }
 
-// Group G: near-plane clip integration
+// Near-plane clipping
 // With eye z=5 and near=0.1, world z=4.95 lies behind the plane. Check
 // clip_near forwarding through Phong, Flat, and wireframe paths.
 
@@ -426,7 +426,7 @@ static Mesh make_screen_triangle_ao(float ao_a, float ao_b, float ao_c)
     return m;
 }
 
-// Group I: AO end-to-end
+// Ambient occlusion
 // With no lights and red ambient 0.8, AO values 1, 0, and 1/3 produce red
 // channels near 204, 0, and 68.
 

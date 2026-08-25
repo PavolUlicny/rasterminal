@@ -488,7 +488,7 @@ TEST(reject, empty_file_glb)
     assert_rejects(t.path);
 }
 
-// Group C: non-indexed triangles branch
+// Non-indexed triangles
 
 TEST(gltf_valid, non_indexed_triangles_loaded)
 {
@@ -550,7 +550,7 @@ TEST(gltf_valid, non_indexed_partial_triangle_truncated)
     ASSERT_EQ(m.vertices.size(), static_cast<size_t>(4));
 }
 
-// Group D: indexed truncation
+// Truncated indices
 
 TEST(gltf_valid, indexed_partial_triangle_truncated)
 {
@@ -594,7 +594,7 @@ TEST(gltf_valid, indexed_partial_triangle_truncated)
     ASSERT_EQ(m.triangles[0].v[2], 2u);
 }
 
-// Group E: UV coordinate handling
+// UV coordinates
 
 TEST(gltf_valid, uv_v_coordinate_flipped)
 {
@@ -644,7 +644,7 @@ TEST(gltf_valid, no_uv_accessor_uv_stays_zero)
     ASSERT_NEAR(m.vertices[0].uv.y, 0.0f, 1e-6f);
 }
 
-// Group F: Normal handling
+// Normals
 
 TEST(gltf_valid, normals_loaded_from_accessor_not_recomputed)
 {
@@ -679,7 +679,7 @@ TEST(gltf_valid, normals_loaded_from_accessor_not_recomputed)
     ASSERT_NEAR(m.vertices[0].normal.z, 0.0f, 1e-5f);
 }
 
-// Group G: Node transforms
+// Node transforms
 
 TEST(gltf_valid, node_translation_applied_to_positions)
 {
@@ -721,7 +721,7 @@ TEST(gltf_valid, child_node_mesh_visited_recursively)
     ASSERT_EQ(m.vertices.size(), static_cast<size_t>(3));
 }
 
-// Group I: alpha mode variants
+// Alpha modes
 
 TEST(gltf_valid, alpha_mode_blend_leaves_alpha_cutoff_zero)
 {
@@ -762,7 +762,7 @@ TEST(gltf_valid, alpha_mode_opaque_leaves_alpha_cutoff_zero)
     ASSERT_NEAR(m.materials[1].alpha_cutoff, 0.0f, 1e-6f);
 }
 
-// Group J: multi-primitive material assignment
+// Multi-primitive material assignment
 
 TEST(gltf_valid, multi_primitive_correct_material_indices)
 {
@@ -802,7 +802,7 @@ TEST(gltf_valid, multi_primitive_correct_material_indices)
     ASSERT_NEAR(m.materials[2].diffuse.y, 1.0f, 1e-4f);
 }
 
-// Group K: UINT32 index accessor
+// UINT32 index accessors
 
 TEST(gltf_valid, uint32_index_accessor_loaded)
 {
@@ -833,7 +833,7 @@ TEST(gltf_valid, uint32_index_accessor_loaded)
     ASSERT_EQ(m.triangles[0].v[2], 2u);
 }
 
-// Group L: two-node scene merge
+// Two-node scene merging
 
 TEST(gltf_valid, two_nodes_merged_with_correct_vertex_base)
 {
@@ -869,7 +869,7 @@ TEST(gltf_valid, two_nodes_merged_with_correct_vertex_base)
     ASSERT_EQ(m.triangles[1].v[2], 5u);
 }
 
-// Group M: no-scenes rejection
+// Missing scenes
 
 TEST(reject, gltf_no_scenes_array_rejects)
 {
@@ -879,7 +879,7 @@ TEST(reject, gltf_no_scenes_array_rejects)
     assert_rejects(f.path);
 }
 
-// Group O: cgltf_load_buffers / cgltf_validate failures
+// cgltf buffer and validation failures
 
 TEST(reject, gltf_missing_external_buffer_fails_load_buffers)
 {
@@ -911,7 +911,7 @@ TEST(reject, gltf_oversized_buffer_view_fails_validate)
     assert_rejects(f.path);
 }
 
-// Group Q: cgltf_parse_file failure
+// cgltf parse failure
 
 TEST(reject, gltf_corrupt_header_fails_parse)
 {
@@ -920,7 +920,7 @@ TEST(reject, gltf_corrupt_header_fails_parse)
     assert_rejects(f.path);
 }
 
-// Group R: zero/degenerate normals
+// Zero and degenerate normals
 
 TEST(gltf_valid, zero_normals_skip_normalise_and_load_succeeds)
 {
@@ -952,7 +952,7 @@ TEST(gltf_valid, zero_normals_skip_normalise_and_load_succeeds)
     ASSERT_NEAR(m.vertices[0].normal.z, 0.0f, 1e-6f);
 }
 
-// Group S: rotation node transform
+// Node rotation
 
 TEST(gltf_valid, rotation_transform_applied_to_positions_and_normals)
 {
@@ -988,7 +988,7 @@ TEST(gltf_valid, rotation_transform_applied_to_positions_and_normals)
     ASSERT_NEAR(m.vertices[0].normal.z, 0.0f, 1e-4f);
 }
 
-// Group U: null material pointer
+// Null material pointers
 
 TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
 {
@@ -1015,7 +1015,7 @@ TEST(gltf_valid, null_material_uses_default_white_at_index_zero)
     ASSERT_NEAR(m.materials[0].diffuse.x, 1.0f, 1e-5f);
 }
 
-// Group W: primitive without POSITION attribute
+// Missing POSITION attributes
 
 TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
 {
@@ -1039,7 +1039,7 @@ TEST(gltf_valid, primitive_without_position_attribute_is_skipped)
     ASSERT_EQ(m.triangles.size(), static_cast<size_t>(1));
 }
 
-// Group X: non-uniform node scale → inverse-transpose for normals
+// Non-uniform scale uses inverse-transpose normals
 
 TEST(gltf_valid, non_uniform_scale_uses_inverse_transpose_for_normals)
 {
@@ -1094,7 +1094,7 @@ TEST(gltf_valid, non_uniform_scale_uses_inverse_transpose_for_normals)
     }
 }
 
-// Group Y: negative-determinant node scale → triangle winding flips
+// Negative-determinant scale flips triangle winding
 
 TEST(gltf_valid, negative_determinant_flips_triangle_winding)
 {
@@ -1182,7 +1182,7 @@ TEST(gltf_valid, negative_determinant_flips_winding_for_indexed_primitive)
     ASSERT_TRUE(face_n.z > 0.0f);
 }
 
-// Group Z: sparse accessor resolution
+// Sparse accessors
 
 TEST(gltf_valid, sparse_accessor_resolves_positions)
 {

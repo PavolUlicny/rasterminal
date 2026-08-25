@@ -52,7 +52,7 @@ static void rast_tex(
 //   Pixel (12,10): ba=0.46875, bb=0,       bc=0.53125
 //   Pixel (20,10): ba=0.21875, bb=0.25,    bc=0.53125
 
-// Group A: diffuse texture in rasterize_flat()
+// Diffuse textures in rasterize_flat()
 
 // 1×1 red texture × white vertex colour → red pixel.
 TEST(rasterize, solid_diffuse_texture_replaces_color)
@@ -245,7 +245,7 @@ TEST(rasterize, diffuse_transform_scale_multiplies_sampled_coord)
     }
 }
 
-// Group B: diffuse texture in rasterize_phong()
+// Diffuse textures in rasterize_phong()
 
 // 1×1 gray (128,128,128) texture halves both diffuse and ambient.
 // Ambient-only setup (n_lights=0): without tex R≈255, with tex R≈128.
@@ -357,7 +357,7 @@ TEST(rasterize_phong, white_texture_matches_no_texture)
     assert_pixel_near(fb_tex, 20, 10, fb_notex.get_pixel(20, 10), 2);
 }
 
-// Group C: specular texture
+// Specular textures
 
 // A black specular texture must multiply peak specular from about 255 to zero,
 // with diffuse and ambient disabled.
@@ -403,7 +403,7 @@ TEST(rasterize_phong, specular_texture_zeroes_highlight)
     }
 }
 
-// Group D: normal map
+// Normal maps
 
 // nmap texel (255,128,128) unpacks to nm≈(1,0,0) via *2−1.
 // Vertex normals=(0,0,1), tangents=(1,0,0) → TBN redirects normal to +x.
@@ -449,7 +449,7 @@ TEST(rasterize_phong, normal_map_redirects_lighting)
     }
 }
 
-// Group D+: glTF normalScale applied to the tangent-space normal
+// glTF normalScale
 
 // Normal scale zero removes the +X map component, leaving +Z dark under +X light.
 // Disabling scale application restores full red and catches wrong-axis multiplication.
@@ -583,7 +583,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_no_crash)
     }
 }
 
-// Group D3: degenerate tangent, colour value validation
+// Degenerate tangents and color validation
 
 // A degenerate tangent with a +Z normal texel resolves to the vertex normal.
 // Its pixel value must match the valid-tangent, no-map baseline.
@@ -625,7 +625,7 @@ TEST(rasterize_phong, normal_map_degenerate_tangent_correct_value)
     assert_pixel_near(fb_degen, 20, 10, fb_base.get_pixel(20, 10), 5);
 }
 
-// Group E: diffuse + specular texture simultaneously
+// Combined diffuse and specular textures
 
 // Red diffuse and green specular textures must both apply. Frontal peak lighting
 // produces red diffuse/ambient and green specular; omitting stex removes the green.
@@ -683,7 +683,7 @@ TEST(rasterize_phong, diffuse_and_specular_texture_both_applied)
     }
 }
 
-// Group F: specular texture combined with alpha cutout
+// Specular textures with alpha cutout
 
 // Cutout computes the only UV used by the specular map. An opaque white diffuse
 // texture passes cutout; black stex suppresses peak specular from about 255 to zero.
@@ -737,7 +737,7 @@ TEST(rasterize_phong, specular_tex_and_cutout_active)
     }
 }
 
-// Group F: metallic-roughness remap
+// Metallic-roughness remapping
 // Metallic tints F0 toward base color; dielectrics retain 4%. Diffuse remains
 // because this renderer has no environment reflection for strict PBR metals.
 
@@ -851,7 +851,7 @@ TEST(rasterize_phong, metallic_tints_specular_and_mr_texture_modulates)
     }
 }
 
-// Group O: glTF occlusion overrides baked AO
+// glTF occlusion overrides baked AO
 // With red ambient and no lights, output red equals 255*AO. A 1x1 map applies
 // strength to its red channel; no map retains interpolated vertex AO.
 
@@ -959,7 +959,7 @@ TEST(rasterize_phong, orm_shared_occlusion_mr_sample_matches_separate)
     assert_pixel_near(fb_separate, 20, 10, fb_shared.get_pixel(20, 10), 1);
 }
 
-// Group T1: per-slot UV set selection
+// Per-slot UV set selection
 // uv0 selects red and uv1 blue from one texture. Changing diffuse_map.uv_set
 // must switch the sampled half.
 TEST(rasterize, diffuse_uv_set_selects_texcoord1)
