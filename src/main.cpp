@@ -628,7 +628,7 @@ namespace
         std::fprintf(stderr, "  p95     %.2f ms\n", ms(p95));
         std::fprintf(stderr, "  max     %.2f ms\n", ms(mx));
         std::fprintf(stderr, "  stddev  %.2f ms\n", stddev_ms);
-        std::fprintf(stderr, "  total   %.0f ms  (%d frames incl. warmup)\n", total_ms, n_warmup + n_measure);
+        std::fprintf(stderr, "  total   %.0f ms  %d frames including warmup\n", total_ms, n_warmup + n_measure);
     }
 
 } // namespace

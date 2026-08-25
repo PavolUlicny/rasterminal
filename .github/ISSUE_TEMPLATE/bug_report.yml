@@ -6,14 +6,14 @@ body:
     id: what-happened
     attributes:
       label: What happened
-      description: Describe the bug. If it is not obvious, also say what you expected instead.
+      description: Describe the bug and what you expected to happen.
     validations:
       required: true
   - type: textarea
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: The exact command line, plus any keys or mouse actions needed to trigger the bug.
+      description: Include the exact command and any keys or mouse actions needed to trigger it.
       placeholder: |
         1. rasterminal --shading phong model.glb
         2. Press Space
@@ -24,7 +24,7 @@ body:
     id: version
     attributes:
       label: rasterminal version
-      description: Output of `rasterminal --version`. If built from source, also the commit hash (`git rev-parse --short HEAD`).
+      description: Paste `rasterminal --version`. For source builds, also paste `git rev-parse --short HEAD`.
       placeholder: rasterminal 0.2.0
     validations:
       required: true
@@ -48,7 +48,7 @@ body:
     id: terminal
     attributes:
       label: Terminal
-      description: Terminal emulator and version, plus tmux or screen if you use one. On Linux/macOS, include the output of `echo $TERM $COLORTERM`.
+      description: Include the terminal name and version, tmux or screen if used, and `echo $TERM $COLORTERM` on Linux or macOS.
       placeholder: kitty 0.35 (xterm-kitty, truecolor), tmux 3.4
     validations:
       required: true
@@ -56,13 +56,13 @@ body:
     id: model
     attributes:
       label: Model file
-      description: If the bug involves a specific model, name the format and whether README lists it as native or Assimp-backed. If possible, add a link to or attachment of a file that reproduces it.
+      description: For model-specific bugs, name the format and whether it is native or Assimp-backed. Link or attach a reproducing file if possible.
     validations:
       required: false
   - type: textarea
     id: extra
     attributes:
       label: Anything else
-      description: Screenshots, recordings, workarounds you found.
+      description: Add screenshots, recordings or workarounds.
     validations:
       required: false

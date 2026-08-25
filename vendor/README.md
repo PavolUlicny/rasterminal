@@ -1,6 +1,16 @@
 # Vendored libraries
 
-Libraries are chosen for fit, not size, and vendored directly. One may be a single header, a small source set, or a full source subset, whatever the job warrants. Do not edit these files by hand: they are formatting-disabled through `vendor/.clang-format` and diff-suppressed in `.gitattributes`. To update a library, follow the refresh recipe below.
+Each library is vendored as a header, source subset or full tree according to the
+project's needs. Do not edit vendored files by hand. `vendor/.clang-format` disables
+formatting and `.gitattributes` suppresses their diffs. Use the recipes below for updates.
+
+After any update, run a clean build and test:
+
+```sh
+rm -rf build
+cmake -B build
+cmake --build build --target check -j
+```
 
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
@@ -19,10 +29,9 @@ Libraries are chosen for fit, not size, and vendored directly. One may be a sing
 
 ## Refresh recipe
 
-Assimp comes from the tagged source archive. Keep the build and legal files plus
-`cmake-modules/`, `code/`, `contrib/` and `include/`. Copy only the paths below. The
-source root contains a `.clang-format` that would override `vendor/.clang-format`.
-Never copy `test/models-nonbsd/`, whose models have separate licenses.
+Assimp comes from its tagged source archive. Copy only the build and legal files
+plus `cmake-modules/`, `code/`, `contrib/` and `include/` shown below. Do not copy
+the root `.clang-format` or `test/models-nonbsd/`; the latter has separate licenses.
 
 ```sh
 TAG=v6.0.5
@@ -41,17 +50,16 @@ rm -rf vendor/assimp/contrib/{android-cmake,draco,googletest,meshlab,tinyusdz,zi
 git ls-remote https://github.com/assimp/assimp.git "refs/tags/${TAG}"
 ```
 
-Record the resolved tag commit and archive SHA-256. For v6.0.5 the archive is
+Record the resolved tag commit and archive SHA-256. The v6.0.5 archive hash is
 `edf3749559c2b7d1f758ffb66fc5bec62186221e623b7f2e8969f17ee46ecb6f`.
-Review the root and retained `contrib/` licenses. Update this table, README and
-`THIRD_PARTY_NOTICES`. Recheck every `ASSIMP_*` option because renamed options can restore
-disabled code or dependencies. Retained files must match upstream byte for byte. Tools,
-samples, tests and Draco depend on pruned directories. USD and VRML fetch source during
-configuration. Keep them disabled.
+Review the root and retained `contrib/` licenses, then update this table, the top-level
+README and `THIRD_PARTY_NOTICES`. Retained files must match upstream byte for byte.
+Recheck every `ASSIMP_*` option because a rename can restore disabled code or dependencies.
+Keep tools, samples, tests, Draco, USD and VRML disabled; they depend on pruned or downloaded sources.
 
 Assimp builds as a static, import-only library. Exporters, tools, samples, tests,
-documentation, installation, Draco, M3D, USD, VRML and C4D are disabled. OBJ, PLY, STL
-and glTF remain native-only. A clean configure must report this importer set:
+documentation, installation, Draco, M3D, USD, VRML and C4D are disabled. OBJ, PLY,
+STL and glTF remain native. A clean configure must report:
 
 ```text
 Enabled:  AMF 3DS AC ASE ASSBIN B3D BVH COLLADA DXF CSM HMP IRRMESH IQM IRR LWO LWS
@@ -60,20 +68,19 @@ Enabled:  AMF 3DS AC ASE ASSBIN B3D BVH COLLADA DXF CSM HMP IRRMESH IQM IRR LWO 
 Disabled: OBJ PLY STL USD GLTF
 ```
 
-Inspect the final link graph. Assimp and `zlibstatic` must come from `vendor/assimp/`, with
-no system or downloaded dependency. The root CMake file works around zlib 1.2.13 treating
-Darwin Clang's `TARGET_OS_MAC` builtin as legacy Mac OS. Keep the workaround until that
-check disappears upstream.
+Inspect the final link graph. Assimp and `zlibstatic` must come from `vendor/assimp/`,
+with no system or downloaded dependency. Keep the zlib 1.2.13 Darwin workaround in the
+root CMake file until upstream removes its `TARGET_OS_MAC` check.
 
 ```sh
 # Example: update cgltf to v1.16
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/cgltf.h -o vendor/cgltf/cgltf.h
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/LICENSE  -o vendor/cgltf/LICENSE
 git ls-remote https://github.com/jkuhlmann/cgltf refs/tags/v1.16
-# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: rm -rf build && cmake -B build && cmake --build build --target check -j
+# Update both version tables and any changed license notice.
 ```
 
-For stb (no per-file tags), use `master` and record the resolved HEAD SHA:
+stb has no per-file tags. Use `master` and record the resolved HEAD SHA:
 
 ```sh
 curl -sL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -o vendor/stb/stb_image.h
@@ -81,14 +88,14 @@ curl -sL https://raw.githubusercontent.com/nothings/stb/master/LICENSE      -o v
 git ls-remote https://github.com/nothings/stb HEAD
 ```
 
-For stl_reader (header lives at `include/stl_reader/stl_reader.h` in the repo, but we flatten to `vendor/stl_reader/stl_reader.h`):
+Flatten stl_reader's `include/stl_reader/stl_reader.h` to `vendor/stl_reader/stl_reader.h`:
 
 ```sh
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/include/stl_reader/stl_reader.h -o vendor/stl_reader/stl_reader.h
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/LICENSE -o vendor/stl_reader/LICENSE
 ```
 
-For miniz (the repo stores unamalgamated sources; the release asset carries the amalgamated `miniz.c`/`miniz.h` pair we vendor):
+miniz release assets contain the amalgamated `miniz.c` and `miniz.h` pair:
 
 ```sh
 curl -sL https://github.com/richgel999/miniz/releases/download/<tag>/miniz-<tag>.zip -o /tmp/miniz.zip
@@ -96,16 +103,12 @@ unzip -o -j /tmp/miniz.zip miniz.c miniz.h LICENSE -d vendor/miniz
 git ls-remote https://github.com/richgel999/miniz refs/tags/<tag>
 ```
 
-Update the commit and version in this table (and in the README's third-party table); update
-`THIRD_PARTY_NOTICES` if the license changed. Re-verify the three config macros the build defines globally
-(`MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, `MINIZ_NO_STDIO`, `MINIZ_NO_ARCHIVE_APIS`; set in
-CMakeLists.txt and `compile_flags.txt`) still exist upstream: a bump that renames
-or drops one silently restores the zlib-name compatibility layer, the stdio layer and its
-`#pragma message` note, and the ZIP archive layer, with nothing failing. Never set
-`MINIZ_NO_INFLATE_APIS` (the tests round-trip frames through `mz_uncompress`); then test:
-`rm -rf build && cmake -B build && cmake --build build --target check -j`.
+Update both version tables and `THIRD_PARTY_NOTICES` if the license changed. Verify that
+`MINIZ_NO_ZLIB_COMPATIBLE_NAMES`, `MINIZ_NO_STDIO` and `MINIZ_NO_ARCHIVE_APIS` still
+exist upstream. A renamed or removed macro silently restores unwanted code. Never set
+`MINIZ_NO_INFLATE_APIS`; tests use `mz_uncompress`.
 
-For meshoptimizer (header lives in `src/`, compiled via unity shim `meshoptimizer_impl.cpp`):
+meshoptimizer is compiled through `meshoptimizer_impl.cpp`:
 
 ```sh
 BASE="https://raw.githubusercontent.com/zeux/meshoptimizer/<tag>"
@@ -118,49 +121,41 @@ for f in allocator clusterizer indexanalyzer indexcodec indexgenerator \
     curl -sL "$BASE/src/$f.cpp" -o "vendor/meshoptimizer/src/$f.cpp"
 done
 git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
-# Update the commit and version in this table (and in the README's third-party table), update THIRD_PARTY_NOTICES if the license changed, then test: rm -rf build && cmake -B build && cmake --build build --target check -j
+# Update both version tables and any changed license notice.
 ```
 
-For draco (decode-only glTF-bitstream subset, compiled via unity shim `draco_impl.cpp`):
-Draco ships no single-header form, so we vendor only the source files the decoder
-pulls. The subset is *derived mechanically* from an upstream checkout rather than
-hand-listed, so regenerate it on every version bump:
+Draco is a decode-only glTF bitstream subset compiled through `draco_impl.cpp`.
+Regenerate its source closure from upstream on every update:
 
 ```sh
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/google/draco.git /tmp/draco && cd /tmp/draco
-# 1. Build draco_decoder with the glTF-bitstream feature set; this also generates draco_features.h.
+# 1. Build the decoder and generate draco_features.h.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDRACO_GLTF_BITSTREAM=ON -DDRACO_TESTS=OFF
 cmake --build build --target draco_decoder -j
 
-# 2. Candidate decode sources = all .cc minus encoders/io/scene/tools/tests.
+# 2. List decoder candidates, excluding encoders, I/O, scenes, tools and tests.
 find src/draco -name '*.cc' \
   | grep -vE '_test\.cc$|/testing/|/tools/|/io/|/javascript/|/maya/|/unity/|/scene/|/texture/|/material/|/animation/' \
   | grep -viE 'encode|encoder|_enc' > /tmp/cand.txt
 
-# 3. Compile candidates into an archive; link a minimal DecodeMeshFromBuffer program;
-#    the linker pulls exactly the needed members. Read them from the map, then take the
-#    `c++ -M` header closure of that .cc set. Copy both into vendor/draco/ preserving the
-#    src/draco/... layout. (See the phase-1 spike notes for the exact extraction script.)
+# 3. Archive the candidates and link a minimal DecodeMeshFromBuffer program. Read the
+#    selected members from the link map, calculate their `c++ -M` header closure, and copy
+#    both sets to vendor/draco/ without changing the src/draco/ layout.
 
-# 4. License + provenance, then hand-author the generated features header:
+# 4. Copy provenance files and the generated feature header.
 cp LICENSE AUTHORS /path/to/vendor/draco/
 cp build/draco/draco_features.h /path/to/vendor/draco/src/draco/draco_features.h   # then strip the "GENERATED" banner
 git rev-parse HEAD   # record the commit SHA in the table above
 ```
 
-Update the commit and version in this table (and in the README's third-party table); verify
-`vendor/draco/src/draco/draco_features.h`
-still matches what `DRACO_GLTF_BITSTREAM=ON` generates; update `THIRD_PARTY_NOTICES` if the
-license changed; then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.
+Update both version tables. Verify that `vendor/draco/src/draco/draco_features.h` matches
+`DRACO_GLTF_BITSTREAM=ON`, and update changed license notices.
 
-For basis_universal (decode-only KTX2/Basis transcoder for `KHR_texture_basisu`): we vendor
-the whole `transcoder/` directory plus the bundled zstd *decode* amalgam (zstd ships inside
-the basis_universal repo). The transcoder is configured for decode in the
-`vendor/basisu/basisu_impl.cpp` shim (only `BASISD_SUPPORT_KTX2` + `BASISD_SUPPORT_KTX2_ZSTD`
-are set; the GPU block-format targets are left at upstream defaults, since partial stripping does
-not compile). The shim and the zstd C TU are built with blanket `-w` (they are large,
-unaudited TUs): the shim per-source in CMakeLists.txt, the C TU through the
-`rasterminal_c` object library that carries every vendored C source.
+basis_universal provides the decode-only KTX2/Basis transcoder for `KHR_texture_basisu`.
+Vendor its `transcoder/` directory and bundled zstd decode amalgam. `basisu_impl.cpp`
+defines `BASISD_SUPPORT_KTX2` and `BASISD_SUPPORT_KTX2_ZSTD`; leave GPU targets at their
+upstream defaults because partial stripping does not compile. CMake applies `-w` to the
+shim and builds the zstd C file through `rasterminal_c`.
 
 ```sh
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/basis_universal.git /tmp/bu && cd /tmp/bu
@@ -171,26 +166,19 @@ cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by 
 git rev-parse HEAD        # record the commit SHA in the table above (both basisu + zstd rows)
 ```
 
-Re-verify the `basisu_impl.cpp` `BASISD_SUPPORT_*` defines still compile; if either
-license **or the NOTICE text** changed, update `THIRD_PARTY_NOTICES` (it reproduces the
-basis_universal NOTICE verbatim, so a NOTICE change there must be mirrored; it is not a
-license change); then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.
+Verify that the `BASISD_SUPPORT_*` defines still compile. Update `THIRD_PARTY_NOTICES`
+when either the license or NOTICE changes; it reproduces the NOTICE verbatim.
 
-For libwebp (decode-only subset for `EXT_texture_webp`): libwebp ships no single-header
-form, so we vendor only the source the decoder pulls. The set is *derived mechanically*
-from an upstream checkout. Do NOT hand-maintain it; regenerate on every version bump.
-The `.c` files are listed individually in `WEBP_DEC_SRCS` (a unity `#include` shim
-fails on duplicate file-local statics, e.g. `clip_8b`); the dsp SIMD variants self-gate on
-arch macros (`WEBP_USE_SSE2`/`SSE41`/`AVX2`/`NEON`), so no per-file SIMD flags are used.
-They are C TUs, built with blanket `-w` through the `rasterminal_c` object library, whose
-flag set is deliberately not the C++ one (no LTO, no C++-only options). Internal includes are repo-rooted (`"src/dec/..."`), so the layout
-must keep the `src/` prefix and the include path is `-isystem vendor/libwebp`.
+libwebp is a decode-only subset for `EXT_texture_webp`. Regenerate its source closure from
+upstream on every update. `WEBP_DEC_SRCS` lists each C file because a unity build collides
+on file-local statics. SIMD files select themselves through architecture macros and need no
+per-file flags. `rasterminal_c` compiles them with `-w` and without LTO or C++ options.
+Preserve the `src/` layout for repo-rooted internal includes.
 
 ```sh
 TAG=v1.6.0; git clone --depth 1 --branch "$TAG" https://chromium.googlesource.com/webm/libwebp /tmp/webp && cd /tmp/webp
 
-# 1. Decode .c set = libwebp's libwebpdecoder groups (see src/{dec,dsp,utils}/Makefile.am:
-#    dec + dsp COMMON + the *_decode_ SIMD variants + utils COMMON), minus mips/msa (no target).
+# 1. List libwebpdecoder's dec, dsp and utils groups, excluding MIPS and MSA.
 CFILES=$(cat <<'EOF'
 src/dec/alpha_dec.c src/dec/buffer_dec.c src/dec/frame_dec.c src/dec/idec_dec.c src/dec/io_dec.c src/dec/quant_dec.c src/dec/tree_dec.c src/dec/vp8_dec.c src/dec/vp8l_dec.c src/dec/webp_dec.c
 src/dsp/alpha_processing.c src/dsp/cpu.c src/dsp/dec.c src/dsp/dec_clip_tables.c src/dsp/filters.c src/dsp/lossless.c src/dsp/rescaler.c src/dsp/upsampling.c src/dsp/yuv.c
@@ -201,22 +189,17 @@ src/dsp/alpha_processing_neon.c src/dsp/dec_neon.c src/dsp/filters_neon.c src/ds
 src/utils/bit_reader_utils.c src/utils/color_cache_utils.c src/utils/filters_utils.c src/utils/huffman_utils.c src/utils/palette.c src/utils/quant_levels_dec_utils.c src/utils/rescaler_utils.c src/utils/random_utils.c src/utils/thread_utils.c src/utils/utils.c
 EOF
 )
-# 2. Header set = the -M closure of those .c. The two x86 passes (native + portable) capture the
-#    SSE2/SSE41/AVX2-guarded includes; a THIRD pass forces WEBP_USE_NEON (with a stub <arm_neon.h>)
-#    so the ARM-only include src/dsp/neon.h is captured too. Toggling -march on x86 never enters the
-#    `#if defined(WEBP_USE_NEON)` block, so without this pass neon.h is silently dropped and the
-#    macOS-ARM build later fails with "src/dsp/neon.h file not found".
+# 2. Calculate the header closure. Native and portable x86 passes cover x86 SIMD. A third
+#    pass forces WEBP_USE_NEON with a stub arm_neon.h so src/dsp/neon.h is included for ARM.
 mkdir -p /tmp/armstub && : > /tmp/armstub/arm_neon.h
 HDRS=$({ for m in "-march=native" ""; do for f in $CFILES; do gcc $m -DNDEBUG -I. -MM -MG $f 2>/dev/null; done; done
          for f in $CFILES; do gcc -DWEBP_USE_NEON -DNDEBUG -I. -isystem /tmp/armstub -MM -MG $f 2>/dev/null; done; } \
        | tr ' \\' '\n\n' | grep '^src/.*\.h$' | sed 's#/\./#/#' | sort -u)
-# 3. Copy .c + .h preserving the src/ layout, plus the three root files every source
-#    header points to: COPYING (license), PATENTS (patent grant), AUTHORS (contributors).
+# 3. Preserve the src/ layout and copy the license, patent grant and author list.
 for f in $CFILES $HDRS; do mkdir -p /path/to/vendor/libwebp/$(dirname $f); cp $f /path/to/vendor/libwebp/$f; done
 cp COPYING PATENTS AUTHORS /path/to/vendor/libwebp/
 git rev-parse HEAD   # record the commit SHA in the table above
 ```
 
-If the `.c` closure changed (new/removed files), update `WEBP_DEC_SRCS` in CMakeLists.txt
-to match; if the license or PATENTS text changed, update
-`THIRD_PARTY_NOTICES`; then test: `rm -rf build && cmake -B build && cmake --build build --target check -j`.
+Keep `WEBP_DEC_SRCS` synchronized with the C closure. Update `THIRD_PARTY_NOTICES` when
+the license or PATENTS changes.

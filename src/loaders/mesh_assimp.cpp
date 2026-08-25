@@ -1414,7 +1414,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
     }
     if ((extension == ".nff" || extension == ".enff") && !nff_tessellation_within_bounds(path))
     {
-        std::fprintf(stderr, "note: tessellation level in '%s' exceeds the supported maximum (8)\n", path.c_str());
+        std::fprintf(stderr, "note: tessellation level in '%s' exceeds the supported maximum of 8\n", path.c_str());
         return false;
     }
     if (extension == ".off" && !off_declared_counts_fit_file(path))
@@ -1424,7 +1424,7 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
     }
     if ((extension == ".ac" || extension == ".acc" || extension == ".ac3d") && !ac_subdivision_within_bounds(path))
     {
-        std::fprintf(stderr, "note: subdivision level in '%s' exceeds the supported maximum (6)\n", path.c_str());
+        std::fprintf(stderr, "note: subdivision level in '%s' exceeds the supported maximum of 6\n", path.c_str());
         return false;
     }
     if ((extension == ".3d" || extension == ".uc") && !unreal_triangle_indices_in_bounds(path))

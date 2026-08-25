@@ -17,30 +17,24 @@ rasterminal \- render a 3D model in the terminal
 .I model
 .SH DESCRIPTION
 .B rasterminal
-is a cross-platform 3D model viewer that renders entirely in the terminal:
-as real pixels on terminals with kitty or sixel graphics support, detected at
-startup (see
-.BR \-\-graphics ),
-and as unicode half-block characters with ANSI color escapes elsewhere, in
-24-bit (truecolor) where the terminal supports it with an automatic 256-color
-fallback (see
-.B ENVIRONMENT
-and
-.BR \-\-color ).
-.PP
+renders 3D models in the terminal. It uses native-resolution kitty or sixel
+images where supported and Unicode half-blocks elsewhere. The backend is
+detected at startup and can be selected with
+.BR \-\-graphics .
 The
-.I model
-operand is required. A lone
+.B \-\-color
+option controls 24-bit or 256-color text output.
+.PP
+The model operand is required. A lone
 .B \-
 is treated as a positional operand, not stdin.
 .PP
-Interactive rendering requires that both standard input and standard output be
-terminals; if either is piped or redirected,
+Interactive mode requires terminals on standard input and standard output. If
+either is piped or redirected,
 .B rasterminal
-exits with an error rather than writing escape sequences into the stream. The
-headless
+exits without writing escape sequences. The headless
 .B \-\-bench
-mode is exempt and runs with redirected streams.
+mode works with redirected streams.
 .SH SUPPORTED FORMATS
 .TP
 .B .obj
@@ -50,8 +44,8 @@ Wavefront OBJ with optional .mtl (diffuse/specular/normal maps).
 ASCII or binary (little- and big-endian).
 .TP
 .B .stl
-ASCII or binary. The format's conventional Z\-up orientation is remapped so models load upright.
-ASCII files are rejected if any single line exceeds 64 KB (a malformed\-input guard; the format puts one short statement per line).
+ASCII or binary. Z\-up coordinates are remapped to Y\-up. ASCII lines are
+limited to 64 KB.
 .TP
 .B .gltf, .glb
 glTF 2.0 (PBR materials, textures, node transforms).
@@ -96,9 +90,9 @@ Default:
 .BI \-\-yaw " DEG"
 Initial camera yaw in degrees, in
 .BR [\-180,\ 180] ;
-positive turns the model left on screen (the same direction as
+positive turns the model left on screen, the direction selected by
 .B \-\-spin\-direction
-.BR left ).
+.BR left .
 Also sets the
 .B \-\-bench
 camera. Default:
@@ -111,9 +105,7 @@ negative looks down from above,
 .B \-90
 is top\-down, and values past \(+-90 view the model upside down. Under
 .B \-\-first\-person
-the value is clamped to just inside straight up and straight down, the same limit
-the mode holds while looking, since a flying camera must not start upside down or
-in a pose it cannot itself hold. Also sets the
+the value is clamped just inside straight up or down. Also sets the
 .B \-\-bench
 camera. Default:
 .BR \-17.2 .
@@ -122,13 +114,11 @@ camera. Default:
 Initial zoom as an apparent\-size multiplier of the auto\-fit framing, in
 .BR [0.2,\ 100] :
 .B 2
-starts twice as close,
+appears twice as large and
 .B 0.2
-fully zoomed out. The bounds equal the range the scroll wheel reaches in orbit
-mode; under
+starts fully zoomed out. Under
 .B \-\-first\-person
-the wheel sets movement speed instead, and this sets how far back the camera
-starts. Also sets the
+this sets the starting distance. Also sets the
 .B \-\-bench
 camera. Default:
 .BR 1 .
@@ -136,11 +126,11 @@ camera. Default:
 .BI \-\-first\-person\-speed " FACTOR"
 Initial movement speed as a multiplier of the model\-scaled default, in
 .BR [0.05,\ 20] ,
-the same range
-.BR +/\- " and the wheel"
-move within. Requires
-.BR \-\-first\-person ,
-without which the value could never come into play. Default:
+the range used by
+.BR +/\- " and the wheel."
+Requires
+.BR \-\-first\-person .
+Default:
 .BR 1 .
 .TP
 .BR \-\-cull ", " \-\-no\-cull
@@ -168,10 +158,7 @@ under
 .BR kitty " and " sixel ,
 and
 .B min(cores,4)
-under
-.BR blocks ,
-whose frames are roughly a hundredth the size and already finish inside the
-frame cap. Loading a model always uses all cores, whatever the backend.
+under blocks. Model loading always uses all cores.
 .TP
 .BR \-f ", " \-\-fps " " [\fIN\fR]
 Frame cap. Bare
@@ -188,8 +175,8 @@ Headless benchmark: run
 .I N
 frames (default
 .BR 200 )
-with warmup discarded, print a structured timing/fps/throughput report to
-standard error, then exit. No terminal I/O.
+after warmup, report timing, fps and throughput to standard error, then exit.
+The benchmark performs no terminal I/O.
 .TP
 .BI \-\-bench\-size " WxH"
 Bench framebuffer size in pixels (default
@@ -207,8 +194,8 @@ for none). Requires
 .BI \-\-smooth\-angle " DEG"
 Crease angle in degrees, in
 .BR [0,\ 180] ,
-for normals computed when a file has no normals: below it adjacent faces smooth,
-above it they hard-edge. Default
+used to compute missing normals. Adjacent faces smooth below the angle and form
+a hard edge above it. Default
 .BR 60 ;
 .B 0
 is faceted,
@@ -219,23 +206,22 @@ Assimp-backed formats cap this setting at Assimp's 175-degree maximum.
 .BI \-\-color " mode"
 Color output:
 .B truecolor
-(alias
-.BR 24bit )
-forces 24-bit output,
+and its alias
+.B 24bit
+force 24-bit output,
 .B 256
 forces 256-color output, and
 .B auto
-(the default) detects the terminal's capability from the environment (see
-.BR ENVIRONMENT ,
-including the GNU screen 256-color floor that
-.B truecolor
-overrides).
+detects the terminal from the environment. The default is
+.BR auto .
+See
+.B ENVIRONMENT
+for the detection order.
 Forcing a color mode does not bypass the
 .B TERM=dumb
 rejection or the Windows VT-capability gate.
-With the kitty graphics backend the image is transmitted as 24-bit pixels and
-with sixel as the fixed 240-color palette regardless; this option then affects
-only the HUD line.
+Kitty images remain 24-bit and sixel images use 240 colors, so this option
+affects only the HUD under those backends.
 .TP
 .BI \-\-graphics " mode"
 Rendering backend.
@@ -244,42 +230,35 @@ draws real pixels through the kitty graphics protocol,
 .B sixel
 draws real pixels through sixel graphics,
 .B blocks
-draws unicode half-block cells, and
+draws Unicode half-block cells, and
 .B auto
-(the default) prefers kitty when the terminal answers the startup capability
-query, then sixel when its device attributes reply advertises it, and blocks
-otherwise.
+prefers kitty, then sixel, then blocks. The default is
+.BR auto .
 .IP
-A sixel image is always the 240-color xterm palette at native resolution. Its
-height is kept to whole 6-pixel sixel bands, and it never paints the last
-terminal row, even under
-.BR \-\-no\-hud ,
-since an image touching that row scrolls the screen every frame. It is capped
-to the maximum image size the terminal advertises, when it advertises one, and
-centered when a limit leaves it smaller than the window and the cell size is
-known rather than guessed. xterm defaults to a 1000x1000 pixel maximum and
-discards, rather than clips, anything larger. Its
+A sixel image uses the 240-color xterm palette at native resolution. It uses
+whole 6-pixel bands and leaves the last terminal row clear to prevent scrolling,
+even under
+.BR \-\-no\-hud .
+It honors the terminal's advertised image limit and centers a limited image when
+the cell size is known. xterm defaults to 1000x1000 pixels and discards larger
+images. Its
 .B maxStringParse
-resource (default 600000) silently drops any frame whose sixel encoding is
-larger, which very busy scenes can exceed; raise it with
+resource defaults to 600000 and drops larger sixel payloads. Raise it with
 .BR "xterm \-xrm '*maxStringParse: 10000000'" .
 .IP
 Forcing
 .B kitty
 or
 .B sixel
-still requires detection to succeed, since a terminal without the protocol
-would silently show nothing. Both are an error under tmux and GNU screen:
-kitty is not passed through there, and sixel support is build-dependent and
-not detected.
+requires successful detection. Both modes are unavailable under tmux and GNU
+screen.
 .TP
 .BI \-\-spin\-speed " DEG/S"
-Auto-rotation speed in degrees per second, used whenever spinning is active
-(via
+Auto-rotation speed in degrees per second. It applies to
 .B \-\-spin
-or the Space toggle). Any positive number; zero and negative values are
-rejected (direction is set by
-.BR \-\-spin\-direction ).
+and the Space toggle. The value must be positive. Use
+.B \-\-spin\-direction
+to select direction.
 Default
 .BR 45 .
 .TP
@@ -309,9 +288,9 @@ every binding in
 .B CONTROLS
 is ignored except
 .BR Q ,
-which still quits, as does Ctrl+C. Input is still read (so it cannot pile up in
-the terminal) and the mouse stays claimed by the viewer, so a drag neither orbits
-nor selects text. Auto-rotation, terminal resizing, and
+which still quits, as does Ctrl+C. Input is still read and cannot accumulate in
+the terminal. The viewer keeps mouse tracking active, so dragging does not
+select text. Auto-rotation, terminal resizing and
 .B \-\-bench
 are unaffected.
 .TP
@@ -319,30 +298,22 @@ are unaffected.
 Use a free\-flying first\-person camera instead of the turntable; the later flag
 wins. Default:
 .BR \-\-no\-first\-person .
-There is no gravity, collision or ground plane: the camera flies, and passes
-through geometry. WASD moves, the arrows and a mouse drag look,
+The camera has no gravity or collision and can pass through geometry.
+WASD moves, the arrows and a mouse drag look,
 .BR E " and " V
-rise and fall along world up, and
+move along world up, and
 .BR +/\- " and the wheel"
-set the movement speed, which is scaled to the model so it feels the same at any
-size. Pitch is clamped to straight up and straight down so the horizon never
-inverts, and the camera cannot fly further from the model than the orbit zoom can
-already reach. Auto\-rotation still works and becomes a panorama from wherever the
-camera stands. The launch pose is still the one
-.BR \-\-yaw ", " \-\-pitch " and " \-\-zoom
-select, with
-.B \-\-pitch
-clamped as described above.
+set movement speed. Speed scales with model size. Pitch stops at straight up or
+down, and distance is limited to the orbit zoom range. Auto\-rotation turns the
+view from the camera's current position. The launch pose comes from
+.BR \-\-yaw ", " \-\-pitch " and " \-\-zoom .
 .B \-\-bench
-ignores this flag entirely, so a benchmark measures the same camera either way.
+ignores this mode.
 .PP
-Note that
 .B \-\-spin\-direction
-is defined by the way the model's front face moves on screen. Under
+describes model movement in turntable mode and view movement under
 .B \-\-first\-person
-nothing is being orbited, so the setting names the way the view itself turns;
-.B left
-still turns left.
+mode.
 .SS Meta
 .TP
 .BR \-h ", " \-\-help
@@ -351,35 +322,38 @@ Print usage and exit.
 .BR \-V ", " \-\-version
 Print version and license information and exit.
 .SH OPTION SYNTAX
-A long flag that takes a value accepts it with a space or
-.RB ' = '
-.RB ( \-\-shading
-.BR flat ", " \-\-shading=flat ).
-Short flags take a value with a space or in compact form
-.RB ( \-s
-.BR flat ", " \-sflat ).
+A long flag accepts its value after a space or
+.RB ' = ' .
+For example,
+.B \-\-shading flat
+and
+.B \-\-shading=flat
+are equivalent. Short flags accept a space or compact form, as in
+.B \-s flat
+and
+.BR \-sflat .
 String values are case-insensitive.
 .PP
 Boolean flags take no value:
 .B \-\-cull=on
 is an error, not a synonym for
 .BR \-\-cull .
-The paired flags listed above (for example
+For paired flags such as
 .B \-\-cull
 and
-.BR \-\-no\-cull )
-select the two states directly, and where both appear the later one on the
-command line wins.
+.BR \-\-no\-cull ,
+the later one wins.
 .PP
 No-argument short options may be clustered behind one
 .RB ' \- '
-with at most one value-taking option last
-.RB ( \-Sj4
-is
-.BR \-S " " \-j4 ).
+with at most one value-taking option last.
+For example,
+.B \-Sj4
+means
+.BR \-S " " \-j4 .
 A bare
 .B \-\-
-terminates option parsing: every following token is the model operand, even one
+terminates option parsing. Every following token is the model operand, even one
 beginning with
 .RB ' \- '.
 .SH CONTROLS
@@ -404,7 +378,8 @@ Cycle background.
 Cycle lighting.
 .TP
 .B R
-Reset the camera and every runtime setting to the state selected by the command-line flags (their defaults when not passed).
+Reset the camera and runtime settings to the command-line state, or to their
+defaults when no state flags were passed.
 .TP
 .B C
 Cycle wireframe color.
@@ -435,120 +410,81 @@ none of the above act except
 .SH EXIT STATUS
 .TP
 .B 0
-Success (including
-.BR \-\-help " and " \-\-version ).
+Success, including
+.BR \-\-help " and " \-\-version .
 .TP
 .B 1
-Usage error (unknown flag, missing or invalid value, invalid flag
-combination, unexpected argument),
-model load failure, or a terminal
+Usage error, model load failure, or a terminal
 .B rasterminal
-cannot draw to (outside
-.BR \-\-bench ):
-standard input or output is not a terminal,
+cannot draw to outside
+.BR \-\-bench .
+Terminal errors include redirected input or output,
 .B TERM
 is
 .BR dumb ,
-a Windows console cannot enable virtual-terminal escape processing, or a
-forced
+a Windows console cannot enable ANSI escapes, or a forced
 .B \-\-graphics kitty
 or
 .B \-\-graphics sixel
-backend is not detected (see
-.BR \-\-graphics ).
+backend is not detected.
 .SH ENVIRONMENT
 .B rasterminal
-reads these variables to pick the color mode when rendering interactively, and,
-as noted below, to gate the graphics backends under a multiplexer. The headless
+reads these variables in interactive mode to choose color output and detect
+terminal multiplexers. The headless
 .B \-\-bench
 mode reads none of them.
 .PP
-Detection runs in a fixed order and the first match wins. It applies only under
-.B \-\-color auto
-(the default), since any other
-.B \-\-color
-value forces the choice, but
+With
+.BR "\-\-color auto" ,
+the first matching rule wins:
 .B TERM=dumb
-is fatal either way, even when
+is rejected; GNU screen uses 256 colors;
 .B COLORTERM
-claims truecolor. Real GNU screen (a non-empty
-.B STY
-variable, or a screen-family
+truecolor hints select 24-bit output; recognized
 .B TERM
-without a non-empty
-.B TMUX
-variable) is floored to 256-color next, before
-.B COLORTERM
-is consulted, since the inherited
-.B COLORTERM
-describes the outer terminal and screen 4.x renders 24-bit color as garbage.
-tmux is exempt: it sets
-.B TMUX
-and resolves 24-bit output against the outer terminal itself; under screen 5
-configured for truecolor, force
-.BR "\-\-color truecolor" .
-A
-.B COLORTERM
-truecolor signal in turn wins over a
-.B TERM
-that would otherwise map to 256-color.
+hints and terminal names select 24-bit output; everything else uses 256 colors.
+Native Windows consoles default to 24-bit when neither variable identifies a
+mode.
 .TP
 .B COLORTERM
 .B truecolor
 or
 .B 24bit
-selects 24-bit output, except inside real GNU screen (above).
+selects 24-bit output except inside GNU screen.
 .TP
 .B TERM
 .B dumb
-makes
-.B rasterminal
-exit with an error (a dumb terminal cannot render escape sequences at all); this
-is checked before
-.BR COLORTERM .
-A screen-family name without tmux takes the GNU screen 256-color floor (above).
-A truecolor hint (the
+is always rejected. A
 .B \-direct
-terminfo family, or a name containing
+terminfo name, a name containing
 .B truecolor
 or
-.BR 24bit )
-or a known truecolor terminal name (kitty, WezTerm, Alacritty, Ghostty, foot,
-Contour; this keeps ssh sessions, which do not forward
-.BR COLORTERM ,
-on 24-bit) selects 24-bit output. Any other non-empty value gets 256-color
-output. When
-.B TERM
-is unset or empty and
-.B COLORTERM
-carries no truecolor signal, the default is 256-color (24-bit on native
-Windows consoles).
+.BR 24bit ,
+or a known truecolor terminal name selects 24-bit output. Recognized terminals
+are kitty, WezTerm, Alacritty, Ghostty, foot and Contour. This also preserves
+24-bit output over SSH, which does not forward
+.BR COLORTERM .
 .TP
 .B TMUX
-A non-empty value marks a tmux session and exempts a screen-family
+A non-empty value exempts a screen-family
 .B TERM
 from the GNU screen floor, unless
 .B STY
-marks a screen session, which always wins. Separately, the graphics
-capability query is skipped when
+marks a screen session. The graphics query is skipped whenever
 .B TMUX
-is set (even empty) or
+is set, even to an empty value, or
 .B TERM
-is screen- or tmux-prefixed, so under a multiplexer
+starts with screen or tmux. Under a multiplexer,
 .B \-\-graphics auto
-falls back to half-blocks and forcing a pixel backend is an error,
-regardless of color mode.
+uses half-blocks and a forced pixel backend is an error.
 .TP
 .B STY
-A non-empty value is GNU screen's own session marker and applies the
-256-color floor whatever
-.B TERM
-and
-.B TMUX
-say.
+A non-empty value marks GNU screen and forces the 256-color default.
 .PP
 .B \-\-color
-overrides the detected mode.
+overrides color detection but not the
+.B TERM=dumb
+rejection.
 .SH EXAMPLES
 .TP
 Render a model with default settings:

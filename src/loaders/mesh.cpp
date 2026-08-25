@@ -218,7 +218,7 @@ bool Mesh::load_model(const std::string &path, bool ao, int n_threads, float cre
         // resource exhaustion or an internal error from a normal malformed-file rejection, which
         // returns false without throwing), then fail loud with a clean rollback. main() prints the
         // user-facing "failed to load" summary on the false return.
-        std::fprintf(stderr, "note: load of '%s' raised an exception: %s\n", path.c_str(), e.what());
+        std::fprintf(stderr, "note: loading '%s' threw an exception: %s\n", path.c_str(), e.what());
         clear();
         return false;
     }
