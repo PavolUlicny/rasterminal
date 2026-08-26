@@ -13,7 +13,10 @@
 #include <cstring>
 
 #ifdef _WIN32
+#include <atomic>
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <conio.h>
 #include <io.h>
 #include <windows.h>
@@ -32,6 +35,65 @@
 
 namespace platform
 {
+
+    namespace detail
+    {
+#ifdef _WIN32
+        using InterruptFlag = std::atomic_bool;
+#else
+        using InterruptFlag = volatile std::sig_atomic_t;
+#endif
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): shared by the control handler and main
+        inline InterruptFlag interrupt_flag = {};
+    } // namespace detail
+
+    [[nodiscard]] inline bool interrupt_requested() noexcept
+    {
+#ifdef _WIN32
+        return detail::interrupt_flag.load(std::memory_order_relaxed);
+#else
+        return detail::interrupt_flag != 0;
+#endif
+    }
+
+    namespace detail
+    {
+#ifdef _WIN32
+        inline BOOL WINAPI console_interrupt_handler(DWORD event) noexcept
+        {
+            if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT)
+            {
+                return FALSE;
+            }
+            interrupt_flag.store(true, std::memory_order_relaxed);
+            return TRUE;
+        }
+#else
+        inline void signal_handler(int /*signal*/) noexcept
+        {
+            interrupt_flag = 1;
+        }
+#endif
+    } // namespace detail
+
+    inline bool install_interrupt_handler() noexcept
+    {
+#ifdef _WIN32
+        // CREATE_NEW_PROCESS_GROUP and an ignoring parent can disable Ctrl+C in
+        // the child. Clear that inherited process attribute before registering.
+        if (SetConsoleCtrlHandler(nullptr, FALSE) == 0)
+        {
+            return false;
+        }
+        detail::interrupt_flag.store(false, std::memory_order_relaxed);
+        return SetConsoleCtrlHandler(detail::console_interrupt_handler, TRUE) != 0;
+#else
+        detail::interrupt_flag = 0;
+        const auto interrupt_handler = std::signal(SIGINT, detail::signal_handler);
+        const auto terminate_handler = std::signal(SIGTERM, detail::signal_handler);
+        return interrupt_handler != SIG_ERR && terminate_handler != SIG_ERR;
+#endif
+    }
 
     // Return a 64-bit stream size and leave the stream at EOF, or -1 on failure.
     inline int64_t file_size(std::FILE *f)
@@ -271,8 +333,7 @@ namespace platform
 
         // Bounded query read: positive bytes, zero to retry, negative to stop.
 #ifdef _WIN32
-        inline int
-        read_query_bytes(char *out, int cap, int timeout_ms, const volatile std::sig_atomic_t * /*interrupted*/)
+        inline int read_query_bytes(char *out, int cap, int timeout_ms)
         {
             HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
             // Slice Windows waits so another thread's Ctrl+C flag is noticed promptly.
@@ -305,13 +366,13 @@ namespace platform
             return n;
         }
 #else
-        inline int read_query_bytes(char *out, int cap, int timeout_ms, const volatile std::sig_atomic_t *interrupted)
+        inline int read_query_bytes(char *out, int cap, int timeout_ms)
         {
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
             const int pr = poll(&pfd, 1, timeout_ms);
             if (pr < 0 && errno == EINTR)
             {
-                if (interrupted != nullptr && *interrupted != 0)
+                if (interrupt_requested())
                 {
                     return -1; // a quit signal ends the wait
                 }
@@ -330,7 +391,7 @@ namespace platform
             const auto got = read(STDIN_FILENO, out, static_cast<size_t>(cap));
             if (got < 0 && errno == EINTR)
             {
-                if (interrupted != nullptr && *interrupted != 0)
+                if (interrupt_requested())
                 {
                     return -1;
                 }
@@ -351,7 +412,7 @@ namespace platform
 
     // Query graphics, cell, and sixel capabilities before the input loop starts.
     // DSR terminates the ordered reply batch. The terminal remains on the alternate screen.
-    inline TermGraphics query_term_graphics(const volatile std::sig_atomic_t *interrupted = nullptr)
+    inline TermGraphics query_term_graphics()
     {
         TermGraphics tg;
         // Windows: without VT input the console never surfaces the replies as
@@ -405,7 +466,7 @@ namespace platform
         {
             // Check before each wait. Windows waits are sliced because Ctrl+C does
             // not interrupt them; POSIX may set the flag outside an EINTR path.
-            if (interrupted != nullptr && *interrupted != 0)
+            if (interrupt_requested())
             {
                 break;
             }
@@ -418,9 +479,8 @@ namespace platform
             // millisecond before the deadline a zero-timeout spin (poll returns
             // instantly, the loop re-enters); rounding up waits it out instead.
             const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count();
-            const int got = detail::read_query_bytes(
-                buf + len, detail::GRAPHICS_REPLY_BUF - len, static_cast<int>(remaining), interrupted
-            );
+            const int got =
+                detail::read_query_bytes(buf + len, detail::GRAPHICS_REPLY_BUF - len, static_cast<int>(remaining));
             if (got < 0)
             {
                 break; // quit signal, closed stream, or failure: nothing more will arrive
@@ -452,7 +512,7 @@ namespace platform
             char junk[256];
             // Zero may be a Windows timeout or discarded non-key record; only a
             // dead stream stops the bounded drain early.
-            if (detail::read_query_bytes(junk, sizeof junk, 0, nullptr) < 0)
+            if (detail::read_query_bytes(junk, sizeof junk, 0) < 0)
             {
                 break;
             }
@@ -637,6 +697,66 @@ namespace platform
     } // namespace detail
 #endif
 
+    // Snapshot Windows console buffer modes and the process output code page before setup.
+    // main keeps one guard alive for the whole invocation so every orderly return restores
+    // the shell. Console close, logoff, and shutdown events still terminate the process.
+    class ConsoleStateGuard
+    {
+      public:
+        ConsoleStateGuard() noexcept { capture(); }
+
+        ~ConsoleStateGuard() noexcept
+        {
+#ifdef _WIN32
+            // Buffered output must reach the console while VT processing and the
+            // UTF-8 code page are still active.
+            std::fflush(stdout);
+            // A destructor cannot report cleanup failures. Restore each mode through the
+            // handle used to read it. Restore the code page only when output setup could
+            // have changed it, after the output-mode probe succeeded.
+            if (m_have_input_mode)
+            {
+                SetConsoleMode(m_input, m_input_mode);
+            }
+            if (m_have_output_mode)
+            {
+                SetConsoleMode(m_output, m_output_mode);
+                if (m_output_cp != 0)
+                {
+                    SetConsoleOutputCP(m_output_cp);
+                }
+            }
+#endif
+        }
+
+        ConsoleStateGuard(const ConsoleStateGuard &) = delete;
+        ConsoleStateGuard &operator=(const ConsoleStateGuard &) = delete;
+        ConsoleStateGuard(ConsoleStateGuard &&) = delete;
+        ConsoleStateGuard &operator=(ConsoleStateGuard &&) = delete;
+
+      private:
+        void capture() noexcept
+        {
+#ifdef _WIN32
+            m_input = GetStdHandle(STD_INPUT_HANDLE);
+            m_output = GetStdHandle(STD_OUTPUT_HANDLE);
+            m_have_input_mode = GetConsoleMode(m_input, &m_input_mode) != 0;
+            m_have_output_mode = GetConsoleMode(m_output, &m_output_mode) != 0;
+            m_output_cp = GetConsoleOutputCP();
+#endif
+        }
+
+#ifdef _WIN32
+        HANDLE m_input = INVALID_HANDLE_VALUE;
+        HANDLE m_output = INVALID_HANDLE_VALUE;
+        DWORD m_input_mode = 0;
+        DWORD m_output_mode = 0;
+        bool m_have_input_mode = false;
+        bool m_have_output_mode = false;
+        UINT m_output_cp = 0;
+#endif
+    };
+
     // Idempotently enable UTF-8 and VT output. POSIX terminals handle escapes themselves.
     inline bool init_console_output()
     {
@@ -652,7 +772,8 @@ namespace platform
         {
             return false;
         }
-        // Switch code page only after VT setup succeeds. Console flags persist on exit.
+        // ConsoleStateGuard uses its successful GetConsoleMode probe as a proxy
+        // for code-page restoration. Keep every code-page change after that probe.
         SetConsoleOutputCP(65001);
         return true;
 #else
@@ -664,6 +785,16 @@ namespace platform
     {
 #ifdef _WIN32
         init_console_output();
+        HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD mode = 0;
+        if (GetConsoleMode(hin, &mode) != 0)
+        {
+            // VT input must not run through cmd.exe's cooked line editor. Processed
+            // input makes Ctrl+C reach the handler even when the shell left it disabled.
+            SetConsoleMode(
+                hin, (mode | ENABLE_PROCESSED_INPUT) & ~static_cast<DWORD>(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
+            );
+        }
 #else
         termios raw = {};
         tcgetattr(STDIN_FILENO, &raw);
@@ -681,7 +812,10 @@ namespace platform
 
     inline void disable_raw_mode()
     {
-#ifndef _WIN32
+#ifdef _WIN32
+        // Mouse reports queued before tracking was disabled must not reach the shell.
+        FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+#else
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &detail::saved_termios());
 #endif
     }

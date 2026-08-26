@@ -17,7 +17,6 @@
 #include <chrono>
 #include <cmath>
 #include <ratio>
-#include <csignal>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -31,14 +30,6 @@
 
 namespace
 {
-
-    volatile sig_atomic_t
-        g_interrupted = // NOLINT(cppcoreguidelines-avoid-non-const-global-variables): written by signal handler
-        0;
-    void signal_handler(int /*signum*/)
-    {
-        g_interrupted = 1;
-    }
 
     constexpr Color BG_BLACK = { 0, 0, 0 };
     constexpr Color BG_GRAY = { 128, 128, 128 };
@@ -260,26 +251,66 @@ namespace
     }
 
     // Startup graphics result. exit_code >= 0 means return immediately after a
-    // query interrupt or failed forced-backend detection; negotiation has already
-    // restored the terminal.
+    // query interrupt or failed forced-backend detection; the caller still owns
+    // any terminal state recorded here and must clean it up first.
     struct GraphicsSetup
     {
         GraphicsBackend backend = GraphicsBackend::Blocks;
         bool shm_ok = false;
-        // A query leaves the alternate screen for Framebuffer to adopt.
-        // Before adoption, every exit path must call platform::exit_alt_screen().
+        // Framebuffer uses this to adopt the alternate screen entered by the query.
         bool query_ran = false;
         int cell_w = 0;
         int cell_h = 0;
         // The terminal's max sixel image size (0 = unreported); see TermGraphics.
         int sixel_max_w = 0;
         int sixel_max_h = 0;
+        // Set with exit_code 1; main prints it after restoring the terminal.
+        const char *error = nullptr;
         int exit_code = -1;
     };
 
+    struct TerminalSessionGuard
+    {
+        const char *program;
+        bool alt_screen_owned = false;
+        bool mouse_enabled = false;
+        bool raw_enabled = false;
+        const char *error = nullptr;
+
+        explicit TerminalSessionGuard(const char *prog) noexcept : program(prog) {}
+
+        ~TerminalSessionGuard() noexcept
+        {
+            // Framebuffer adopts a successful query's alternate screen and releases it
+            // in its destructor. Until construction finishes, this guard owns it.
+            if (alt_screen_owned)
+            {
+                platform::exit_alt_screen();
+            }
+            if (mouse_enabled)
+            {
+                platform::disable_mouse();
+            }
+            if (raw_enabled)
+            {
+                platform::disable_raw_mode();
+            }
+            if (error != nullptr)
+            {
+                std::fprintf(stderr, "%s: %s\n", program, error);
+            }
+        }
+
+        TerminalSessionGuard(const TerminalSessionGuard &) = delete;
+        TerminalSessionGuard &operator=(const TerminalSessionGuard &) = delete;
+        TerminalSessionGuard(TerminalSessionGuard &&) = delete;
+        TerminalSessionGuard &operator=(TerminalSessionGuard &&) = delete;
+    };
+
     // Query before mouse tracking and input parsing. tmux needs protocol
-    // passthrough this build does not implement, so it uses blocks.
-    GraphicsSetup negotiate_graphics(GraphicsChoice choice, const char *prog)
+    // passthrough this build does not implement, so it uses blocks. Record alternate-screen
+    // ownership before the query so the caller can clean up if the query throws.
+    GraphicsSetup negotiate_graphics(GraphicsChoice choice, bool &alt_screen_owned)
     {
         GraphicsSetup gfx;
         if (choice == GraphicsChoice::Blocks)
@@ -294,7 +325,8 @@ namespace
         if (!under_tmux)
         {
             gfx.query_ran = true;
-            const TermGraphics tg = platform::query_term_graphics(&g_interrupted);
+            alt_screen_owned = true;
+            const TermGraphics tg = platform::query_term_graphics();
             // Outside the backend selection: a sixel-only terminal's cell-size
             // reply must not be thrown away with the kitty verdict.
             gfx.cell_w = tg.cell_w;
@@ -314,13 +346,8 @@ namespace
             }
         }
         // Treat an interrupted query as a clean quit, not failed detection.
-        if (g_interrupted)
+        if (platform::interrupt_requested())
         {
-            if (gfx.query_ran)
-            {
-                platform::exit_alt_screen();
-            }
-            platform::disable_raw_mode();
             gfx.exit_code = 0;
             return gfx;
         }
@@ -329,11 +356,6 @@ namespace
         if (gfx.backend == GraphicsBackend::Blocks &&
             (choice == GraphicsChoice::Kitty || choice == GraphicsChoice::Sixel))
         {
-            if (gfx.query_ran)
-            {
-                platform::exit_alt_screen();
-            }
-            platform::disable_raw_mode();
             const bool kitty_choice = choice == GraphicsChoice::Kitty;
             const char *reason = kitty_choice ? "terminal does not answer the kitty graphics query"
                                               : "terminal does not report sixel support";
@@ -344,7 +366,7 @@ namespace
                 reason = kitty_choice ? "kitty graphics is not supported under tmux or GNU screen"
                                       : "sixel graphics is not supported under tmux or GNU screen";
             }
-            std::fprintf(stderr, "%s: %s\n", prog, reason);
+            gfx.error = reason;
             gfx.exit_code = 1;
             return gfx;
         }
@@ -532,7 +554,7 @@ namespace
 
 } // namespace
 
-int main(int argc, char *argv[])
+const auto run_main = [](int argc, char *argv[]) -> int
 {
     const ParseResult parsed = parse_args(argc, argv);
     if (!parsed.ok)
@@ -617,100 +639,108 @@ int main(int argc, char *argv[])
         model_name = sanitize_controls(model_name);
     }
 
-    std::signal(SIGINT, signal_handler);  // Ctrl+C
-    std::signal(SIGTERM, signal_handler); // kill
-
-    // Defer persistent Windows console mutation until loading succeeds. cppcheck sees
-    // the platform branch as constant; keep the suppression directly above the if.
-    // cppcheck-suppress knownConditionTrueFalse
-    if (!platform::init_console_output())
+    if (!platform::install_interrupt_handler())
     {
-        std::fprintf(stderr, "%s: console does not support ANSI escape sequences\n", program_name(argv[0]));
+        std::fprintf(stderr, "%s: failed to install interrupt handler\n", program_name(argv[0]));
         return 1;
     }
 
-    platform::enable_raw_mode();
-
-    const GraphicsSetup gfx = negotiate_graphics(args.graphics, program_name(argv[0]));
-    if (gfx.exit_code >= 0)
     {
-        return gfx.exit_code;
-    }
-    const GraphicsBackend backend = gfx.backend;
-    const bool pixel_backend = backend != GraphicsBackend::Blocks;
-    // Mutable copies: the cell-size tiers below and the resize poll refine them.
-    int cell_w = gfx.cell_w;
-    int cell_h = gfx.cell_h;
+        TerminalSessionGuard terminal(program_name(argv[0]));
 
-    platform::enable_mouse();
-
-    int cols = 0;
-    int rows = 0;
-    platform::get_terminal_size(cols, rows);
-
-    // Cell size priority: query, ioctl-derived pixels, then 8x16. Track the ioctl
-    // value separately so its stable approximation never replaces an exact reply.
-    int ioctl_cell_w = 0;
-    int ioctl_cell_h = 0;
-    bool have_pixel_report = false;
-    if (pixel_backend)
-    {
-        have_pixel_report = derive_cell_from_pixels(cols, rows, ioctl_cell_w, ioctl_cell_h);
-        if (cell_w <= 0 || cell_h <= 0)
+        // Defer persistent Windows VT mutation until loading succeeds. cppcheck sees
+        // the platform branch as constant; keep the suppression directly above the if.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!platform::init_console_output())
         {
-            cell_w = ioctl_cell_w;
-            cell_h = ioctl_cell_h;
+            terminal.error = "console does not support ANSI escape sequences";
+            return 1;
         }
-    }
-    // A guessed cell size disables sixel centering until a real source arrives.
-    bool cell_guessed = false;
-    if (pixel_backend && (cell_w <= 0 || cell_h <= 0))
-    {
-        cell_w = 8;
-        cell_h = 16;
-        cell_guessed = true;
-    }
-    // The terminal's max sixel image size, refreshed mid-session (the value is
-    // window-tied on xterm and foot): the resize path re-requests it on a grid
-    // change and the SixelGeometry drain arm updates these.
-    int sixel_geom_w = gfx.sixel_max_w;
-    int sixel_geom_h = gfx.sixel_max_h;
 
-    // Blocks use two vertical pixels per cell; image backends use native pixels.
-    const int hud_rows = args.hud ? 1 : 0;
-    GraphicsConfig gfx_cfg;
-    int fb_w = cols;
-    int fb_h = (rows - hud_rows) * 2;
-    if (pixel_backend)
-    {
-        gfx_cfg.backend = backend;
-        // Use kitty shm only after the end-to-end probe succeeds.
-        gfx_cfg.shm = gfx.shm_ok;
-        gfx_cfg.cols = cols;
-        const int image_rows = image_rows_for(backend, rows, hud_rows);
-        gfx_cfg.rows = image_rows;
-        // The same gated bound spelling as the resize poll, so the two sites
-        // read identically (ioctl_cell_* is 0 on a failed derive either way).
-        const FbSize fbs = pixel_fb_size(
-            backend, cols, image_rows, cell_w, cell_h,
-            { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w, sixel_geom_h,
-              !cell_guessed }
-        );
-        fb_w = fbs.w;
-        fb_h = fbs.h;
-        gfx_cfg.origin_col = fbs.origin_col;
-        gfx_cfg.origin_row = fbs.origin_row;
-    }
-    // Ensure exceptions unwind terminal state. Before Framebuffer finishes constructing,
-    // the catch still owns the graphics query's alternate screen.
-    bool fb_constructed = false;
-    try
-    {
+        platform::enable_raw_mode();
+        // POSIX cleanup cannot run until enable_raw_mode saves the original termios.
+        // Windows restores the input mode through the outer console guard.
+        terminal.raw_enabled = true;
+
+        const GraphicsSetup gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
+        if (gfx.exit_code >= 0)
+        {
+            terminal.error = gfx.error;
+            return gfx.exit_code;
+        }
+        const GraphicsBackend backend = gfx.backend;
+        const bool pixel_backend = backend != GraphicsBackend::Blocks;
+        // Mutable copies: the cell-size tiers below and the resize poll refine them.
+        int cell_w = gfx.cell_w;
+        int cell_h = gfx.cell_h;
+
+        // Mouse teardown has no saved-state dependency, so arm it before writing.
+        terminal.mouse_enabled = true;
+        platform::enable_mouse();
+
+        int cols = 0;
+        int rows = 0;
+        platform::get_terminal_size(cols, rows);
+
+        // Cell size priority: query, ioctl-derived pixels, then 8x16. Track the ioctl
+        // value separately so its stable approximation never replaces an exact reply.
+        int ioctl_cell_w = 0;
+        int ioctl_cell_h = 0;
+        bool have_pixel_report = false;
+        if (pixel_backend)
+        {
+            have_pixel_report = derive_cell_from_pixels(cols, rows, ioctl_cell_w, ioctl_cell_h);
+            if (cell_w <= 0 || cell_h <= 0)
+            {
+                cell_w = ioctl_cell_w;
+                cell_h = ioctl_cell_h;
+            }
+        }
+        // A guessed cell size disables sixel centering until a real source arrives.
+        bool cell_guessed = false;
+        if (pixel_backend && (cell_w <= 0 || cell_h <= 0))
+        {
+            cell_w = 8;
+            cell_h = 16;
+            cell_guessed = true;
+        }
+        // The terminal's max sixel image size, refreshed mid-session (the value is
+        // window-tied on xterm and foot): the resize path re-requests it on a grid
+        // change and the SixelGeometry drain arm updates these.
+        int sixel_geom_w = gfx.sixel_max_w;
+        int sixel_geom_h = gfx.sixel_max_h;
+
+        // Blocks use two vertical pixels per cell; image backends use native pixels.
+        const int hud_rows = args.hud ? 1 : 0;
+        GraphicsConfig gfx_cfg;
+        int fb_w = cols;
+        int fb_h = (rows - hud_rows) * 2;
+        if (pixel_backend)
+        {
+            gfx_cfg.backend = backend;
+            // Use kitty shm only after the end-to-end probe succeeds.
+            gfx_cfg.shm = gfx.shm_ok;
+            gfx_cfg.cols = cols;
+            const int image_rows = image_rows_for(backend, rows, hud_rows);
+            gfx_cfg.rows = image_rows;
+            // The same gated bound spelling as the resize poll, so the two sites
+            // read identically (ioctl_cell_* is 0 on a failed derive either way).
+            const FbSize fbs = pixel_fb_size(
+                backend, cols, image_rows, cell_w, cell_h,
+                { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w,
+                  sixel_geom_h, !cell_guessed }
+            );
+            fb_w = fbs.w;
+            fb_h = fbs.h;
+            gfx_cfg.origin_col = fbs.origin_col;
+            gfx_cfg.origin_row = fbs.origin_row;
+        }
+
         // Renderer must outlive Framebuffer because its borrowed runner captures it.
         Renderer renderer(Renderer::resolve_thread_count(args.n_threads, pixel_backend));
 
         Framebuffer fb(fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/gfx.query_ran);
-        fb_constructed = true;
+        terminal.alt_screen_owned = false;
 
         // Key light: warm white from upper-right-front.
         // Fill light: dim cool blue from lower-left-back, providing contrast.
@@ -803,7 +833,7 @@ int main(int argc, char *argv[])
                 fps_latch_time = 0.0f;
             }
 
-            if (g_interrupted)
+            if (platform::interrupt_requested())
             {
                 break;
             }
@@ -1165,22 +1195,29 @@ int main(int argc, char *argv[])
                 }
             }
         }
+        return 0;
+    }
+};
+
+int main(int argc, char *argv[])
+{
+    // Windows console modes and the output code page belong to the parent console.
+    // Declare this first so it restores last, after every escape-based cleanup write.
+    const platform::ConsoleStateGuard console_state;
+
+    // Catch every run_main failure so its locals unwind before the console guard restores output.
+    try
+    {
+        return run_main(argc, argv);
     }
     catch (const std::exception &e)
     {
-        // Unwind terminal state on session failure. If Framebuffer construction
-        // failed, its destructor could not release the query's alternate screen.
-        if (gfx.query_ran && !fb_constructed)
-        {
-            platform::exit_alt_screen();
-        }
-        platform::disable_mouse();
-        platform::disable_raw_mode();
         std::fprintf(stderr, "%s: %s\n", program_name(argv[0]), e.what());
         return 1;
     }
-
-    platform::disable_mouse();
-    platform::disable_raw_mode();
-    return 0;
+    catch (...)
+    {
+        std::fprintf(stderr, "%s: unexpected exception\n", program_name(argv[0]));
+        return 1;
+    }
 }
