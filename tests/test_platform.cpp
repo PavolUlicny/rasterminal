@@ -1,4 +1,5 @@
 #include "tests/test.h"
+#include "src/args.h"
 #include "src/platform/input.h"
 #include "src/platform/platform.h"
 
@@ -74,6 +75,56 @@ namespace
     };
 
 #ifdef _WIN32
+    struct ScopedStdoutSilence
+    {
+        int saved = -1;
+        bool valid = false;
+
+        ScopedStdoutSilence()
+        {
+            std::fflush(stdout);
+            saved = test_dup(TEST_STDOUT);
+            const int null_output = test_devnull();
+            if (saved >= 0 && null_output >= 0)
+            {
+                valid = test_dup2(null_output, TEST_STDOUT) >= 0;
+            }
+            if (null_output >= 0)
+            {
+                test_close(null_output);
+            }
+        }
+
+        ~ScopedStdoutSilence()
+        {
+            std::fflush(stdout);
+            if (saved >= 0)
+            {
+                test_dup2(saved, TEST_STDOUT);
+                test_close(saved);
+            }
+        }
+
+        ScopedStdoutSilence(const ScopedStdoutSilence &) = delete;
+        ScopedStdoutSilence &operator=(const ScopedStdoutSilence &) = delete;
+        ScopedStdoutSilence(ScopedStdoutSilence &&) = delete;
+        ScopedStdoutSilence &operator=(ScopedStdoutSilence &&) = delete;
+    };
+
+    struct ScopedWindowsStandardInput
+    {
+        HANDLE saved = GetStdHandle(STD_INPUT_HANDLE);
+        bool valid = false;
+
+        explicit ScopedWindowsStandardInput(HANDLE input) { valid = SetStdHandle(STD_INPUT_HANDLE, input) != 0; }
+        ~ScopedWindowsStandardInput() { SetStdHandle(STD_INPUT_HANDLE, saved); }
+
+        ScopedWindowsStandardInput(const ScopedWindowsStandardInput &) = delete;
+        ScopedWindowsStandardInput &operator=(const ScopedWindowsStandardInput &) = delete;
+        ScopedWindowsStandardInput(ScopedWindowsStandardInput &&) = delete;
+        ScopedWindowsStandardInput &operator=(ScopedWindowsStandardInput &&) = delete;
+    };
+
     // CTest may replace the Win32 standard handles with pipes. Attach a console when
     // needed and point the platform helpers at CONIN$/CONOUT$ for lifecycle tests.
     // Windows CI must provide a console or permit AllocConsole; the test harness
@@ -94,7 +145,7 @@ namespace
         bool restore_state = true;
         bool valid = false;
 
-        ScopedWindowsConsole()
+        explicit ScopedWindowsConsole(bool replace_standard_input = true)
         {
             open_handles();
             // A partial open means a console is already attached, so AllocConsole
@@ -111,7 +162,8 @@ namespace
             if (valid)
             {
                 saved_output_cp = GetConsoleOutputCP();
-                valid = saved_output_cp != 0 && SetStdHandle(STD_INPUT_HANDLE, input) != 0 &&
+                valid = saved_output_cp != 0 &&
+                        (!replace_standard_input || SetStdHandle(STD_INPUT_HANDLE, input) != 0) &&
                         SetStdHandle(STD_OUTPUT_HANDLE, output) != 0;
             }
         }
@@ -272,7 +324,18 @@ namespace
             return false;
         }
         DWORD exit_code = 1;
-        return GetExitCodeProcess(process.hProcess, &exit_code) != 0 && exit_code == 0;
+        if (GetExitCodeProcess(process.hProcess, &exit_code) == 0)
+        {
+            return false;
+        }
+        if (exit_code != 0)
+        {
+            std::fprintf(
+                stderr, "Windows console helper exited with code %lu\n", static_cast<unsigned long>(exit_code)
+            );
+            return false;
+        }
+        return true;
     }
 
     bool console_modes_equal(HANDLE input, HANDLE output, DWORD input_mode, DWORD output_mode, UINT output_cp)
@@ -312,17 +375,22 @@ namespace
         security.nLength = sizeof security;
         security.bInheritHandle = TRUE;
         ScopedWindowsHandle ready(CreateEventW(&security, TRUE, FALSE, nullptr));
-        if (ready.value == nullptr)
+        ScopedWindowsHandle teardown_ready(CreateEventW(&security, TRUE, FALSE, nullptr));
+        if (ready.value == nullptr || teardown_ready.value == nullptr)
         {
             return false;
         }
 
         const auto handle_value = reinterpret_cast<std::uintptr_t>(ready.value);
+        const auto teardown_handle_value = reinterpret_cast<std::uintptr_t>(teardown_ready.value);
         const wchar_t processed_name = (input_mode & ENABLE_PROCESSED_INPUT) != 0 ? L'p' : L'u';
         const std::wstring command = L"\"" + executable + L"\" --windows-console-control-helper child " + event_name +
-                                     L" " + processed_name + L" " + std::to_wstring(handle_value);
+                                     L" " + processed_name + L" " + std::to_wstring(handle_value) + L" " +
+                                     std::to_wstring(teardown_handle_value);
+
         PROCESS_INFORMATION process = {};
-        if (!launch_process(command, CREATE_NEW_PROCESS_GROUP, true, process))
+        const bool launched = launch_process(command, CREATE_NEW_PROCESS_GROUP, true, process);
+        if (!launched)
         {
             return false;
         }
@@ -360,7 +428,12 @@ namespace
         }
         if (event == CTRL_C_EVENT)
         {
-            Sleep(50);
+            if (WaitForSingleObject(teardown_ready.value, 5000) != WAIT_OBJECT_0)
+            {
+                TerminateProcess(process.hProcess, 1);
+                WaitForSingleObject(process.hProcess, 1000);
+                return false;
+            }
             if (GenerateConsoleCtrlEvent(event, group) == 0)
             {
                 TerminateProcess(process.hProcess, 1);
@@ -375,7 +448,7 @@ namespace
             return false;
         }
         DWORD pending = 0;
-        return !queue_mouse_report || (GetNumberOfConsoleInputEvents(console.input, &pending) != 0 && pending == 0);
+        return GetNumberOfConsoleInputEvents(console.input, &pending) != 0 && pending == 0;
     }
 
     int run_console_control_host()
@@ -425,7 +498,7 @@ namespace
 
     int run_console_control_child(int argc, char *argv[])
     {
-        if (argc != 6 || (argv[3][0] != 'c' && argv[3][0] != 'b') || argv[3][1] != '\0' ||
+        if (argc != 7 || (argv[3][0] != 'c' && argv[3][0] != 'b') || argv[3][1] != '\0' ||
             (argv[4][0] != 'p' && argv[4][0] != 'u') || argv[4][1] != '\0')
         {
             return 10;
@@ -437,6 +510,12 @@ namespace
             return 11;
         }
         ScopedWindowsHandle ready(reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(raw_handle)));
+        const unsigned long long raw_teardown_handle = std::strtoull(argv[6], &end, 10);
+        if (end == argv[6] || *end != '\0')
+        {
+            return 22;
+        }
+        ScopedWindowsHandle teardown_ready(reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(raw_teardown_handle)));
         ScopedWindowsConsole console;
         if (!console.valid)
         {
@@ -454,20 +533,29 @@ namespace
         const platform::ConsoleStateGuard guard;
         if (!platform::install_interrupt_handler())
         {
-            return 14;
+            return 15;
         }
         platform::enable_raw_mode();
         platform::enable_vt_input();
         DWORD active_input_mode = 0;
-        if (GetConsoleMode(console.input, &active_input_mode) == 0 ||
+        if (GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &active_input_mode) == 0 ||
             (active_input_mode & ENABLE_PROCESSED_INPUT) == 0 || (active_input_mode & ENABLE_LINE_INPUT) != 0 ||
             (active_input_mode & ENABLE_ECHO_INPUT) != 0)
         {
-            return 15;
+            return 16;
         }
         if (SetEvent(ready.value) == 0)
         {
-            return 16;
+            return 17;
+        }
+
+        if (argv[3][0] == 'b' || argv[4][0] == 'p')
+        {
+            // The production reader can be waiting inside _getch when either event arrives.
+            if (_getch() != 'x')
+            {
+                return 21;
+            }
         }
 
         const ULONGLONG deadline = GetTickCount64() + 5000;
@@ -477,18 +565,37 @@ namespace
         }
         if (!platform::interrupt_requested())
         {
-            return 17;
+            return 18;
+        }
+        if (!platform::disable_raw_mode())
+        {
+            return 19;
         }
         if (argv[3][0] == 'c')
         {
-            // Stay alive for the second Ctrl+C so a one-shot handler would fail.
-            Sleep(300);
+            // Deliver the repeat after the production cleanup boundary. The handler
+            // must still consume it without adding another wake record to the queue.
+            platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
+            if (SetEvent(teardown_ready.value) == 0)
+            {
+                return 23;
+            }
+            const ULONGLONG repeat_deadline = GetTickCount64() + 5000;
+            while (!platform::interrupt_requested() && GetTickCount64() < repeat_deadline)
+            {
+                Sleep(10);
+            }
+            if (!platform::interrupt_requested())
+            {
+                return 24;
+            }
+            // The interrupt flag is published after the handler registers itself,
+            // so this barrier proves the late handler has finished without flushing.
+            platform::detail::disarm_console_input_wake();
         }
-        // The production guard disables mouse tracking before this flush. This fixture
-        // never enables tracking, so only the shared console input needs cleanup.
-        platform::disable_raw_mode();
         return 0;
     }
+
 #endif
 } // namespace
 
@@ -520,6 +627,43 @@ TEST(platform, is_tty_false_for_null_device)
 }
 
 #ifdef _WIN32
+TEST(platform, version_output_restores_windows_console_state)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+
+    const DWORD output_mode =
+        console.saved_output_mode & ~static_cast<DWORD>(ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    ASSERT_TRUE(SetConsoleMode(console.output, output_mode) != 0);
+    DWORD baseline_output_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.output, &baseline_output_mode) != 0);
+
+    UINT output_cp = GetConsoleOutputCP();
+    if (output_cp == 65001)
+    {
+        output_cp = 437;
+    }
+    ASSERT_TRUE(IsValidCodePage(output_cp) != 0);
+    ASSERT_TRUE(SetConsoleOutputCP(output_cp) != 0);
+
+    char program[] = "rasterminal";
+    char option[] = "--version";
+    char *argv[] = { program, option };
+    ParseResult parsed;
+    {
+        ScopedStdoutSilence output;
+        ASSERT_TRUE(output.valid);
+        parsed = parse_args(2, argv);
+    }
+    ASSERT_FALSE(parsed.ok);
+    ASSERT_EQ(parsed.exit_code, 0);
+
+    DWORD restored_output_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.output, &restored_output_mode) != 0);
+    ASSERT_EQ(restored_output_mode, baseline_output_mode);
+    ASSERT_EQ(GetConsoleOutputCP(), output_cp);
+}
+
 TEST(platform, console_state_guard_restores_exact_windows_state)
 {
     ScopedWindowsConsole console;
@@ -660,12 +804,62 @@ TEST(platform, disable_raw_mode_discards_pending_windows_input)
     DWORD pending = 0;
     ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
     ASSERT_TRUE(pending >= 3);
-    platform::disable_raw_mode();
+    ASSERT_TRUE(platform::disable_raw_mode());
     ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
     ASSERT_EQ(pending, static_cast<DWORD>(0));
 }
 
-TEST(platform, console_cleanup_restores_modes_and_discards_input_after_control_events)
+TEST(platform, disable_raw_mode_handles_read_only_standard_input)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(FlushConsoleInputBuffer(console.input) != 0);
+
+    ScopedWindowsHandle restricted_input(
+        CreateFileW(L"CONIN$", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr)
+    );
+    ASSERT_TRUE(restricted_input.value != INVALID_HANDLE_VALUE);
+    ScopedWindowsStandardInput standard_input(restricted_input.value);
+    ASSERT_TRUE(standard_input.valid);
+    ASSERT_FALSE(FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE)) != 0);
+
+    constexpr wchar_t report[] = L"\033[<32;10;20M";
+    constexpr size_t report_size = (sizeof report / sizeof *report) - 1;
+    ASSERT_TRUE(queue_console_bytes(console.input, report, report_size));
+    DWORD pending = 0;
+    ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
+    ASSERT_TRUE(pending >= report_size);
+
+    ASSERT_TRUE(platform::disable_raw_mode());
+    ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
+    ASSERT_EQ(pending, static_cast<DWORD>(0));
+}
+
+TEST(platform, discard_pending_input_falls_back_to_read_only_console_handle)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(FlushConsoleInputBuffer(console.input) != 0);
+
+    ScopedWindowsHandle restricted_input(
+        CreateFileW(L"CONIN$", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr)
+    );
+    ASSERT_TRUE(restricted_input.value != INVALID_HANDLE_VALUE);
+    ASSERT_FALSE(FlushConsoleInputBuffer(restricted_input.value) != 0);
+
+    constexpr wchar_t report[] = L"\033[<32;10;20M";
+    constexpr size_t report_size = (sizeof report / sizeof *report) - 1;
+    ASSERT_TRUE(queue_console_bytes(console.input, report, report_size));
+    ASSERT_TRUE(platform::detail::discard_pending_console_input(restricted_input.value, INVALID_HANDLE_VALUE));
+
+    DWORD pending = 0;
+    ASSERT_TRUE(GetNumberOfConsoleInputEvents(restricted_input.value, &pending) != 0);
+    ASSERT_EQ(pending, static_cast<DWORD>(0));
+    // Simulate another reader consuming a record after the snapshot count.
+    ASSERT_TRUE(platform::detail::drain_console_input_records_nowait(restricted_input.value, 1));
+}
+
+TEST(platform, console_cleanup_handles_control_events)
 {
     std::wstring executable;
     ASSERT_TRUE(executable_path(executable));

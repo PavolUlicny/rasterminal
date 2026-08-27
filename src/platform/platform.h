@@ -50,7 +50,7 @@ namespace platform
     [[nodiscard]] inline bool interrupt_requested() noexcept
     {
 #ifdef _WIN32
-        return detail::interrupt_flag.load(std::memory_order_relaxed);
+        return detail::interrupt_flag.load(std::memory_order_acquire);
 #else
         return detail::interrupt_flag != 0;
 #endif
@@ -59,13 +59,70 @@ namespace platform
     namespace detail
     {
 #ifdef _WIN32
+        inline std::atomic_bool console_input_wake_enabled = {};
+        inline std::atomic_uint console_input_wake_handlers = {};
+
+        inline void wake_console_input() noexcept
+        {
+            HANDLE input = CreateFileW(
+                L"CONIN$", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr
+            );
+            const bool close_input = input != INVALID_HANDLE_VALUE;
+            if (!close_input)
+            {
+                input = GetStdHandle(STD_INPUT_HANDLE);
+            }
+
+            INPUT_RECORD wake = {};
+            wake.EventType = KEY_EVENT;
+            wake.Event.KeyEvent.bKeyDown = TRUE;
+            wake.Event.KeyEvent.wRepeatCount = 1;
+            wake.Event.KeyEvent.wVirtualKeyCode = static_cast<WORD>('X');
+            wake.Event.KeyEvent.uChar.UnicodeChar = L'x';
+            DWORD written = 0;
+            WriteConsoleInputW(input, &wake, 1, &written);
+
+            if (close_input)
+            {
+                CloseHandle(input);
+            }
+        }
+
+        inline void arm_console_input_wake() noexcept
+        {
+            console_input_wake_enabled.store(true);
+        }
+
+        inline void disarm_console_input_wake() noexcept
+        {
+            console_input_wake_enabled.store(false);
+            // A handler that observed the armed state may still be writing. Wait
+            // for it before the caller performs the final console-input flush.
+            while (console_input_wake_handlers.load() != 0)
+            {
+                Sleep(0);
+            }
+        }
+
         inline BOOL WINAPI console_interrupt_handler(DWORD event) noexcept
         {
             if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT)
             {
+                // Closing a console or pseudoconsole terminates every attached client,
+                // so no shell survives to inherit terminal state. Let Windows exit promptly.
                 return FALSE;
             }
-            interrupt_flag.store(true, std::memory_order_relaxed);
+            console_input_wake_handlers.fetch_add(1);
+            // Publish the interrupt only after registering this handler. Teardown
+            // can then wait for every handler that caused it to start.
+            interrupt_flag.store(true, std::memory_order_release);
+            if (console_input_wake_enabled.load())
+            {
+                // _kbhit can report input just before _getch blocks. Wake that read so
+                // the main thread can observe the flag and run normal terminal cleanup.
+                wake_console_input();
+            }
+            console_input_wake_handlers.fetch_sub(1);
             return TRUE;
         }
 #else
@@ -86,6 +143,7 @@ namespace platform
             return false;
         }
         detail::interrupt_flag.store(false, std::memory_order_relaxed);
+        detail::console_input_wake_enabled.store(false);
         return SetConsoleCtrlHandler(detail::console_interrupt_handler, TRUE) != 0;
 #else
         detail::interrupt_flag = 0;
@@ -697,9 +755,9 @@ namespace platform
     } // namespace detail
 #endif
 
-    // Snapshot Windows console buffer modes and the process output code page before setup.
-    // main keeps one guard alive for the whole invocation so every orderly return restores
-    // the shell. Console close, logoff, and shutdown events still terminate the process.
+    // Snapshot Windows console buffer modes and the process output code page immediately
+    // before terminal setup. Console close, logoff, and shutdown events still terminate
+    // the process without unwinding.
     class ConsoleStateGuard
     {
       public:
@@ -795,6 +853,7 @@ namespace platform
                 hin, (mode | ENABLE_PROCESSED_INPUT) & ~static_cast<DWORD>(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
             );
         }
+        detail::arm_console_input_wake();
 #else
         termios raw = {};
         tcgetattr(STDIN_FILENO, &raw);
@@ -810,13 +869,82 @@ namespace platform
 #endif
     }
 
-    inline void disable_raw_mode()
+#ifdef _WIN32
+    namespace detail
+    {
+        inline bool drain_console_input_records_nowait(HANDLE input, DWORD remaining) noexcept
+        {
+            using ReadConsoleInputExWFn = BOOL(WINAPI *)(HANDLE, PINPUT_RECORD, DWORD, LPDWORD, USHORT);
+            const HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
+            const FARPROC address = kernel32 == nullptr ? nullptr : GetProcAddress(kernel32, "ReadConsoleInputExW");
+            static_assert(sizeof address == sizeof(ReadConsoleInputExWFn));
+            ReadConsoleInputExWFn read_nowait = nullptr;
+            std::memcpy(&read_nowait, &address, sizeof read_nowait);
+            if (read_nowait == nullptr)
+            {
+                return false;
+            }
+
+            INPUT_RECORD records[64];
+            while (remaining > 0)
+            {
+                constexpr DWORD capacity = static_cast<DWORD>(sizeof records / sizeof *records);
+                const DWORD requested = std::min(remaining, capacity);
+                DWORD read = 0;
+                constexpr USHORT read_nowait_flag = 0x0002;
+                if (read_nowait(input, records, requested, &read, read_nowait_flag) == 0)
+                {
+                    return false;
+                }
+                // Another attached reader may consume the snapshot first. NOWAIT
+                // reports an empty queue instead of blocking teardown in that race.
+                if (read == 0)
+                {
+                    return true;
+                }
+                remaining -= read;
+            }
+            return true;
+        }
+
+        inline bool drain_console_input_snapshot(HANDLE input) noexcept
+        {
+            DWORD pending_records = 0;
+            return GetNumberOfConsoleInputEvents(input, &pending_records) != 0 &&
+                   drain_console_input_records_nowait(input, pending_records);
+        }
+
+        inline bool discard_pending_console_input(HANDLE standard_input, HANDLE writable_input) noexcept
+        {
+            if (writable_input == INVALID_HANDLE_VALUE)
+            {
+                // ReadConsoleInputEx removes records with GENERIC_READ, so cleanup still
+                // works when a writable CONIN$ handle cannot be opened.
+                return drain_console_input_snapshot(standard_input);
+            }
+            return FlushConsoleInputBuffer(writable_input) != 0 || drain_console_input_snapshot(writable_input);
+        }
+    } // namespace detail
+#endif
+
+    inline bool disable_raw_mode()
     {
 #ifdef _WIN32
-        // Mouse reports queued before tracking was disabled must not reach the shell.
-        FlushConsoleInputBuffer(GetStdHandle(STD_INPUT_HANDLE));
+        detail::disarm_console_input_wake();
+        // Console input belongs to rasterminal until raw mode is restored. Open the
+        // attached buffer directly because inherited standard input may be read-only.
+        HANDLE input = CreateFileW(
+            L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
+            nullptr
+        );
+        const bool discarded = detail::discard_pending_console_input(GetStdHandle(STD_INPUT_HANDLE), input);
+        if (input != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(input);
+        }
+        return discarded;
 #else
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &detail::saved_termios());
+        return tcsetattr(STDIN_FILENO, TCSAFLUSH, &detail::saved_termios()) == 0;
 #endif
     }
 

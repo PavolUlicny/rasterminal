@@ -319,6 +319,7 @@ ParseResult parse_args(int argc, char *argv[])
     {
         // --version exits before raw-mode setup, so initialize the Windows UTF-8 code page here.
         // Ignore VT failure: redirected output must still print the version block.
+        const platform::ConsoleStateGuard console_state;
         platform::init_console_output();
         // GNU-style version block. Program identity is canonical, not argv[0].
         std::printf(

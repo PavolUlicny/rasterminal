@@ -645,6 +645,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
         return 1;
     }
 
+    // Capture shared Windows console state only when this run is about to change it.
+    // Keep this outside the terminal guard so escape-based cleanup runs first.
+    const platform::ConsoleStateGuard console_state;
+
     {
         TerminalSessionGuard terminal(program_name(argv[0]));
 
@@ -1201,11 +1205,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
 
 int main(int argc, char *argv[])
 {
-    // Windows console modes and the output code page belong to the parent console.
-    // Declare this first so it restores last, after every escape-based cleanup write.
-    const platform::ConsoleStateGuard console_state;
-
-    // Catch every run_main failure so its locals unwind before the console guard restores output.
+    // run_main owns the cleanup guards so exceptions restore terminal state before reporting.
     try
     {
         return run_main(argc, argv);
