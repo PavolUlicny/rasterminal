@@ -6,11 +6,13 @@
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #ifdef _WIN32
 #include <atomic>
@@ -814,6 +816,95 @@ namespace platform
         UINT m_output_cp = 0;
 #endif
     };
+
+#ifdef _WIN32
+    namespace detail
+    {
+        inline BOOL WINAPI version_output_control_handler(DWORD event) noexcept
+        {
+            return event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT;
+        }
+
+        inline bool write_utf8_console(HANDLE output, const char *text, size_t byte_count)
+        {
+            if (byte_count == 0)
+            {
+                return true;
+            }
+            if (byte_count > static_cast<size_t>(INT_MAX))
+            {
+                return false;
+            }
+            const int input_count = static_cast<int>(byte_count);
+            const int wide_count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, input_count, nullptr, 0);
+            if (wide_count <= 0)
+            {
+                return false;
+            }
+            std::wstring wide(static_cast<size_t>(wide_count), L'\0');
+            if (MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, input_count, wide.data(), wide_count) !=
+                wide_count)
+            {
+                return false;
+            }
+
+            std::wstring console_text;
+            console_text.reserve(wide.size() + static_cast<size_t>(std::count(wide.begin(), wide.end(), L'\n')));
+            for (const wchar_t c : wide)
+            {
+                if (c == L'\n' && (console_text.empty() || console_text.back() != L'\r'))
+                {
+                    console_text.push_back(L'\r');
+                }
+                console_text.push_back(c);
+            }
+
+            DWORD mode = 0;
+            if (GetConsoleMode(output, &mode) == 0)
+            {
+                return false;
+            }
+            const bool change_mode = (mode & ENABLE_PROCESSED_OUTPUT) == 0;
+            if (change_mode && SetConsoleCtrlHandler(version_output_control_handler, TRUE) == 0)
+            {
+                return false;
+            }
+            if (change_mode && SetConsoleMode(output, mode | ENABLE_PROCESSED_OUTPUT) == 0)
+            {
+                SetConsoleCtrlHandler(version_output_control_handler, FALSE);
+                return false;
+            }
+
+            DWORD written = 0;
+            const bool write_ok =
+                WriteConsoleW(
+                    output, console_text.data(), static_cast<DWORD>(console_text.size()), &written, nullptr
+                ) != 0;
+            if (change_mode)
+            {
+                SetConsoleMode(output, mode);
+                SetConsoleCtrlHandler(version_output_control_handler, FALSE);
+            }
+            return write_ok;
+        }
+    } // namespace detail
+#endif
+
+    // Write Unicode directly when stdout is a Windows console. Files and pipes
+    // keep UTF-8 bytes, and console output restores any mode bit it must enable.
+    inline void write_utf8_stdout(const char *text)
+    {
+#ifdef _WIN32
+        std::fflush(stdout);
+        const intptr_t raw_output = _get_osfhandle(_fileno(stdout));
+        if (raw_output != -1 &&
+            detail::write_utf8_console(reinterpret_cast<HANDLE>(raw_output), text, std::strlen(text)))
+        {
+            return;
+        }
+#endif
+        std::fputs(text, stdout);
+    }
 
     // Idempotently enable UTF-8 and VT output. POSIX terminals handle escapes themselves.
     inline bool init_console_output()

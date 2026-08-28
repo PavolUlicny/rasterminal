@@ -2,6 +2,7 @@
 #include "src/args.h"
 #include "src/platform/input.h"
 #include "src/platform/platform.h"
+#include "src/version.h"
 
 // <stdlib.h> declares the POSIX pty and cross-platform environment functions in
 // the global namespace; <cstdlib> need not.
@@ -75,27 +76,87 @@ namespace
     };
 
 #ifdef _WIN32
-    struct ScopedStdoutSilence
+    struct ScopedStdoutCapture
+    {
+        std::FILE *capture = nullptr;
+        int saved = -1;
+        bool valid = false;
+
+        ScopedStdoutCapture()
+        {
+            std::fflush(stdout);
+            capture = std::tmpfile();
+            saved = test_dup(TEST_STDOUT);
+            if (capture != nullptr && saved >= 0)
+            {
+                valid = test_dup2(test_fileno(capture), TEST_STDOUT) >= 0;
+            }
+        }
+
+        ~ScopedStdoutCapture()
+        {
+            std::fflush(stdout);
+            if (saved >= 0)
+            {
+                test_dup2(saved, TEST_STDOUT);
+                test_close(saved);
+            }
+            if (capture != nullptr)
+            {
+                std::fclose(capture);
+            }
+        }
+
+        [[nodiscard]] std::string read() const
+        {
+            std::fflush(stdout);
+            if (capture == nullptr || std::fseek(capture, 0, SEEK_SET) != 0)
+            {
+                return {};
+            }
+            std::string text;
+            char buffer[512];
+            size_t count = 0;
+            while ((count = std::fread(buffer, 1, sizeof buffer, capture)) > 0)
+            {
+                text.append(buffer, count);
+            }
+            return text;
+        }
+
+        ScopedStdoutCapture(const ScopedStdoutCapture &) = delete;
+        ScopedStdoutCapture &operator=(const ScopedStdoutCapture &) = delete;
+        ScopedStdoutCapture(ScopedStdoutCapture &&) = delete;
+        ScopedStdoutCapture &operator=(ScopedStdoutCapture &&) = delete;
+    };
+
+    struct ScopedStdoutHandle
     {
         int saved = -1;
         bool valid = false;
 
-        ScopedStdoutSilence()
+        explicit ScopedStdoutHandle(HANDLE output)
         {
             std::fflush(stdout);
+            HANDLE duplicate = INVALID_HANDLE_VALUE;
+            if (DuplicateHandle(
+                    GetCurrentProcess(), output, GetCurrentProcess(), &duplicate, 0, FALSE, DUPLICATE_SAME_ACCESS
+                ) == 0)
+            {
+                return;
+            }
+            const int output_fd = _open_osfhandle(reinterpret_cast<intptr_t>(duplicate), _O_WRONLY | _O_TEXT);
+            if (output_fd < 0)
+            {
+                CloseHandle(duplicate);
+                return;
+            }
             saved = test_dup(TEST_STDOUT);
-            const int null_output = test_devnull();
-            if (saved >= 0 && null_output >= 0)
-            {
-                valid = test_dup2(null_output, TEST_STDOUT) >= 0;
-            }
-            if (null_output >= 0)
-            {
-                test_close(null_output);
-            }
+            valid = saved >= 0 && test_dup2(output_fd, TEST_STDOUT) >= 0;
+            test_close(output_fd);
         }
 
-        ~ScopedStdoutSilence()
+        ~ScopedStdoutHandle()
         {
             std::fflush(stdout);
             if (saved >= 0)
@@ -105,10 +166,10 @@ namespace
             }
         }
 
-        ScopedStdoutSilence(const ScopedStdoutSilence &) = delete;
-        ScopedStdoutSilence &operator=(const ScopedStdoutSilence &) = delete;
-        ScopedStdoutSilence(ScopedStdoutSilence &&) = delete;
-        ScopedStdoutSilence &operator=(ScopedStdoutSilence &&) = delete;
+        ScopedStdoutHandle(const ScopedStdoutHandle &) = delete;
+        ScopedStdoutHandle &operator=(const ScopedStdoutHandle &) = delete;
+        ScopedStdoutHandle(ScopedStdoutHandle &&) = delete;
+        ScopedStdoutHandle &operator=(ScopedStdoutHandle &&) = delete;
     };
 
     struct ScopedWindowsStandardInput
@@ -627,7 +688,7 @@ TEST(platform, is_tty_false_for_null_device)
 }
 
 #ifdef _WIN32
-TEST(platform, version_output_restores_windows_console_state)
+TEST(platform, version_output_preserves_windows_console_state_and_redirected_utf8)
 {
     ScopedWindowsConsole console;
     ASSERT_TRUE(console.valid);
@@ -650,17 +711,62 @@ TEST(platform, version_output_restores_windows_console_state)
     char option[] = "--version";
     char *argv[] = { program, option };
     ParseResult parsed;
+    std::string version_text;
     {
-        ScopedStdoutSilence output;
+        ScopedStdoutCapture output;
+        ASSERT_TRUE(output.valid);
+        parsed = parse_args(2, argv);
+        version_text = output.read();
+    }
+    ASSERT_FALSE(parsed.ok);
+    ASSERT_EQ(parsed.exit_code, 0);
+    ASSERT_TRUE(version_text.find(RASTERMINAL_AUTHOR) != std::string::npos);
+
+    DWORD current_output_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.output, &current_output_mode) != 0);
+    ASSERT_EQ(current_output_mode, baseline_output_mode);
+    ASSERT_EQ(GetConsoleOutputCP(), output_cp);
+}
+
+TEST(platform, version_output_formats_lines_with_processed_output_disabled)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ScopedWindowsHandle screen(CreateConsoleScreenBuffer(
+        GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, CONSOLE_TEXTMODE_BUFFER, nullptr
+    ));
+    ASSERT_TRUE(screen.value != INVALID_HANDLE_VALUE);
+
+    DWORD original_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(screen.value, &original_mode) != 0);
+    const DWORD baseline_mode =
+        original_mode & ~static_cast<DWORD>(ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    ASSERT_TRUE(SetConsoleMode(screen.value, baseline_mode) != 0);
+    const UINT output_cp = GetConsoleOutputCP();
+    ASSERT_TRUE(SetConsoleCursorPosition(screen.value, { 0, 0 }) != 0);
+
+    char program[] = "rasterminal";
+    char option[] = "--version";
+    char *argv[] = { program, option };
+    ParseResult parsed;
+    {
+        ScopedStdoutHandle output(screen.value);
         ASSERT_TRUE(output.valid);
         parsed = parse_args(2, argv);
     }
     ASSERT_FALSE(parsed.ok);
     ASSERT_EQ(parsed.exit_code, 0);
 
-    DWORD restored_output_mode = 0;
-    ASSERT_TRUE(GetConsoleMode(console.output, &restored_output_mode) != 0);
-    ASSERT_EQ(restored_output_mode, baseline_output_mode);
+    wchar_t row[80] = {};
+    DWORD read = 0;
+    ASSERT_TRUE(ReadConsoleOutputCharacterW(screen.value, row, 80, { 0, 0 }, &read) != 0);
+    ASSERT_TRUE(std::wstring(row, read).find(L"rasterminal ") == 0);
+    ASSERT_TRUE(ReadConsoleOutputCharacterW(screen.value, row, 80, { 0, 1 }, &read) != 0);
+    ASSERT_TRUE(std::wstring(row, read).find(L"Pavol Uli\u010dn\u00fd") != std::wstring::npos);
+
+    DWORD current_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(screen.value, &current_mode) != 0);
+    ASSERT_EQ(current_mode, baseline_mode);
     ASSERT_EQ(GetConsoleOutputCP(), output_cp);
 }
 

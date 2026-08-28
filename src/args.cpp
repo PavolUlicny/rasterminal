@@ -317,12 +317,10 @@ ParseResult parse_args(int argc, char *argv[])
 
     auto print_version = []()
     {
-        // --version exits before raw-mode setup, so initialize the Windows UTF-8 code page here.
-        // Ignore VT failure: redirected output must still print the version block.
-        const platform::ConsoleStateGuard console_state;
-        platform::init_console_output();
         // GNU-style version block. Program identity is canonical, not argv[0].
-        std::printf(
+        char text[512];
+        std::snprintf(
+            text, sizeof text,
             "rasterminal %s\n"
             "Copyright (C) %s %s\n"
             "License MIT: <https://opensource.org/license/mit>\n"
@@ -332,6 +330,7 @@ ParseResult parse_args(int argc, char *argv[])
             "Written by %s.\n",
             RASTERMINAL_VERSION, RASTERMINAL_COPYRIGHT_YEAR, RASTERMINAL_AUTHOR, RASTERMINAL_AUTHOR
         );
+        platform::write_utf8_stdout(text);
     };
 
     // As in git, a short flag beside --[no-]name means only the positive form.
