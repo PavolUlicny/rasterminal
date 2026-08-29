@@ -272,12 +272,16 @@ namespace
     struct TerminalSessionGuard
     {
         const char *program;
+        platform::ConsoleStateGuard &console_state;
         bool alt_screen_owned = false;
         bool mouse_enabled = false;
         bool raw_enabled = false;
         const char *error = nullptr;
 
-        explicit TerminalSessionGuard(const char *prog) noexcept : program(prog) {}
+        TerminalSessionGuard(const char *prog, platform::ConsoleStateGuard &state) noexcept
+            : program(prog), console_state(state)
+        {
+        }
 
         ~TerminalSessionGuard() noexcept
         {
@@ -293,7 +297,7 @@ namespace
             }
             if (raw_enabled)
             {
-                platform::disable_raw_mode();
+                platform::disable_raw_mode(&console_state);
             }
             if (error != nullptr)
             {
@@ -645,12 +649,20 @@ const auto run_main = [](int argc, char *argv[]) -> int
         return 1;
     }
 
+    // Keep interrupt-handler resources alive through terminal cleanup.
+    const platform::InterruptHandlerGuard interrupt_handler;
+
     // Capture shared Windows console state only when this run is about to change it.
     // Keep this outside the terminal guard so escape-based cleanup runs first.
-    const platform::ConsoleStateGuard console_state;
+    platform::ConsoleStateGuard console_state;
+    if (!console_state.valid())
+    {
+        std::fprintf(stderr, "%s: failed to capture console state\n", program_name(argv[0]));
+        return 1;
+    }
 
     {
-        TerminalSessionGuard terminal(program_name(argv[0]));
+        TerminalSessionGuard terminal(program_name(argv[0]), console_state);
 
         // Defer persistent Windows VT mutation until loading succeeds. cppcheck sees
         // the platform branch as constant; keep the suppression directly above the if.
@@ -662,8 +674,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
 
         platform::enable_raw_mode();
-        // POSIX cleanup cannot run until enable_raw_mode saves the original termios.
-        // Windows restores the input mode through the outer console guard.
+        // Cleanup cannot run until enable_raw_mode saves the original terminal state.
         terminal.raw_enabled = true;
 
         const GraphicsSetup gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);

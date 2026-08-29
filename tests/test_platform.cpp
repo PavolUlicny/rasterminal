@@ -8,6 +8,7 @@
 // the global namespace; <cstdlib> need not.
 #include <stdlib.h> // NOLINT(modernize-deprecated-headers,hicpp-deprecated-headers)
 
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -422,6 +423,104 @@ namespace
         return WriteConsoleInputW(input, records.data(), record_count, &written) != 0 && written == record_count;
     }
 
+    unsigned &query_record_read_call_count()
+    {
+        static unsigned calls = 0;
+        return calls;
+    }
+
+    BOOL WINAPI count_query_record_read(HANDLE, PINPUT_RECORD, DWORD, LPDWORD read)
+    {
+        query_record_read_call_count()++;
+        *read = 1;
+        return TRUE;
+    }
+
+    std::atomic_uint &cancel_console_input_call_count()
+    {
+        static std::atomic_uint calls = 0;
+        return calls;
+    }
+
+    BOOL WINAPI cancel_console_input_after_miss(HANDLE /*thread*/)
+    {
+        if (cancel_console_input_call_count().fetch_add(1) == 0)
+        {
+            SetLastError(ERROR_NOT_FOUND);
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+    int &console_mode_probe_count()
+    {
+        static int count = 0;
+        return count;
+    }
+
+    int &console_mode_probe_failure()
+    {
+        static int failure = 0;
+        return failure;
+    }
+
+    bool &console_output_cp_probe_failure()
+    {
+        static bool failure = false;
+        return failure;
+    }
+
+    BOOL WINAPI probe_console_mode(HANDLE /*console*/, LPDWORD mode)
+    {
+        console_mode_probe_count()++;
+        if (console_mode_probe_count() == console_mode_probe_failure())
+        {
+            return FALSE;
+        }
+        *mode = 0;
+        return TRUE;
+    }
+
+    UINT WINAPI probe_console_output_cp()
+    {
+        return console_output_cp_probe_failure() ? 0U : 437U;
+    }
+
+    int &input_mode_restore_attempts()
+    {
+        static int attempts = 0;
+        return attempts;
+    }
+
+    BOOL WINAPI fail_first_input_mode_restore(HANDLE /*input*/, DWORD /*mode*/)
+    {
+        input_mode_restore_attempts()++;
+        if (input_mode_restore_attempts() == 1)
+        {
+            SetLastError(ERROR_INVALID_FUNCTION);
+            return FALSE;
+        }
+        return TRUE;
+    }
+
+    int &input_discard_attempts()
+    {
+        static int attempts = 0;
+        return attempts;
+    }
+
+    bool fail_first_input_discard() noexcept
+    {
+        input_discard_attempts()++;
+        return input_discard_attempts() != 1;
+    }
+
+    bool count_input_discard() noexcept
+    {
+        input_discard_attempts()++;
+        return true;
+    }
+
     bool run_console_control_case(
         const std::wstring &executable,
         ScopedWindowsConsole &console,
@@ -490,6 +589,13 @@ namespace
         if (event == CTRL_C_EVENT)
         {
             if (WaitForSingleObject(teardown_ready.value, 5000) != WAIT_OBJECT_0)
+            {
+                TerminateProcess(process.hProcess, 1);
+                WaitForSingleObject(process.hProcess, 1000);
+                return false;
+            }
+            DWORD teardown_input_mode = 0;
+            if (GetConsoleMode(console.input, &teardown_input_mode) == 0 || teardown_input_mode != input_mode)
             {
                 TerminateProcess(process.hProcess, 1);
                 WaitForSingleObject(process.hProcess, 1000);
@@ -591,7 +697,11 @@ namespace
         // this fixture after the guard has been destroyed.
         console.restore_state = false;
 
-        const platform::ConsoleStateGuard guard;
+        platform::ConsoleStateGuard guard;
+        if (!guard.valid())
+        {
+            return 14;
+        }
         if (!platform::install_interrupt_handler())
         {
             return 15;
@@ -628,7 +738,7 @@ namespace
         {
             return 18;
         }
-        if (!platform::disable_raw_mode())
+        if (!platform::disable_raw_mode(&guard))
         {
             return 19;
         }
@@ -657,6 +767,60 @@ namespace
         return 0;
     }
 
+    int run_console_cancel_read_child()
+    {
+        ScopedWindowsConsole console;
+        if (!console.valid || FlushConsoleInputBuffer(console.input) == 0)
+        {
+            return 30;
+        }
+
+        ScopedWindowsHandle read_only_input(
+            CreateFileW(L"CONIN$", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr)
+        );
+        if (read_only_input.value == INVALID_HANDLE_VALUE)
+        {
+            return 31;
+        }
+
+        platform::detail::interrupt_flag.store(false);
+        platform::detail::console_input_read_active.store(false);
+        std::atomic_bool returned = false;
+        bool read = true;
+        char input_byte = 0;
+        std::thread reader(
+            [&]()
+            {
+                read = platform::detail::read_console_byte(input_byte);
+                returned.store(true, std::memory_order_release);
+            }
+        );
+
+        const ULONGLONG active_deadline = GetTickCount64() + 1000;
+        while (!platform::detail::console_input_read_active.load() && GetTickCount64() < active_deadline)
+        {
+            Sleep(1);
+        }
+        const bool active = platform::detail::console_input_read_active.load();
+        const bool woke = active && platform::detail::wake_console_input(read_only_input.value, reader.native_handle());
+
+        const ULONGLONG return_deadline = GetTickCount64() + 1000;
+        while (!returned.load(std::memory_order_acquire) && GetTickCount64() < return_deadline)
+        {
+            Sleep(1);
+        }
+        const bool cancelled = returned.load(std::memory_order_acquire);
+        if (!cancelled)
+        {
+            constexpr wchar_t rescue[] = L"x";
+            queue_console_bytes(console.input, rescue, 1);
+        }
+        reader.join();
+        platform::detail::console_input_read_active.store(false);
+
+        return active && woke && cancelled && !read ? 0 : 32;
+    }
+
 #endif
 } // namespace
 
@@ -668,6 +832,10 @@ namespace platform_test
         if (argc == 3 && std::strcmp(argv[2], "host") == 0)
         {
             return run_console_control_host();
+        }
+        if (argc == 3 && std::strcmp(argv[2], "cancel-read") == 0)
+        {
+            return run_console_cancel_read_child();
         }
         if (argc >= 3 && std::strcmp(argv[2], "child") == 0)
         {
@@ -688,6 +856,21 @@ TEST(platform, is_tty_false_for_null_device)
 }
 
 #ifdef _WIN32
+TEST(platform, query_read_interrupt_skips_record_fallback)
+{
+    query_record_read_call_count() = 0;
+    platform::detail::interrupt_flag.store(true, std::memory_order_release);
+    const int interrupted = platform::detail::finish_query_read(INVALID_HANDLE_VALUE, 0, count_query_record_read);
+    platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
+    const int discarded = platform::detail::finish_query_read(INVALID_HANDLE_VALUE, 0, count_query_record_read);
+    const int bytes = platform::detail::finish_query_read(INVALID_HANDLE_VALUE, 2, count_query_record_read);
+
+    ASSERT_EQ(interrupted, -1);
+    ASSERT_EQ(discarded, 0);
+    ASSERT_EQ(bytes, 2);
+    ASSERT_EQ(query_record_read_call_count(), 1U);
+}
+
 TEST(platform, version_output_preserves_windows_console_state_and_redirected_utf8)
 {
     ScopedWindowsConsole console;
@@ -797,6 +980,7 @@ TEST(platform, console_state_guard_restores_exact_windows_state)
 
     {
         const platform::ConsoleStateGuard guard;
+        ASSERT_TRUE(guard.valid());
         // Repeating setup must not change the captured restoration baseline.
         ASSERT_TRUE(platform::init_console_output());
         ASSERT_TRUE(platform::init_console_output());
@@ -830,6 +1014,63 @@ TEST(platform, console_state_guard_restores_exact_windows_state)
     ASSERT_EQ(GetConsoleOutputCP(), output_cp);
 }
 
+TEST(platform, console_close_event_uses_default_handler)
+{
+    platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
+    platform::detail::console_input_wake_enabled.store(false, std::memory_order_relaxed);
+    platform::detail::console_input_wake_handlers.store(0, std::memory_order_relaxed);
+
+    ASSERT_TRUE(platform::detail::console_interrupt_handler(CTRL_CLOSE_EVENT) == FALSE);
+    ASSERT_TRUE(!platform::interrupt_requested());
+    ASSERT_EQ(platform::detail::console_input_wake_handlers.load(std::memory_order_relaxed), 0U);
+}
+
+TEST(platform, console_input_wake_cancels_read_when_queue_write_fails)
+{
+    std::wstring executable;
+    ASSERT_TRUE(executable_path(executable));
+    const std::wstring command = L"\"" + executable + L"\" --windows-console-control-helper cancel-read";
+    PROCESS_INFORMATION process = {};
+    ASSERT_TRUE(launch_process(command, CREATE_NEW_CONSOLE, false, process));
+    ScopedWindowsHandle process_handle(process.hProcess);
+    ScopedWindowsHandle thread_handle(process.hThread);
+    ASSERT_TRUE(wait_for_clean_exit(process, 5000));
+}
+
+TEST(platform, console_input_cancellation_retries_when_read_has_not_started)
+{
+    platform::detail::console_input_read_active.store(true);
+    cancel_console_input_call_count().store(0);
+    const bool cancelled = platform::detail::cancel_console_input_read(
+        reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1)), cancel_console_input_after_miss
+    );
+    platform::detail::console_input_read_active.store(false);
+
+    ASSERT_TRUE(cancelled);
+    ASSERT_EQ(cancel_console_input_call_count().load(), 2U);
+}
+
+TEST(platform, console_state_guard_rejects_each_failed_probe)
+{
+    for (int failed_mode_probe = 1; failed_mode_probe <= 2; failed_mode_probe++)
+    {
+        console_mode_probe_count() = 0;
+        console_mode_probe_failure() = failed_mode_probe;
+        console_output_cp_probe_failure() = false;
+        platform::ConsoleStateGuard guard(probe_console_mode, probe_console_output_cp);
+        ASSERT_FALSE(guard.valid());
+        ASSERT_FALSE(guard.restore_input_mode());
+    }
+
+    console_mode_probe_count() = 0;
+    console_mode_probe_failure() = 0;
+    console_output_cp_probe_failure() = true;
+    platform::ConsoleStateGuard guard(probe_console_mode, probe_console_output_cp);
+    ASSERT_FALSE(guard.valid());
+    ASSERT_FALSE(guard.restore_input_mode());
+    console_output_cp_probe_failure() = false;
+}
+
 TEST(platform, console_state_guard_ignores_pipe_handles)
 {
     ScopedWindowsConsole console;
@@ -845,16 +1086,16 @@ TEST(platform, console_state_guard_ignores_pipe_handles)
     ASSERT_FALSE(GetConsoleMode(pipes.output_write, &mode) != 0);
     {
         const platform::ConsoleStateGuard guard;
+        ASSERT_FALSE(guard.valid());
         ASSERT_FALSE(platform::init_console_output());
         platform::enable_vt_input();
         ASSERT_TRUE(SetConsoleOutputCP(65001) != 0);
     }
-    // A pipe output handle prevents rasterminal from changing the code page, so
-    // the guard must not restore the unrelated process-wide value it observed.
+    // An incomplete snapshot owns no state and must not restore this unrelated change.
     ASSERT_EQ(GetConsoleOutputCP(), static_cast<UINT>(65001));
 }
 
-TEST(platform, console_state_guard_restores_console_input_with_pipe_output)
+TEST(platform, console_state_guard_does_not_restore_partial_snapshot)
 {
     ScopedWindowsConsole console;
     ASSERT_TRUE(console.valid);
@@ -870,11 +1111,12 @@ TEST(platform, console_state_guard_restores_console_input_with_pipe_output)
     ASSERT_TRUE(pipes.valid);
     ASSERT_TRUE(SetStdHandle(STD_INPUT_HANDLE, console.input) != 0);
 
+    DWORD changed_input_mode = 0;
     {
         const platform::ConsoleStateGuard guard;
+        ASSERT_FALSE(guard.valid());
         ASSERT_FALSE(platform::init_console_output());
         platform::enable_vt_input();
-        DWORD changed_input_mode = 0;
         ASSERT_TRUE(GetConsoleMode(console.input, &changed_input_mode) != 0);
         ASSERT_TRUE((changed_input_mode & ENABLE_VIRTUAL_TERMINAL_INPUT) != 0);
         ASSERT_TRUE(SetConsoleOutputCP(65001) != 0);
@@ -882,9 +1124,9 @@ TEST(platform, console_state_guard_restores_console_input_with_pipe_output)
 
     DWORD restored_input_mode = 0;
     ASSERT_TRUE(GetConsoleMode(console.input, &restored_input_mode) != 0);
-    ASSERT_EQ(restored_input_mode, baseline_input_mode);
-    // The pipe output prevents rasterminal from changing the code page, so the guard
-    // restores the independent console input mode without rolling the code page back.
+    ASSERT_EQ(restored_input_mode, changed_input_mode);
+    // The caller must reject an incomplete snapshot before mutation. If it does not,
+    // the guard still avoids overwriting newer state with a partial capture.
     ASSERT_EQ(GetConsoleOutputCP(), static_cast<UINT>(65001));
 }
 
@@ -913,6 +1155,43 @@ TEST(platform, disable_raw_mode_discards_pending_windows_input)
     ASSERT_TRUE(platform::disable_raw_mode());
     ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
     ASSERT_EQ(pending, static_cast<DWORD>(0));
+}
+
+TEST(platform, console_state_guard_retries_input_cleanup_after_restore_failure)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    input_mode_restore_attempts() = 0;
+    input_discard_attempts() = 0;
+
+    {
+        platform::ConsoleStateGuard guard(
+            GetConsoleMode, GetConsoleOutputCP, fail_first_input_mode_restore, count_input_discard
+        );
+        ASSERT_TRUE(guard.valid());
+        ASSERT_FALSE(platform::disable_raw_mode(&guard));
+        ASSERT_EQ(input_mode_restore_attempts(), 1);
+        ASSERT_EQ(input_discard_attempts(), 0);
+    }
+
+    ASSERT_EQ(input_mode_restore_attempts(), 2);
+    ASSERT_EQ(input_discard_attempts(), 1);
+}
+
+TEST(platform, console_state_guard_retries_input_cleanup_after_discard_failure)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    input_discard_attempts() = 0;
+
+    {
+        platform::ConsoleStateGuard guard(GetConsoleMode, GetConsoleOutputCP, SetConsoleMode, fail_first_input_discard);
+        ASSERT_TRUE(guard.valid());
+        ASSERT_FALSE(platform::disable_raw_mode(&guard));
+        ASSERT_EQ(input_discard_attempts(), 1);
+    }
+
+    ASSERT_EQ(input_discard_attempts(), 2);
 }
 
 TEST(platform, disable_raw_mode_handles_read_only_standard_input)

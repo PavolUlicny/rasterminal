@@ -63,6 +63,52 @@ namespace platform
 #ifdef _WIN32
         inline std::atomic_bool console_input_wake_enabled = {};
         inline std::atomic_uint console_input_wake_handlers = {};
+        inline std::atomic_bool console_input_read_active = {};
+        inline std::atomic<HANDLE> console_input_thread = {};
+
+        using CancelSynchronousIoFn = BOOL(WINAPI *)(HANDLE);
+
+        inline bool cancel_console_input_read(HANDLE input_thread, CancelSynchronousIoFn cancel) noexcept
+        {
+            if (input_thread == nullptr)
+            {
+                return false;
+            }
+            while (console_input_read_active.load())
+            {
+                if (cancel(input_thread) != 0)
+                {
+                    return true;
+                }
+                if (GetLastError() != ERROR_NOT_FOUND)
+                {
+                    return false;
+                }
+                // The reader may be between its interrupt check and the console
+                // request. Yield until it starts the request or leaves the read.
+                Sleep(0);
+            }
+            return true;
+        }
+
+        inline bool wake_console_input(HANDLE input, HANDLE input_thread) noexcept
+        {
+            INPUT_RECORD wake = {};
+            wake.EventType = KEY_EVENT;
+            wake.Event.KeyEvent.bKeyDown = TRUE;
+            wake.Event.KeyEvent.wRepeatCount = 1;
+            wake.Event.KeyEvent.wVirtualKeyCode = static_cast<WORD>('X');
+            wake.Event.KeyEvent.uChar.UnicodeChar = L'x';
+            DWORD written = 0;
+            if (WriteConsoleInputW(input, &wake, 1, &written) != 0 && written == 1)
+            {
+                return true;
+            }
+
+            // A lower-integrity process cannot add records to a higher-integrity
+            // console. Cancel the synchronous _getch read without touching the queue.
+            return cancel_console_input_read(input_thread, CancelSynchronousIo);
+        }
 
         inline void wake_console_input() noexcept
         {
@@ -74,15 +120,7 @@ namespace platform
             {
                 input = GetStdHandle(STD_INPUT_HANDLE);
             }
-
-            INPUT_RECORD wake = {};
-            wake.EventType = KEY_EVENT;
-            wake.Event.KeyEvent.bKeyDown = TRUE;
-            wake.Event.KeyEvent.wRepeatCount = 1;
-            wake.Event.KeyEvent.wVirtualKeyCode = static_cast<WORD>('X');
-            wake.Event.KeyEvent.uChar.UnicodeChar = L'x';
-            DWORD written = 0;
-            WriteConsoleInputW(input, &wake, 1, &written);
+            wake_console_input(input, console_input_thread.load());
 
             if (close_input)
             {
@@ -93,6 +131,26 @@ namespace platform
         inline void arm_console_input_wake() noexcept
         {
             console_input_wake_enabled.store(true);
+        }
+
+        inline bool read_console_byte(char &out) noexcept
+        {
+            // This state lets the handler retry cancellation across the gap between
+            // _kbhit and _getch. Otherwise this thread observes the interrupt here.
+            console_input_read_active.store(true);
+            if (interrupt_flag.load())
+            {
+                console_input_read_active.store(false);
+                return false;
+            }
+            const int value = _getch();
+            console_input_read_active.store(false);
+            if (value == EOF || interrupt_flag.load())
+            {
+                return false;
+            }
+            out = static_cast<char>(value);
+            return true;
         }
 
         inline void disarm_console_input_wake() noexcept
@@ -108,16 +166,16 @@ namespace platform
 
         inline BOOL WINAPI console_interrupt_handler(DWORD event) noexcept
         {
+            // Task Manager may terminate the process without running this handler.
+            // Waiting on close events only delays termination without guaranteeing cleanup.
             if (event != CTRL_C_EVENT && event != CTRL_BREAK_EVENT)
             {
-                // Closing a console or pseudoconsole terminates every attached client,
-                // so no shell survives to inherit terminal state. Let Windows exit promptly.
                 return FALSE;
             }
             console_input_wake_handlers.fetch_add(1);
             // Publish the interrupt only after registering this handler. Teardown
             // can then wait for every handler that caused it to start.
-            interrupt_flag.store(true, std::memory_order_release);
+            interrupt_flag.store(true);
             if (console_input_wake_enabled.load())
             {
                 // _kbhit can report input just before _getch blocks. Wake that read so
@@ -146,7 +204,22 @@ namespace platform
         }
         detail::interrupt_flag.store(false, std::memory_order_relaxed);
         detail::console_input_wake_enabled.store(false);
-        return SetConsoleCtrlHandler(detail::console_interrupt_handler, TRUE) != 0;
+        detail::console_input_read_active.store(false);
+        HANDLE input_thread = nullptr;
+        if (DuplicateHandle(
+                GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &input_thread, THREAD_TERMINATE, FALSE, 0
+            ) == 0)
+        {
+            return false;
+        }
+        detail::console_input_thread.store(input_thread);
+        if (SetConsoleCtrlHandler(detail::console_interrupt_handler, TRUE) == 0)
+        {
+            detail::console_input_thread.store(nullptr);
+            CloseHandle(input_thread);
+            return false;
+        }
+        return true;
 #else
         detail::interrupt_flag = 0;
         const auto interrupt_handler = std::signal(SIGINT, detail::signal_handler);
@@ -154,6 +227,32 @@ namespace platform
         return interrupt_handler != SIG_ERR && terminate_handler != SIG_ERR;
 #endif
     }
+
+    class InterruptHandlerGuard
+    {
+      public:
+        ~InterruptHandlerGuard() noexcept
+        {
+#ifdef _WIN32
+            SetConsoleCtrlHandler(detail::console_interrupt_handler, FALSE);
+            while (detail::console_input_wake_handlers.load() != 0)
+            {
+                Sleep(0);
+            }
+            HANDLE input_thread = detail::console_input_thread.exchange(nullptr);
+            if (input_thread != nullptr)
+            {
+                CloseHandle(input_thread);
+            }
+#endif
+        }
+
+        InterruptHandlerGuard() noexcept = default;
+        InterruptHandlerGuard(const InterruptHandlerGuard &) = delete;
+        InterruptHandlerGuard &operator=(const InterruptHandlerGuard &) = delete;
+        InterruptHandlerGuard(InterruptHandlerGuard &&) = delete;
+        InterruptHandlerGuard &operator=(InterruptHandlerGuard &&) = delete;
+    };
 
     // Return a 64-bit stream size and leave the stream at EOF, or -1 on failure.
     inline int64_t file_size(std::FILE *f)
@@ -393,6 +492,24 @@ namespace platform
 
         // Bounded query read: positive bytes, zero to retry, negative to stop.
 #ifdef _WIN32
+        using ReadConsoleInputFn = BOOL(WINAPI *)(HANDLE, PINPUT_RECORD, DWORD, LPDWORD);
+
+        inline int finish_query_read(HANDLE input, int byte_count, ReadConsoleInputFn read_input)
+        {
+            if (byte_count != 0)
+            {
+                return byte_count;
+            }
+            if (interrupt_requested())
+            {
+                return -1;
+            }
+            // Discard non-byte console records that would keep the handle signaled.
+            INPUT_RECORD record;
+            DWORD read = 0;
+            return read_input(input, &record, 1, &read) != 0 && read != 0 ? 0 : -1;
+        }
+
         inline int read_query_bytes(char *out, int cap, int timeout_ms)
         {
             HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
@@ -411,19 +528,13 @@ namespace platform
             int n = 0;
             while (n < cap && _kbhit())
             {
-                out[n++] = static_cast<char>(_getch());
-            }
-            if (n == 0)
-            {
-                // Discard non-byte console records that would keep the handle signaled.
-                INPUT_RECORD rec;
-                DWORD got = 0;
-                if (ReadConsoleInput(hin, &rec, 1, &got) == 0 || got == 0)
+                if (!read_console_byte(out[n]))
                 {
-                    return -1;
+                    break;
                 }
+                n++;
             }
-            return n;
+            return finish_query_read(hin, n, ReadConsoleInputW);
         }
 #else
         inline int read_query_bytes(char *out, int cap, int timeout_ms)
@@ -757,37 +868,99 @@ namespace platform
     } // namespace detail
 #endif
 
+#ifdef _WIN32
+    namespace detail
+    {
+        using GetConsoleModeFn = BOOL(WINAPI *)(HANDLE, LPDWORD);
+        using GetConsoleOutputCPFn = UINT(WINAPI *)();
+        using SetConsoleModeFn = BOOL(WINAPI *)(HANDLE, DWORD);
+        using DiscardPendingInputFn = bool (*)() noexcept;
+
+        inline bool discard_pending_standard_input() noexcept;
+    } // namespace detail
+#endif
+
     // Snapshot Windows console buffer modes and the process output code page immediately
-    // before terminal setup. Console close, logoff, and shutdown events still terminate
-    // the process without unwinding.
+    // before terminal setup. Logoff and shutdown events still bypass orderly cleanup.
     class ConsoleStateGuard
     {
       public:
-        ConsoleStateGuard() noexcept { capture(); }
+        ConsoleStateGuard() noexcept
+        {
+#ifdef _WIN32
+            capture(GetConsoleMode, GetConsoleOutputCP);
+#endif
+        }
+
+#ifdef _WIN32
+        ConsoleStateGuard(
+            detail::GetConsoleModeFn get_mode,
+            detail::GetConsoleOutputCPFn get_output_cp,
+            detail::SetConsoleModeFn set_mode = SetConsoleMode,
+            detail::DiscardPendingInputFn discard_pending_input = detail::discard_pending_standard_input
+        ) noexcept
+            : m_set_mode(set_mode), m_discard_pending_input(discard_pending_input)
+        {
+            capture(get_mode, get_output_cp);
+        }
+#endif
+
+        [[nodiscard]] bool valid() const noexcept { return m_snapshot_complete; }
 
         ~ConsoleStateGuard() noexcept
         {
 #ifdef _WIN32
+            if (!m_snapshot_complete)
+            {
+                return;
+            }
             // Buffered output must reach the console while VT processing and the
             // UTF-8 code page are still active.
             std::fflush(stdout);
-            // A destructor cannot report cleanup failures. Restore each mode through the
-            // handle used to read it. Restore the code page only when output setup could
-            // have changed it, after the output-mode probe succeeded.
-            if (m_have_input_mode)
+            // A destructor cannot report cleanup failures. Retry any input cleanup
+            // started by disable_raw_mode before restoring the remaining state.
+            if (m_input_cleanup_pending)
             {
-                SetConsoleMode(m_input, m_input_mode);
+                retry_input_cleanup();
             }
-            if (m_have_output_mode)
+            else
             {
-                SetConsoleMode(m_output, m_output_mode);
-                if (m_output_cp != 0)
-                {
-                    SetConsoleOutputCP(m_output_cp);
-                }
+                restore_input_mode();
             }
+            SetConsoleMode(m_output, m_output_mode);
+            SetConsoleOutputCP(m_output_cp);
 #endif
         }
+
+#ifdef _WIN32
+        bool restore_input_mode() noexcept
+        {
+            if (!m_snapshot_complete)
+            {
+                return false;
+            }
+            if (!m_input_mode_pending)
+            {
+                return true;
+            }
+            if (m_set_mode(m_input, m_input_mode) == 0)
+            {
+                return false;
+            }
+            m_input_mode_pending = false;
+            return true;
+        }
+
+        bool cleanup_input() noexcept
+        {
+            if (!m_snapshot_complete)
+            {
+                return false;
+            }
+            m_input_cleanup_pending = true;
+            return retry_input_cleanup();
+        }
+#endif
 
         ConsoleStateGuard(const ConsoleStateGuard &) = delete;
         ConsoleStateGuard &operator=(const ConsoleStateGuard &) = delete;
@@ -795,26 +968,46 @@ namespace platform
         ConsoleStateGuard &operator=(ConsoleStateGuard &&) = delete;
 
       private:
-        void capture() noexcept
-        {
 #ifdef _WIN32
-            m_input = GetStdHandle(STD_INPUT_HANDLE);
-            m_output = GetStdHandle(STD_OUTPUT_HANDLE);
-            m_have_input_mode = GetConsoleMode(m_input, &m_input_mode) != 0;
-            m_have_output_mode = GetConsoleMode(m_output, &m_output_mode) != 0;
-            m_output_cp = GetConsoleOutputCP();
-#endif
+        bool retry_input_cleanup() noexcept;
+
+        void capture(detail::GetConsoleModeFn get_mode, detail::GetConsoleOutputCPFn get_output_cp) noexcept
+        {
+            m_snapshot_complete = false;
+            const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+            const HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
+            DWORD input_mode = 0;
+            DWORD output_mode = 0;
+            if (get_mode(input, &input_mode) == 0 || get_mode(output, &output_mode) == 0)
+            {
+                return;
+            }
+            const UINT output_cp = get_output_cp();
+            if (output_cp == 0)
+            {
+                return;
+            }
+
+            m_input = input;
+            m_output = output;
+            m_input_mode = input_mode;
+            m_output_mode = output_mode;
+            m_output_cp = output_cp;
+            m_input_mode_pending = true;
+            m_snapshot_complete = true;
         }
 
-#ifdef _WIN32
         HANDLE m_input = INVALID_HANDLE_VALUE;
         HANDLE m_output = INVALID_HANDLE_VALUE;
         DWORD m_input_mode = 0;
         DWORD m_output_mode = 0;
-        bool m_have_input_mode = false;
-        bool m_have_output_mode = false;
+        bool m_input_mode_pending = false;
+        bool m_input_cleanup_pending = false;
         UINT m_output_cp = 0;
+        detail::SetConsoleModeFn m_set_mode = SetConsoleMode;
+        detail::DiscardPendingInputFn m_discard_pending_input = detail::discard_pending_standard_input;
 #endif
+        bool m_snapshot_complete = true;
     };
 
 #ifdef _WIN32
@@ -921,8 +1114,8 @@ namespace platform
         {
             return false;
         }
-        // ConsoleStateGuard uses its successful GetConsoleMode probe as a proxy
-        // for code-page restoration. Keep every code-page change after that probe.
+        // ConsoleStateGuard captures a complete restoration snapshot before this call.
+        // Keep every code-page change after that snapshot.
         SetConsoleOutputCP(65001);
         return true;
 #else
@@ -1015,26 +1208,50 @@ namespace platform
             }
             return FlushConsoleInputBuffer(writable_input) != 0 || drain_console_input_snapshot(writable_input);
         }
+
+        inline bool discard_pending_standard_input() noexcept
+        {
+            HANDLE input = CreateFileW(
+                L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
+                nullptr
+            );
+            const bool discarded = discard_pending_console_input(GetStdHandle(STD_INPUT_HANDLE), input);
+            if (input != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(input);
+            }
+            return discarded;
+        }
     } // namespace detail
+
+    inline bool ConsoleStateGuard::retry_input_cleanup() noexcept
+    {
+        if (!restore_input_mode())
+        {
+            return false;
+        }
+        if (!m_discard_pending_input())
+        {
+            return false;
+        }
+        m_input_cleanup_pending = false;
+        return true;
+    }
 #endif
 
-    inline bool disable_raw_mode()
+    inline bool disable_raw_mode(ConsoleStateGuard *console_state = nullptr)
     {
 #ifdef _WIN32
         detail::disarm_console_input_wake();
-        // Console input belongs to rasterminal until raw mode is restored. Open the
-        // attached buffer directly because inherited standard input may be read-only.
-        HANDLE input = CreateFileW(
-            L"CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
-            nullptr
-        );
-        const bool discarded = detail::discard_pending_console_input(GetStdHandle(STD_INPUT_HANDLE), input);
-        if (input != INVALID_HANDLE_VALUE)
+        if (console_state != nullptr)
         {
-            CloseHandle(input);
+            // Keep the operation pending in the guard if either step fails. Its
+            // destructor retries the mode restore before attempting another drain.
+            return console_state->cleanup_input();
         }
-        return discarded;
+        return detail::discard_pending_standard_input();
 #else
+        (void)console_state;
         return tcsetattr(STDIN_FILENO, TCSAFLUSH, &detail::saved_termios()) == 0;
 #endif
     }
@@ -1152,7 +1369,11 @@ namespace platform
             int n = 0;
             while (n < cap && _kbhit())
             {
-                out[n++] = static_cast<char>(_getch());
+                if (!read_console_byte(out[n]))
+                {
+                    break;
+                }
+                n++;
             }
             return n;
 #else
