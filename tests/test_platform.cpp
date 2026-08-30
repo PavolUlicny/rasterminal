@@ -1258,6 +1258,233 @@ TEST(platform, console_cleanup_handles_control_events)
 #endif
 
 #ifndef _WIN32
+namespace
+{
+    struct TermiosCalls
+    {
+        termios captured = {};
+        termios current = {};
+        termios writes[8] = {};
+        int get_errors[4] = {};
+        int set_errors[8] = {};
+        int partial_set_call = -1;
+        int partial_field = -1;
+        int get_calls = 0;
+        int set_calls = 0;
+    };
+
+    TermiosCalls &termios_calls()
+    {
+        static TermiosCalls calls;
+        return calls;
+    }
+
+    void reset_termios_calls()
+    {
+        termios_calls() = {};
+        termios_calls().captured.c_lflag = static_cast<tcflag_t>(ECHO | ICANON | ISIG);
+        termios_calls().captured.c_cc[VMIN] = 1;
+        termios_calls().captured.c_cc[VTIME] = 7;
+        termios_calls().current = termios_calls().captured;
+    }
+
+    int scripted_tcgetattr(int fd, termios *value)
+    {
+        TermiosCalls &calls = termios_calls();
+        if (fd != STDIN_FILENO || calls.get_calls >= 4)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        const int error = calls.get_errors[calls.get_calls++];
+        if (error != 0)
+        {
+            errno = error;
+            return -1;
+        }
+        *value = calls.current;
+        return 0;
+    }
+
+    int scripted_tcsetattr(int fd, int action, const termios *value)
+    {
+        TermiosCalls &calls = termios_calls();
+        if (fd != STDIN_FILENO || action != TCSAFLUSH || calls.set_calls >= 8)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        const int call = calls.set_calls++;
+        calls.writes[call] = *value;
+        const int error = calls.set_errors[call];
+        if (error != 0)
+        {
+            errno = error;
+            return -1;
+        }
+        const termios previous = calls.current;
+        calls.current = *value;
+        if (call == calls.partial_set_call)
+        {
+            switch (calls.partial_field)
+            {
+            case 0:
+                calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ECHO)) |
+                                        (previous.c_lflag & static_cast<tcflag_t>(ECHO));
+                break;
+            case 1:
+                calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ICANON)) |
+                                        (previous.c_lflag & static_cast<tcflag_t>(ICANON));
+                break;
+            case 2:
+                calls.current.c_cc[VMIN] = previous.c_cc[VMIN];
+                break;
+            case 3:
+                calls.current.c_cc[VTIME] = previous.c_cc[VTIME];
+                break;
+            default:
+                break;
+            }
+        }
+        return 0;
+    }
+
+    bool termios_equal(const termios &a, const termios &b)
+    {
+        return a.c_iflag == b.c_iflag && a.c_oflag == b.c_oflag && a.c_cflag == b.c_cflag && a.c_lflag == b.c_lflag &&
+               std::memcmp(a.c_cc, b.c_cc, sizeof a.c_cc) == 0;
+    }
+} // namespace
+
+TEST(platform, posix_raw_mode_rejects_failed_capture_without_writing)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[0] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_FALSE(guard.valid());
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 1);
+    ASSERT_EQ(termios_calls().set_calls, 0);
+}
+
+TEST(platform, posix_raw_mode_rolls_back_failed_write)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[0] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(guard.valid());
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 2);
+    ASSERT_TRUE((termios_calls().writes[0].c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) == 0);
+    ASSERT_EQ(termios_calls().writes[0].c_cc[VMIN], static_cast<cc_t>(0));
+    ASSERT_EQ(termios_calls().writes[0].c_cc[VTIME], static_cast<cc_t>(0));
+    ASSERT_TRUE(termios_equal(termios_calls().writes[1], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_rolls_back_partial_write)
+{
+    for (int field = 0; field < 4; ++field)
+    {
+        reset_termios_calls();
+        termios_calls().partial_set_call = 0;
+        termios_calls().partial_field = field;
+
+        platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+        ASSERT_FALSE(platform::enable_raw_mode(&guard));
+        ASSERT_EQ(termios_calls().get_calls, 3);
+        ASSERT_EQ(termios_calls().set_calls, 2);
+        ASSERT_TRUE(termios_equal(termios_calls().writes[1], termios_calls().captured));
+        ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+        ASSERT_FALSE(guard.raw_mode_restore_pending());
+    }
+}
+
+TEST(platform, posix_raw_mode_rolls_back_failed_verification)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[1] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 3);
+    ASSERT_EQ(termios_calls().set_calls, 2);
+    ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_retries_partial_restore)
+{
+    reset_termios_calls();
+    termios_calls().partial_set_call = 1;
+    termios_calls().partial_field = 0;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_verification_retries_eintr)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[1] = EINTR;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 3);
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+}
+
+TEST(platform, posix_raw_mode_restore_retries_eintr)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EINTR;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[2], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_restore_makes_final_attempt)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[2], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_keeps_failed_restore_pending)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EIO;
+    termios_calls().set_errors[2] = EIO;
+
+    {
+        platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+        ASSERT_TRUE(platform::enable_raw_mode(&guard));
+        ASSERT_FALSE(platform::disable_raw_mode(&guard));
+        ASSERT_EQ(termios_calls().set_calls, 3);
+        ASSERT_TRUE(guard.raw_mode_restore_pending());
+    }
+
+    // The guard remains armed and retries after the session cleanup boundary.
+    ASSERT_EQ(termios_calls().set_calls, 4);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[3], termios_calls().captured));
+}
+
 // Probe a fresh pty slave, which POSIX defines as a terminal. Master behavior
 // varies by OS, and Windows has no equivalent portable fixture.
 TEST(platform, is_tty_true_for_pty_slave)
