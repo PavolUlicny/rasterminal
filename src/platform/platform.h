@@ -186,9 +186,91 @@ namespace platform
             return TRUE;
         }
 #else
-        inline void signal_handler(int /*signal*/) noexcept
+        struct TerminationSignal
         {
-            interrupt_flag = 1;
+            int number;
+            uint32_t bit;
+        };
+
+        inline constexpr uint32_t TERMINATION_SIGINT = 1U;
+        inline constexpr uint32_t TERMINATION_SIGTERM = 2U;
+        inline constexpr uint32_t TERMINATION_SIGQUIT = 4U;
+        inline constexpr uint32_t TERMINATION_SIGHUP = 8U;
+        inline constexpr uint32_t ALL_TERMINATION_SIGNALS =
+            TERMINATION_SIGINT | TERMINATION_SIGTERM | TERMINATION_SIGQUIT | TERMINATION_SIGHUP;
+        inline constexpr TerminationSignal TERMINATION_SIGNALS[] = {
+            { SIGINT, TERMINATION_SIGINT },
+            { SIGTERM, TERMINATION_SIGTERM },
+            { SIGQUIT, TERMINATION_SIGQUIT },
+            { SIGHUP, TERMINATION_SIGHUP },
+        };
+
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): set during startup and read at exit
+        inline uint32_t termination_handler_mask = 0;
+
+        inline bool add_termination_signals(sigset_t &signals, uint32_t mask) noexcept
+        {
+            for (const TerminationSignal &entry : TERMINATION_SIGNALS)
+            {
+                if ((mask & entry.bit) != 0 && sigaddset(&signals, entry.number) != 0)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        inline bool termination_signal_set(sigset_t &signals, uint32_t mask = ALL_TERMINATION_SIGNALS) noexcept
+        {
+            return sigemptyset(&signals) == 0 && add_termination_signals(signals, mask);
+        }
+
+        inline void reset_termination_handlers(uint32_t mask) noexcept
+        {
+            struct sigaction action = {};
+            action.sa_handler = SIG_DFL;
+            sigemptyset(&action.sa_mask);
+            for (const TerminationSignal &entry : TERMINATION_SIGNALS)
+            {
+                if ((mask & entry.bit) != 0)
+                {
+                    sigaction(entry.number, &action, nullptr);
+                }
+            }
+        }
+
+        inline int finish_termination_with_signals_blocked(
+            int status, const sigset_t &previous_mask, uint32_t handler_mask
+        ) noexcept
+        {
+            const int signal = static_cast<int>(interrupt_flag);
+            // A signal arriving after the flag read remains pending until every
+            // handled signal has its default disposition again.
+            reset_termination_handlers(handler_mask);
+            if (signal == 0)
+            {
+                pthread_sigmask(SIG_SETMASK, &previous_mask, nullptr);
+                return status;
+            }
+
+            sigset_t delivery_mask = previous_mask;
+            const bool mask_ready =
+                add_termination_signals(delivery_mask, handler_mask) && sigdelset(&delivery_mask, signal) == 0;
+            if (mask_ready && pthread_sigmask(SIG_SETMASK, &delivery_mask, nullptr) == 0)
+            {
+                // Keep later termination signals pending until the recorded one
+                // has been delivered with its default disposition.
+                std::raise(signal);
+            }
+            return 128 + signal;
+        }
+
+        inline void signal_handler(int signal) noexcept
+        {
+            if (interrupt_flag == 0)
+            {
+                interrupt_flag = signal;
+            }
         }
 #endif
     } // namespace detail
@@ -222,9 +304,65 @@ namespace platform
         return true;
 #else
         detail::interrupt_flag = 0;
-        const auto interrupt_handler = std::signal(SIGINT, detail::signal_handler);
-        const auto terminate_handler = std::signal(SIGTERM, detail::signal_handler);
-        return interrupt_handler != SIG_ERR && terminate_handler != SIG_ERR;
+        detail::termination_handler_mask = 0;
+        struct sigaction action = {};
+        action.sa_handler = detail::signal_handler;
+        if (!detail::termination_signal_set(action.sa_mask))
+        {
+            return false;
+        }
+        for (const detail::TerminationSignal &entry : detail::TERMINATION_SIGNALS)
+        {
+            struct sigaction previous = {};
+            if (sigaction(entry.number, nullptr, &previous) != 0)
+            {
+                return false;
+            }
+            if (previous.sa_handler == SIG_IGN)
+            {
+                continue;
+            }
+            if (sigaction(entry.number, &action, nullptr) != 0)
+            {
+                return false;
+            }
+            detail::termination_handler_mask |= entry.bit;
+        }
+        return true;
+#endif
+    }
+
+    // Call only after terminal guards have unwound. POSIX callers should still
+    // observe signal termination; the numeric status is a fallback if re-raising fails.
+    [[nodiscard]] inline int finish_termination(int status) noexcept
+    {
+#ifdef _WIN32
+        return status;
+#else
+        const uint32_t handler_mask = detail::termination_handler_mask;
+        if (handler_mask == 0)
+        {
+            return status;
+        }
+        sigset_t signals = {};
+        sigset_t previous_mask = {};
+        const bool blocked = detail::termination_signal_set(signals, handler_mask) &&
+                             pthread_sigmask(SIG_BLOCK, &signals, &previous_mask) == 0;
+        if (blocked)
+        {
+            return detail::finish_termination_with_signals_blocked(status, previous_mask, handler_mask);
+        }
+        const int signal = static_cast<int>(detail::interrupt_flag);
+        if (signal == 0)
+        {
+            return status;
+        }
+        if (std::signal(signal, SIG_DFL) == SIG_ERR)
+        {
+            return 128 + signal;
+        }
+        std::raise(signal);
+        return 128 + signal;
 #endif
     }
 
@@ -1086,6 +1224,14 @@ namespace platform
                    actual.c_cc[VMIN] == expected.c_cc[VMIN] && actual.c_cc[VTIME] == expected.c_cc[VTIME];
         }
 
+        static bool terminal_settings_match(const termios &actual, const termios &expected) noexcept
+        {
+            return actual.c_iflag == expected.c_iflag && actual.c_oflag == expected.c_oflag &&
+                   actual.c_cflag == expected.c_cflag && actual.c_lflag == expected.c_lflag &&
+                   std::memcmp(actual.c_cc, expected.c_cc, sizeof actual.c_cc) == 0 &&
+                   cfgetispeed(&actual) == cfgetispeed(&expected) && cfgetospeed(&actual) == cfgetospeed(&expected);
+        }
+
         bool restore_raw_mode_once() noexcept
         {
             int result = m_set_termios(STDIN_FILENO, TCSAFLUSH, &m_input_mode);
@@ -1098,7 +1244,7 @@ namespace platform
                 return false;
             }
             termios restored = {};
-            if (!read_input_mode(restored) || !input_settings_match(restored, m_input_mode))
+            if (!read_input_mode(restored) || !terminal_settings_match(restored, m_input_mode))
             {
                 return false;
             }

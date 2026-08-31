@@ -349,7 +349,8 @@ namespace
                 gfx.backend = GraphicsBackend::Sixel;
             }
         }
-        // Treat an interrupted query as a clean quit, not failed detection.
+        // Stop backend detection with a temporary success status. After cleanup,
+        // finish_termination re-raises the recorded signal.
         if (platform::interrupt_requested())
         {
             gfx.exit_code = 0;
@@ -1221,18 +1222,20 @@ const auto run_main = [](int argc, char *argv[]) -> int
 int main(int argc, char *argv[])
 {
     // run_main owns the cleanup guards so exceptions restore terminal state before reporting.
+    int status = 0;
     try
     {
-        return run_main(argc, argv);
+        status = run_main(argc, argv);
     }
     catch (const std::exception &e)
     {
         std::fprintf(stderr, "%s: %s\n", program_name(argv[0]), e.what());
-        return 1;
+        status = 1;
     }
     catch (...)
     {
         std::fprintf(stderr, "%s: unexpected exception\n", program_name(argv[0]));
-        return 1;
+        status = 1;
     }
+    return platform::finish_termination(status);
 }
