@@ -652,12 +652,12 @@ const auto run_main = [](int argc, char *argv[]) -> int
     // Keep interrupt-handler resources alive through terminal cleanup.
     const platform::InterruptHandlerGuard interrupt_handler;
 
-    // Capture shared Windows console state only when this run is about to change it.
-    // Keep this outside the terminal guard so escape-based cleanup runs first.
+    // Capture terminal state only when this run is about to change it. Keep this
+    // outside the session guard so escape-based cleanup runs before final restoration.
     platform::ConsoleStateGuard console_state;
     if (!console_state.valid())
     {
-        std::fprintf(stderr, "%s: failed to capture console state\n", program_name(argv[0]));
+        std::fprintf(stderr, "%s: failed to capture terminal state\n", program_name(argv[0]));
         return 1;
     }
 
@@ -673,9 +673,13 @@ const auto run_main = [](int argc, char *argv[]) -> int
             return 1;
         }
 
-        platform::enable_raw_mode();
-        // Cleanup cannot run until enable_raw_mode saves the original terminal state.
+        // Arm cleanup before the write. A failed tcsetattr may still need rollback.
         terminal.raw_enabled = true;
+        if (!platform::enable_raw_mode(&console_state))
+        {
+            terminal.error = "failed to enable raw input mode";
+            return 1;
+        }
 
         const GraphicsSetup gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
         if (gfx.exit_code >= 0)

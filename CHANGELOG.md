@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Rasterminal restores Windows console modes and the output code page after normal exits, Ctrl+C, and Ctrl+Break. It clears queued mouse reports and handles Ctrl+C when processed input was inherited disabled, so the shell receives no stale escapes and keeps its original input behavior.
+- POSIX interactive startup now stops safely if raw input mode cannot be enabled. Terminal restoration retries interrupted or transient failures instead of leaving the shell in raw mode.
 - Triangle coverage is more accurate. Long, nearly horizontal edges no longer bleed beyond their triangles, and shared edges have fewer pinholes.
 - Malformed models with non-finite texture coordinates or undersized glTF vertex attributes are rejected instead of reading uninitialized or out-of-bounds memory.
 - Valid STL files no longer fail when their opening text confuses the ASCII/binary heuristic. STL coordinates are also remapped from the format's usual Z-up convention so models load upright. ASCII STL lines longer than 64 KB are rejected as malformed.

@@ -429,6 +429,12 @@ if(RASTERMINAL_BUILD_TESTS)
     ${RASTERMINAL_SHM_LIB})
   target_link_options(rasterminal_tests PRIVATE
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:-Wno-maybe-uninitialized>)
+  if(NOT WIN32)
+    # POSIX terminal integration tests launch the production executable in a pty.
+    add_dependencies(rasterminal_tests rasterminal)
+    target_compile_definitions(rasterminal_tests PRIVATE
+      RASTERMINAL_TEST_BINARY="$<TARGET_FILE:rasterminal>")
+  endif()
   if(ipo_ok)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
     set_property(TARGET rasterminal_tests PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO TRUE)

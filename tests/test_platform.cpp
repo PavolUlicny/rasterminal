@@ -24,6 +24,8 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -1258,6 +1260,234 @@ TEST(platform, console_cleanup_handles_control_events)
 #endif
 
 #ifndef _WIN32
+namespace
+{
+    struct TermiosCalls
+    {
+        termios captured = {};
+        termios current = {};
+        termios writes[8] = {};
+        int get_errors[4] = {};
+        int set_errors[8] = {};
+        int partial_set_call = -1;
+        int partial_field = -1;
+        int get_calls = 0;
+        int set_calls = 0;
+    };
+
+    TermiosCalls &termios_calls()
+    {
+        static TermiosCalls calls;
+        return calls;
+    }
+
+    void reset_termios_calls()
+    {
+        termios_calls() = {};
+        termios_calls().captured.c_lflag = static_cast<tcflag_t>(ECHO | ICANON | ISIG);
+        termios_calls().captured.c_cc[VMIN] = 1;
+        termios_calls().captured.c_cc[VTIME] = 7;
+        termios_calls().current = termios_calls().captured;
+    }
+
+    int scripted_tcgetattr(int fd, termios *value)
+    {
+        TermiosCalls &calls = termios_calls();
+        if (fd != STDIN_FILENO || calls.get_calls >= 4)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        const int error = calls.get_errors[calls.get_calls++];
+        if (error != 0)
+        {
+            errno = error;
+            return -1;
+        }
+        *value = calls.current;
+        return 0;
+    }
+
+    int scripted_tcsetattr(int fd, int action, const termios *value)
+    {
+        TermiosCalls &calls = termios_calls();
+        if (fd != STDIN_FILENO || action != TCSAFLUSH || calls.set_calls >= 8)
+        {
+            errno = EINVAL;
+            return -1;
+        }
+        const int call = calls.set_calls++;
+        calls.writes[call] = *value;
+        const int error = calls.set_errors[call];
+        if (error != 0)
+        {
+            errno = error;
+            return -1;
+        }
+        const termios previous = calls.current;
+        calls.current = *value;
+        if (call == calls.partial_set_call)
+        {
+            switch (calls.partial_field)
+            {
+            case 0:
+                calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ECHO)) |
+                                        (previous.c_lflag & static_cast<tcflag_t>(ECHO));
+                break;
+            case 1:
+                calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ICANON)) |
+                                        (previous.c_lflag & static_cast<tcflag_t>(ICANON));
+                break;
+            case 2:
+                calls.current.c_cc[VMIN] = previous.c_cc[VMIN];
+                break;
+            case 3:
+                calls.current.c_cc[VTIME] = previous.c_cc[VTIME];
+                break;
+            default:
+                break;
+            }
+        }
+        return 0;
+    }
+
+    bool termios_equal(const termios &a, const termios &b)
+    {
+        return a.c_iflag == b.c_iflag && a.c_oflag == b.c_oflag && a.c_cflag == b.c_cflag && a.c_lflag == b.c_lflag &&
+               std::memcmp(a.c_cc, b.c_cc, sizeof a.c_cc) == 0 && cfgetispeed(&a) == cfgetispeed(&b) &&
+               cfgetospeed(&a) == cfgetospeed(&b);
+    }
+} // namespace
+
+TEST(platform, posix_raw_mode_rejects_failed_capture_without_writing)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[0] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_FALSE(guard.valid());
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 1);
+    ASSERT_EQ(termios_calls().set_calls, 0);
+}
+
+TEST(platform, posix_raw_mode_rolls_back_failed_write)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[0] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(guard.valid());
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 2);
+    ASSERT_TRUE((termios_calls().writes[0].c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) == 0);
+    ASSERT_EQ(termios_calls().writes[0].c_cc[VMIN], static_cast<cc_t>(0));
+    ASSERT_EQ(termios_calls().writes[0].c_cc[VTIME], static_cast<cc_t>(0));
+    ASSERT_TRUE(termios_equal(termios_calls().writes[1], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_rolls_back_partial_write)
+{
+    for (int field = 0; field < 4; ++field)
+    {
+        reset_termios_calls();
+        termios_calls().partial_set_call = 0;
+        termios_calls().partial_field = field;
+
+        platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+        ASSERT_FALSE(platform::enable_raw_mode(&guard));
+        ASSERT_EQ(termios_calls().get_calls, 3);
+        ASSERT_EQ(termios_calls().set_calls, 2);
+        ASSERT_TRUE(termios_equal(termios_calls().writes[1], termios_calls().captured));
+        ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+        ASSERT_FALSE(guard.raw_mode_restore_pending());
+    }
+}
+
+TEST(platform, posix_raw_mode_rolls_back_failed_verification)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[1] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_FALSE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 3);
+    ASSERT_EQ(termios_calls().set_calls, 2);
+    ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_retries_partial_restore)
+{
+    reset_termios_calls();
+    termios_calls().partial_set_call = 1;
+    termios_calls().partial_field = 0;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_verification_retries_eintr)
+{
+    reset_termios_calls();
+    termios_calls().get_errors[1] = EINTR;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().get_calls, 3);
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+}
+
+TEST(platform, posix_raw_mode_restore_retries_eintr)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EINTR;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[2], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_restore_makes_final_attempt)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EIO;
+
+    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+    ASSERT_EQ(termios_calls().set_calls, 3);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[2], termios_calls().captured));
+    ASSERT_FALSE(guard.raw_mode_restore_pending());
+}
+
+TEST(platform, posix_raw_mode_keeps_failed_restore_pending)
+{
+    reset_termios_calls();
+    termios_calls().set_errors[1] = EIO;
+    termios_calls().set_errors[2] = EIO;
+
+    {
+        platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+        ASSERT_TRUE(platform::enable_raw_mode(&guard));
+        ASSERT_FALSE(platform::disable_raw_mode(&guard));
+        ASSERT_EQ(termios_calls().set_calls, 3);
+        ASSERT_TRUE(guard.raw_mode_restore_pending());
+    }
+
+    // The guard remains armed and retries after the session cleanup boundary.
+    ASSERT_EQ(termios_calls().set_calls, 4);
+    ASSERT_TRUE(termios_equal(termios_calls().writes[3], termios_calls().captured));
+}
+
 // Probe a fresh pty slave, which POSIX defines as a terminal. Master behavior
 // varies by OS, and Windows has no equivalent portable fixture.
 TEST(platform, is_tty_true_for_pty_slave)
@@ -1554,6 +1784,268 @@ namespace
         ScopedTmpFile &operator=(ScopedTmpFile &&) = delete;
     };
 } // namespace
+
+#ifndef _WIN32
+namespace
+{
+    struct ScopedPosixSession
+    {
+        pid_t pid;
+
+        explicit ScopedPosixSession(pid_t leader) : pid(leader) {}
+        ~ScopedPosixSession()
+        {
+            if (pid <= 0)
+            {
+                return;
+            }
+            kill(-pid, SIGKILL);
+            int status = 0;
+            while (waitpid(pid, &status, 0) < 0 && errno == EINTR)
+            {
+            }
+        }
+
+        ScopedPosixSession(const ScopedPosixSession &) = delete;
+        ScopedPosixSession &operator=(const ScopedPosixSession &) = delete;
+        ScopedPosixSession(ScopedPosixSession &&) = delete;
+        ScopedPosixSession &operator=(ScopedPosixSession &&) = delete;
+    };
+
+    void drain_pty_output(int fd)
+    {
+        char buffer[4096];
+        while (read(fd, buffer, sizeof buffer) > 0)
+        {
+        }
+    }
+
+    struct PtyProcessResult
+    {
+        int status;
+        int termios_restored;
+    };
+
+    bool write_pipe_value(int fd, const void *value, size_t size)
+    {
+        const auto *bytes = static_cast<const unsigned char *>(value);
+        size_t written = 0;
+        while (written < size)
+        {
+            const ssize_t result = write(fd, bytes + written, size - written);
+            if (result > 0)
+            {
+                written += static_cast<size_t>(result);
+            }
+            else if (result == 0 || errno != EINTR)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool read_pipe_value(int fd, void *value, size_t size)
+    {
+        auto *bytes = static_cast<unsigned char *>(value);
+        size_t received = 0;
+        while (received < size)
+        {
+            const ssize_t result = read(fd, bytes + received, size - received);
+            if (result > 0)
+            {
+                received += static_cast<size_t>(result);
+            }
+            else if (result == 0 || errno != EINTR)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    void verify_interactive_process_restores_posix_termios(int exit_signal)
+    {
+        static constexpr char model_data[] = "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n";
+        const std::string model_name =
+            "rasterminal_raw_mode_" + std::to_string(getpid()) + "_" + std::to_string(exit_signal) + ".obj";
+        ScopedTmpFile model(model_name.c_str(), model_data, sizeof model_data - 1);
+
+        ScopedFd master(posix_openpt(O_RDWR | O_NOCTTY));
+        ASSERT_TRUE(master.fd >= 0);
+        ASSERT_TRUE(grantpt(master.fd) == 0);
+        ASSERT_TRUE(unlockpt(master.fd) == 0);
+        const char *slave_name = ptsname(master.fd); // NOLINT(concurrency-mt-unsafe)
+        ASSERT_TRUE(slave_name != nullptr);
+        ScopedFd slave(open(slave_name, O_RDWR | O_NOCTTY));
+        ASSERT_TRUE(slave.fd >= 0);
+
+        winsize size = {};
+        size.ws_row = 24;
+        size.ws_col = 80;
+        ASSERT_TRUE(ioctl(slave.fd, TIOCSWINSZ, &size) == 0);
+
+        termios configured = {};
+        ASSERT_TRUE(tcgetattr(slave.fd, &configured) == 0);
+        configured.c_lflag |= static_cast<tcflag_t>(ECHO | ICANON);
+        configured.c_cc[VMIN] = 1;
+        configured.c_cc[VTIME] = 0;
+        ASSERT_TRUE(tcsetattr(slave.fd, TCSANOW, &configured) == 0);
+        termios baseline = {};
+        ASSERT_TRUE(tcgetattr(slave.fd, &baseline) == 0);
+
+        int app_pid_fds[2] = { -1, -1 };
+        int result_fds[2] = { -1, -1 };
+        ASSERT_TRUE(pipe(app_pid_fds) == 0);
+        ScopedFd app_pid_read(app_pid_fds[0]);
+        ScopedFd app_pid_write(app_pid_fds[1]);
+        ASSERT_TRUE(pipe(result_fds) == 0);
+        ScopedFd result_read(result_fds[0]);
+        ScopedFd result_write(result_fds[1]);
+
+        const pid_t supervisor_pid = fork();
+        ASSERT_TRUE(supervisor_pid >= 0);
+        if (supervisor_pid == 0)
+        {
+            close(app_pid_read.fd);
+            close(result_read.fd);
+            if (setsid() < 0 || ioctl(slave.fd, TIOCSCTTY, 0) < 0 || dup2(slave.fd, STDIN_FILENO) < 0 ||
+                dup2(slave.fd, STDOUT_FILENO) < 0 || dup2(slave.fd, STDERR_FILENO) < 0)
+            {
+                _exit(120);
+            }
+            close(master.fd);
+            if (slave.fd > STDERR_FILENO)
+            {
+                close(slave.fd);
+            }
+
+            const pid_t app_pid = fork();
+            if (app_pid < 0)
+            {
+                _exit(121);
+            }
+            if (app_pid == 0)
+            {
+                close(app_pid_write.fd);
+                close(result_write.fd);
+                // The test runner has no live worker threads when it forks this child.
+                if (setenv("TERM", "xterm-256color", 1) != 0 || // NOLINT(concurrency-mt-unsafe)
+                    unsetenv("TMUX") != 0 ||                    // NOLINT(concurrency-mt-unsafe)
+                    unsetenv("STY") != 0)                       // NOLINT(concurrency-mt-unsafe)
+                {
+                    _exit(122);
+                }
+                execl(
+                    RASTERMINAL_TEST_BINARY, "rasterminal", "--graphics=blocks", "--color=256", "--no-ao", "--no-hud",
+                    "--no-spin", "--no-input", "--fps=30", "--threads=1", model.path.c_str(),
+                    static_cast<char *>(nullptr)
+                );
+                _exit(123);
+            }
+
+            if (!write_pipe_value(app_pid_write.fd, &app_pid, sizeof app_pid))
+            {
+                _exit(124);
+            }
+            close(app_pid_write.fd);
+
+            PtyProcessResult process_result = {};
+            pid_t waited = 0;
+            while ((waited = waitpid(app_pid, &process_result.status, 0)) < 0 && errno == EINTR)
+            {
+            }
+            termios restored = {};
+            process_result.termios_restored =
+                waited == app_pid && tcgetattr(STDIN_FILENO, &restored) == 0 && termios_equal(restored, baseline);
+            if (!write_pipe_value(result_write.fd, &process_result, sizeof process_result))
+            {
+                _exit(125);
+            }
+            _exit(0);
+        }
+
+        test_close(app_pid_write.fd);
+        app_pid_write.fd = -1;
+        test_close(result_write.fd);
+        result_write.fd = -1;
+
+        pid_t app_pid = -1;
+        ASSERT_TRUE(read_pipe_value(app_pid_read.fd, &app_pid, sizeof app_pid));
+        ASSERT_TRUE(app_pid > 0);
+
+        ScopedPosixSession session(supervisor_pid);
+        const int flags = fcntl(master.fd, F_GETFL, 0);
+        ASSERT_TRUE(flags >= 0);
+        ASSERT_TRUE(fcntl(master.fd, F_SETFL, flags | O_NONBLOCK) == 0);
+
+        bool saw_raw_mode = false;
+        bool requested_exit = false;
+        bool exited = false;
+        int status = 0;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (std::chrono::steady_clock::now() < deadline)
+        {
+            drain_pty_output(master.fd);
+            termios active = {};
+            if (tcgetattr(slave.fd, &active) == 0 && (active.c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) == 0 &&
+                active.c_cc[VMIN] == 0 && active.c_cc[VTIME] == 0)
+            {
+                saw_raw_mode = true;
+            }
+            if (saw_raw_mode && !requested_exit)
+            {
+                if (exit_signal == 0)
+                {
+                    const char quit = 'Q';
+                    requested_exit = write(master.fd, &quit, 1) == 1;
+                }
+                else
+                {
+                    requested_exit = kill(app_pid, exit_signal) == 0;
+                }
+            }
+
+            const pid_t waited = waitpid(supervisor_pid, &status, WNOHANG);
+            if (waited == supervisor_pid)
+            {
+                session.pid = -1;
+                exited = true;
+                break;
+            }
+            ASSERT_TRUE(waited == 0 || (waited < 0 && errno == EINTR));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        ASSERT_TRUE(saw_raw_mode);
+        ASSERT_TRUE(requested_exit);
+        ASSERT_TRUE(exited);
+        ASSERT_TRUE(WIFEXITED(status));
+        ASSERT_EQ(WEXITSTATUS(status), 0);
+
+        PtyProcessResult process_result = {};
+        ASSERT_TRUE(read_pipe_value(result_read.fd, &process_result, sizeof process_result));
+        ASSERT_TRUE(WIFEXITED(process_result.status));
+        ASSERT_EQ(WEXITSTATUS(process_result.status), 0);
+        ASSERT_TRUE(process_result.termios_restored != 0);
+    }
+} // namespace
+
+TEST(platform, interactive_process_restores_posix_termios_after_quit)
+{
+    verify_interactive_process_restores_posix_termios(0);
+}
+
+TEST(platform, interactive_process_restores_posix_termios_after_sigint)
+{
+    verify_interactive_process_restores_posix_termios(SIGINT);
+}
+
+TEST(platform, interactive_process_restores_posix_termios_after_sigterm)
+{
+    verify_interactive_process_restores_posix_termios(SIGTERM);
+}
+#endif
 
 TEST(platform, file_size_reports_exact_byte_count)
 {

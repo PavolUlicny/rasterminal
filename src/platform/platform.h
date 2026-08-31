@@ -857,17 +857,6 @@ namespace platform
         return classify_term_color(colorterm, term, unset_default, under_tmux, in_screen);
     }
 
-#ifndef _WIN32
-    namespace detail
-    {
-        inline termios &saved_termios()
-        {
-            static termios t;
-            return t;
-        }
-    } // namespace detail
-#endif
-
 #ifdef _WIN32
     namespace detail
     {
@@ -878,10 +867,16 @@ namespace platform
 
         inline bool discard_pending_standard_input() noexcept;
     } // namespace detail
+#else
+    namespace detail
+    {
+        using TcgetattrFn = int (*)(int, termios *);
+        using TcsetattrFn = int (*)(int, int, const termios *);
+    } // namespace detail
 #endif
 
-    // Snapshot Windows console buffer modes and the process output code page immediately
-    // before terminal setup. Logoff and shutdown events still bypass orderly cleanup.
+    // Snapshot terminal state immediately before setup. Windows also captures the
+    // process output code page. Logoff and shutdown events still bypass orderly cleanup.
     class ConsoleStateGuard
     {
       public:
@@ -889,6 +884,8 @@ namespace platform
         {
 #ifdef _WIN32
             capture(GetConsoleMode, GetConsoleOutputCP);
+#else
+            capture();
 #endif
         }
 
@@ -902,6 +899,12 @@ namespace platform
             : m_set_mode(set_mode), m_discard_pending_input(discard_pending_input)
         {
             capture(get_mode, get_output_cp);
+        }
+#else
+        ConsoleStateGuard(detail::TcgetattrFn get_termios, detail::TcsetattrFn set_termios) noexcept
+            : m_get_termios(get_termios), m_set_termios(set_termios)
+        {
+            capture();
         }
 #endif
 
@@ -929,6 +932,11 @@ namespace platform
             }
             SetConsoleMode(m_output, m_output_mode);
             SetConsoleOutputCP(m_output_cp);
+#else
+            if (m_restore_pending && !restore_raw_mode())
+            {
+                std::fputs("rasterminal: failed to restore terminal input mode\n", stderr);
+            }
 #endif
         }
 
@@ -960,6 +968,58 @@ namespace platform
             m_input_cleanup_pending = true;
             return retry_input_cleanup();
         }
+#else
+        bool enable_raw_mode() noexcept
+        {
+            if (!m_snapshot_complete)
+            {
+                return false;
+            }
+
+            termios raw = m_input_mode;
+            // Disable echo and canonical input. VMIN=0 and VTIME=0 make an
+            // idle read return immediately without changing the file status flags.
+            raw.c_lflag &= ~static_cast<tcflag_t>(ECHO | ICANON);
+            raw.c_cc[VMIN] = 0;
+            raw.c_cc[VTIME] = 0;
+
+            // tcsetattr may alter some settings before reporting failure. Keep
+            // restoration armed until the captured state has been written back.
+            m_restore_pending = true;
+            if (m_set_termios(STDIN_FILENO, TCSAFLUSH, &raw) == 0)
+            {
+                termios applied = {};
+                if (read_input_mode(applied) && input_settings_match(applied, raw))
+                {
+                    return true;
+                }
+            }
+            restore_raw_mode_once();
+            return false;
+        }
+
+        bool restore_raw_mode() noexcept
+        {
+            if (!m_snapshot_complete)
+            {
+                return false;
+            }
+            if (!m_restore_pending)
+            {
+                return true;
+            }
+            if (restore_raw_mode_once())
+            {
+                return true;
+            }
+            // Escape cleanup has already run when normal teardown reaches this
+            // method. Give a transient non-EINTR failure one final attempt.
+            return restore_raw_mode_once();
+        }
+
+        // Test hook for restoration fault injection.
+        // cppcheck-suppress unusedFunction
+        [[nodiscard]] bool raw_mode_restore_pending() const noexcept { return m_restore_pending; }
 #endif
 
         ConsoleStateGuard(const ConsoleStateGuard &) = delete;
@@ -1006,8 +1066,52 @@ namespace platform
         UINT m_output_cp = 0;
         detail::SetConsoleModeFn m_set_mode = SetConsoleMode;
         detail::DiscardPendingInputFn m_discard_pending_input = detail::discard_pending_standard_input;
+#else
+        bool read_input_mode(termios &mode) noexcept
+        {
+            int result = m_get_termios(STDIN_FILENO, &mode);
+            while (result != 0 && errno == EINTR)
+            {
+                result = m_get_termios(STDIN_FILENO, &mode);
+            }
+            return result == 0;
+        }
+
+        void capture() noexcept { m_snapshot_complete = read_input_mode(m_input_mode); }
+
+        static bool input_settings_match(const termios &actual, const termios &expected) noexcept
+        {
+            return (actual.c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) ==
+                       (expected.c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) &&
+                   actual.c_cc[VMIN] == expected.c_cc[VMIN] && actual.c_cc[VTIME] == expected.c_cc[VTIME];
+        }
+
+        bool restore_raw_mode_once() noexcept
+        {
+            int result = m_set_termios(STDIN_FILENO, TCSAFLUSH, &m_input_mode);
+            while (result != 0 && errno == EINTR)
+            {
+                result = m_set_termios(STDIN_FILENO, TCSAFLUSH, &m_input_mode);
+            }
+            if (result != 0)
+            {
+                return false;
+            }
+            termios restored = {};
+            if (!read_input_mode(restored) || !input_settings_match(restored, m_input_mode))
+            {
+                return false;
+            }
+            m_restore_pending = false;
+            return true;
+        }
+
+        termios m_input_mode = {};
+        bool m_restore_pending = false;
+        detail::TcgetattrFn m_get_termios = tcgetattr;
+        detail::TcsetattrFn m_set_termios = tcsetattr;
 #endif
-        bool m_snapshot_complete = true;
+        bool m_snapshot_complete = false;
     };
 
 #ifdef _WIN32
@@ -1123,9 +1227,10 @@ namespace platform
 #endif
     }
 
-    inline void enable_raw_mode()
+    inline bool enable_raw_mode(ConsoleStateGuard *console_state = nullptr)
     {
 #ifdef _WIN32
+        (void)console_state;
         init_console_output();
         HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
         DWORD mode = 0;
@@ -1138,18 +1243,10 @@ namespace platform
             );
         }
         detail::arm_console_input_wake();
+        return true;
 #else
-        termios raw = {};
-        tcgetattr(STDIN_FILENO, &raw);
-        detail::saved_termios() = raw;
-
-        // Disable echo and canonical (line-buffered) mode.
-        // VMIN=0 / VTIME=0: read() returns immediately with 0 bytes if nothing available.
-        raw.c_lflag &= ~static_cast<tcflag_t>(ECHO | ICANON);
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 0;
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
         // Do not set O_NONBLOCK: tty stdio fds may share an open description.
+        return console_state != nullptr && console_state->enable_raw_mode();
 #endif
     }
 
@@ -1251,8 +1348,7 @@ namespace platform
         }
         return detail::discard_pending_standard_input();
 #else
-        (void)console_state;
-        return tcsetattr(STDIN_FILENO, TCSAFLUSH, &detail::saved_termios()) == 0;
+        return console_state != nullptr && console_state->restore_raw_mode();
 #endif
     }
 
