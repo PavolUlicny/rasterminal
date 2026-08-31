@@ -24,6 +24,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -1262,6 +1263,22 @@ TEST(platform, console_cleanup_handles_control_events)
 #ifndef _WIN32
 namespace
 {
+    enum class PartialTermiosField : std::uint8_t
+    {
+        None,
+        Echo,
+        Canonical,
+        MinimumBytes,
+        Timeout,
+        InputFlags,
+        OutputFlags,
+        ControlFlags,
+        SignalFlag,
+        ControlCharacter,
+        InputSpeed,
+        OutputSpeed,
+    };
+
     struct TermiosCalls
     {
         termios captured = {};
@@ -1270,7 +1287,7 @@ namespace
         int get_errors[4] = {};
         int set_errors[8] = {};
         int partial_set_call = -1;
-        int partial_field = -1;
+        PartialTermiosField partial_field = PartialTermiosField::None;
         int get_calls = 0;
         int set_calls = 0;
     };
@@ -1330,25 +1347,80 @@ namespace
         {
             switch (calls.partial_field)
             {
-            case 0:
+            case PartialTermiosField::Echo:
                 calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ECHO)) |
                                         (previous.c_lflag & static_cast<tcflag_t>(ECHO));
                 break;
-            case 1:
+            case PartialTermiosField::Canonical:
                 calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ICANON)) |
                                         (previous.c_lflag & static_cast<tcflag_t>(ICANON));
                 break;
-            case 2:
+            case PartialTermiosField::MinimumBytes:
                 calls.current.c_cc[VMIN] = previous.c_cc[VMIN];
                 break;
-            case 3:
+            case PartialTermiosField::Timeout:
                 calls.current.c_cc[VTIME] = previous.c_cc[VTIME];
                 break;
-            default:
+            case PartialTermiosField::InputFlags:
+                calls.current.c_iflag = previous.c_iflag;
+                break;
+            case PartialTermiosField::OutputFlags:
+                calls.current.c_oflag = previous.c_oflag;
+                break;
+            case PartialTermiosField::ControlFlags:
+                calls.current.c_cflag = previous.c_cflag;
+                break;
+            case PartialTermiosField::SignalFlag:
+                calls.current.c_lflag = (calls.current.c_lflag & ~static_cast<tcflag_t>(ISIG)) |
+                                        (previous.c_lflag & static_cast<tcflag_t>(ISIG));
+                break;
+            case PartialTermiosField::ControlCharacter:
+                calls.current.c_cc[VINTR] = previous.c_cc[VINTR];
+                break;
+            case PartialTermiosField::InputSpeed:
+                cfsetispeed(&calls.current, cfgetispeed(&previous));
+                break;
+            case PartialTermiosField::OutputSpeed:
+                cfsetospeed(&calls.current, cfgetospeed(&previous));
+                break;
+            case PartialTermiosField::None:
                 break;
             }
         }
         return 0;
+    }
+
+    bool alter_termios_field(termios &mode, PartialTermiosField field)
+    {
+        switch (field)
+        {
+        case PartialTermiosField::InputFlags:
+            mode.c_iflag ^= IXON;
+            return true;
+        case PartialTermiosField::OutputFlags:
+            mode.c_oflag ^= OPOST;
+            return true;
+        case PartialTermiosField::ControlFlags:
+            mode.c_cflag ^= CLOCAL;
+            return true;
+        case PartialTermiosField::SignalFlag:
+            mode.c_lflag ^= ISIG;
+            return true;
+        case PartialTermiosField::ControlCharacter:
+            mode.c_cc[VINTR] = mode.c_cc[VINTR] == 0 ? static_cast<cc_t>(1) : static_cast<cc_t>(0);
+            return true;
+        case PartialTermiosField::InputSpeed:
+            return cfsetispeed(&mode, cfgetispeed(&mode) == B9600 ? B4800 : B9600) == 0;
+        case PartialTermiosField::OutputSpeed:
+            return cfsetospeed(&mode, cfgetospeed(&mode) == B9600 ? B4800 : B9600) == 0;
+        case PartialTermiosField::None:
+        case PartialTermiosField::Echo:
+        case PartialTermiosField::Canonical:
+        case PartialTermiosField::MinimumBytes:
+        case PartialTermiosField::Timeout:
+            return true;
+        }
+        return false;
     }
 
     bool termios_equal(const termios &a, const termios &b)
@@ -1389,7 +1461,13 @@ TEST(platform, posix_raw_mode_rolls_back_failed_write)
 
 TEST(platform, posix_raw_mode_rolls_back_partial_write)
 {
-    for (int field = 0; field < 4; ++field)
+    static constexpr PartialTermiosField fields[] = {
+        PartialTermiosField::Echo,
+        PartialTermiosField::Canonical,
+        PartialTermiosField::MinimumBytes,
+        PartialTermiosField::Timeout,
+    };
+    for (const PartialTermiosField field : fields)
     {
         reset_termios_calls();
         termios_calls().partial_set_call = 0;
@@ -1420,16 +1498,27 @@ TEST(platform, posix_raw_mode_rolls_back_failed_verification)
 
 TEST(platform, posix_raw_mode_retries_partial_restore)
 {
-    reset_termios_calls();
-    termios_calls().partial_set_call = 1;
-    termios_calls().partial_field = 0;
+    static constexpr PartialTermiosField fields[] = {
+        PartialTermiosField::Echo,         PartialTermiosField::Canonical,   PartialTermiosField::MinimumBytes,
+        PartialTermiosField::Timeout,      PartialTermiosField::InputFlags,  PartialTermiosField::OutputFlags,
+        PartialTermiosField::ControlFlags, PartialTermiosField::SignalFlag,  PartialTermiosField::ControlCharacter,
+        PartialTermiosField::InputSpeed,   PartialTermiosField::OutputSpeed,
+    };
+    for (const PartialTermiosField field : fields)
+    {
+        reset_termios_calls();
 
-    platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
-    ASSERT_TRUE(platform::enable_raw_mode(&guard));
-    ASSERT_TRUE(platform::disable_raw_mode(&guard));
-    ASSERT_EQ(termios_calls().set_calls, 3);
-    ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
-    ASSERT_FALSE(guard.raw_mode_restore_pending());
+        platform::ConsoleStateGuard guard(scripted_tcgetattr, scripted_tcsetattr);
+        ASSERT_TRUE(platform::enable_raw_mode(&guard));
+        ASSERT_TRUE(alter_termios_field(termios_calls().current, field));
+        termios_calls().partial_set_call = 1;
+        termios_calls().partial_field = field;
+
+        ASSERT_TRUE(platform::disable_raw_mode(&guard));
+        ASSERT_EQ(termios_calls().set_calls, 3);
+        ASSERT_TRUE(termios_equal(termios_calls().current, termios_calls().captured));
+        ASSERT_FALSE(guard.raw_mode_restore_pending());
+    }
 }
 
 TEST(platform, posix_raw_mode_verification_retries_eintr)
@@ -1812,11 +1901,13 @@ namespace
         ScopedPosixSession &operator=(ScopedPosixSession &&) = delete;
     };
 
-    void drain_pty_output(int fd)
+    void drain_pty_output(int fd, std::string &output)
     {
         char buffer[4096];
-        while (read(fd, buffer, sizeof buffer) > 0)
+        ssize_t received = 0;
+        while ((received = read(fd, buffer, sizeof buffer)) > 0)
         {
+            output.append(buffer, static_cast<size_t>(received));
         }
     }
 
@@ -1864,7 +1955,7 @@ namespace
         return true;
     }
 
-    void verify_interactive_process_restores_posix_termios(int exit_signal)
+    void verify_interactive_process_cleans_up_terminal(int exit_signal)
     {
         static constexpr char model_data[] = "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n";
         const std::string model_name =
@@ -1896,12 +1987,16 @@ namespace
 
         int app_pid_fds[2] = { -1, -1 };
         int result_fds[2] = { -1, -1 };
+        int release_fds[2] = { -1, -1 };
         ASSERT_TRUE(pipe(app_pid_fds) == 0);
         ScopedFd app_pid_read(app_pid_fds[0]);
         ScopedFd app_pid_write(app_pid_fds[1]);
         ASSERT_TRUE(pipe(result_fds) == 0);
         ScopedFd result_read(result_fds[0]);
         ScopedFd result_write(result_fds[1]);
+        ASSERT_TRUE(pipe(release_fds) == 0);
+        ScopedFd release_read(release_fds[0]);
+        ScopedFd release_write(release_fds[1]);
 
         const pid_t supervisor_pid = fork();
         ASSERT_TRUE(supervisor_pid >= 0);
@@ -1909,6 +2004,7 @@ namespace
         {
             close(app_pid_read.fd);
             close(result_read.fd);
+            close(release_write.fd);
             if (setsid() < 0 || ioctl(slave.fd, TIOCSCTTY, 0) < 0 || dup2(slave.fd, STDIN_FILENO) < 0 ||
                 dup2(slave.fd, STDOUT_FILENO) < 0 || dup2(slave.fd, STDERR_FILENO) < 0)
             {
@@ -1929,6 +2025,7 @@ namespace
             {
                 close(app_pid_write.fd);
                 close(result_write.fd);
+                close(release_read.fd);
                 // The test runner has no live worker threads when it forks this child.
                 if (setenv("TERM", "xterm-256color", 1) != 0 || // NOLINT(concurrency-mt-unsafe)
                     unsetenv("TMUX") != 0 ||                    // NOLINT(concurrency-mt-unsafe)
@@ -1962,6 +2059,11 @@ namespace
             {
                 _exit(125);
             }
+            unsigned char release = 0;
+            if (!read_pipe_value(release_read.fd, &release, sizeof release))
+            {
+                _exit(126);
+            }
             _exit(0);
         }
 
@@ -1969,6 +2071,8 @@ namespace
         app_pid_write.fd = -1;
         test_close(result_write.fd);
         result_write.fd = -1;
+        test_close(release_read.fd);
+        release_read.fd = -1;
 
         pid_t app_pid = -1;
         ASSERT_TRUE(read_pipe_value(app_pid_read.fd, &app_pid, sizeof app_pid));
@@ -1981,20 +2085,28 @@ namespace
 
         bool saw_raw_mode = false;
         bool requested_exit = false;
+        bool received_result = false;
         bool exited = false;
+        size_t cleanup_offset = 0;
+        std::string output;
+        PtyProcessResult process_result = {};
         int status = 0;
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (std::chrono::steady_clock::now() < deadline)
         {
-            drain_pty_output(master.fd);
+            drain_pty_output(master.fd, output);
             termios active = {};
             if (tcgetattr(slave.fd, &active) == 0 && (active.c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) == 0 &&
                 active.c_cc[VMIN] == 0 && active.c_cc[VTIME] == 0)
             {
                 saw_raw_mode = true;
             }
-            if (saw_raw_mode && !requested_exit)
+            const bool session_ready = output.find("\033[?1006h\033[?1002h") != std::string::npos &&
+                                       output.find("\033[?1049h") != std::string::npos &&
+                                       output.find("\033[?25l") != std::string::npos;
+            if (saw_raw_mode && session_ready && !requested_exit)
             {
+                cleanup_offset = output.size();
                 if (exit_signal == 0)
                 {
                     const char quit = 'Q';
@@ -2006,6 +2118,31 @@ namespace
                 }
             }
 
+            pollfd result_poll = { result_read.fd, POLLIN, 0 };
+            const int poll_result = poll(&result_poll, 1, 0);
+            if (poll_result > 0)
+            {
+                ASSERT_TRUE(read_pipe_value(result_read.fd, &process_result, sizeof process_result));
+                received_result = true;
+                break;
+            }
+            ASSERT_TRUE(poll_result == 0 || (poll_result < 0 && errno == EINTR));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        ASSERT_TRUE(saw_raw_mode);
+        ASSERT_TRUE(requested_exit);
+        ASSERT_TRUE(received_result);
+
+        drain_pty_output(master.fd, output);
+        const unsigned char release = 1;
+        ASSERT_TRUE(write_pipe_value(release_write.fd, &release, sizeof release));
+        test_close(release_write.fd);
+        release_write.fd = -1;
+
+        const auto exit_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (std::chrono::steady_clock::now() < exit_deadline)
+        {
             const pid_t waited = waitpid(supervisor_pid, &status, WNOHANG);
             if (waited == supervisor_pid)
             {
@@ -2017,33 +2154,186 @@ namespace
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
         }
 
-        ASSERT_TRUE(saw_raw_mode);
-        ASSERT_TRUE(requested_exit);
         ASSERT_TRUE(exited);
         ASSERT_TRUE(WIFEXITED(status));
         ASSERT_EQ(WEXITSTATUS(status), 0);
 
-        PtyProcessResult process_result = {};
-        ASSERT_TRUE(read_pipe_value(result_read.fd, &process_result, sizeof process_result));
-        ASSERT_TRUE(WIFEXITED(process_result.status));
-        ASSERT_EQ(WEXITSTATUS(process_result.status), 0);
+        if (exit_signal == 0)
+        {
+            ASSERT_TRUE(WIFEXITED(process_result.status));
+            ASSERT_EQ(WEXITSTATUS(process_result.status), 0);
+        }
+        else
+        {
+            ASSERT_TRUE(WIFSIGNALED(process_result.status));
+            ASSERT_EQ(WTERMSIG(process_result.status), exit_signal);
+        }
         ASSERT_TRUE(process_result.termios_restored != 0);
+
+        const std::string cleanup = output.substr(cleanup_offset);
+        ASSERT_TRUE(cleanup.find("\033[?25h\033[0m\033[?1049l") != std::string::npos);
+        ASSERT_TRUE(cleanup.find("\033[?1002l\033[?1006l") != std::string::npos);
     }
 } // namespace
 
-TEST(platform, interactive_process_restores_posix_termios_after_quit)
+TEST(platform, finish_termination_delivers_signal_pending_at_cleanup_boundary)
 {
-    verify_interactive_process_restores_posix_termios(0);
+    const pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+    {
+        sigset_t signal = {};
+        sigset_t signals = {};
+        sigset_t previous_mask = {};
+        if (sigemptyset(&signal) != 0 || sigaddset(&signal, SIGTERM) != 0 ||
+            pthread_sigmask(SIG_UNBLOCK, &signal, nullptr) != 0 || !platform::install_interrupt_handler() ||
+            !platform::detail::termination_signal_set(signals) ||
+            pthread_sigmask(SIG_BLOCK, &signals, &previous_mask) != 0 || std::raise(SIGTERM) != 0)
+        {
+            _exit(120);
+        }
+        _exit(platform::detail::finish_termination_with_signals_blocked(
+            0, previous_mask, platform::detail::termination_handler_mask
+        ));
+    }
+
+    int status = 0;
+    pid_t waited = 0;
+    while ((waited = waitpid(child, &status, 0)) < 0 && errno == EINTR)
+    {
+    }
+    ASSERT_EQ(waited, child);
+    ASSERT_TRUE(WIFSIGNALED(status));
+    ASSERT_EQ(WTERMSIG(status), SIGTERM);
 }
 
-TEST(platform, interactive_process_restores_posix_termios_after_sigint)
+TEST(platform, finish_termination_preserves_caller_signal_mask)
 {
-    verify_interactive_process_restores_posix_termios(SIGINT);
+    const pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+    {
+        sigset_t signal = {};
+        if (sigemptyset(&signal) != 0 || sigaddset(&signal, SIGTERM) != 0 ||
+            pthread_sigmask(SIG_BLOCK, &signal, nullptr) != 0 || !platform::install_interrupt_handler() ||
+            std::raise(SIGTERM) != 0)
+        {
+            _exit(120);
+        }
+
+        platform::detail::interrupt_flag = 0;
+        if (platform::finish_termination(17) != 17)
+        {
+            _exit(121);
+        }
+        sigset_t restored_mask = {};
+        if (pthread_sigmask(SIG_BLOCK, nullptr, &restored_mask) != 0 || sigismember(&restored_mask, SIGTERM) != 1)
+        {
+            _exit(122);
+        }
+        _exit(0);
+    }
+
+    int status = 0;
+    pid_t waited = 0;
+    while ((waited = waitpid(child, &status, 0)) < 0 && errno == EINTR)
+    {
+    }
+    ASSERT_EQ(waited, child);
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(WEXITSTATUS(status), 0);
 }
 
-TEST(platform, interactive_process_restores_posix_termios_after_sigterm)
+TEST(platform, finish_termination_preserves_inherited_ignored_signal)
 {
-    verify_interactive_process_restores_posix_termios(SIGTERM);
+    const pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+    {
+        if (std::signal(SIGHUP, SIG_IGN) == SIG_ERR || !platform::install_interrupt_handler())
+        {
+            _exit(120);
+        }
+        struct sigaction disposition = {};
+        if (sigaction(SIGHUP, nullptr, &disposition) != 0 || disposition.sa_handler != SIG_IGN)
+        {
+            _exit(121);
+        }
+        if (platform::finish_termination(17) != 17)
+        {
+            _exit(122);
+        }
+
+        if (sigaction(SIGHUP, nullptr, &disposition) != 0 || disposition.sa_handler != SIG_IGN)
+        {
+            _exit(123);
+        }
+        _exit(0);
+    }
+
+    int status = 0;
+    pid_t waited = 0;
+    while ((waited = waitpid(child, &status, 0)) < 0 && errno == EINTR)
+    {
+    }
+    ASSERT_EQ(waited, child);
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(platform, finish_termination_delivers_recorded_signal_before_later_pending_signal)
+{
+    const pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+    {
+        sigset_t signals = {};
+        sigset_t previous_mask = {};
+        if (!platform::detail::termination_signal_set(signals) ||
+            pthread_sigmask(SIG_UNBLOCK, &signals, nullptr) != 0 || !platform::install_interrupt_handler() ||
+            std::raise(SIGTERM) != 0 || pthread_sigmask(SIG_BLOCK, &signals, &previous_mask) != 0 ||
+            std::raise(SIGINT) != 0)
+        {
+            _exit(120);
+        }
+        _exit(platform::detail::finish_termination_with_signals_blocked(
+            0, previous_mask, platform::detail::termination_handler_mask
+        ));
+    }
+
+    int status = 0;
+    pid_t waited = 0;
+    while ((waited = waitpid(child, &status, 0)) < 0 && errno == EINTR)
+    {
+    }
+    ASSERT_EQ(waited, child);
+    ASSERT_TRUE(WIFSIGNALED(status));
+    ASSERT_EQ(WTERMSIG(status), SIGTERM);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_quit)
+{
+    verify_interactive_process_cleans_up_terminal(0);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_sigint)
+{
+    verify_interactive_process_cleans_up_terminal(SIGINT);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_sigterm)
+{
+    verify_interactive_process_cleans_up_terminal(SIGTERM);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_sigquit)
+{
+    verify_interactive_process_cleans_up_terminal(SIGQUIT);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_sighup)
+{
+    verify_interactive_process_cleans_up_terminal(SIGHUP);
 }
 #endif
 
