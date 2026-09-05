@@ -5,6 +5,7 @@
 #include "src/terminal/kitty.h"    // the capability query escape, sent by query_term_graphics
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <climits>
 #include <csignal>
@@ -16,6 +17,7 @@
 
 #ifdef _WIN32
 #include <atomic>
+#include <thread>
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -26,7 +28,7 @@
 #undef near
 #undef far
 #else
-#include <cerrno>
+#include <ctime>
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/ioctl.h>
@@ -47,6 +49,10 @@ namespace platform
 #endif
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): shared by the control handler and main
         inline InterruptFlag interrupt_flag = {};
+#ifndef _WIN32
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): main-thread signal requests
+        inline volatile std::sig_atomic_t suspend_flag = 0;
+#endif
     } // namespace detail
 
     [[nodiscard]] inline bool interrupt_requested() noexcept
@@ -56,6 +62,224 @@ namespace platform
 #else
         return detail::interrupt_flag != 0;
 #endif
+    }
+
+    [[nodiscard]] inline bool suspend_requested() noexcept
+    {
+#ifdef _WIN32
+        return false;
+#else
+        return detail::suspend_flag != 0;
+#endif
+    }
+
+    [[nodiscard]] inline bool control_requested() noexcept
+    {
+        return interrupt_requested() || suspend_requested();
+    }
+
+    namespace detail
+    {
+        using WriteTerminalFn = int64_t (*)(const char *, size_t);
+
+        inline int64_t write_terminal_bytes(const char *data, size_t size) noexcept
+        {
+            const size_t count = std::min(size, static_cast<size_t>(INT_MAX));
+#ifdef _WIN32
+            return _write(_fileno(stdout), data, static_cast<unsigned>(count));
+#else
+            return write(STDOUT_FILENO, data, count);
+#endif
+        }
+#ifndef _WIN32
+        inline bool set_output_flags(int flags) noexcept
+        {
+            int result = fcntl(STDOUT_FILENO, F_SETFL, flags);
+            while (result < 0 && errno == EINTR)
+            {
+                result = fcntl(STDOUT_FILENO, F_SETFL, flags);
+            }
+            return result == 0;
+        }
+
+        // stdout may share its open-file description with the shell. The caller
+        // must restore these flags before stopping or handing the terminal back.
+        inline int make_output_nonblocking() noexcept
+        {
+            int flags = fcntl(STDOUT_FILENO, F_GETFL, 0);
+            while (flags < 0 && errno == EINTR)
+            {
+                flags = fcntl(STDOUT_FILENO, F_GETFL, 0);
+            }
+            if (flags < 0 || !set_output_flags(static_cast<int>(static_cast<unsigned>(flags) | O_NONBLOCK)))
+            {
+                return -1;
+            }
+            return flags;
+        }
+#endif
+    } // namespace detail
+
+    // Flush earlier stdio output before calling. Preserve offsets across EINTR
+    // and report cancellation separately because SIGCONT can clear the request.
+    inline bool write_terminal(
+        const char *data,
+        size_t size,
+        bool cancel_on_control = false,
+        detail::WriteTerminalFn write_bytes = detail::write_terminal_bytes,
+        bool *canceled = nullptr
+    ) noexcept
+    {
+        if (canceled != nullptr)
+        {
+            *canceled = false;
+        }
+#ifndef _WIN32
+        int saved_flags = -1;
+        if (cancel_on_control)
+        {
+            // A signal can arrive between the request check and write. Keep the
+            // syscall nonblocking and bound the wait before checking again.
+            saved_flags = detail::make_output_nonblocking();
+            if (saved_flags < 0)
+            {
+                return false;
+            }
+        }
+#endif
+        size_t offset = 0;
+        while (offset < size)
+        {
+            if (cancel_on_control && control_requested())
+            {
+                if (canceled != nullptr)
+                {
+                    *canceled = true;
+                }
+                break;
+            }
+            const int64_t written = write_bytes(data + offset, size - offset);
+            if (written > 0)
+            {
+                offset += static_cast<size_t>(written);
+            }
+#ifndef _WIN32
+            else if (written < 0 && errno == EAGAIN && cancel_on_control)
+            {
+                pollfd output = { STDOUT_FILENO, POLLOUT, 0 };
+                const int ready = poll(&output, 1, 50);
+                if ((ready < 0 && errno != EINTR) ||
+                    (ready > 0 && (static_cast<unsigned>(output.revents) &
+                                   static_cast<unsigned>(POLLERR | POLLHUP | POLLNVAL)) != 0))
+                {
+                    break;
+                }
+            }
+#endif
+            else if (written == 0 || errno != EINTR)
+            {
+                break;
+            }
+        }
+#ifndef _WIN32
+        if (saved_flags >= 0 && !detail::set_output_flags(saved_flags))
+        {
+            if (canceled != nullptr)
+            {
+                *canceled = false;
+            }
+            return false;
+        }
+#endif
+        return offset == size;
+    }
+
+    inline bool write_terminal(const char *text) noexcept
+    {
+        return write_terminal(text, std::strlen(text));
+    }
+
+    namespace detail
+    {
+#ifndef _WIN32
+        // Cleanup may run after foreground ownership changes. Termios writes can
+        // send SIGTTOU even without TOSTOP, so protect both input and output release.
+        template <typename Operation> inline bool with_sigttou_blocked(Operation operation) noexcept
+        {
+            sigset_t signals = {};
+            sigset_t previous = {};
+            if (sigemptyset(&signals) != 0 || sigaddset(&signals, SIGTTOU) != 0 ||
+                pthread_sigmask(SIG_BLOCK, &signals, &previous) != 0)
+            {
+                return false;
+            }
+            const bool completed = operation();
+            const bool restored = pthread_sigmask(SIG_SETMASK, &previous, nullptr) == 0;
+            return completed && restored;
+        }
+
+        inline bool write_bounded_output(const char *text) noexcept
+        {
+            const int saved_flags = detail::make_output_nonblocking();
+            if (saved_flags < 0)
+            {
+                return false;
+            }
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+            const size_t size = std::strlen(text);
+            size_t offset = 0;
+            while (offset < size && std::chrono::steady_clock::now() < deadline)
+            {
+                const ssize_t written = write(STDOUT_FILENO, text + offset, size - offset);
+                if (written > 0)
+                {
+                    offset += static_cast<size_t>(written);
+                }
+                else if (written < 0 && errno == EAGAIN)
+                {
+                    const auto remaining = deadline - std::chrono::steady_clock::now();
+                    if (remaining <= std::chrono::steady_clock::duration::zero())
+                    {
+                        break;
+                    }
+                    pollfd output = { STDOUT_FILENO, POLLOUT, 0 };
+                    const int timeout =
+                        static_cast<int>(std::chrono::ceil<std::chrono::milliseconds>(remaining).count());
+                    const int ready = poll(&output, 1, timeout);
+                    if (ready == 0 || (ready < 0 && errno != EINTR) ||
+                        (ready > 0 && (static_cast<unsigned>(output.revents) &
+                                       static_cast<unsigned>(POLLERR | POLLHUP | POLLNVAL)) != 0))
+                    {
+                        break;
+                    }
+                }
+                else if (written == 0 || errno != EINTR)
+                {
+                    break;
+                }
+            }
+            const bool restored = detail::set_output_flags(saved_flags);
+            return restored && offset == size;
+        }
+#endif
+    } // namespace detail
+
+    // Cleanup must reach termios restoration and signal handoff even when XOFF
+    // or a full terminal queue prevents output. Frame writes wait until canceled.
+    inline bool write_terminal_cleanup(const char *text) noexcept
+    {
+#ifdef _WIN32
+        return write_terminal(text);
+#else
+        return detail::with_sigttou_blocked([text]() { return detail::write_bounded_output(text); });
+#endif
+    }
+
+    inline bool end_terminal_frame(bool (*write_cleanup)(const char *) = write_terminal_cleanup) noexcept
+    {
+        // ST ends a truncated kitty APC or sixel DCS; its ESC aborts a partial CSI.
+        // Use it without CAN, which Ghostty 1.3.1 prints in the ground state.
+        return write_cleanup("\033\\\033[?2026l\033[?7h");
     }
 
     namespace detail
@@ -208,6 +432,144 @@ namespace platform
         // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): set during startup and read at exit
         inline uint32_t termination_handler_mask = 0;
 
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): owned by interactive startup and teardown
+        inline bool job_control_installed = false;
+        // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables): inherited continuation policy
+        inline struct sigaction previous_continue_action = {};
+
+        inline bool add_job_control_signals(sigset_t &signals) noexcept
+        {
+            return sigaddset(&signals, SIGTSTP) == 0 && sigaddset(&signals, SIGCONT) == 0;
+        }
+
+        inline void job_control_handler(int signal) noexcept
+        {
+            suspend_flag = signal == SIGTSTP ? 1 : 0;
+        }
+
+        inline bool set_suspend_handler(void (*handler)(int)) noexcept
+        {
+            struct sigaction action = {};
+            action.sa_handler = handler;
+            return sigemptyset(&action.sa_mask) == 0 && add_job_control_signals(action.sa_mask) &&
+                   sigaction(SIGTSTP, &action, nullptr) == 0;
+        }
+
+        using SetSuspendHandlerFn = bool (*)(void (*)(int));
+        using RaiseSignalFn = int (*)(int);
+
+        inline bool suspend_handoff(
+            SetSuspendHandlerFn set_handler = set_suspend_handler, RaiseSignalFn raise_signal = std::raise
+        ) noexcept
+        {
+            sigset_t signals = {};
+            sigset_t previous = {};
+            if (sigemptyset(&signals) != 0 || !add_job_control_signals(signals) ||
+                pthread_sigmask(SIG_BLOCK, &signals, &previous) != 0)
+            {
+                return false;
+            }
+            bool ok = true;
+            if (suspend_requested() && !interrupt_requested())
+            {
+                // A mask change need only deliver one pending signal. Unblock
+                // SIGCONT alone so the synthetic stop cannot discard it.
+                sigset_t preparing = {};
+                ok = sigfillset(&preparing) == 0 && sigdelset(&preparing, SIGCONT) == 0 &&
+                     pthread_sigmask(SIG_SETMASK, &preparing, nullptr) == 0;
+                // Restore other handlers while keeping SIGTSTP queued and SIGCONT
+                // observable, including a continuation racing with raise().
+                preparing = previous;
+                ok = ok && add_job_control_signals(preparing) && sigdelset(&preparing, SIGCONT) == 0 &&
+                     pthread_sigmask(SIG_SETMASK, &preparing, nullptr) == 0;
+                if (ok && suspend_requested() && !interrupt_requested())
+                {
+                    ok = raise_signal(SIGTSTP) == 0;
+                    // Freeze handled requests before the final decision to stop.
+                    sigset_t stopping = {};
+                    const bool blocked =
+                        sigfillset(&stopping) == 0 && pthread_sigmask(SIG_SETMASK, &stopping, nullptr) == 0;
+                    ok = blocked && ok;
+                    if (ok && suspend_requested() && !interrupt_requested())
+                    {
+                        ok = set_handler(SIG_DFL);
+                        if (ok)
+                        {
+                            sigset_t pending_signals = {};
+                            ok = sigpending(&pending_signals) == 0 && sigdelset(&stopping, SIGTSTP) == 0;
+                            bool terminating = interrupt_requested();
+                            for (const TerminationSignal &entry : TERMINATION_SIGNALS)
+                            {
+                                terminating = terminating || ((termination_handler_mask & entry.bit) != 0 &&
+                                                              sigismember(&previous, entry.number) == 0 &&
+                                                              sigismember(&pending_signals, entry.number) == 1);
+                            }
+                            if (ok && terminating)
+                            {
+                                // Discard the synthetic stop before delivering termination.
+                                ok = set_handler(SIG_IGN);
+                            }
+                            else if (ok)
+                            {
+                                // With only SIGTSTP unblocked, pthread_sigmask must
+                                // deliver the queued stop before returning unless
+                                // SIGCONT cancels it. SIGCONT resumes even while blocked.
+                                ok = pthread_sigmask(SIG_SETMASK, &stopping, nullptr) == 0;
+                                const bool reblocked = pthread_sigmask(SIG_BLOCK, &signals, nullptr) == 0;
+                                ok = reblocked && ok;
+                            }
+                        }
+                    }
+                    else if (ok)
+                    {
+                        // SIGCONT may have run just before raise(). Discard that
+                        // synthetic stop rather than turning it into a new request.
+                        ok = set_handler(SIG_IGN);
+                    }
+                    suspend_flag = 0;
+                    ok = set_handler(job_control_handler) && ok;
+                }
+            }
+            const bool restored = pthread_sigmask(SIG_SETMASK, &previous, nullptr) == 0;
+            return ok && restored;
+        }
+
+        inline bool install_job_control_handlers() noexcept
+        {
+            struct sigaction previous = {};
+            if (sigaction(SIGTSTP, nullptr, &previous) != 0)
+            {
+                return false;
+            }
+            if (previous.sa_handler == SIG_IGN)
+            {
+                return true;
+            }
+            if (sigaction(SIGCONT, nullptr, &previous_continue_action) != 0)
+            {
+                return false;
+            }
+            struct sigaction action = {};
+            action.sa_handler = job_control_handler;
+            if (sigemptyset(&action.sa_mask) != 0 || !add_job_control_signals(action.sa_mask))
+            {
+                return false;
+            }
+            // Even an inherited ignored SIGCONT must cancel a deferred stop.
+            // Restore the inherited disposition at final cleanup.
+            if (sigaction(SIGCONT, &action, nullptr) != 0)
+            {
+                return false;
+            }
+            if (!set_suspend_handler(job_control_handler))
+            {
+                sigaction(SIGCONT, &previous_continue_action, nullptr);
+                return false;
+            }
+            job_control_installed = true;
+            return true;
+        }
+
         inline bool add_termination_signals(sigset_t &signals, uint32_t mask) noexcept
         {
             for (const TerminationSignal &entry : TERMINATION_SIGNALS)
@@ -247,6 +609,16 @@ namespace platform
             // A signal arriving after the flag read remains pending until every
             // handled signal has its default disposition again.
             reset_termination_handlers(handler_mask);
+            if (job_control_installed)
+            {
+                // On a clean exit, keep the recording handler installed until
+                // process exit so a late SIGTSTP cannot stop teardown.
+                if (signal != 0)
+                {
+                    set_suspend_handler(SIG_DFL);
+                }
+                sigaction(SIGCONT, &previous_continue_action, nullptr);
+            }
             if (signal == 0)
             {
                 pthread_sigmask(SIG_SETMASK, &previous_mask, nullptr);
@@ -254,8 +626,9 @@ namespace platform
             }
 
             sigset_t delivery_mask = previous_mask;
-            const bool mask_ready =
-                add_termination_signals(delivery_mask, handler_mask) && sigdelset(&delivery_mask, signal) == 0;
+            const bool mask_ready = add_termination_signals(delivery_mask, handler_mask) &&
+                                    (!job_control_installed || add_job_control_signals(delivery_mask)) &&
+                                    sigdelset(&delivery_mask, signal) == 0;
             if (mask_ready && pthread_sigmask(SIG_SETMASK, &delivery_mask, nullptr) == 0)
             {
                 // Keep later termination signals pending until the recorded one
@@ -332,6 +705,127 @@ namespace platform
 #endif
     }
 
+    inline bool install_job_control_handler() noexcept
+    {
+#ifdef _WIN32
+        return true;
+#else
+        return detail::install_job_control_handlers();
+#endif
+    }
+
+    // Workers inherit this blocked mask. Restore the main thread's mask after
+    // constructing them so only it receives control requests.
+    class WorkerSignalMask
+    {
+      public:
+        WorkerSignalMask() noexcept
+        {
+#ifndef _WIN32
+            sigset_t signals = {};
+            m_valid = detail::termination_signal_set(signals, detail::termination_handler_mask) &&
+                      (!detail::job_control_installed || detail::add_job_control_signals(signals)) &&
+                      pthread_sigmask(SIG_BLOCK, &signals, &m_previous) == 0;
+#endif
+        }
+        ~WorkerSignalMask() noexcept
+        {
+#ifndef _WIN32
+            if (m_valid)
+            {
+                pthread_sigmask(SIG_SETMASK, &m_previous, nullptr);
+            }
+#endif
+        }
+        [[nodiscard]] bool valid() const noexcept { return m_valid; }
+        WorkerSignalMask(const WorkerSignalMask &) = delete;
+        WorkerSignalMask &operator=(const WorkerSignalMask &) = delete;
+        WorkerSignalMask(WorkerSignalMask &&) = delete;
+        WorkerSignalMask &operator=(WorkerSignalMask &&) = delete;
+
+      private:
+        bool m_valid = true;
+#ifndef _WIN32
+        sigset_t m_previous = {};
+#endif
+    };
+
+    // Call after releasing terminal state. Background continuations wait for
+    // foreground ownership before returning.
+    inline bool suspend_process() noexcept
+    {
+#ifdef _WIN32
+        return true;
+#else
+        for (;;)
+        {
+            if (!detail::suspend_handoff())
+            {
+                return false;
+            }
+            while (!control_requested())
+            {
+                const pid_t foreground = tcgetpgrp(STDIN_FILENO);
+                if (foreground < 0)
+                {
+                    return false;
+                }
+                if (foreground == getpgrp())
+                {
+                    return true;
+                }
+                poll(nullptr, 0, 50);
+            }
+            if (interrupt_requested())
+            {
+                return true;
+            }
+        }
+#endif
+    }
+
+    namespace detail
+    {
+        inline auto frame_deadline(std::chrono::steady_clock::time_point now, std::chrono::duration<float> delay)
+        {
+            // Keep the absolute timestamp in clock ticks; float loses frame-sized
+            // increments after long uptimes.
+            return now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(delay);
+        }
+
+#ifndef _WIN32
+        template <typename Now, typename Sleep>
+        inline void wait_frame_until(std::chrono::steady_clock::time_point deadline, Now now, Sleep sleep_for)
+        {
+            while (!control_requested())
+            {
+                const auto remaining = std::chrono::ceil<std::chrono::nanoseconds>(deadline - now());
+                if (remaining <= std::chrono::nanoseconds::zero())
+                {
+                    break;
+                }
+                // Bound the check-to-sleep signal race without rounding short frame waits.
+                const auto slice = std::min(remaining, std::chrono::nanoseconds(std::chrono::milliseconds(50)));
+                const timespec timeout{ 0, static_cast<long>(slice.count()) };
+                if (sleep_for(&timeout, nullptr) != 0 && errno != EINTR)
+                {
+                    break;
+                }
+            }
+        }
+#endif
+    } // namespace detail
+
+    inline void wait_frame(std::chrono::duration<float> duration)
+    {
+#ifdef _WIN32
+        std::this_thread::sleep_for(duration);
+#else
+        const auto deadline = detail::frame_deadline(std::chrono::steady_clock::now(), duration);
+        detail::wait_frame_until(deadline, std::chrono::steady_clock::now, nanosleep);
+#endif
+    }
+
     // Call only after terminal guards have unwound. POSIX callers should still
     // observe signal termination; the numeric status is a fallback if re-raising fails.
     [[nodiscard]] inline int finish_termination(int status) noexcept
@@ -340,13 +834,14 @@ namespace platform
         return status;
 #else
         const uint32_t handler_mask = detail::termination_handler_mask;
-        if (handler_mask == 0)
+        if (handler_mask == 0 && !detail::job_control_installed)
         {
             return status;
         }
         sigset_t signals = {};
         sigset_t previous_mask = {};
         const bool blocked = detail::termination_signal_set(signals, handler_mask) &&
+                             (!detail::job_control_installed || detail::add_job_control_signals(signals)) &&
                              pthread_sigmask(SIG_BLOCK, &signals, &previous_mask) == 0;
         if (blocked)
         {
@@ -605,16 +1100,14 @@ namespace platform
 #endif
 
     // Enable Windows VT input so query and mouse escapes arrive as bytes.
-    inline void enable_vt_input()
+    inline bool enable_vt_input()
     {
 #ifdef _WIN32
         HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
         DWORD mode = 0;
-        // Never OR flags into a mode value from a failed probe.
-        if (GetConsoleMode(hin, &mode) != 0)
-        {
-            SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT);
-        }
+        return GetConsoleMode(hin, &mode) != 0 && SetConsoleMode(hin, mode | ENABLE_VIRTUAL_TERMINAL_INPUT) != 0;
+#else
+        return true;
 #endif
     }
 
@@ -678,15 +1171,11 @@ namespace platform
         inline int read_query_bytes(char *out, int cap, int timeout_ms)
         {
             struct pollfd pfd = { STDIN_FILENO, POLLIN, 0 };
-            const int pr = poll(&pfd, 1, timeout_ms);
+            const int pr = poll(&pfd, 1, std::min(timeout_ms, 50));
             if (pr < 0 && errno == EINTR)
             {
-                if (interrupt_requested())
-                {
-                    return -1; // a quit signal ends the wait
-                }
-                // Linux stop and SIGCONT can interrupt poll without a handler; retry
-                // against the caller's deadline.
+                // The query loop records control requests before retrying. A
+                // canceled suspension can instead continue this same query.
                 return 0;
             }
             if (pr < 0)
@@ -700,37 +1189,36 @@ namespace platform
             const auto got = read(STDIN_FILENO, out, static_cast<size_t>(cap));
             if (got < 0 && errno == EINTR)
             {
-                if (interrupt_requested())
-                {
-                    return -1;
-                }
                 return 0;
             }
             return (got <= 0) ? -1 : static_cast<int>(got);
         }
 #endif
+        using ReadQueryBytesFn = int (*)(char *, int, int);
     } // namespace detail
 
-    // Bail paths after graphics detection must leave the alternate screen here;
-    // the normal path transfers ownership to Framebuffer.
-    inline void exit_alt_screen()
+    // Bail paths after graphics detection must reset a partial query and leave
+    // the alternate screen here; the normal path transfers ownership to Framebuffer.
+    inline bool exit_alt_screen()
     {
-        std::fputs("\033[?1049l", stdout);
-        std::fflush(stdout);
+        return write_terminal_cleanup("\033\\\033[?1049l");
     }
 
     // Query graphics, cell, and sixel capabilities before the input loop starts.
     // DSR terminates the ordered reply batch. The terminal remains on the alternate screen.
-    inline TermGraphics query_term_graphics()
+    inline TermGraphics query_term_graphics(
+        detail::ReadQueryBytesFn read_bytes = detail::read_query_bytes,
+        detail::WriteTerminalFn write_bytes = detail::write_terminal_bytes
+    )
     {
         TermGraphics tg;
-        // Windows: without VT input the console never surfaces the replies as
-        // bytes, and enable_mouse (the other place the flag is set) runs only
-        // after the query window closes.
-        enable_vt_input();
-        // Keep unconsumed query escapes out of scrollback; Framebuffer adopts this screen.
-        std::fputs("\033[?1049h", stdout);
-
+        // VT input must precede the Windows query; POSIX setup is a no-op.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!enable_vt_input())
+        {
+            tg.failed = true;
+            return tg;
+        }
         // Probe kitty shm end-to-end with one pixel; real-frame capacity can still fall back.
         char shm_name[64];
         std::snprintf(shm_name, sizeof shm_name, "/rasterminal-%lu-q", process_id());
@@ -753,19 +1241,33 @@ namespace platform
             }
         }
 
-        std::fputs(kitty::QUERY, stdout);
+        // Keep unconsumed query escapes out of scrollback; Framebuffer adopts this screen.
+        std::string query = "\033[?1049h";
+        query += kitty::QUERY;
         // cppcheck-suppress knownConditionTrueFalse
         if (shm_probe)
         {
-            std::string shm_query;
-            kitty::append_query_shm(shm_query, shm_name);
-            std::fputs(shm_query.c_str(), stdout);
+            kitty::append_query_shm(query, shm_name);
         }
-        std::fputs(detail::QUERY_CELL_SIZE, stdout);
-        std::fputs("\033[c", stdout);
-        std::fputs(detail::QUERY_SIXEL_GEOMETRY, stdout);
-        std::fputs("\033[5n", stdout);
-        std::fflush(stdout);
+        query += detail::QUERY_CELL_SIZE;
+        query += "\033[c";
+        query += detail::QUERY_SIXEL_GEOMETRY;
+        query += "\033[5n";
+        bool canceled = false;
+        const bool flushed = std::fflush(stdout) == 0;
+        if (!flushed || !write_terminal(query.data(), query.size(), true, write_bytes, &canceled))
+        {
+            // Cancellation can split a protocol string. Reset the parser before
+            // later cleanup writes terminal modes.
+            write_terminal_cleanup("\033\\");
+            if (shm_probe)
+            {
+                shm_frame_remove(shm_name);
+            }
+            tg.interrupted = canceled || (!flushed && control_requested());
+            tg.failed = !tg.interrupted;
+            return tg;
+        }
 
         char buf[detail::GRAPHICS_REPLY_BUF];
         int len = 0;
@@ -775,8 +1277,9 @@ namespace platform
         {
             // Check before each wait. Windows waits are sliced because Ctrl+C does
             // not interrupt them; POSIX may set the flag outside an EINTR path.
-            if (interrupt_requested())
+            if (control_requested())
             {
+                tg.interrupted = true;
                 break;
             }
             const auto now = std::chrono::steady_clock::now();
@@ -788,8 +1291,7 @@ namespace platform
             // millisecond before the deadline a zero-timeout spin (poll returns
             // instantly, the loop re-enters); rounding up waits it out instead.
             const auto remaining = std::chrono::ceil<std::chrono::milliseconds>(deadline - now).count();
-            const int got =
-                detail::read_query_bytes(buf + len, detail::GRAPHICS_REPLY_BUF - len, static_cast<int>(remaining));
+            const int got = read_bytes(buf + len, detail::GRAPHICS_REPLY_BUF - len, static_cast<int>(remaining));
             if (got < 0)
             {
                 break; // quit signal, closed stream, or failure: nothing more will arrive
@@ -821,7 +1323,7 @@ namespace platform
             char junk[256];
             // Zero may be a Windows timeout or discarded non-key record; only a
             // dead stream stops the bounded drain early.
-            if (detail::read_query_bytes(junk, sizeof junk, 0) < 0)
+            if (read_bytes(junk, sizeof junk, 0) < 0)
             {
                 break;
             }
@@ -839,15 +1341,13 @@ namespace platform
     // Request cell pixels asynchronously; parse_input emits the eventual reply.
     inline void request_cell_size()
     {
-        std::fputs(detail::QUERY_CELL_SIZE, stdout);
-        std::fflush(stdout);
+        write_terminal(detail::QUERY_CELL_SIZE, std::strlen(detail::QUERY_CELL_SIZE), true);
     }
 
     // Refresh the window-dependent sixel geometry limit asynchronously.
     inline void request_sixel_geometry()
     {
-        std::fputs(detail::QUERY_SIXEL_GEOMETRY, stdout);
-        std::fflush(stdout);
+        write_terminal(detail::QUERY_SIXEL_GEOMETRY, std::strlen(detail::QUERY_SIXEL_GEOMETRY), true);
     }
 
     // Windows requires a real console because input uses console APIs; POSIX accepts a tty.
@@ -1010,6 +1510,7 @@ namespace platform
     {
         using TcgetattrFn = int (*)(int, termios *);
         using TcsetattrFn = int (*)(int, int, const termios *);
+        using TcflushFn = int (*)(int, int);
     } // namespace detail
 #endif
 
@@ -1039,8 +1540,10 @@ namespace platform
             capture(get_mode, get_output_cp);
         }
 #else
-        ConsoleStateGuard(detail::TcgetattrFn get_termios, detail::TcsetattrFn set_termios) noexcept
-            : m_get_termios(get_termios), m_set_termios(set_termios)
+        ConsoleStateGuard(
+            detail::TcgetattrFn get_termios, detail::TcsetattrFn set_termios, detail::TcflushFn flush_input
+        ) noexcept
+            : m_get_termios(get_termios), m_set_termios(set_termios), m_flush_input(flush_input)
         {
             capture();
         }
@@ -1124,7 +1627,7 @@ namespace platform
             // tcsetattr may alter some settings before reporting failure. Keep
             // restoration armed until the captured state has been written back.
             m_restore_pending = true;
-            if (m_set_termios(STDIN_FILENO, TCSAFLUSH, &raw) == 0)
+            if (set_input_mode(raw))
             {
                 termios applied = {};
                 if (read_input_mode(applied) && input_settings_match(applied, raw))
@@ -1153,6 +1656,21 @@ namespace platform
             // Escape cleanup has already run when normal teardown reaches this
             // method. Give a transient non-EINTR failure one final attempt.
             return restore_raw_mode_once();
+        }
+
+        bool refresh_input_mode() noexcept
+        {
+            if (!m_snapshot_complete || m_restore_pending)
+            {
+                return false;
+            }
+            termios current = {};
+            if (!read_input_mode(current))
+            {
+                return false;
+            }
+            m_input_mode = current;
+            return true;
         }
 
         // Test hook for restoration fault injection.
@@ -1224,38 +1742,70 @@ namespace platform
                    actual.c_cc[VMIN] == expected.c_cc[VMIN] && actual.c_cc[VTIME] == expected.c_cc[VTIME];
         }
 
+        static tcflag_t persistent_local_flags(tcflag_t flags) noexcept
+        {
+#ifdef PENDIN
+            // Flushing input can clear PENDIN, notably on macOS.
+            flags &= ~static_cast<tcflag_t>(PENDIN);
+#endif
+            return flags;
+        }
+
         static bool terminal_settings_match(const termios &actual, const termios &expected) noexcept
         {
             return actual.c_iflag == expected.c_iflag && actual.c_oflag == expected.c_oflag &&
-                   actual.c_cflag == expected.c_cflag && actual.c_lflag == expected.c_lflag &&
+                   actual.c_cflag == expected.c_cflag &&
+                   persistent_local_flags(actual.c_lflag) == persistent_local_flags(expected.c_lflag) &&
                    std::memcmp(actual.c_cc, expected.c_cc, sizeof actual.c_cc) == 0 &&
                    cfgetispeed(&actual) == cfgetispeed(&expected) && cfgetospeed(&actual) == cfgetospeed(&expected);
         }
 
         bool restore_raw_mode_once() noexcept
         {
-            int result = m_set_termios(STDIN_FILENO, TCSAFLUSH, &m_input_mode);
+            return detail::with_sigttou_blocked(
+                [this]()
+                {
+                    if (!set_input_mode(m_input_mode))
+                    {
+                        return false;
+                    }
+                    termios restored = {};
+                    if (!read_input_mode(restored) || !terminal_settings_match(restored, m_input_mode))
+                    {
+                        return false;
+                    }
+                    m_restore_pending = false;
+                    return true;
+                }
+            );
+        }
+
+        bool set_input_mode(const termios &mode) noexcept
+        {
+            // TCSAFLUSH waits for output to drain, which can block suspension
+            // indefinitely under flow control. Discard input separately instead.
+            int result = m_set_termios(STDIN_FILENO, TCSANOW, &mode);
             while (result != 0 && errno == EINTR)
             {
-                result = m_set_termios(STDIN_FILENO, TCSAFLUSH, &m_input_mode);
+                result = m_set_termios(STDIN_FILENO, TCSANOW, &mode);
             }
             if (result != 0)
             {
                 return false;
             }
-            termios restored = {};
-            if (!read_input_mode(restored) || !terminal_settings_match(restored, m_input_mode))
+            result = m_flush_input(STDIN_FILENO, TCIFLUSH);
+            while (result != 0 && errno == EINTR)
             {
-                return false;
+                result = m_flush_input(STDIN_FILENO, TCIFLUSH);
             }
-            m_restore_pending = false;
-            return true;
+            return result == 0;
         }
 
         termios m_input_mode = {};
         bool m_restore_pending = false;
         detail::TcgetattrFn m_get_termios = tcgetattr;
         detail::TcsetattrFn m_set_termios = tcsetattr;
+        detail::TcflushFn m_flush_input = tcflush;
 #endif
         bool m_snapshot_complete = false;
     };
@@ -1366,8 +1916,7 @@ namespace platform
         }
         // ConsoleStateGuard captures a complete restoration snapshot before this call.
         // Keep every code-page change after that snapshot.
-        SetConsoleOutputCP(65001);
-        return true;
+        return SetConsoleOutputCP(65001) != 0;
 #else
         return true;
 #endif
@@ -1377,16 +1926,20 @@ namespace platform
     {
 #ifdef _WIN32
         (void)console_state;
-        init_console_output();
+        if (!init_console_output())
+        {
+            return false;
+        }
         HANDLE hin = GetStdHandle(STD_INPUT_HANDLE);
         DWORD mode = 0;
-        if (GetConsoleMode(hin, &mode) != 0)
-        {
-            // VT input must not run through cmd.exe's cooked line editor. Processed
-            // input makes Ctrl+C reach the handler even when the shell left it disabled.
+        // Processed input delivers Ctrl+C to the handler. VT input must bypass
+        // the cooked line editor even when inherited console modes differ.
+        if (GetConsoleMode(hin, &mode) == 0 ||
             SetConsoleMode(
                 hin, (mode | ENABLE_PROCESSED_INPUT) & ~static_cast<DWORD>(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT)
-            );
+            ) == 0)
+        {
+            return false;
         }
         detail::arm_console_input_wake();
         return true;
@@ -1498,23 +2051,39 @@ namespace platform
 #endif
     }
 
-    // Enable SGR mouse reports for wheel and button-drag input.
-
-    inline void enable_mouse()
+    inline bool resume_raw_mode(ConsoleStateGuard &console_state)
     {
-        // VT input covers mouse sequences too; the graphics query normally set
-        // it already, but a --graphics blocks session skips the query.
-        enable_vt_input();
-        // \033[?1006h: SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
-        // \033[?1002h: button-events mode: reports motion only while a button is held
-        std::fputs("\033[?1006h\033[?1002h", stdout);
-        std::fflush(stdout);
+#ifdef _WIN32
+        return enable_raw_mode(&console_state);
+#else
+        return console_state.refresh_input_mode() && console_state.enable_raw_mode();
+#endif
     }
 
-    inline void disable_mouse()
+    // Enable SGR mouse reports for wheel and button-drag input.
+
+    inline bool enable_mouse(bool cancel_on_control = false, bool *canceled = nullptr)
     {
-        std::fputs("\033[?1002l\033[?1006l", stdout);
-        std::fflush(stdout);
+        if (canceled != nullptr)
+        {
+            *canceled = false;
+        }
+        // Blocks skips the query's VT setup. The POSIX setup is a no-op.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!enable_vt_input())
+        {
+            return false;
+        }
+        // \033[?1006h: SGR extended format: \033[<btn;x;yM / \033[<btn;x;ym
+        // \033[?1002h: button-events mode: reports motion only while a button is held
+        constexpr char setup[] = "\033[?1006h\033[?1002h";
+        return write_terminal(setup, sizeof setup - 1, cancel_on_control, detail::write_terminal_bytes, canceled);
+    }
+
+    inline bool disable_mouse(bool (*write_cleanup)(const char *) = write_terminal_cleanup)
+    {
+        // This may run after leaving the alternate screen; keep the reset nonprinting.
+        return write_cleanup("\033\\\033[?1002l\033[?1006l");
     }
 
     // Buffered, timed input reader; input.h owns the stateless grammar.
@@ -1656,6 +2225,11 @@ namespace platform
             p.skipping = true;
         }
     } // namespace detail
+
+    inline void reset_input_state() noexcept
+    {
+        detail::pending() = {};
+    }
 
     // Reassemble split events. Discard short stale prefixes; skip long replies to their
     // terminator or rate-floor timeout. Only UTF-8-safe 7-bit ESC forms are recognized.

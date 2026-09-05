@@ -56,6 +56,10 @@ struct GraphicsConfig
 class Framebuffer
 {
   public:
+    // Inject writers to test short writes and cleanup failures.
+    using WriteFrameFn = int64_t (*)(const char *, size_t);
+    using WriteCleanupFn = bool (*)(const char *);
+
     // Pixel dimensions are literal for image backends; blocks use two pixels per cell.
     // adopt_alt_screen means startup detection already entered the alternate screen.
     Framebuffer(
@@ -64,9 +68,16 @@ class Framebuffer
         bool headless = false,
         ColorMode mode = ColorMode::TrueColor,
         const GraphicsConfig &gfx = {},
-        bool adopt_alt_screen = false
+        bool adopt_alt_screen = false,
+        WriteFrameFn write_frame = nullptr,
+        bool defer_terminal_setup = false
     );
-    ~Framebuffer();
+    ~Framebuffer() noexcept;
+
+    // Release the terminal while retaining render buffers; resume forces a redraw.
+    // Clear a pending mouse reset only after the complete cleanup write succeeds.
+    void suspend_terminal(WriteCleanupFn write_cleanup = nullptr, bool *mouse_cleanup_pending = nullptr) noexcept;
+    bool resume_terminal(bool *canceled = nullptr) noexcept;
 
     Framebuffer(const Framebuffer &) = delete;
     Framebuffer &operator=(const Framebuffer &) = delete;
@@ -175,7 +186,7 @@ class Framebuffer
     // Set the one-line HUD. SGR is allowed; newlines and cursor movement are not.
     void set_hud(std::string text) { m_hud = std::move(text); }
 
-    // Flush the pixel buffer to the terminal as a single write.
+    // Flush the pixel buffer, retrying short writes until complete or interrupted.
     void present();
 
   private:
@@ -190,9 +201,10 @@ class Framebuffer
     // xterm-240 palette (m_idx) and emit one full sixel frame, gated like kitty.
     void present_sixel();
 
-    // Compose inside synchronized-output markers and flush with one write.
+    // Compose and flush inside synchronized-output markers.
     void begin_frame();
     void end_frame();
+    bool recover_terminal_output() noexcept;
 
     // Shared HUD-row emission; erase before writing shorter replacement text.
     void append_hud_line(bool full_redraw);
@@ -332,9 +344,16 @@ class Framebuffer
     bool m_force_redraw = true;
     // Defer resize erasure into the next synchronized frame to avoid a blank flash.
     bool m_pending_clear = false;
+    bool m_output_recovery_pending = false;
     bool m_headless = false;
+    bool m_terminal_active = false;
+    bool m_adopted_alt_screen = false;
+    // Suspension stops rendering even if terminal release must be retried at teardown.
+    bool m_terminal_release_pending = false;
+    bool m_mouse_cleanup_pending = false;
     ColorMode m_mode = ColorMode::TrueColor;
     GraphicsConfig m_gfx;
+    WriteFrameFn m_write_frame;
     // clear() arms image emission; hot-path pixel writes deliberately do not.
     bool m_image_dirty = true;
     // Whether a transmitted image is resident in the terminal; lets a

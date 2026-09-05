@@ -10,6 +10,10 @@ namespace kitty
     // Reusing one image ID with a=T replaces frames atomically. Per-frame deletes strobe.
     constexpr int IMAGE_ID = 1;
 
+    inline constexpr char FINISH_TRANSMISSION[] = "\033_Gq=2,m=0;\033\\";
+    inline constexpr char DELETE_IMAGE[] = "\033_Gq=2,a=d,d=I,i=1\033\\";
+    static_assert(IMAGE_ID == 1, "DELETE_IMAGE must name IMAGE_ID");
+
     // A fixed placement ID prevents Ghostty from accumulating anonymous placements each frame.
     constexpr int PLACEMENT_ID = 1;
 

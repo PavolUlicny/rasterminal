@@ -187,11 +187,18 @@ namespace
 } // namespace
 
 Framebuffer::Framebuffer(
-    int pixel_width, int pixel_height, bool headless, ColorMode mode, const GraphicsConfig &gfx, bool adopt_alt_screen
+    int pixel_width,
+    int pixel_height,
+    bool headless,
+    ColorMode mode,
+    const GraphicsConfig &gfx,
+    bool adopt_alt_screen,
+    WriteFrameFn write_frame,
+    bool defer_terminal_setup
 )
     : m_width(pixel_width), m_height(pixel_height),
       m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)), m_headless(headless), m_mode(mode),
-      m_gfx(gfx)
+      m_gfx(gfx), m_write_frame(write_frame != nullptr ? write_frame : platform::detail::write_terminal_bytes)
 {
     // Sized here rather than in the init list so the predicate has one
     // spelling (is_pixel_backend needs m_gfx, which member order initializes
@@ -207,32 +214,109 @@ Framebuffer::Framebuffer(
         // before constructing us); this path and present() write ANSI to it.
         // Preallocate a mode-dependent per-cell upper bound (see buf_reserve_bytes).
         m_buf.reserve(buf_reserve_bytes());
+        if (defer_terminal_setup)
+        {
+            m_adopted_alt_screen = adopt_alt_screen;
+            m_terminal_release_pending = adopt_alt_screen;
+            return;
+        }
         if (!adopt_alt_screen)
         {
             std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
         }
         std::fputs("\033[?25l", stdout); // hide cursor
         std::fflush(stdout);
+        m_terminal_active = true;
     }
 }
 
-Framebuffer::~Framebuffer()
+void Framebuffer::suspend_terminal(WriteCleanupFn write_cleanup, bool *mouse_cleanup_pending) noexcept
 {
-    if (!m_headless)
+    if (write_cleanup == nullptr)
     {
-        if (m_gfx.backend == GraphicsBackend::Kitty)
-        {
-            // Free the resident image terminal-side before leaving; without this
-            // the last frame's data stays in the terminal for the session.
-            std::string cleanup;
-            kitty::append_delete(cleanup);
-            std::fputs(cleanup.c_str(), stdout);
-        }
-        // Restore cursor, reset colours, then leave the alternate screen buffer.
-        // This restores the terminal to exactly the state it was in before launch.
-        std::fputs("\033[?25h\033[0m\033[?1049l", stdout);
-        std::fflush(stdout);
+        write_cleanup = platform::write_terminal_cleanup;
     }
+    if (!m_terminal_active && !m_terminal_release_pending)
+    {
+        return;
+    }
+    m_adopted_alt_screen = false;
+    m_mouse_cleanup_pending = m_mouse_cleanup_pending || (mouse_cleanup_pending != nullptr && *mouse_cleanup_pending);
+
+    constexpr char reset[] = "\033\\\033[?2026l\033[?7h";
+    constexpr char mouse[] = "\033[?1002l\033[?1006l";
+    constexpr char release[] = "\033[?25h\033[0m\033[?1049l";
+    char cleanup
+        [sizeof reset + sizeof mouse + sizeof release + sizeof kitty::FINISH_TRANSMISSION + sizeof kitty::DELETE_IMAGE];
+    char *out = cleanup;
+    const auto append = [&out](const char *text)
+    {
+        const size_t size = std::strlen(text);
+        std::memcpy(out, text, size);
+        out += size;
+    };
+    // One bounded write preserves cleanup order across partial writes. A failed
+    // release retains every reset for the next attempt, including image deletion.
+    append(reset);
+    if (m_gfx.backend == GraphicsBackend::Kitty)
+    {
+        if (m_output_recovery_pending)
+        {
+            append(kitty::FINISH_TRANSMISSION);
+        }
+        append(kitty::DELETE_IMAGE);
+    }
+    if (m_mouse_cleanup_pending)
+    {
+        append(mouse);
+    }
+    append(release);
+    *out = '\0';
+    m_terminal_release_pending = !write_cleanup(cleanup);
+    m_output_recovery_pending = m_terminal_release_pending;
+    if (!m_terminal_release_pending)
+    {
+        m_image_shown = false;
+        m_mouse_cleanup_pending = false;
+        if (mouse_cleanup_pending != nullptr)
+        {
+            *mouse_cleanup_pending = false;
+        }
+    }
+    m_terminal_active = false;
+}
+
+bool Framebuffer::resume_terminal(bool *canceled) noexcept
+{
+    if (canceled != nullptr)
+    {
+        *canceled = false;
+    }
+    if (!m_headless && !m_terminal_active)
+    {
+        const char *setup = m_output_recovery_pending ? "\033\\\033[?1049h\033[?25l"
+                            : m_adopted_alt_screen    ? "\033[?25l"
+                                                      : "\033[?1049h\033[?25l";
+        // Even a partial reacquisition owns cleanup. Do not render until the
+        // complete setup has reached the terminal.
+        m_terminal_release_pending = true;
+        if (!platform::write_terminal(setup, std::strlen(setup), true, m_write_frame, canceled))
+        {
+            m_output_recovery_pending = true;
+            return false;
+        }
+        m_terminal_active = true;
+        m_adopted_alt_screen = false;
+        m_force_redraw = true;
+        m_image_dirty = true;
+        m_pending_clear = true;
+    }
+    return true;
+}
+
+Framebuffer::~Framebuffer() noexcept
+{
+    suspend_terminal();
     // Headless mode suppresses escapes, not cleanup of shared-memory frames.
     if (m_gfx.backend == GraphicsBackend::Kitty)
     {
@@ -317,14 +401,51 @@ void Framebuffer::end_frame()
         return;
     }
     m_buf += "\033[?2026l";
-    // Return values intentionally ignored: a write failure to a terminal means
-    // the session is already broken; there is no meaningful recovery path here.
-    (void)std::fwrite(m_buf.data(), 1, m_buf.size(), stdout);
-    (void)std::fflush(stdout);
+    if (!platform::write_terminal(m_buf.data(), m_buf.size(), /*cancel_on_control=*/true, m_write_frame))
+    {
+        m_output_recovery_pending = !recover_terminal_output();
+        // SIGCONT can cancel a stop after output was abandoned. The next frame
+        // must repaint even if the main loop no longer sees a suspend request.
+        m_force_redraw = true;
+        m_image_dirty = true;
+        m_pending_clear = true;
+    }
+}
+
+bool Framebuffer::recover_terminal_output() noexcept
+{
+    if (!platform::end_terminal_frame())
+    {
+        return false;
+    }
+    if (m_gfx.backend == GraphicsBackend::Kitty)
+    {
+        // Ghostty keeps partial uploads across deletes. Finish quietly before
+        // deleting so the next frame cannot append to an abandoned upload.
+        if (!platform::write_terminal_cleanup(kitty::FINISH_TRANSMISSION) ||
+            !platform::write_terminal_cleanup(kitty::DELETE_IMAGE))
+        {
+            return false;
+        }
+        m_image_shown = false;
+    }
+    return true;
 }
 
 void Framebuffer::present()
 {
+    if (!m_headless && !m_terminal_active)
+    {
+        return;
+    }
+    if (m_output_recovery_pending)
+    {
+        if (!recover_terminal_output())
+        {
+            return;
+        }
+        m_output_recovery_pending = false;
+    }
     if (m_gfx.backend == GraphicsBackend::Kitty)
     {
         present_kitty();

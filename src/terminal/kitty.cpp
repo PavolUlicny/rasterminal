@@ -154,9 +154,7 @@ namespace kitty
 
     void append_delete(std::string &out)
     {
-        out += "\033_Gq=2,a=d,d=I,i=";
-        append_uint(out, IMAGE_ID);
-        out += "\033\\";
+        out += DELETE_IMAGE;
     }
 
 } // namespace kitty
