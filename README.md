@@ -183,7 +183,9 @@ String values are case-insensitive. Value flags accept `--flag value`, `--flag=v
 | `R` | Reset to the state set by the command-line flags (their defaults when not passed) |
 | `Q` / `Ctrl+C` | Quit |
 
-`--no-input` ignores every binding except `Q` and Ctrl+C. The viewer keeps mouse tracking active, so dragging does not select terminal text.
+`--no-input` ignores the viewer's keyboard and mouse controls except `Q`. Ctrl+C still quits. The viewer keeps mouse tracking active, so dragging does not select terminal text.
+
+On POSIX, Ctrl+Z restores the terminal and suspends the viewer, including with `--no-input`. Use `fg` to resume with a full redraw. A viewer resumed with `bg` stays idle until it returns to the foreground.
 
 ### First-person controls
 

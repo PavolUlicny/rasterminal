@@ -4,6 +4,7 @@
 #include "tests/sixel_test_util.h"
 #include "src/terminal/framebuffer.h"
 #include "src/render/renderer.h"
+#include "src/platform/platform.h"
 
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 
@@ -13,9 +14,11 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifndef _WIN32
+#include <csignal>
 // The kitty shm tests read the frame object back by name; there is no shm
 // transport on Windows (platform.h's stubs), so they compile out entirely.
 #include <fcntl.h>
@@ -314,6 +317,304 @@ namespace
         }
     };
 } // namespace
+
+TEST(framebuffer, terminal_suspend_resume_is_idempotent_for_each_backend)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        {
+            GraphicsConfig gfx;
+            gfx.backend = backend;
+            Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            fb.suspend_terminal();
+            fb.suspend_terminal();
+            fb.present();
+            fb.resume_terminal();
+            fb.resume_terminal();
+            fb.suspend_terminal();
+        }
+        const std::string enter = "\033[?1049h\033[?25l";
+        std::string leave = "\033\\\033[?2026l\033[?7h";
+        if (backend == GraphicsBackend::Kitty)
+        {
+            leave += "\033_Gq=2,a=d,d=I,i=1\033\\";
+        }
+        leave += "\033[?25h\033[0m\033[?1049l";
+        const std::string cycle = enter + leave;
+        ASSERT_TRUE(cap.read() == cycle + cycle);
+    }
+}
+
+#ifndef _WIN32
+TEST(framebuffer, deferred_terminal_setup_observes_pending_control_before_writing)
+{
+    CaptureStdout cap;
+    GraphicsConfig gfx;
+    gfx.backend = GraphicsBackend::Blocks;
+    Framebuffer fb(
+        4, 4, false, ColorMode::TrueColor, gfx, /*adopt_alt_screen=*/true, /*write_frame=*/nullptr,
+        /*defer_terminal_setup=*/true
+    );
+    ASSERT_TRUE(cap.read().empty());
+
+    platform::detail::job_control_handler(SIGTSTP);
+    bool canceled = false;
+    ASSERT_FALSE(fb.resume_terminal(&canceled));
+    ASSERT_TRUE(canceled);
+    ASSERT_TRUE(cap.read().empty());
+
+    platform::detail::job_control_handler(SIGCONT);
+    ASSERT_TRUE(fb.resume_terminal());
+    ASSERT_TRUE(cap.read() == "\033\\\033[?1049h\033[?25l");
+}
+#endif
+
+TEST(framebuffer, terminal_resume_forces_full_cell_and_hud_redraw)
+{
+    CaptureStdout cap;
+    {
+        Framebuffer fb(4, 4, false);
+        fb.set_hud("resume-hud");
+        fb.present();
+        fb.suspend_terminal();
+        fb.resume_terminal();
+        fb.present();
+    }
+    const std::string output = cap.read();
+    const size_t first = output.find("resume-hud");
+    ASSERT_TRUE(first != std::string::npos);
+    ASSERT_TRUE(output.find("resume-hud", first + 1) != std::string::npos);
+    ASSERT_TRUE(output.find("\033[2J") != std::string::npos);
+}
+
+TEST(framebuffer, failed_terminal_resume_retains_cleanup_without_rendering)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        {
+            GraphicsConfig gfx;
+            gfx.backend = backend;
+            Framebuffer fb(
+                4, 4, false, ColorMode::TrueColor, gfx, false,
+                [](const char *data, size_t) -> int64_t
+                {
+                    // Leave an unfinished CSI, then fail its continuation.
+                    if (data[0] == '\033')
+                    {
+                        return platform::detail::write_terminal_bytes(data, 2);
+                    }
+                    errno = EIO;
+                    return -1;
+                }
+            );
+            fb.suspend_terminal();
+            ASSERT_FALSE(fb.resume_terminal());
+            const std::string interrupted = cap.read();
+            fb.present();
+            ASSERT_TRUE(cap.read() == interrupted);
+        }
+        const std::string output = cap.read();
+        ASSERT_TRUE(output.find("\033[\033\\") != std::string::npos);
+        ASSERT_TRUE(output.rfind("\033[?25h\033[0m\033[?1049l") != std::string::npos);
+    }
+}
+
+#ifndef _WIN32
+TEST(framebuffer, teardown_retries_failed_release_without_reactivating_terminal)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        size_t offset = 0;
+        {
+            GraphicsConfig gfx;
+            gfx.backend = backend;
+            Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            bool mouse_pending = true;
+            offset = cap.read().size();
+            fb.suspend_terminal([](const char *) { return false; }, &mouse_pending);
+            ASSERT_TRUE(mouse_pending);
+            fb.present();
+            ASSERT_EQ(cap.read().size(), offset);
+        }
+        const std::string cleanup = cap.read().substr(offset);
+        ASSERT_TRUE(cleanup.find("\033[?1049h") == std::string::npos);
+        ASSERT_TRUE(cleanup.find("\033[?25h\033[0m\033[?1049l") != std::string::npos);
+        ASSERT_TRUE(cleanup.find("\033[?1002l\033[?1006l") < cleanup.find("\033[?1049l"));
+    }
+}
+
+TEST(framebuffer, final_suspend_cleanup_retries_failed_mouse_reset_before_terminal_release)
+{
+    for (const bool fail_final : { false, true })
+    {
+        CaptureStdout cap;
+        Framebuffer fb(4, 4, false);
+        platform::enable_mouse();
+        bool mouse_pending = !platform::disable_mouse(
+            [](const char *)
+            {
+                // A timed-out mouse reset can leave a partial CSI in the parser.
+                platform::write_terminal("\033[?1002");
+                return false;
+            }
+        );
+        ASSERT_TRUE(mouse_pending);
+        const size_t offset = cap.read().size();
+        Framebuffer::WriteCleanupFn writer = platform::write_terminal_cleanup;
+        if (fail_final)
+        {
+            writer = [](const char *text)
+            {
+                if (std::string_view(text).find("\033[?1049l") != std::string_view::npos)
+                {
+                    return false;
+                }
+                return platform::write_terminal_cleanup(text);
+            };
+        }
+        fb.suspend_terminal(writer, &mouse_pending);
+        ASSERT_EQ(mouse_pending, fail_final);
+        const std::string cleanup = cap.read().substr(offset);
+        if (fail_final)
+        {
+            ASSERT_TRUE(cleanup.find("\033[?1049l") == std::string::npos);
+        }
+        else
+        {
+            ASSERT_TRUE(
+                cleanup == "\033\\\033[?2026l\033[?7h\033[?1002l\033[?1006l"
+                           "\033[?25h\033[0m\033[?1049l"
+            );
+        }
+    }
+}
+
+TEST(framebuffer, interrupted_terminal_release_retries_all_cleanup_at_every_byte_boundary)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        std::string cleanup = "\033\\\033[?2026l\033[?7h";
+        if (backend == GraphicsBackend::Kitty)
+        {
+            cleanup += kitty::DELETE_IMAGE;
+        }
+        cleanup += "\033[?1002l\033[?1006l\033[?25h\033[0m\033[?1049l";
+        // Restoring stdout flags can fail after the entire release reached the shell.
+        for (size_t split = 0; split <= cleanup.size(); ++split)
+        {
+            CaptureStdout cap;
+            GraphicsConfig gfx;
+            gfx.backend = backend;
+            Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            bool mouse_pending = true;
+            static size_t prefix_size = 0;
+            prefix_size = split;
+            fb.suspend_terminal(
+                [](const char *text)
+                {
+                    platform::write_terminal(text, prefix_size);
+                    return false;
+                },
+                &mouse_pending
+            );
+            ASSERT_TRUE(mouse_pending);
+            const std::string partial = cap.read();
+            ASSERT_TRUE(partial == "\033[?1049h\033[?25l" + cleanup.substr(0, split));
+            fb.present();
+            ASSERT_TRUE(cap.read() == partial);
+            fb.suspend_terminal(nullptr, &mouse_pending);
+            ASSERT_FALSE(mouse_pending);
+            std::string retry = cleanup;
+            if (backend == GraphicsBackend::Kitty)
+            {
+                // An interrupted delete is indistinguishable from an interrupted
+                // upload. Finish any upload before retrying the image deletion.
+                retry.insert(retry.find(kitty::DELETE_IMAGE), kitty::FINISH_TRANSMISSION);
+            }
+            ASSERT_TRUE(cap.read() == partial + retry);
+            fb.suspend_terminal();
+            ASSERT_TRUE(cap.read() == partial + retry);
+        }
+    }
+}
+
+TEST(framebuffer, canceled_frame_forces_redraw_when_continuation_cancels_stop)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        GraphicsConfig gfx;
+        gfx.backend = backend;
+        Framebuffer fb(4, 4, true, ColorMode::TrueColor, gfx);
+        fb.set_hud("recover-hud");
+        platform::detail::job_control_handler(SIGTSTP);
+        fb.present();
+        platform::detail::job_control_handler(SIGCONT);
+        fb.present();
+        const std::string output = cap.read();
+        ASSERT_TRUE(output.rfind("\033\\\033[?2026l\033[?7h", 0) == 0);
+        ASSERT_TRUE(output.find("\033[?2026h\033[2J") != std::string::npos);
+        ASSERT_TRUE(output.find("recover-hud") != std::string::npos);
+    }
+}
+
+TEST(framebuffer, interrupted_reacquisition_can_retry_after_continue_clears_stop)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        GraphicsConfig gfx;
+        gfx.backend = backend;
+        static bool interrupt_setup = false;
+        interrupt_setup = true;
+        Framebuffer fb(
+            4, 4, false, ColorMode::TrueColor, gfx, false,
+            [](const char *data, size_t size) -> int64_t
+            {
+                if (interrupt_setup)
+                {
+                    interrupt_setup = false;
+                    const int64_t written = platform::detail::write_terminal_bytes(data, 2);
+                    platform::detail::job_control_handler(SIGTSTP);
+                    return written;
+                }
+                return platform::detail::write_terminal_bytes(data, size);
+            }
+        );
+        fb.set_hud("reacquired-hud");
+        fb.suspend_terminal();
+        bool canceled = false;
+        const bool resumed = fb.resume_terminal(&canceled);
+        platform::detail::job_control_handler(SIGCONT);
+        ASSERT_FALSE(resumed);
+        ASSERT_TRUE(canceled);
+        ASSERT_FALSE(platform::control_requested());
+        const std::string interrupted = cap.read();
+        fb.present();
+        ASSERT_TRUE(cap.read() == interrupted);
+        ASSERT_TRUE(fb.resume_terminal(&canceled));
+        ASSERT_FALSE(canceled);
+        fb.present();
+        const std::string output = cap.read();
+        ASSERT_TRUE(output.find("\033[\033\\\033[?1049h\033[?25l") != std::string::npos);
+        ASSERT_TRUE(output.find("reacquired-hud") != std::string::npos);
+    }
+}
+#endif
+
+TEST(framebuffer, headless_suspend_resume_emits_nothing)
+{
+    CaptureStdout cap;
+    {
+        Framebuffer fb(4, 4, true);
+        fb.suspend_terminal();
+        fb.resume_terminal();
+    }
+    ASSERT_TRUE(cap.read().empty());
+}
 
 TEST(framebuffer, hud_text_appears_in_present_output)
 {
@@ -1307,6 +1608,158 @@ namespace
                  n };
     }
 } // namespace
+
+#ifndef _WIN32
+namespace
+{
+    struct KittyChunkWrite
+    {
+        bool interrupt_next = true;
+        bool fail_cleanup = false;
+        size_t chunk_end = 0;
+    };
+
+    KittyChunkWrite &kitty_chunk_write()
+    {
+        static KittyChunkWrite script;
+        return script;
+    }
+
+    int64_t interrupt_after_kitty_chunk(const char *data, size_t size)
+    {
+        auto &script = kitty_chunk_write();
+        if (!script.interrupt_next)
+        {
+            return platform::detail::write_terminal_bytes(data, size);
+        }
+        script.interrupt_next = false;
+        const std::string_view frame(data, size);
+        const size_t apc = frame.find("\033_G");
+        const size_t st = frame.find("\033\\", apc);
+        if (st == std::string_view::npos)
+        {
+            return 0;
+        }
+        script.chunk_end = st + 2;
+        if (!platform::write_terminal(data, script.chunk_end))
+        {
+            return 0;
+        }
+        platform::detail::job_control_handler(SIGTSTP);
+        if (script.fail_cleanup)
+        {
+            // Keep the completed chunk, but make every cleanup write fail.
+            close(STDOUT_FILENO);
+        }
+        return static_cast<int64_t>(script.chunk_end);
+    }
+} // namespace
+
+namespace
+{
+    void verify_interrupted_kitty_recovery(bool fail_cleanup)
+    {
+        kitty_chunk_write() = {};
+        kitty_chunk_write().fail_cleanup = fail_cleanup;
+        Framebuffer fb(
+            64, 64, true, ColorMode::TrueColor, direct_kitty_config(8, 4), false, interrupt_after_kitty_chunk
+        );
+        std::vector<unsigned char> expected;
+        uint32_t rng = 1;
+        for (size_t i = 0; i < size_t{ 64 } * 64u; ++i)
+        {
+            // Incompressible pixels keep the upload larger than one Kitty chunk.
+            rng = (rng * 1664525u) + 1013904223u;
+            const Color color{ static_cast<uint8_t>(rng >> 24u), static_cast<uint8_t>(rng >> 16u),
+                               static_cast<uint8_t>(rng >> 8u) };
+            fb.set_color_at(i, color);
+            expected.insert(expected.end(), { color.r, color.g, color.b });
+        }
+        CaptureStdout cap;
+        fb.present();
+        const bool suspended = platform::suspend_requested();
+        platform::detail::job_control_handler(SIGCONT);
+        if (fail_cleanup)
+        {
+            // A retry while output is unavailable must retain the dirty frame.
+            fb.present();
+            ASSERT_TRUE(dup2(fileno(cap.tmp), STDOUT_FILENO) >= 0);
+        }
+        const std::string interrupted = cap.read();
+        ASSERT_TRUE(suspended);
+        ASSERT_FALSE(platform::suspend_requested());
+        const size_t apc = interrupted.find("\033_G");
+        const size_t semi = interrupted.find(';', apc);
+        const size_t chunk_end = kitty_chunk_write().chunk_end;
+        ASSERT_TRUE(chunk_end > 0);
+        ASSERT_TRUE(interrupted.find(",m=1", apc) < semi);
+        ASSERT_TRUE(interrupted.substr(chunk_end - 2, 2) == "\033\\");
+        const std::string recovery = "\033\\\033[?2026l\033[?7h\033_Gq=2,m=0;\033\\\033_Gq=2,a=d,d=I,i=1\033\\";
+        ASSERT_TRUE(interrupted.substr(chunk_end) == (fail_cleanup ? "" : recovery));
+
+        // No suspend_terminal() or scene update: the failed frame must arm its own retry.
+        fb.present();
+        const std::string output = cap.read();
+        const std::string retry = output.substr(interrupted.size());
+        ASSERT_TRUE(retry.rfind((fail_cleanup ? recovery : "") + "\033[?2026h\033[2J", 0) == 0);
+        ASSERT_TRUE(retry.find("a=T") != std::string::npos);
+        ASSERT_TRUE(retry.find(",m=0;") != std::string::npos);
+        ASSERT_TRUE(retry.find("o=z") != std::string::npos);
+        // Ghostty 1.3.1 keeps pending upload data across deletes. Only m=0
+        // finishes it, even when the resulting compressed image is incomplete.
+        std::string pending;
+        std::vector<std::string> transfers;
+        size_t pos = 0;
+        while ((pos = output.find("\033_G", pos)) != std::string::npos)
+        {
+            const size_t end = output.find("\033\\", pos);
+            ASSERT_TRUE(end != std::string::npos);
+            const std::string command = output.substr(pos + 3, end - pos - 3);
+            const size_t separator = command.find(';');
+            const std::string params = "," + command.substr(0, separator) + ",";
+            if (params.find(",a=d,") == std::string::npos)
+            {
+                ASSERT_TRUE(separator != std::string::npos);
+                pending += command.substr(separator + 1);
+                if (params.find(",m=1,") == std::string::npos)
+                {
+                    transfers.push_back(pending);
+                    pending.clear();
+                }
+            }
+            pos = end + 2;
+        }
+        ASSERT_TRUE(pending.empty());
+        ASSERT_EQ(transfers.size(), size_t{ 2 });
+        std::vector<unsigned char> rgb(expected.size());
+        const auto rgb_len = static_cast<unsigned int>(rgb.size());
+        mz_ulong len = rgb_len;
+        const auto abandoned = b64_decode(transfers[0]);
+        ASSERT_TRUE(
+            mz_uncompress(rgb.data(), &len, abandoned.data(), static_cast<unsigned int>(abandoned.size())) != MZ_OK
+        );
+        const auto compressed = b64_decode(transfers[1]);
+        len = rgb_len;
+        ASSERT_EQ(
+            mz_uncompress(rgb.data(), &len, compressed.data(), static_cast<unsigned int>(compressed.size())), MZ_OK
+        );
+        ASSERT_EQ(len, rgb_len);
+        ASSERT_TRUE(rgb == expected);
+        fb.present();
+        ASSERT_TRUE(cap.read() == output);
+    }
+} // namespace
+
+TEST(framebuffer, kitty_aborts_completed_partial_chunk_when_continuation_cancels_stop)
+{
+    verify_interrupted_kitty_recovery(false);
+}
+
+TEST(framebuffer, kitty_retries_failed_cleanup_before_redrawing_after_canceled_stop)
+{
+    verify_interrupted_kitty_recovery(true);
+}
+#endif
 
 TEST(framebuffer, kitty_parallel_deflate_stream_inflates_to_the_exact_frame)
 {
