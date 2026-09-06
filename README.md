@@ -185,8 +185,6 @@ String values are case-insensitive. Value flags accept `--flag value`, `--flag=v
 
 `--no-input` ignores the viewer's keyboard and mouse controls except `Q`. Ctrl+C still quits. The viewer keeps mouse tracking active, so dragging does not select terminal text.
 
-On POSIX, Ctrl+Z restores the terminal and suspends the viewer, including with `--no-input`. Use `fg` to resume with a full redraw. A viewer resumed with `bg` stays idle until it returns to the foreground.
-
 ### First-person controls
 
 `--first-person` replaces the turntable with a camera that can fly through geometry. Rendering controls, `R`, `Q` and `Space` keep their usual bindings.
