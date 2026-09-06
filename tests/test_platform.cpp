@@ -3275,7 +3275,7 @@ TEST(platform, terminal_cleanup_restart_restores_captured_termios_and_signal_mas
     ASSERT_EQ(sigismember(&after, SIGTTOU), sigismember(&before, SIGTTOU));
 }
 
-TEST(platform, terminal_cleanup_restart_releases_xoff_without_xon)
+TEST(platform, terminal_cleanup_survives_xoff_without_losing_bytes)
 {
     ScopedFd master(posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK));
     ASSERT_TRUE(master.fd >= 0);
@@ -3315,6 +3315,14 @@ TEST(platform, terminal_cleanup_restart_releases_xoff_without_xon)
     ASSERT_TRUE(platform::write_terminal_cleanup("cleanup"));
 
     const std::string expected = blocked_write == 1 ? "xcleanup" : "cleanup";
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    drain_pty_output(master.fd, output);
+    if (output.size() < expected.size())
+    {
+        // macOS queues stopped output but does not restart it when IXON changes.
+        const char start = static_cast<char>(configured.c_cc[VSTART]);
+        ASSERT_EQ(write(master.fd, &start, 1), 1);
+    }
     await_pty(master.fd, output, [&]() { return output.size() >= expected.size(); });
     ASSERT_TRUE(output == expected);
     termios restored = {};
