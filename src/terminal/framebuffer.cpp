@@ -272,7 +272,9 @@ void Framebuffer::suspend_terminal(WriteCleanupFn write_cleanup, bool *mouse_cle
     }
     append(release);
     *out = '\0';
-    m_terminal_release_pending = !write_cleanup(cleanup);
+    const bool output_restarted = platform::restart_terminal_output_for_cleanup();
+    const bool released = write_cleanup(cleanup);
+    m_terminal_release_pending = !output_restarted || !released;
     m_output_recovery_pending = m_terminal_release_pending;
     if (!m_terminal_release_pending)
     {

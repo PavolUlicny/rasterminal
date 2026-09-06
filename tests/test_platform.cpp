@@ -1308,6 +1308,7 @@ namespace
         PartialTermiosField partial_field = PartialTermiosField::None;
         int get_calls = 0;
         int set_calls = 0;
+        int set_calls_with_sigttou_blocked = 0;
         int flush_calls = 0;
         bool flush_clears_pending_input = false;
     };
@@ -1330,7 +1331,7 @@ namespace
     int scripted_tcgetattr(int fd, termios *value)
     {
         TermiosCalls &calls = termios_calls();
-        if (fd != STDIN_FILENO || calls.get_calls >= 8)
+        if ((fd != STDIN_FILENO && fd != STDOUT_FILENO) || calls.get_calls >= 8)
         {
             errno = EINVAL;
             return -1;
@@ -1348,12 +1349,17 @@ namespace
     int scripted_tcsetattr(int fd, int action, const termios *value)
     {
         TermiosCalls &calls = termios_calls();
-        if (fd != STDIN_FILENO || action != TCSANOW || calls.set_calls >= 8)
+        if ((fd != STDIN_FILENO && fd != STDOUT_FILENO) || action != TCSANOW || calls.set_calls >= 8)
         {
             errno = EINVAL;
             return -1;
         }
         const int call = calls.set_calls++;
+        sigset_t blocked = {};
+        if (pthread_sigmask(SIG_SETMASK, nullptr, &blocked) == 0 && sigismember(&blocked, SIGTTOU) == 1)
+        {
+            calls.set_calls_with_sigttou_blocked++;
+        }
         calls.writes[call] = *value;
         const int error = calls.set_errors[call];
         if (error != 0)
@@ -3243,6 +3249,77 @@ TEST(platform, terminal_cleanup_preserves_shared_flags_on_exclusive_terminal)
         await_pty(master.fd, output, [&]() { return output.size() >= 7; });
         ASSERT_TRUE(output == "cleanup");
     }
+}
+
+TEST(platform, terminal_cleanup_restart_restores_captured_termios_and_signal_mask)
+{
+    reset_termios_calls();
+    auto &calls = termios_calls();
+    calls.current.c_iflag |= static_cast<tcflag_t>(IXON | ICRNL);
+    calls.current.c_oflag |= OPOST;
+    calls.current.c_lflag |= ISIG;
+    const termios captured = calls.current;
+
+    sigset_t before = {};
+    sigset_t after = {};
+    ASSERT_EQ(pthread_sigmask(SIG_SETMASK, nullptr, &before), 0);
+    ASSERT_TRUE(platform::restart_terminal_output_for_cleanup(scripted_tcgetattr, scripted_tcsetattr));
+    ASSERT_EQ(pthread_sigmask(SIG_SETMASK, nullptr, &after), 0);
+
+    ASSERT_EQ(calls.get_calls, 1);
+    ASSERT_EQ(calls.set_calls, 2);
+    ASSERT_EQ(calls.set_calls_with_sigttou_blocked, 2);
+    ASSERT_EQ(calls.writes[0].c_iflag & static_cast<tcflag_t>(IXON), static_cast<tcflag_t>(0));
+    ASSERT_TRUE(termios_equal(calls.writes[1], captured));
+    ASSERT_TRUE(termios_equal(calls.current, captured));
+    ASSERT_EQ(sigismember(&after, SIGTTOU), sigismember(&before, SIGTTOU));
+}
+
+TEST(platform, terminal_cleanup_restart_releases_xoff_without_xon)
+{
+    ScopedFd master(posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK));
+    ASSERT_TRUE(master.fd >= 0);
+    ASSERT_EQ(grantpt(master.fd), 0);
+    ASSERT_EQ(unlockpt(master.fd), 0);
+    const char *path = ptsname(master.fd); // NOLINT(concurrency-mt-unsafe)
+    ASSERT_TRUE(path != nullptr);
+    ScopedFd slave(open(path, O_RDWR | O_NOCTTY | O_NONBLOCK));
+    ASSERT_TRUE(slave.fd >= 0);
+
+    termios configured = {};
+    ASSERT_EQ(tcgetattr(slave.fd, &configured), 0);
+    configured.c_iflag |= IXON;
+    configured.c_iflag &= ~static_cast<tcflag_t>(IXANY);
+    configured.c_lflag &= ~static_cast<tcflag_t>(ECHO);
+    ASSERT_EQ(tcsetattr(slave.fd, TCSANOW, &configured), 0);
+    const termios captured = configured;
+
+    const char stop = static_cast<char>(configured.c_cc[VSTOP]);
+    ASSERT_EQ(write(master.fd, &stop, 1), 1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const ssize_t blocked_write = write(slave.fd, "x", 1);
+    // Linux refuses the write while macOS may queue it. Neither may expose
+    // output on the master until the cleanup helper releases XOFF.
+    ASSERT_TRUE(
+        blocked_write == 0 || blocked_write == 1 || (blocked_write < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+    );
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    std::string output;
+    drain_pty_output(master.fd, output);
+    ASSERT_TRUE(output.empty());
+
+    ScopedStdoutCapture capture;
+    ASSERT_TRUE(capture.valid);
+    ASSERT_TRUE(dup2(slave.fd, STDOUT_FILENO) >= 0);
+    ASSERT_TRUE(platform::restart_terminal_output_for_cleanup());
+    ASSERT_TRUE(platform::write_terminal_cleanup("cleanup"));
+
+    const std::string expected = blocked_write == 1 ? "xcleanup" : "cleanup";
+    await_pty(master.fd, output, [&]() { return output.size() >= expected.size(); });
+    ASSERT_TRUE(output == expected);
+    termios restored = {};
+    ASSERT_EQ(tcgetattr(slave.fd, &restored), 0);
+    ASSERT_TRUE(termios_equal(restored, captured));
 }
 
 TEST(platform, raw_mode_restoration_in_background_preserves_signal_mask)

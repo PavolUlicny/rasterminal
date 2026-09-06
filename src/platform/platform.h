@@ -92,6 +92,9 @@ namespace platform
 #endif
         }
 #ifndef _WIN32
+        using TcgetattrFn = int (*)(int, termios *);
+        using TcsetattrFn = int (*)(int, int, const termios *);
+
         inline bool set_output_flags(int flags) noexcept
         {
             int result = fcntl(STDOUT_FILENO, F_SETFL, flags);
@@ -263,6 +266,56 @@ namespace platform
         }
 #endif
     } // namespace detail
+
+    // Releasing the terminal takes precedence over a user's XOFF pause. Toggling
+    // IXON restarts Linux tty output, and restoring the captured mode preserves
+    // every termios setting the caller owned.
+#ifdef _WIN32
+    inline bool restart_terminal_output_for_cleanup() noexcept
+    {
+        return true;
+    }
+#else
+    inline bool restart_terminal_output_for_cleanup(
+        detail::TcgetattrFn get_termios = tcgetattr, detail::TcsetattrFn set_termios = tcsetattr
+    ) noexcept
+    {
+        return detail::with_sigttou_blocked(
+            [get_termios, set_termios]()
+            {
+                termios captured = {};
+                int result = get_termios(STDOUT_FILENO, &captured);
+                while (result < 0 && errno == EINTR)
+                {
+                    result = get_termios(STDOUT_FILENO, &captured);
+                }
+                if (result < 0)
+                {
+                    return errno == ENOTTY;
+                }
+                if ((captured.c_iflag & static_cast<tcflag_t>(IXON)) == 0)
+                {
+                    return true;
+                }
+
+                termios running = captured;
+                running.c_iflag &= ~static_cast<tcflag_t>(IXON);
+                result = set_termios(STDOUT_FILENO, TCSANOW, &running);
+                while (result < 0 && errno == EINTR)
+                {
+                    result = set_termios(STDOUT_FILENO, TCSANOW, &running);
+                }
+                const bool restarted = result == 0;
+                result = set_termios(STDOUT_FILENO, TCSANOW, &captured);
+                while (result < 0 && errno == EINTR)
+                {
+                    result = set_termios(STDOUT_FILENO, TCSANOW, &captured);
+                }
+                return restarted && result == 0;
+            }
+        );
+    }
+#endif
 
     // Cleanup must reach termios restoration and signal handoff even when XOFF
     // or a full terminal queue prevents output. Frame writes wait until canceled.
@@ -1201,7 +1254,11 @@ namespace platform
     // the alternate screen here; the normal path transfers ownership to Framebuffer.
     inline bool exit_alt_screen()
     {
-        return write_terminal_cleanup("\033\\\033[?1049l");
+        const bool output_restarted = restart_terminal_output_for_cleanup();
+        const bool released = write_terminal_cleanup("\033\\\033[?1049l");
+        // The restart helper is a no-op on Windows.
+        // cppcheck-suppress knownConditionTrueFalse
+        return output_restarted && released;
     }
 
     // Query graphics, cell, and sixel capabilities before the input loop starts.
@@ -1508,8 +1565,6 @@ namespace platform
 #else
     namespace detail
     {
-        using TcgetattrFn = int (*)(int, termios *);
-        using TcsetattrFn = int (*)(int, int, const termios *);
         using TcflushFn = int (*)(int, int);
     } // namespace detail
 #endif
@@ -2083,7 +2138,11 @@ namespace platform
     inline bool disable_mouse(bool (*write_cleanup)(const char *) = write_terminal_cleanup)
     {
         // This may run after leaving the alternate screen; keep the reset nonprinting.
-        return write_cleanup("\033\\\033[?1002l\033[?1006l");
+        const bool output_restarted = restart_terminal_output_for_cleanup();
+        const bool released = write_cleanup("\033\\\033[?1002l\033[?1006l");
+        // The restart helper is a no-op on Windows.
+        // cppcheck-suppress knownConditionTrueFalse
+        return output_restarted && released;
     }
 
     // Buffered, timed input reader; input.h owns the stateless grammar.

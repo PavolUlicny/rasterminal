@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Terminal teardown on POSIX now releases a Ctrl+S output pause before sending cleanup escapes, then restores the original flow-control setting. Quitting under XOFF no longer leaves the alternate screen, hidden cursor, or mouse tracking active.
 - Rasterminal restores Windows console modes and the output code page after normal exits, Ctrl+C, and Ctrl+Break. It clears queued mouse reports and handles Ctrl+C when processed input was inherited disabled, so the shell receives no stale escapes and keeps its original input behavior.
 - POSIX interactive startup now stops safely if raw input mode cannot be enabled. Terminal restoration retries interrupted or transient failures instead of leaving the shell in raw mode.
 - POSIX sessions now restore terminal state before terminating from `SIGINT`, `SIGTERM`, `SIGQUIT`, or `SIGHUP`, and preserve the signal termination status. `SIGINT` and `SIGTERM` therefore report their usual shell statuses, typically 130 and 143, instead of 0.
