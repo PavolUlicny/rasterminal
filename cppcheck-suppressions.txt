@@ -8,8 +8,8 @@ toomanyconfigs
 unusedFunction:src/terminal/framebuffer.h
 unusedFunction:src/math/linalg.h
 
-// The Linux scan sees the Windows VT gate as constant. Permit its inline suppression to
-// become unmatched if a later cppcheck version stops reporting it.
+// Platform stubs make checks constant in individual configurations. Permit their inline
+// suppressions to become unmatched if a later cppcheck version stops reporting them.
 unmatchedSuppression:src/main.cpp
 
 // The Windows shared-memory stub makes two framebuffer conditions appear constant.

@@ -16,6 +16,10 @@ enum class GraphicsBackend : std::uint8_t
 // Zero dimensions mean unreported.
 struct TermGraphics
 {
+    // Once a query stops for a control request, SIGCONT cannot make it complete.
+    bool interrupted = false;
+    // Setup or I/O failed; this is not a negative capability reply.
+    bool failed = false;
     bool kitty = false;
     bool kitty_shm = false;
     bool sixel = false;

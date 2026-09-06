@@ -410,6 +410,7 @@ ParseResult parse_args(int argc, char *argv[])
             "  Mouse drag   Orbit                  K       Toggle backface culling\n"
             "  Scroll       Zoom                   T       Toggle textures\n"
             "  Q, Ctrl+C    Quit\n"
+            "  Ctrl+Z       Suspend on POSIX; fg resumes, bg waits for foreground\n"
             "\n"
             "First-person controls (--first-person, replaces orbit and zoom above):\n"
             "  WASD         Move                   E / V   Move up / down\n"

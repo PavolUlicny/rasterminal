@@ -25,7 +25,7 @@
 #include <exception>
 #include <functional>
 #include <string>
-#include <thread>
+#include <stdexcept>
 #include <vector>
 
 namespace
@@ -250,15 +250,13 @@ namespace
         return true;
     }
 
-    // Startup graphics result. exit_code >= 0 means return immediately after a
-    // query interrupt or failed forced-backend detection; the caller still owns
-    // any terminal state recorded here and must clean it up first.
+    // Interrupted queries must be retried. Detection errors are reported only
+    // after the caller releases the terminal state recorded here.
     struct GraphicsSetup
     {
         GraphicsBackend backend = GraphicsBackend::Blocks;
         bool shm_ok = false;
-        // Framebuffer uses this to adopt the alternate screen entered by the query.
-        bool query_ran = false;
+        bool interrupted = false;
         int cell_w = 0;
         int cell_h = 0;
         // The terminal's max sixel image size (0 = unreported); see TermGraphics.
@@ -276,6 +274,7 @@ namespace
         bool alt_screen_owned = false;
         bool mouse_enabled = false;
         bool raw_enabled = false;
+        bool reacquisition_pending = false;
         const char *error = nullptr;
 
         TerminalSessionGuard(const char *prog, platform::ConsoleStateGuard &state) noexcept
@@ -305,6 +304,81 @@ namespace
             }
         }
 
+        bool resume_output(Framebuffer *framebuffer)
+        {
+            if (!reacquisition_pending)
+            {
+                return true;
+            }
+            bool canceled = false;
+            if ((framebuffer != nullptr && !framebuffer->resume_terminal(&canceled)) ||
+                (mouse_enabled && !platform::enable_mouse(true, &canceled)))
+            {
+                // SIGCONT can clear a stop request after setup was abandoned.
+                if (canceled)
+                {
+                    return true;
+                }
+                error = "failed to enable terminal output";
+                return false;
+            }
+            reacquisition_pending = false;
+            return true;
+        }
+
+        bool handle_suspend(Framebuffer *framebuffer = nullptr)
+        {
+            // The Windows stub never requests suspension; POSIX needs this guard.
+            // cppcheck-suppress knownConditionTrueFalse
+            if (!platform::suspend_requested())
+            {
+                return resume_output(framebuffer);
+            }
+            const bool restore_mouse = mouse_enabled;
+            if (framebuffer != nullptr)
+            {
+                framebuffer->suspend_terminal(nullptr, &mouse_enabled);
+            }
+            else if (mouse_enabled)
+            {
+                mouse_enabled = !platform::disable_mouse();
+            }
+            if (alt_screen_owned)
+            {
+                alt_screen_owned = !platform::exit_alt_screen();
+            }
+            if (!platform::disable_raw_mode(&console_state))
+            {
+                error = "failed to restore terminal state before suspension";
+                return false;
+            }
+            raw_enabled = false;
+            platform::reset_input_state();
+            // The Windows stub always succeeds; POSIX stop and resume can fail.
+            // cppcheck-suppress knownConditionTrueFalse
+            if (!platform::suspend_process())
+            {
+                error = "failed to suspend or resume terminal session";
+                return false;
+            }
+            if (platform::interrupt_requested())
+            {
+                return true;
+            }
+
+            // Exit must restore any termios changes the shell made while stopped.
+            raw_enabled = true;
+            if (!platform::resume_raw_mode(console_state))
+            {
+                error = "failed to restore raw input mode after continuation";
+                return false;
+            }
+            // Retain setup intent and cleanup ownership across interrupted writes.
+            mouse_enabled = restore_mouse;
+            reacquisition_pending = true;
+            return resume_output(framebuffer);
+        }
+
         TerminalSessionGuard(const TerminalSessionGuard &) = delete;
         TerminalSessionGuard &operator=(const TerminalSessionGuard &) = delete;
         TerminalSessionGuard(TerminalSessionGuard &&) = delete;
@@ -328,9 +402,15 @@ namespace
                                  (std::strncmp(term_env, "screen", 6) == 0 || std::strncmp(term_env, "tmux", 4) == 0));
         if (!under_tmux)
         {
-            gfx.query_ran = true;
             alt_screen_owned = true;
             const TermGraphics tg = platform::query_term_graphics();
+            gfx.interrupted = tg.interrupted;
+            if (tg.failed)
+            {
+                gfx.error = "failed to query terminal graphics";
+                gfx.exit_code = 1;
+                return gfx;
+            }
             // Outside the backend selection: a sixel-only terminal's cell-size
             // reply must not be thrown away with the kitty verdict.
             gfx.cell_w = tg.cell_w;
@@ -349,11 +429,11 @@ namespace
                 gfx.backend = GraphicsBackend::Sixel;
             }
         }
-        // Stop backend detection with a temporary success status. After cleanup,
-        // finish_termination re-raises the recorded signal.
-        if (platform::interrupt_requested())
+        // Suspension restarts detection after continuation. Termination unwinds
+        // the terminal guards before finish_termination re-raises the signal.
+        if (gfx.interrupted || platform::control_requested())
         {
-            gfx.exit_code = 0;
+            gfx.interrupted = true;
             return gfx;
         }
         // Forced pixel modes still require detection; unsupported escapes would
@@ -644,9 +724,9 @@ const auto run_main = [](int argc, char *argv[]) -> int
         model_name = sanitize_controls(model_name);
     }
 
-    if (!platform::install_interrupt_handler())
+    if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
     {
-        std::fprintf(stderr, "%s: failed to install interrupt handler\n", program_name(argv[0]));
+        std::fprintf(stderr, "%s: failed to install signal handlers\n", program_name(argv[0]));
         return 1;
     }
 
@@ -682,7 +762,23 @@ const auto run_main = [](int argc, char *argv[]) -> int
             return 1;
         }
 
-        const GraphicsSetup gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
+        GraphicsSetup gfx;
+        for (;;)
+        {
+            if (!terminal.handle_suspend())
+            {
+                return 1;
+            }
+            if (platform::interrupt_requested())
+            {
+                return 0;
+            }
+            gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
+            if (!gfx.interrupted && !platform::suspend_requested())
+            {
+                break;
+            }
+        }
         if (gfx.exit_code >= 0)
         {
             terminal.error = gfx.error;
@@ -694,9 +790,9 @@ const auto run_main = [](int argc, char *argv[]) -> int
         int cell_w = gfx.cell_w;
         int cell_h = gfx.cell_h;
 
-        // Mouse teardown has no saved-state dependency, so arm it before writing.
+        // Arm cleanup before deferred framebuffer and mouse setup.
         terminal.mouse_enabled = true;
-        platform::enable_mouse();
+        terminal.reacquisition_pending = true;
 
         int cols = 0;
         int rows = 0;
@@ -757,10 +853,32 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
 
         // Renderer must outlive Framebuffer because its borrowed runner captures it.
-        Renderer renderer(Renderer::resolve_thread_count(args.n_threads, pixel_backend));
+        Renderer renderer = [&]()
+        {
+            const platform::WorkerSignalMask worker_signals;
+            if (!worker_signals.valid())
+            {
+                throw std::runtime_error("failed to block control signals for render workers");
+            }
+            return Renderer(Renderer::resolve_thread_count(args.n_threads, pixel_backend));
+        }();
 
-        Framebuffer fb(fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/gfx.query_ran);
+        Framebuffer fb(
+            fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/terminal.alt_screen_owned,
+            /*write_frame=*/nullptr, /*defer_terminal_setup=*/true
+        );
         terminal.alt_screen_owned = false;
+        while (terminal.reacquisition_pending)
+        {
+            if (platform::interrupt_requested())
+            {
+                return 0;
+            }
+            if (!terminal.handle_suspend(&fb))
+            {
+                return 1;
+            }
+        }
 
         // Key light: warm white from upper-right-front.
         // Fill light: dim cool blue from lower-left-back, providing contrast.
@@ -829,6 +947,39 @@ const auto run_main = [](int argc, char *argv[]) -> int
         bool running = true;
         while (running)
         {
+            if (platform::interrupt_requested())
+            {
+                break;
+            }
+            if (platform::suspend_requested() || terminal.reacquisition_pending)
+            {
+                if (!terminal.handle_suspend(&fb))
+                {
+                    return 1;
+                }
+                if (platform::control_requested() || terminal.reacquisition_pending)
+                {
+                    continue;
+                }
+                held_cam_key = platform::Key::None;
+                mouse_dragging = false;
+                scene_dirty = true;
+                first_frame = true;
+                fps_smooth = -1.0f;
+                fps_display = -1.0f;
+                fps_latch_time = 0.0f;
+                prev = clock::now();
+                cols = 0;
+                rows = 0;
+                if (pixel_backend)
+                {
+                    platform::request_cell_size();
+                    if (backend == GraphicsBackend::Sixel)
+                    {
+                        platform::request_sixel_geometry();
+                    }
+                }
+            }
             auto now = clock::now();
             const float raw_dt = std::chrono::duration<float>(now - prev).count();
             prev = now;
@@ -863,6 +1014,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
             constexpr int MAX_EVENTS_PER_FRAME = 4096;
             for (int handled = 0; handled < MAX_EVENTS_PER_FRAME; handled++)
             {
+                if (platform::control_requested())
+                {
+                    break;
+                }
                 const platform::InputEvent ev = platform::poll_event();
                 if (ev.type == platform::InputEvent::Type::None)
                 {
@@ -1051,6 +1206,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
             {
                 break;
             }
+            if (platform::control_requested())
+            {
+                continue;
+            }
 
             // Camera key movement (once per frame, frame-rate independent)
             if (held_cam_key != platform::Key::None)
@@ -1211,7 +1370,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 const float elapsed = std::chrono::duration<float>(frame_end - now).count();
                 if (elapsed < target_dt)
                 {
-                    std::this_thread::sleep_for(std::chrono::duration<float>(target_dt - elapsed));
+                    platform::wait_frame(std::chrono::duration<float>(target_dt - elapsed));
                 }
             }
         }
