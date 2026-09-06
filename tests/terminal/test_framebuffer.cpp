@@ -327,6 +327,7 @@ TEST(framebuffer, terminal_suspend_resume_is_idempotent_for_each_backend)
             GraphicsConfig gfx;
             gfx.backend = backend;
             Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            ASSERT_TRUE(fb.resume_terminal());
             fb.suspend_terminal();
             fb.suspend_terminal();
             fb.present();
@@ -347,15 +348,12 @@ TEST(framebuffer, terminal_suspend_resume_is_idempotent_for_each_backend)
 }
 
 #ifndef _WIN32
-TEST(framebuffer, deferred_terminal_setup_observes_pending_control_before_writing)
+TEST(framebuffer, terminal_setup_observes_pending_control_before_writing)
 {
     CaptureStdout cap;
     GraphicsConfig gfx;
     gfx.backend = GraphicsBackend::Blocks;
-    Framebuffer fb(
-        4, 4, false, ColorMode::TrueColor, gfx, /*adopt_alt_screen=*/true, /*write_frame=*/nullptr,
-        /*defer_terminal_setup=*/true
-    );
+    Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx, /*adopt_alt_screen=*/true);
     ASSERT_TRUE(cap.read().empty());
 
     platform::detail::job_control_handler(SIGTSTP);
@@ -375,6 +373,7 @@ TEST(framebuffer, terminal_resume_forces_full_cell_and_hud_redraw)
     CaptureStdout cap;
     {
         Framebuffer fb(4, 4, false);
+        ASSERT_TRUE(fb.resume_terminal());
         fb.set_hud("resume-hud");
         fb.present();
         fb.suspend_terminal();
@@ -409,7 +408,6 @@ TEST(framebuffer, failed_terminal_resume_retains_cleanup_without_rendering)
                     return -1;
                 }
             );
-            fb.suspend_terminal();
             ASSERT_FALSE(fb.resume_terminal());
             const std::string interrupted = cap.read();
             fb.present();
@@ -432,6 +430,7 @@ TEST(framebuffer, teardown_retries_failed_release_without_reactivating_terminal)
             GraphicsConfig gfx;
             gfx.backend = backend;
             Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            ASSERT_TRUE(fb.resume_terminal());
             bool mouse_pending = true;
             offset = cap.read().size();
             fb.suspend_terminal([](const char *) { return false; }, &mouse_pending);
@@ -452,6 +451,7 @@ TEST(framebuffer, final_suspend_cleanup_retries_failed_mouse_reset_before_termin
     {
         CaptureStdout cap;
         Framebuffer fb(4, 4, false);
+        ASSERT_TRUE(fb.resume_terminal());
         platform::enable_mouse();
         bool mouse_pending = !platform::disable_mouse(
             [](const char *)
@@ -509,6 +509,7 @@ TEST(framebuffer, interrupted_terminal_release_retries_all_cleanup_at_every_byte
             GraphicsConfig gfx;
             gfx.backend = backend;
             Framebuffer fb(4, 4, false, ColorMode::TrueColor, gfx);
+            ASSERT_TRUE(fb.resume_terminal());
             bool mouse_pending = true;
             static size_t prefix_size = 0;
             prefix_size = split;
@@ -585,7 +586,6 @@ TEST(framebuffer, interrupted_reacquisition_can_retry_after_continue_clears_stop
             }
         );
         fb.set_hud("reacquired-hud");
-        fb.suspend_terminal();
         bool canceled = false;
         const bool resumed = fb.resume_terminal(&canceled);
         platform::detail::job_control_handler(SIGCONT);
@@ -951,15 +951,13 @@ TEST(framebuffer, present_all_cells_dirty_skip_never_fires)
     ASSERT_TRUE(cap.read().find("\033[48;2;200;100;50m") != std::string::npos);
 }
 
-TEST(framebuffer, non_headless_ctor_dtor_emits_alternate_screen_escapes)
+TEST(framebuffer, non_headless_resume_and_dtor_emit_alternate_screen_escapes)
 {
-    // headless=false triggers the alternate-screen enter (ctor) and exit (dtor)
-    // ANSI sequences, which are normally suppressed by headless=true in all other
-    // tests.  CaptureStdout captures both in one buffer.
     CaptureStdout cap;
     {
         Framebuffer fb(1, 2, /*headless=*/false);
-    } // destructor runs here, emitting the exit sequence
+        ASSERT_TRUE(fb.resume_terminal());
+    }
     const std::string out = cap.read();
     ASSERT_TRUE(out.find("\033[?1049h") != std::string::npos); // enter alternate screen
     ASSERT_TRUE(out.find("\033[?1049l") != std::string::npos); // exit alternate screen
@@ -972,6 +970,7 @@ TEST(framebuffer, adopt_alt_screen_skips_enter_but_still_exits)
     CaptureStdout cap;
     {
         Framebuffer fb(1, 2, /*headless=*/false, ColorMode::TrueColor, {}, /*adopt_alt_screen=*/true);
+        ASSERT_TRUE(fb.resume_terminal());
     }
     const std::string out = cap.read();
     ASSERT_TRUE(out.find("\033[?1049h") == std::string::npos);

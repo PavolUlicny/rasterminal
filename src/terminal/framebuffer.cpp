@@ -193,8 +193,7 @@ Framebuffer::Framebuffer(
     ColorMode mode,
     const GraphicsConfig &gfx,
     bool adopt_alt_screen,
-    WriteFrameFn write_frame,
-    bool defer_terminal_setup
+    WriteFrameFn write_frame
 )
     : m_width(pixel_width), m_height(pixel_height),
       m_pixel(static_cast<size_t>(pixel_width) * static_cast<size_t>(pixel_height)), m_headless(headless), m_mode(mode),
@@ -211,22 +210,11 @@ Framebuffer::Framebuffer(
     if (!m_headless)
     {
         // Precondition: stdout is a terminal (main.cpp enforces the tty check
-        // before constructing us); this path and present() write ANSI to it.
+        // before constructing us); resume_terminal() and present() write ANSI to it.
         // Preallocate a mode-dependent per-cell upper bound (see buf_reserve_bytes).
         m_buf.reserve(buf_reserve_bytes());
-        if (defer_terminal_setup)
-        {
-            m_adopted_alt_screen = adopt_alt_screen;
-            m_terminal_release_pending = adopt_alt_screen;
-            return;
-        }
-        if (!adopt_alt_screen)
-        {
-            std::fputs("\033[?1049h", stdout); // enter alternate screen buffer
-        }
-        std::fputs("\033[?25l", stdout); // hide cursor
-        std::fflush(stdout);
-        m_terminal_active = true;
+        m_adopted_alt_screen = adopt_alt_screen;
+        m_terminal_release_pending = adopt_alt_screen;
     }
 }
 

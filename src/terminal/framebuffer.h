@@ -62,6 +62,7 @@ class Framebuffer
 
     // Pixel dimensions are literal for image backends; blocks use two pixels per cell.
     // adopt_alt_screen means startup detection already entered the alternate screen.
+    // Call resume_terminal() to acquire output for a non-headless framebuffer.
     Framebuffer(
         int pixel_width,
         int pixel_height,
@@ -69,8 +70,7 @@ class Framebuffer
         ColorMode mode = ColorMode::TrueColor,
         const GraphicsConfig &gfx = {},
         bool adopt_alt_screen = false,
-        WriteFrameFn write_frame = nullptr,
-        bool defer_terminal_setup = false
+        WriteFrameFn write_frame = nullptr
     );
     ~Framebuffer() noexcept;
 

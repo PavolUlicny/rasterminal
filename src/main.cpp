@@ -865,7 +865,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
 
         Framebuffer fb(
             fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/terminal.alt_screen_owned,
-            /*write_frame=*/nullptr, /*defer_terminal_setup=*/true
+            /*write_frame=*/nullptr
         );
         terminal.alt_screen_owned = false;
         while (terminal.reacquisition_pending)
