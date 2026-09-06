@@ -268,8 +268,8 @@ namespace platform
     } // namespace detail
 
     // Releasing the terminal takes precedence over a user's XOFF pause. Toggling
-    // IXON restarts Linux tty output, and restoring the captured mode preserves
-    // every termios setting the caller owned.
+    // IXON restarts Linux tty output, but macOS keeps stopped output queued.
+    // Restoring the captured mode preserves every termios setting the caller owned.
 #ifdef _WIN32
     inline bool restart_terminal_output_for_cleanup() noexcept
     {
@@ -767,8 +767,8 @@ namespace platform
 #endif
     }
 
-    // Workers inherit this blocked mask. Restore the main thread's mask after
-    // constructing them so only it receives control requests.
+    // Threads constructed while this guard is active inherit the blocked mask.
+    // The guard restores the caller's mask on destruction.
     class WorkerSignalMask
     {
       public:
