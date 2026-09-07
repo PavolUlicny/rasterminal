@@ -994,11 +994,27 @@ TEST(assimp, terragen_declared_grid_loads)
     ASSERT_FALSE(mesh.triangles.empty());
 }
 
-// Motion-only formats must not become synthetic stick figures.
-TEST(assimp, bvh_motion_only_fails_instead_of_synthesizing_geometry)
+// Rejection happens before opening the path, so report a format policy rather than file contents.
+TEST(assimp, bvh_motion_only_fails_with_unsupported_format_note)
 {
     TmpFile file(tmp_path("rast_assimp_motion.bvh"), kBvhMotionOnly);
+    StderrCapture captured;
+    ASSERT_TRUE(captured.ok);
     assert_rejects(file.path);
+    const std::string output = captured.text();
+    ASSERT_TRUE(output.find("BVH motion-capture format is unsupported") != std::string::npos);
+    ASSERT_TRUE(output.find("provides no model geometry") != std::string::npos);
+}
+
+TEST(assimp, csm_motion_only_fails_with_unsupported_format_note)
+{
+    TmpFile file(tmp_path("rast_assimp_motion.csm"), "$Filename motion.csm\n");
+    StderrCapture captured;
+    ASSERT_TRUE(captured.ok);
+    assert_rejects(file.path);
+    const std::string output = captured.text();
+    ASSERT_TRUE(output.find("CSM motion-capture format is unsupported") != std::string::npos);
+    ASSERT_TRUE(output.find("provides no model geometry") != std::string::npos);
 }
 
 // DXF's default gray repeats 0.6 in alpha, but does not author opacity.

@@ -211,9 +211,9 @@ Terminals do not report key releases, so only the most recently pressed movement
 | PLY | Native | ASCII and binary (LE/BE); vertex and face colors |
 | STL | Native | ASCII and binary; Z-up coordinates are remapped to Y-up; ASCII lines are limited to 64 KB |
 | glTF 2.0 | Native | External and embedded (GLB); PBR materials, vertex colors, double-sided, second UV set (`TEXCOORD_1`); `KHR_draco_mesh_compression`, `EXT_meshopt_compression`/`KHR_meshopt_compression`, `KHR_texture_basisu` (KTX2), `EXT_texture_webp`, `KHR_materials_unlit`, `KHR_texture_transform` |
-| AMF, 3DS, AC, ASE, Assbin, B3D, BVH, Collada, DXF, CSM, HMP, IrrMesh, IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX, MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen, Unreal 3D, DirectX X, X3D, 3MF, MMD | Assimp | Static geometry, scene transforms, common materials and textures |
+| AMF, 3DS, AC, ASE, Assbin, B3D, Collada, DXF, HMP, IrrMesh, IQM, IRR, LWO/LWS, MD2/MD3/MD5/MDC/MDL, NFF/NDO/OFF, Ogre, OpenGEX, MS3D, COB, Blender, IFC, XGL, FBX, Q3D/Q3BSP, RAW, SIB, SMD, Terragen, Unreal 3D, DirectX X, X3D, 3MF, MMD | Assimp | Static geometry, scene transforms, common materials and textures |
 
-OBJ, PLY, STL and glTF/GLB always use their native loaders, including when parsing fails. The Assimp loader flattens scene transforms and instances. It does not import animation, skinning, cameras, lights or format-specific metadata. It uses the first texture for each supported material role, and caps `--smooth-angle 180` to Assimp's 175-degree limit.
+BVH and CSM are motion-capture formats that provide no model geometry, so rasterminal does not support them. OBJ, PLY, STL and glTF/GLB always use their native loaders, including when parsing fails. The Assimp loader flattens scene transforms and instances. It does not import animation, skinning, cameras, lights or format-specific metadata. It uses the first texture for each supported material role, and caps `--smooth-angle 180` to Assimp's 175-degree limit.
 
 ## Requirements
 

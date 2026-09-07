@@ -1356,7 +1356,16 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         }
     }
 
-    // These loaders ignore AI_CONFIG_IMPORT_NO_SKELETON_MESHES.
+    if (extension == ".bvh" || extension == ".csm")
+    {
+        const char *const format = extension == ".bvh" ? "BVH" : "CSM";
+        std::fprintf(
+            stderr, "note: %s motion-capture format is unsupported because it provides no model geometry\n", format
+        );
+        return false;
+    }
+
+    // These MD5 loaders ignore AI_CONFIG_IMPORT_NO_SKELETON_MESHES.
     if (extension == ".md5anim" || extension == ".md5camera")
     {
         return false;
