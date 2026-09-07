@@ -125,6 +125,8 @@ namespace platform
 
     // Flush earlier stdio output before calling. Preserve offsets across EINTR
     // and report cancellation separately because SIGCONT can clear the request.
+    // POSIX cancellation is nonblocking, so it can abandon a write in progress.
+    // Windows only checks between writes, so a large frame finishes first.
     inline bool write_terminal(
         const char *data,
         size_t size,
