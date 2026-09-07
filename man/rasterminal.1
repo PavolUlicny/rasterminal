@@ -407,6 +407,14 @@ Under
 .B \-\-no\-input
 none of the above act except
 .BR Q " and " Ctrl+C .
+.PP
+On POSIX, Ctrl+Z restores the terminal and suspends the viewer, even with
+.BR \-\-no\-input .
+Use
+.B fg
+to resume with a full redraw. A viewer resumed with
+.B bg
+stays idle until it returns to the foreground.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -427,6 +435,14 @@ a Windows console cannot enable ANSI escapes, or a forced
 or
 .B \-\-graphics sixel
 backend is not detected.
+.TP
+.BI 128+ N
+On POSIX, termination by signal
+.IR N .
+.B rasterminal
+restores the terminal and then re-raises SIGHUP, SIGINT, SIGQUIT, or SIGTERM.
+Shells typically report these as 128 plus the signal number, including 130 for
+SIGINT and 143 for SIGTERM.
 .SH ENVIRONMENT
 .B rasterminal
 reads these variables in interactive mode to choose color output and detect
