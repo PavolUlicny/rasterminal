@@ -317,8 +317,10 @@ namespace platform
     }
 #endif
 
-    // Cleanup must reach termios restoration and signal handoff even when XOFF
-    // or a full terminal queue prevents output. Frame writes wait until canceled.
+    // POSIX cleanup must reach termios restoration and signal handoff even when XOFF
+    // or a full terminal queue prevents output, so it bounds the write. Windows has
+    // neither, and a paused console resumes on the user's next action, so that branch
+    // blocks instead. Frame writes wait until canceled.
     inline bool write_terminal_cleanup(const char *text) noexcept
     {
 #ifdef _WIN32
