@@ -107,7 +107,7 @@ TEST(args, defaults_when_only_model_given)
     ParseResult r = run({ "model.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.model_path == "model.obj");
-    ASSERT_EQ(r.args.n_threads, -1);
+    ASSERT_EQ(r.args.n_threads, 0);
     ASSERT_EQ(r.args.shading, ShadingMode::Phong);
     ASSERT_EQ(r.args.bg, Background::Black);
     ASSERT_EQ(r.args.lighting, LightingMode::Dual);
@@ -1012,7 +1012,7 @@ TEST(args, single_short_flag_is_length_one_cluster)
     ParseResult r = run({ "-S", "m.obj" });
     ASSERT_TRUE(r.ok);
     ASSERT_TRUE(r.args.spin);
-    ASSERT_EQ(r.args.n_threads, -1);
+    ASSERT_EQ(r.args.n_threads, 0);
 }
 
 TEST(args, cluster_repeated_spin)

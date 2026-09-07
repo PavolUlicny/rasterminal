@@ -7,7 +7,7 @@
 TEST(renderer, constructor_default_threads)
 {
     Renderer r;
-    ASSERT_TRUE(true); // reaching here means construction succeeded
+    ASSERT_EQ(r.worker_count(), Renderer::resolve_thread_count(0));
 }
 
 // Pin the constructor default independently of enum ordering.

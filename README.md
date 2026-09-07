@@ -145,7 +145,7 @@ rasterminal [options] <model>
 | `--cull` / `--no-cull` | none | `on` | Backface culling initial state |
 | `--texture` / `--no-texture` | none | `on` | Texture rendering initial state |
 | `--spin` / `--no-spin` | `-S` | `off` | Auto-rotation initial state |
-| `--threads [N]` | `-j [N]` | per backend | Worker threads; all cores for loading and pixel backends, at most four for half-blocks; bare `-j` uses all cores |
+| `--threads [N]` | `-j [N]` | hardware concurrency | Worker threads for loading and rendering; bare `-j` uses the default, and `N` is clamped to the CPU thread count |
 | `--fps [N]` | `-f [N]` | `30` | Frame cap; bare `-f` uncaps |
 | `--smooth-angle` | none | `60` | Crease angle `[0, 180]` for computed normals; ignored for OBJ smoothing groups |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |

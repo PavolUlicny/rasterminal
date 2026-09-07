@@ -544,11 +544,9 @@ namespace
         return "phong";
     }
 
-    void run_bench(const Mesh &mesh, const ParsedArgs &args, double load_ms)
+    void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double load_ms)
     {
         using clock = std::chrono::steady_clock;
-
-        const int n_threads = Renderer::resolve_thread_count(args.n_threads);
 
         Camera camera = auto_fit_camera(mesh, args, /*first_person=*/false);
         Light lights[2];
@@ -686,8 +684,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
     }
 
-    // Loading defaults to all cores; rendering re-resolves after backend detection.
-    const int n_threads = Renderer::resolve_thread_count(args.n_threads, /*all_cores_default=*/true);
+    // Loading and rendering share one resolved thread count.
+    const int n_threads = Renderer::resolve_thread_count(args.n_threads);
     Mesh mesh;
     const auto load_t0 = std::chrono::steady_clock::now();
     if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
@@ -705,7 +703,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
     {
         const double load_ms =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
-        run_bench(mesh, args, load_ms);
+        run_bench(mesh, args, n_threads, load_ms);
         return 0;
     }
 
@@ -860,7 +858,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             {
                 throw std::runtime_error("failed to block control signals for render workers");
             }
-            return Renderer(Renderer::resolve_thread_count(args.n_threads, pixel_backend));
+            return Renderer(n_threads);
         }();
 
         Framebuffer fb(

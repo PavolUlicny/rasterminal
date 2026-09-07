@@ -152,16 +152,12 @@ Enable or disable auto-rotation initially; the later flag wins. Default:
 .BR \-j ", " \-\-threads " " [\fIN\fR]
 Worker threads. Bare
 .B \-j
-uses all cores;
+uses the default;
 .BI \-j " N"
 uses
 .IR N ,
-clamped to the CPU thread count. The default depends on the backend: all cores
-under
-.BR kitty " and " sixel ,
-and
-.B min(cores,4)
-under blocks. Model loading always uses all cores.
+clamped to the CPU thread count. By default, model loading and every rendering
+backend use the hardware concurrency reported by the system.
 .TP
 .BR \-f ", " \-\-fps " " [\fIN\fR]
 Frame cap. Bare

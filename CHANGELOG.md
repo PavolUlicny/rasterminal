@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Rendering is faster, especially when large triangles fill a high-resolution frame. On a 16-thread laptop, Phong rendering at 1920x1080 fell from 61 ms to 9 ms for Sponza and from 202 ms to 94 ms for a dense jungle scene. Alpha-blended scenes improved by two to eight times. Wireframe rendering is unchanged.
 - glTF and GLB files with many mesh primitives load faster. A 645,000-triangle, 113-primitive model fell from 1.9 seconds to 0.6 seconds on a 16-thread laptop. Single-primitive models are unaffected.
-- Model loading now uses every core by default. Half-block rendering still uses at most four. `--threads` overrides both defaults.
+- Model loading and every rendering backend now use the system's hardware concurrency by default. Bare `-j` has the same effect, while `-j N` overrides the count for both loading and rendering.
 - Idle half-block sessions no longer redraw the model. Rendering resumes immediately after input, resize or auto-rotation.
 - The default frame cap is now 30 fps instead of 60. Use `-f 60` to restore the previous cap.
 - The HUD is now a full-width status bar that drops less useful fields as the terminal narrows. It measures display columns correctly and safely shortens or sanitizes problematic filenames.

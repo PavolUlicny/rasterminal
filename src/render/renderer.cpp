@@ -93,13 +93,11 @@ namespace
 
 } // namespace
 
-int Renderer::resolve_thread_count(int n_threads, bool all_cores_default) noexcept
+int Renderer::resolve_thread_count(int n_threads) noexcept
 {
     // Unknown hardware concurrency conservatively means one worker.
     const int hw = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
-    // Blocks default to four workers to limit CPU; pixel rendering and loading use all cores.
-    const int fallback = all_cores_default ? hw : std::min(hw, 4);
-    const int req = (n_threads < 0) ? fallback : (n_threads == 0) ? hw : n_threads;
+    const int req = (n_threads == 0) ? hw : n_threads;
     return std::clamp(req, 1, hw);
 }
 

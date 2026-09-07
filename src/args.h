@@ -64,8 +64,7 @@ enum class SpinDirection : std::uint8_t
 struct ParsedArgs
 {
     std::string model_path; // required positional
-    int n_threads = -1;     // raw tri-state (-1 = auto, 0 = all cores, >0 = N); never use directly,
-                            // resolve via Renderer::resolve_thread_count (clamps N to the hw count)
+    int n_threads = 0;      // 0 = hardware concurrency, >0 = N; resolve before loading or rendering
     ShadingMode shading = ShadingMode::Phong;
     Background bg = Background::Black;
     LightingMode lighting = LightingMode::Dual;

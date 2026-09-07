@@ -33,12 +33,11 @@ struct Renderer
     };
     OpaquePath opaque_path = OpaquePath::Auto;
 
-    // -1 selects the caller's default, 0 all hardware threads, and N exactly N,
-    // clamped to the available hardware range.
-    [[nodiscard]] static int resolve_thread_count(int n_threads, bool all_cores_default = false) noexcept;
+    // Zero selects hardware concurrency. Positive requests are clamped to it.
+    [[nodiscard]] static int resolve_thread_count(int n_threads) noexcept;
 
     // Workers persist for the Renderer's lifetime.
-    explicit Renderer(int n_threads = -1);
+    explicit Renderer(int n_threads = 0);
     ~Renderer();
 
     Renderer(const Renderer &) = delete;
