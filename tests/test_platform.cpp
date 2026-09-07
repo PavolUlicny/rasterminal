@@ -809,6 +809,9 @@ namespace
             Sleep(1);
         }
         const bool active = platform::detail::console_input_read_active.load();
+        // Match the control handler's ordering. _getch has no documented error
+        // return, so the interrupt flag, not its cancellation result, rejects the byte.
+        platform::detail::interrupt_flag.store(true);
         const bool woke = active && platform::detail::wake_console_input(read_only_input.value, reader.native_handle());
 
         const ULONGLONG return_deadline = GetTickCount64() + 1000;
@@ -823,6 +826,7 @@ namespace
             queue_console_bytes(console.input, rescue, 1);
         }
         reader.join();
+        platform::detail::interrupt_flag.store(false);
         platform::detail::console_input_read_active.store(false);
 
         return active && woke && cancelled && !read ? 0 : 32;
