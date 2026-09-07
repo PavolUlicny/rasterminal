@@ -17,8 +17,9 @@
 
 #define BASISD_SUPPORT_KTX2 1
 #define BASISD_SUPPORT_KTX2_ZSTD 1
-// The x86 fast path dereferences uint16_t pointers at arbitrary byte offsets. Use the
-// byte-wise path so every compiler gets defined behavior, including under UBSan.
+// The x86 fast path dereferences uint16_t pointers at arbitrary byte offsets. Upstream
+// disables it under UBSan through __has_feature, which only clang defines, so set it
+// here for every compiler.
 #define BASISD_USE_UNALIGNED_WORD_READS 0
 
 #include "transcoder/basisu_transcoder.cpp"
