@@ -1657,6 +1657,8 @@ namespace platform
             return true;
         }
 
+        void arm_input_restore() noexcept { m_input_mode_pending = m_snapshot_complete; }
+
         bool cleanup_input() noexcept
         {
             if (!m_snapshot_complete)
@@ -1982,7 +1984,6 @@ namespace platform
     inline bool enable_raw_mode(ConsoleStateGuard *console_state = nullptr)
     {
 #ifdef _WIN32
-        (void)console_state;
         if (!init_console_output())
         {
             return false;
@@ -1997,6 +1998,10 @@ namespace platform
             ) == 0)
         {
             return false;
+        }
+        if (console_state != nullptr)
+        {
+            console_state->arm_input_restore();
         }
         detail::arm_console_input_wake();
         return true;
