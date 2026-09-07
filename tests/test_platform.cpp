@@ -1025,6 +1025,34 @@ TEST(platform, console_state_guard_restores_exact_windows_state)
     ASSERT_EQ(GetConsoleOutputCP(), output_cp);
 }
 
+TEST(platform, console_state_guard_rearms_input_restore_after_raw_mode_resumes)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+
+    const DWORD input_mode = console.saved_input_mode | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT;
+    ASSERT_TRUE(SetConsoleMode(console.input, input_mode) != 0);
+    DWORD baseline_input_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &baseline_input_mode) != 0);
+
+    {
+        platform::ConsoleStateGuard guard;
+        ASSERT_TRUE(guard.valid());
+        ASSERT_TRUE(platform::enable_raw_mode(&guard));
+        ASSERT_TRUE(platform::disable_raw_mode(&guard));
+        ASSERT_TRUE(platform::resume_raw_mode(guard));
+
+        DWORD resumed_input_mode = 0;
+        ASSERT_TRUE(GetConsoleMode(console.input, &resumed_input_mode) != 0);
+        ASSERT_TRUE((resumed_input_mode & ENABLE_LINE_INPUT) == 0);
+        ASSERT_TRUE((resumed_input_mode & ENABLE_ECHO_INPUT) == 0);
+    }
+
+    DWORD restored_input_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &restored_input_mode) != 0);
+    ASSERT_EQ(restored_input_mode, baseline_input_mode);
+}
+
 TEST(platform, console_close_event_uses_default_handler)
 {
     platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
