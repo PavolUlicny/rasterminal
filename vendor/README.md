@@ -153,9 +153,11 @@ Update both version tables. Verify that `vendor/draco/src/draco/draco_features.h
 
 basis_universal provides the decode-only KTX2/Basis transcoder for `KHR_texture_basisu`.
 Vendor its `transcoder/` directory and bundled zstd decode amalgam. `basisu_impl.cpp`
-defines `BASISD_SUPPORT_KTX2` and `BASISD_SUPPORT_KTX2_ZSTD`; leave GPU targets at their
-upstream defaults because partial stripping does not compile. CMake applies `-w` to the
-shim and builds the zstd C file through `rasterminal_c`.
+defines `BASISD_SUPPORT_KTX2`, `BASISD_SUPPORT_KTX2_ZSTD`, and
+`BASISD_USE_UNALIGNED_WORD_READS=0`. The last setting avoids undefined unaligned reads
+in the upstream x86 fast path. Leave GPU targets at their upstream defaults because
+partial stripping does not compile. CMake applies `-w` to the shim and builds the zstd C
+file through `rasterminal_c`.
 
 ```sh
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/basis_universal.git /tmp/bu && cd /tmp/bu
@@ -166,8 +168,9 @@ cp NOTICE                 /path/to/vendor/basisu/NOTICE           # required by 
 git rev-parse HEAD        # record the commit SHA in the table above (both basisu + zstd rows)
 ```
 
-Verify that the `BASISD_SUPPORT_*` defines still compile. Update `THIRD_PARTY_NOTICES`
-when either the license or NOTICE changes; it reproduces the NOTICE verbatim.
+Verify that the `BASISD_SUPPORT_*` defines still compile and keep unaligned word reads
+disabled. Update `THIRD_PARTY_NOTICES` when either the license or NOTICE changes; it
+reproduces the NOTICE verbatim.
 
 libwebp is a decode-only subset for `EXT_texture_webp`. Regenerate its source closure from
 upstream on every update. `WEBP_DEC_SRCS` lists each C file because a unity build collides

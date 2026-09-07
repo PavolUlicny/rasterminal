@@ -5,17 +5,20 @@
 // Unlike those, this TU is large (~1.5 MB) and trips a long, compiler-specific set of
 // warnings that would change on every upstream bump, so instead of a pragma list it is
 // built with blanket warning suppression (-w / /w) applied per-TU in the build files
-// (CMakeLists.txt) — the same treatment the vendored zstd C TU gets. We do
+// (CMakeLists.txt), the same treatment the vendored zstd C TU gets. We do
 // not audit vendored code; refresh from upstream instead (see vendor/README.md).
 //
 // Configuration: upstream-default format set. rasterminal only ever transcodes to
 // cTFRGBA32 for the CPU rasterizer, so the GPU block-format targets (and their lookup
-// tables) are dead code at runtime — but they are NOT compiled out. Disabling them is
+// tables) are dead code at runtime, but they are NOT compiled out. Disabling them is
 // entangled: ASTC/HDR helper code is referenced unconditionally, so a partial strip
 // fails to compile, and a minimal safe subset is fragile across compilers and brittle
 // on every version bump. The only required flags are KTX2 + Zstd, which #error if unset.
 
 #define BASISD_SUPPORT_KTX2 1
 #define BASISD_SUPPORT_KTX2_ZSTD 1
+// The x86 fast path dereferences uint16_t pointers at arbitrary byte offsets. Use the
+// byte-wise path so every compiler gets defined behavior, including under UBSan.
+#define BASISD_USE_UNALIGNED_WORD_READS 0
 
 #include "transcoder/basisu_transcoder.cpp"
