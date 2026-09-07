@@ -131,6 +131,16 @@ jobs:
               build_type: Debug,
               portable: OFF,
             }
+          # Windows release artifacts link the static CRT so the executable needs no VC++
+          # redistributable. Nothing else configures that runtime, and release.yml runs only
+          # after a tag is pushed, where a link failure cannot be fixed without retagging.
+          - {
+              os: windows-latest,
+              label: msvc static-crt,
+              build_type: Release,
+              portable: ON,
+              msvc_runtime: MultiThreaded,
+            }
 
     steps:
       - uses: actions/checkout@v6
@@ -141,7 +151,8 @@ jobs:
           -DRASTERMINAL_PORTABLE=${{ matrix.portable }}
           -DRASTERMINAL_STATIC_LIBSTDCXX=${{ matrix.static_libstdcxx || 'OFF' }}
           ${{ matrix.cc  && format('-DCMAKE_C_COMPILER={0}',   matrix.cc)  || '' }} ${{ matrix.cxx
-          && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }}
+          && format('-DCMAKE_CXX_COMPILER={0}', matrix.cxx) || '' }} ${{ matrix.msvc_runtime
+          && format('-DCMAKE_MSVC_RUNTIME_LIBRARY={0}', matrix.msvc_runtime) || '' }}
 
       # The test target is EXCLUDE_FROM_ALL. Limit parallelism for smaller macOS runners.
       - name: Build
