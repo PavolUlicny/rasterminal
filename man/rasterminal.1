@@ -1,6 +1,6 @@
 .\" Manual page for rasterminal.
 .\" Kept in sync by hand with src/args.cpp's --help text; update both together.
-.\" The .TH version and date track src/version.h; bump them when cutting a release.
+.\" The .TH version tracks src/version.h; its date is the release date.
 .TH RASTERMINAL 1 "2026-06-27" "rasterminal 0.1.0-alpha.1" "User Commands"
 .\" ASCII fallbacks for the accented author name: groff's -Tascii table drops
 .\" u00FD (y-acute) entirely, so without these the name renders "Ulicn" (a
@@ -25,7 +25,11 @@ The
 .B \-\-color
 option controls 24-bit or 256-color text output.
 .PP
-The model operand is required. A lone
+The model operand is required except with
+.B \-\-help
+or
+.BR \-\-version .
+A lone
 .B \-
 is treated as a positional operand, not stdin.
 .PP
@@ -38,17 +42,17 @@ mode works with redirected streams.
 .SH SUPPORTED FORMATS
 .TP
 .B .obj
-Wavefront OBJ with optional .mtl (diffuse/specular/normal maps).
+Wavefront OBJ with optional .mtl files for diffuse, specular and normal maps.
 .TP
 .B .ply
-ASCII or binary (little- and big-endian).
+ASCII or binary, little-endian or big-endian.
 .TP
 .B .stl
 ASCII or binary. Z\-up coordinates are remapped to Y\-up. ASCII lines are
 limited to 64 KB.
 .TP
 .B .gltf, .glb
-glTF 2.0 (PBR materials, textures, node transforms).
+glTF 2.0 with PBR materials, textures and node transforms.
 .TP
 .B Other formats through Assimp
 AMF, 3DS, AC, ASE, Assbin, B3D, Collada, DXF, HMP, IrrMesh, IQM, IRR,
@@ -59,9 +63,10 @@ BVH and CSM are motion-capture formats that provide no model geometry, so
 .B rasterminal
 does not support them.
 The Assimp loader imports static geometry and common materials and textures.
-It flattens scene transforms and does not retain animation, skinning, cameras,
-lights or format-specific metadata. OBJ, PLY, STL and glTF/GLB always use their
-native loaders, including when parsing fails.
+It flattens scene transforms and instances and uses the first texture for each
+supported material role. It does not import animation, skinning, cameras, lights
+or format-specific metadata. OBJ, PLY, STL and glTF/GLB always use their native
+loaders. A parsing failure reports an error without retrying through Assimp.
 .SH OPTIONS
 .SS Initial state
 .TP
@@ -73,9 +78,9 @@ Default:
 .TP
 .BR \-b ", " \-\-bg " " \fIcolor\fR
 Initial background color:
-.BR black | gray | white
-.RB ( grey
-also accepted). Default:
+.BR black | gray | white .
+.B grey
+is also accepted. Default:
 .BR black .
 .TP
 .BR \-l ", " \-\-lighting " " \fImode\fR
@@ -147,7 +152,7 @@ Enable or disable texture rendering initially; the later flag wins. Default:
 .BR \-S ", " \-\-spin ", " \-\-no\-spin
 Enable or disable auto-rotation initially; the later flag wins. Default:
 .BR \-\-no\-spin .
-.SS Runtime and load
+.SS Rendering and loading
 .TP
 .BR \-j ", " \-\-threads " " [\fIN\fR]
 Worker threads. Bare
@@ -170,24 +175,26 @@ fps. Default:
 .BR 30 .
 .TP
 .BR \-B ", " \-\-bench " " [\fIN\fR]
-Headless benchmark: run
+Run a headless benchmark over
 .I N
-frames (default
-.BR 200 )
-after warmup, report timing, fps and throughput to standard error, then exit.
-The benchmark performs no terminal I/O.
+frames after warmup. Report startup and runtime timing, fps and throughput to
+standard error, then exit. Default:
+.B 200
+measured frames. The benchmark does not read terminal input or send terminal
+control sequences.
 .TP
 .BI \-\-bench\-size " WxH"
-Bench framebuffer size in pixels (default
-.BR 200x120 ).
+Benchmark framebuffer size in pixels. Default:
+.BR 200x120 .
 Requires
 .BR \-\-bench .
 .TP
 .BI \-\-bench\-warmup " N"
-Bench warmup frames discarded (default
-.BR 20 ;
+Warmup frames to discard before measurement. Default:
+.BR 20 .
+Use
 .B 0
-for none). Requires
+to skip warmup. Requires
 .BR \-\-bench .
 .TP
 .BI \-\-smooth\-angle " DEG"
@@ -199,7 +206,7 @@ a hard edge above it. Default
 .B 0
 is faceted,
 .B 180
-is fully smooth. Ignored when an OBJ authors smoothing groups.
+is fully smooth. Ignored when an OBJ file defines smoothing groups.
 Assimp-backed formats cap this setting at Assimp's 175-degree maximum.
 .TP
 .BI \-\-color " mode"
@@ -218,16 +225,16 @@ See
 for the detection order.
 Forcing a color mode does not bypass the
 .B TERM=dumb
-rejection or the Windows VT-capability gate.
+rejection or the requirement for ANSI escape support on Windows.
 Kitty images remain 24-bit and sixel images use 240 colors, so this option
 affects only the HUD under those backends.
 .TP
 .BI \-\-graphics " mode"
 Rendering backend.
 .B kitty
-draws real pixels through the kitty graphics protocol,
+draws native-resolution images through the kitty graphics protocol,
 .B sixel
-draws real pixels through sixel graphics,
+draws native-resolution images through sixel graphics,
 .B blocks
 draws Unicode half-block cells, and
 .B auto
@@ -268,7 +275,7 @@ or
 .BR right ,
 the way the model's front face moves on screen. Default
 .BR left .
-.SS Session-fixed toggles
+.SS Session settings
 .TP
 .BR \-\-ao ", " \-\-no\-ao
 Enable or disable baked ambient occlusion; the later flag wins. Default:
@@ -313,7 +320,7 @@ ignores this mode.
 describes model movement in turntable mode and view movement under
 .B \-\-first\-person
 mode.
-.SS Meta
+.SS Help and version
 .TP
 .BR \-h ", " \-\-help
 Print usage and exit.
@@ -352,14 +359,15 @@ means
 .BR \-S " " \-j4 .
 A bare
 .B \-\-
-terminates option parsing. Every following token is the model operand, even one
-beginning with
+terminates option parsing. The following token is the model path, even if it
+begins with
 .RB ' \- '.
+Only one model operand is accepted.
 .SH CONTROLS
 While rendering:
 .TP
 .B 1\-3
-Select shading mode.
+Select wireframe, flat or Phong shading, respectively.
 .TP
 .B Space
 Toggle spin.
@@ -377,8 +385,8 @@ Cycle background.
 Cycle lighting.
 .TP
 .B R
-Reset the camera and runtime settings to the command-line state, or to their
-defaults when no state flags were passed.
+Reset the camera and runtime settings to the launch state, including
+command-line settings and defaults.
 .TP
 .B C
 Cycle wireframe color.
@@ -400,11 +408,12 @@ mouse drag look,
 move up and down, and
 .BR +/\- " and the wheel"
 set the movement speed instead of zooming. Everything else in the list is
-unchanged.
+unchanged. Terminals do not report key releases, so only the most recently
+pressed movement key repeats. Use mouse drag to look while moving.
 .PP
 Under
 .B \-\-no\-input
-none of the above act except
+only the quit controls remain active:
 .BR Q " and " Ctrl+C .
 .PP
 On POSIX, Ctrl+Z restores the terminal and suspends the viewer, even with
@@ -421,19 +430,14 @@ Success, including
 .BR \-\-help " and " \-\-version .
 .TP
 .B 1
-Usage error, model load failure, or a terminal
-.B rasterminal
-cannot draw to outside
-.BR \-\-bench .
+Usage error, model load failure or terminal setup failure in interactive mode.
 Terminal errors include redirected input or output,
-.B TERM
-is
-.BR dumb ,
-a Windows console cannot enable ANSI escapes, or a forced
+.BR TERM=dumb ,
+a Windows console without ANSI escape support, or failure to detect a forced
 .B \-\-graphics kitty
 or
 .B \-\-graphics sixel
-backend is not detected.
+backend.
 .TP
 .BI 128+ N
 On POSIX, termination by signal
@@ -458,8 +462,9 @@ is rejected; GNU screen uses 256 colors;
 truecolor hints select 24-bit output; recognized
 .B TERM
 hints and terminal names select 24-bit output; everything else uses 256 colors.
-Native Windows consoles default to 24-bit when neither variable identifies a
-mode.
+Native Windows consoles default to 24-bit when
+.B TERM
+is unset or empty and no earlier rule applies.
 .TP
 .B COLORTERM
 .B truecolor
@@ -476,9 +481,10 @@ terminfo name, a name containing
 or
 .BR 24bit ,
 or a known truecolor terminal name selects 24-bit output. Recognized terminals
-are kitty, WezTerm, Alacritty, Ghostty, foot and Contour. This also preserves
-24-bit output over SSH, which does not forward
-.BR COLORTERM .
+are kitty, WezTerm, Alacritty, Ghostty, foot and Contour. These names also allow
+24-bit output over SSH when
+.B COLORTERM
+is not forwarded.
 .TP
 .B TMUX
 A non-empty value exempts a screen-family

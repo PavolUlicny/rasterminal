@@ -4,9 +4,14 @@ Each library is vendored as a header, source subset or full tree according to th
 project's needs. Do not edit vendored files by hand. `vendor/.clang-format` disables
 formatting and `.gitattributes` suppresses their diffs. Use the recipes below for updates.
 
-After any update, run a clean build and test:
+Run the commands below from the repository root unless a recipe changes directory.
+Run the update recipes in Bash. They rely on brace expansion and word splitting
+of unquoted variables. Replace placeholder tags and destination paths before
+running a recipe.
 
-```sh
+After any update, remove the old `build` directory, then rebuild and test:
+
+```bash
 rm -rf build
 cmake -B build
 cmake --build build --target check -j
@@ -15,25 +20,27 @@ cmake --build build --target check -j
 | Library | Version | Commit | Upstream | License |
 | --- | --- | --- | --- | --- |
 | Assimp | v6.0.5 | `392a658f9c271be965271f45e7521a1b80ea4392` | <https://github.com/assimp/assimp> | BSD-3-Clause plus bundled-component licenses |
-| stb_image | v2.30 | `31c1ad37456438565541f4919958214b6e762fb4` | <https://github.com/nothings/stb> | MIT / Unlicense (dual) |
-| cgltf | master (post-v1.15) | `85cd62382dfea638278962690cf515023f33ed00` | <https://github.com/jkuhlmann/cgltf> | MIT |
+| stb_image | v2.30 | `31c1ad37456438565541f4919958214b6e762fb4` | <https://github.com/nothings/stb> | MIT / Unlicense, dual-licensed |
+| cgltf | master, post-v1.15 | `85cd62382dfea638278962690cf515023f33ed00` | <https://github.com/jkuhlmann/cgltf> | MIT |
 | tinyply | 3.0 | `c9bb690dfe5e9105961e9e28120c48c9ae084bc6` | <https://github.com/ddiakopoulos/tinyply> | public domain |
 | tinyobjloader | v2.0.0rc13 | `2945a967c5303b2c8c14174117c45f3302591150` | <https://github.com/tinyobjloader/tinyobjloader> | MIT |
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 | meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
 | draco | 1.5.7 | `8786740086a9f4d83f44aa83badfbea4dce7a1b5` | <https://github.com/google/draco> | Apache-2.0 |
-| basis_universal (`vendor/basisu/`) | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
-| zstd (decode amalgam) | bundled with basis_universal `v2_1_0r` | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> (vendored copy of <https://github.com/facebook/zstd>) | BSD-3-Clause |
-| libwebp (decode subset, `vendor/libwebp/`) | v1.6.0 | `4fa21912338357f89e4fd51cf2368325b59e9bd9` | <https://chromium.googlesource.com/webm/libwebp> | BSD-3-Clause + PATENTS |
-| miniz (release amalgamation) | 3.1.2 | `77d0dce8627735138c51770d1799a1ef48f2117d` | <https://github.com/richgel999/miniz> | MIT |
+| basis_universal, `vendor/basisu/` | v2_1_0r | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
+| zstd decode amalgamation | bundled with basis_universal `v2_1_0r` | `e4f439fc9545b6a9e1fd26fc7ffd0c682c4b96d4` | <https://github.com/BinomialLLC/basis_universal> with a vendored copy of <https://github.com/facebook/zstd> | BSD-3-Clause |
+| libwebp decode subset, `vendor/libwebp/` | v1.6.0 | `4fa21912338357f89e4fd51cf2368325b59e9bd9` | <https://chromium.googlesource.com/webm/libwebp> | BSD-3-Clause + PATENTS |
+| miniz release amalgamation | 3.1.2 | `77d0dce8627735138c51770d1799a1ef48f2117d` | <https://github.com/richgel999/miniz> | MIT |
 
-## Refresh recipe
+## Update libraries
+
+### Assimp
 
 Assimp comes from its tagged source archive. Copy only the build and legal files
 plus `cmake-modules/`, `code/`, `contrib/` and `include/` shown below. Do not copy
 the root `.clang-format` or `test/models-nonbsd/`; the latter has separate licenses.
 
-```sh
+```bash
 TAG=v6.0.5
 ARCHIVE=/tmp/assimp-${TAG}.tar.gz
 SOURCE=/tmp/assimp-${TAG}
@@ -72,7 +79,9 @@ Inspect the final link graph. Assimp and `zlibstatic` must come from `vendor/ass
 with no system or downloaded dependency. Keep the zlib 1.2.13 Darwin workaround in the
 root CMake file until upstream removes its `TARGET_OS_MAC` check.
 
-```sh
+### cgltf
+
+```bash
 # Example: update cgltf to v1.16
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/cgltf.h -o vendor/cgltf/cgltf.h
 curl -sL https://raw.githubusercontent.com/jkuhlmann/cgltf/v1.16/LICENSE  -o vendor/cgltf/LICENSE
@@ -80,24 +89,30 @@ git ls-remote https://github.com/jkuhlmann/cgltf refs/tags/v1.16
 # Update both version tables and any changed license notice.
 ```
 
+### stb_image
+
 stb has no per-file tags. Use `master` and record the resolved HEAD SHA:
 
-```sh
+```bash
 curl -sL https://raw.githubusercontent.com/nothings/stb/master/stb_image.h -o vendor/stb/stb_image.h
 curl -sL https://raw.githubusercontent.com/nothings/stb/master/LICENSE      -o vendor/stb/LICENSE
 git ls-remote https://github.com/nothings/stb HEAD
 ```
 
+### stl_reader
+
 Flatten stl_reader's `include/stl_reader/stl_reader.h` to `vendor/stl_reader/stl_reader.h`:
 
-```sh
+```bash
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/include/stl_reader/stl_reader.h -o vendor/stl_reader/stl_reader.h
 curl -sL https://raw.githubusercontent.com/sreiter/stl_reader/<tag>/LICENSE -o vendor/stl_reader/LICENSE
 ```
 
+### miniz
+
 miniz release assets contain the amalgamated `miniz.c` and `miniz.h` pair:
 
-```sh
+```bash
 curl -sL https://github.com/richgel999/miniz/releases/download/<tag>/miniz-<tag>.zip -o /tmp/miniz.zip
 unzip -o -j /tmp/miniz.zip miniz.c miniz.h LICENSE -d vendor/miniz
 git ls-remote https://github.com/richgel999/miniz refs/tags/<tag>
@@ -108,9 +123,11 @@ Update both version tables and `THIRD_PARTY_NOTICES` if the license changed. Ver
 exist upstream. A renamed or removed macro silently restores unwanted code. Never set
 `MINIZ_NO_INFLATE_APIS`; tests use `mz_uncompress`.
 
+### meshoptimizer
+
 meshoptimizer is compiled through `meshoptimizer_impl.cpp`:
 
-```sh
+```bash
 BASE="https://raw.githubusercontent.com/zeux/meshoptimizer/<tag>"
 curl -sL "$BASE/src/meshoptimizer.h" -o vendor/meshoptimizer/src/meshoptimizer.h
 curl -sL "$BASE/LICENSE.md"          -o vendor/meshoptimizer/LICENSE.md
@@ -124,10 +141,12 @@ git ls-remote https://github.com/zeux/meshoptimizer refs/tags/<tag>
 # Update both version tables and any changed license notice.
 ```
 
+### Draco
+
 Draco is a decode-only glTF bitstream subset compiled through `draco_impl.cpp`.
 Regenerate its source closure from upstream on every update:
 
-```sh
+```bash
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/google/draco.git /tmp/draco && cd /tmp/draco
 # 1. Build the decoder and generate draco_features.h.
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDRACO_GLTF_BITSTREAM=ON -DDRACO_TESTS=OFF
@@ -151,6 +170,8 @@ git rev-parse HEAD   # record the commit SHA in the table above
 Update both version tables. Verify that `vendor/draco/src/draco/draco_features.h` matches
 `DRACO_GLTF_BITSTREAM=ON`, and update changed license notices.
 
+### basis_universal and zstd
+
 basis_universal provides the decode-only KTX2/Basis transcoder for `KHR_texture_basisu`.
 Vendor its `transcoder/` directory and bundled zstd decode amalgam. `basisu_impl.cpp`
 defines `BASISD_SUPPORT_KTX2`, `BASISD_SUPPORT_KTX2_ZSTD`, and
@@ -159,7 +180,7 @@ in the upstream x86 fast path. Leave GPU targets at their upstream defaults beca
 partial stripping does not compile. CMake applies `-w` to the shim and builds the zstd C
 file through `rasterminal_c`.
 
-```sh
+```bash
 TAG=<tag>; git clone --depth 1 --branch "$TAG" https://github.com/BinomialLLC/basis_universal.git /tmp/bu && cd /tmp/bu
 cp transcoder/*           /path/to/vendor/basisu/transcoder/
 cp zstd/zstd.h zstd/zstd_errors.h zstd/zstddeclib.c zstd/LICENSE  /path/to/vendor/basisu/zstd/
@@ -172,13 +193,15 @@ Verify that the `BASISD_SUPPORT_*` defines still compile and keep unaligned word
 disabled. Update `THIRD_PARTY_NOTICES` when either the license or NOTICE changes; it
 reproduces the NOTICE verbatim.
 
+### libwebp
+
 libwebp is a decode-only subset for `EXT_texture_webp`. Regenerate its source closure from
 upstream on every update. `WEBP_DEC_SRCS` lists each C file because a unity build collides
 on file-local statics. SIMD files select themselves through architecture macros and need no
 per-file flags. `rasterminal_c` compiles them with `-w` and without LTO or C++ options.
 Preserve the `src/` layout for repo-rooted internal includes.
 
-```sh
+```bash
 TAG=v1.6.0; git clone --depth 1 --branch "$TAG" https://chromium.googlesource.com/webm/libwebp /tmp/webp && cd /tmp/webp
 
 # 1. List libwebpdecoder's dec, dsp and utils groups, excluding MIPS and MSA.

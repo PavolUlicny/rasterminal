@@ -24,7 +24,7 @@ body:
     id: version
     attributes:
       label: rasterminal version
-      description: Paste `rasterminal --version`. For source builds, also paste `git rev-parse --short HEAD`.
+      description: Paste the output of `rasterminal --version`. For source builds, also include the output of `git rev-parse --short HEAD`.
       placeholder: rasterminal 0.2.0
     validations:
       required: true
@@ -56,7 +56,7 @@ body:
     id: model
     attributes:
       label: Model file
-      description: For model-specific bugs, name the format and whether it is native or Assimp-backed. Link or attach a reproducing file if possible.
+      description: For model-specific bugs, name the format. Link or attach a model that reproduces the bug if possible.
     validations:
       required: false
   - type: textarea

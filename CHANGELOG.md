@@ -1,9 +1,9 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+User-visible changes to rasterminal.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
@@ -22,8 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Rendering is faster, especially when large triangles fill a high-resolution frame. On a 16-thread laptop, Phong rendering at 1920x1080 fell from 61 ms to 9 ms for Sponza and from 202 ms to 94 ms for a dense jungle scene. Alpha-blended scenes improved by two to eight times. Wireframe rendering is unchanged.
-- glTF and GLB files with many mesh primitives load faster. A 645,000-triangle, 113-primitive model fell from 1.9 seconds to 0.6 seconds on a 16-thread laptop. Single-primitive models are unaffected.
+- Rendering is faster, especially when large triangles fill a high-resolution frame. On a 16-thread laptop, Phong frame time at 1920x1080 fell from 61 ms to 9 ms for Sponza and from 202 ms to 94 ms for a dense jungle scene. Alpha-blended scenes improved by two to eight times. Wireframe rendering is unchanged.
+- glTF and GLB files with many mesh primitives load faster. Load time for a 645,000-triangle, 113-primitive model fell from 1.9 seconds to 0.6 seconds on a 16-thread laptop. Single-primitive models are unaffected.
 - Model loading and every rendering backend now use the system's hardware concurrency by default. Bare `-j` has the same effect, while `-j N` overrides the count for both loading and rendering.
 - Idle half-block sessions no longer redraw the model. Rendering resumes immediately after input, resize or auto-rotation.
 - The default frame cap is now 30 fps instead of 60. Use `-f 60` to restore the previous cap.
@@ -44,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Terminal teardown on POSIX no longer loses cleanup escapes when Ctrl+S has paused output. Linux releases the pause before cleanup; systems that queue stopped output retain the cleanup until Ctrl+Q. Quitting under XOFF no longer leaves the alternate screen, hidden cursor, or mouse tracking active.
-- Rasterminal restores Windows console modes and the output code page after normal exits, Ctrl+C, and Ctrl+Break. It clears queued mouse reports and handles Ctrl+C when processed input was inherited disabled, so the shell receives no stale escapes and keeps its original input behavior.
+- rasterminal restores Windows console modes and the output code page after normal exits, Ctrl+C, and Ctrl+Break. It clears queued mouse reports and handles Ctrl+C when processed input was inherited disabled, so the shell receives no stale escapes and keeps its original input behavior.
 - POSIX interactive startup now stops safely if raw input mode cannot be enabled. Terminal restoration retries interrupted or transient failures instead of leaving the shell in raw mode.
 - POSIX sessions now restore terminal state before terminating from `SIGINT`, `SIGTERM`, `SIGQUIT`, or `SIGHUP`, and preserve the signal termination status. `SIGINT` and `SIGTERM` therefore report their usual shell statuses, typically 130 and 143, instead of 0.
 - POSIX job control restores the terminal before suspending the viewer. `fg` resumes rendering with a full redraw; `bg` leaves the viewer idle without reclaiming the terminal. Suspension also works during startup queries and with `--no-input`.
@@ -66,18 +66,18 @@ First public prerelease.
 
 ### Added
 
-- CPU rasterization pipeline: model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and order-independent alpha-blended transparency (exact per-pixel A-buffer)
-- Shading modes: wireframe, flat, and Phong
-- Shadow mapping (alpha-cutout aware) and baked ambient occlusion
-- Texturing: bilinear sampling with per-texture wrap modes (Repeat/Clamp/Mirror), alpha cutout, and normal/metallic/emissive/occlusion maps
-- Compressed texture and geometry support: KTX2/Basis (ETC1S/UASTC), WebP, Draco mesh compression, and meshopt-compressed buffer views
-- Model formats: OBJ/MTL, PLY (ASCII and binary LE/BE), STL (ASCII and binary), and glTF 2.0 / GLB
-- Multithreaded worker pool driving the opaque, transparent-accumulate, and resolve phases
-- Unicode half-block (`▀`) output with 24-bit ANSI color; two vertical pixels per terminal cell
-- Interactive controls: keyboard plus mouse drag-orbit and scroll-zoom, auto-rotation, and a HUD status line
-- CLI flags for initial shading/background/lighting/wireframe color, culling, texturing, threads, frame cap, headless benchmarking, crease angle, and the `--no-shadow`/`--no-ao`/`--no-hud` toggles
-- Cross-platform support: Linux, macOS, and Windows, including 32-bit (ILP32) builds
-- Two build systems (Make and CMake) each with release, portable, and dist (self-contained) variants
+- CPU rasterization pipeline: model/view/projection transforms, perspective-correct triangle rasterization, z-buffer depth testing, backface culling, Blinn-Phong lighting, and order-independent alpha-blended transparency through an exact per-pixel A-buffer.
+- Shading modes: wireframe, flat, and Phong.
+- Shadow mapping with alpha-cutout support and baked ambient occlusion.
+- Texturing: bilinear sampling with per-texture Repeat/Clamp/Mirror wrap modes, alpha cutout, and normal/metallic/emissive/occlusion maps.
+- Compressed texture and geometry support: KTX2/Basis with ETC1S/UASTC, WebP, Draco mesh compression, and meshopt-compressed buffer views.
+- Model formats: OBJ/MTL, ASCII and little- or big-endian binary PLY, ASCII and binary STL, and glTF 2.0 / GLB.
+- Multithreaded worker pool driving the opaque, transparent-accumulate, and resolve phases.
+- Unicode half-block output using `▀` and 24-bit ANSI color; two vertical pixels per terminal cell.
+- Interactive controls: keyboard plus mouse drag-orbit and scroll-zoom, auto-rotation, and a HUD status line.
+- CLI flags for initial shading/background/lighting/wireframe color, culling, texturing, threads, frame cap, headless benchmarking, crease angle, and the `--no-shadow`/`--no-ao`/`--no-hud` toggles.
+- Cross-platform support: Linux, macOS, and Windows, including 32-bit ILP32 builds.
+- Make and CMake build systems, each with release, portable, and self-contained dist variants.
 
 [Unreleased]: https://github.com/PavolUlicny/rasterminal/compare/v0.1.0-alpha.1...HEAD
 [v0.1.0-alpha.1]: https://github.com/PavolUlicny/rasterminal/releases/tag/v0.1.0-alpha.1

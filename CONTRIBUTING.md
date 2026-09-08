@@ -18,8 +18,8 @@ cmake --build build --target check -j     # build and run the test suite
 The default build omits the test binary. Building the `check` target compiles it and runs
 the suite.
 
-You need CMake 3.22 or newer, a C++17 compiler and a C compiler. GCC, Clang and MSVC
-are supported. Third-party code is vendored under `vendor/`. See the README's
+You need CMake 3.22 or newer, a C++17 compiler and a C compiler. GCC, Clang,
+AppleClang and MSVC are supported. Third-party code is vendored under `vendor/`. See the README's
 [build section](README.md#build) for other configurations and platforms.
 
 ### Adding a source or test file
@@ -36,8 +36,8 @@ and fixtures stay at `tests/` root.
 
 ## Code style
 
-Run `clang-format -i` on every C++ file you change under `src/` or `tests/`. Do not format
-`vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
+Run `clang-format -i` on every C or C++ source and header you change under `src/`
+or `tests/`. Do not format `vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
 
 ## Pull requests
 
@@ -51,8 +51,11 @@ under `## [Unreleased]`.
 
 ## Vendored libraries
 
-Do not edit `vendor/` by hand. Refresh libraries from upstream as described in `vendor/README.md`.
+Do not edit vendored sources by hand. Refresh libraries from upstream using the
+[vendor update instructions](vendor/README.md). Record version, source, configuration
+and license changes in that file and in `THIRD_PARTY_NOTICES`.
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the project's [MIT license](LICENSE).
+By contributing, you agree to license your contributions under the project's
+[MIT license](LICENSE).
