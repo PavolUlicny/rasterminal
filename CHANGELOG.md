@@ -7,6 +7,8 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [v0.1.0-alpha.2] - 2026-09-08
+
 ### Added
 
 - Native-resolution graphics through the kitty and sixel protocols. `--graphics kitty|sixel|blocks|auto` selects the backend; `auto` prefers kitty, then sixel, and falls back to half-blocks. Local kitty sessions use shared memory, remote sessions send compressed frames, and sixel uses its fixed 240-color palette. Capability detection prevents a forced pixel backend from failing silently. Pixel graphics are unavailable under tmux and GNU screen.
@@ -79,5 +81,6 @@ First public prerelease.
 - Cross-platform support: Linux, macOS, and Windows, including 32-bit ILP32 builds.
 - Make and CMake build systems, each with release, portable, and self-contained dist variants.
 
-[Unreleased]: https://github.com/PavolUlicny/rasterminal/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/PavolUlicny/rasterminal/compare/v0.1.0-alpha.2...HEAD
+[v0.1.0-alpha.2]: https://github.com/PavolUlicny/rasterminal/releases/tag/v0.1.0-alpha.2
 [v0.1.0-alpha.1]: https://github.com/PavolUlicny/rasterminal/releases/tag/v0.1.0-alpha.1
