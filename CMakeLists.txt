@@ -349,7 +349,10 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_main.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp
-    tests/test_platform.cpp
+    tests/platform/test_console.cpp
+    tests/platform/test_terminal_session.cpp
+    tests/platform/test_file.cpp
+    tests/platform/test_input.cpp
     tests/terminal/test_framebuffer.cpp
     tests/terminal/test_graphics.cpp
     tests/terminal/test_kitty.cpp

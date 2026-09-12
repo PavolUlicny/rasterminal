@@ -15,10 +15,11 @@ unmatchedSuppression:src/main.cpp
 // The Windows shared-memory stub makes two framebuffer conditions appear constant.
 unmatchedSuppression:src/terminal/framebuffer.cpp
 
-// Headers are not primary inputs, so platform.h's inline suppressions need no unmatched pair.
+// Header suppressions have no unmatched pair because headers are not primary inputs.
 
-// These loops are clearer than the equivalent algorithms. platform.h also requires constexpr.
+// Keep these explicit loops; some must remain constexpr.
 useStlAlgorithm:src/loaders/mesh.cpp
 useStlAlgorithm:src/loaders/mesh_obj.cpp
 useStlAlgorithm:src/loaders/mesh_ply.cpp
-useStlAlgorithm:src/platform/platform.h
+useStlAlgorithm:src/platform/control.h
+useStlAlgorithm:src/platform/terminal_io.h

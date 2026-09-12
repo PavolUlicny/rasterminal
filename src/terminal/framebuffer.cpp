@@ -1,6 +1,7 @@
 #include "src/terminal/framebuffer.h"
 
-#include "src/platform/platform.h" // shm frame helpers (POSIX)
+#include "src/platform/shared_memory.h"
+#include "src/platform/terminal_io.h"
 #include "src/terminal/color.h"    // Color, ColorMode
 #include "src/terminal/graphics.h" // GraphicsBackend
 #include "src/terminal/kitty.h"    // escape composition for the kitty backend
@@ -487,9 +488,7 @@ void Framebuffer::write_rgb_range(unsigned char *out, size_t first, size_t count
 
 bool Framebuffer::transmit_shm()
 {
-    // On Windows platform.h's shm stubs make the open fail, so this reads as
-    // a per-frame fallback to direct; m_gfx.shm can never be true there anyway
-    // (the startup probe can never verify a transport whose open always fails).
+    // Windows stubs always fall back to direct transport.
     const size_t npx = m_pixel.size();
     char name[64];
     shm_ring_name(name, sizeof name, m_shm_seq % SHM_RING);
