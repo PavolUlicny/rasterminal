@@ -536,6 +536,9 @@ namespace
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     ASSERT_TRUE(kill(-app, SIGTSTP) == 0);
+                    // Suspension cleanup has a 50 ms write budget, and loaded macOS runners
+                    // stretch this loop past it. Keep reading as a terminal would.
+                    drain_pty_output(master.fd, output);
                 }
             }
             const PtyProcessResult stopped = result();
