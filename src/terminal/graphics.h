@@ -1,6 +1,6 @@
 #pragma once
 
-// Pure terminal-graphics reply parsing. platform.h owns query I/O.
+// Pure terminal-graphics reply parsing. terminal_query.h owns query I/O.
 
 #include <cstdint>
 

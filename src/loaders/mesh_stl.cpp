@@ -1,7 +1,7 @@
 #include "src/loaders/mesh.h"
 #include "src/loaders/mesh_loader.h"
 #include "src/math/light.h"
-#include "src/platform/platform.h"
+#include "src/platform/file.h"
 
 #define STL_READER_NO_EXCEPTIONS
 #include "stl_reader.h"

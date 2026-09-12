@@ -4,7 +4,7 @@
 #include "src/loaders/mesh_loader.h"
 #include "src/math/light.h"
 #include "src/math/linalg.h"
-#include "src/platform/platform.h"
+#include "src/platform/file.h"
 #include "src/render/texture.h"
 
 #include <algorithm>

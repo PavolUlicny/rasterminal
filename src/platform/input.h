@@ -1,6 +1,6 @@
 #pragma once
 
-// Stateless terminal escape-sequence grammar. platform.h owns buffering and timing.
+// Stateless terminal escape-sequence grammar. input_reader.h owns buffering and timing.
 
 #include <cstdint>
 
