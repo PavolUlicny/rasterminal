@@ -345,8 +345,9 @@ namespace
             {
                 close(report_write.fd);
                 unsigned char start = 0;
-                if (setpgid(0, 0) < 0 || std::signal(SIGTTOU, SIG_DFL) == SIG_ERR ||
-                    !read_pipe_value(command_read.fd, &start, sizeof start))
+                // The supervisor alone moves the app into its own group. Racing setpgid calls can
+                // fail with EPERM on macOS, and the start byte arrives after the supervisor's call.
+                if (std::signal(SIGTTOU, SIG_DFL) == SIG_ERR || !read_pipe_value(command_read.fd, &start, sizeof start))
                 {
                     _exit(122);
                 }
