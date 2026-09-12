@@ -4,7 +4,10 @@
 #include "tests/sixel_test_util.h"
 #include "src/terminal/framebuffer.h"
 #include "src/render/renderer.h"
-#include "src/platform/platform.h"
+#include "src/platform/console.h"
+#include "src/platform/control.h"
+#include "src/platform/terminal_io.h"
+#include "src/terminal/kitty.h"
 
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 
@@ -19,8 +22,7 @@
 
 #ifndef _WIN32
 #include <csignal>
-// The kitty shm tests read the frame object back by name; there is no shm
-// transport on Windows (platform.h's stubs), so they compile out entirely.
+// Shared-memory transport is unavailable on Windows.
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <unistd.h>
