@@ -2,3 +2,6 @@ CompileFlags:
   # Prevent clangd from treating standalone headers as Objective-C++.
   Add:
     - -xc++
+  # GCC release builds use an interprocedural optimization that Clang cannot parse.
+  Remove:
+    - -fipa-pta
