@@ -349,6 +349,7 @@ if(RASTERMINAL_BUILD_TESTS)
   # The test target recompiles project and vendored C++ sources. Keep it out of viewer-only builds.
   add_executable(rasterminal_tests EXCLUDE_FROM_ALL
     tests/test_main.cpp
+    tests/test_assertions.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp
     tests/platform/test_console.cpp

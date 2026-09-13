@@ -183,7 +183,7 @@ namespace testing
         auto _va = (a);                                                                                                \
         auto _vb = (b);                                                                                                \
         auto _d = std::fabs(_va - _vb);                                                                                \
-        if (_d > (eps))                                                                                                \
+        if (!(_d <= (eps)))                                                                                            \
             ASSERT_FAIL(                                                                                               \
                 "ASSERT_NEAR(" #a ", " #b ", " #eps ") failed: |" + std::to_string(_va) + " - " +                      \
                 std::to_string(_vb) + "| = " + std::to_string(_d)                                                      \
