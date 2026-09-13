@@ -112,6 +112,19 @@ namespace testing
         }
     }
 
+#ifdef _MSC_VER
+// MSVC test translation units use /fp:fast, which can fold away NaN comparisons.
+#pragma float_control(precise, on, push)
+#endif
+    inline bool within_tolerance(double a, double b, double eps, double &difference)
+    {
+        difference = std::fabs(a - b);
+        return difference <= eps;
+    }
+#ifdef _MSC_VER
+#pragma float_control(pop)
+#endif
+
     inline int run_all_tests()
     {
         int passed = 0, failed = 0;
@@ -182,8 +195,11 @@ namespace testing
     {                                                                                                                  \
         auto _va = (a);                                                                                                \
         auto _vb = (b);                                                                                                \
-        auto _d = std::fabs(_va - _vb);                                                                                \
-        if (!(_d <= (eps)))                                                                                            \
+        auto _eps = (eps);                                                                                             \
+        double _d;                                                                                                     \
+        if (!testing::within_tolerance(                                                                                \
+                static_cast<double>(_va), static_cast<double>(_vb), static_cast<double>(_eps), _d                      \
+            ))                                                                                                         \
             ASSERT_FAIL(                                                                                               \
                 "ASSERT_NEAR(" #a ", " #b ", " #eps ") failed: |" + std::to_string(_va) + " - " +                      \
                 std::to_string(_vb) + "| = " + std::to_string(_d)                                                      \
