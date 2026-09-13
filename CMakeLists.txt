@@ -208,7 +208,7 @@ target_compile_options(rasterminal_c PRIVATE
     -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
     -ffunction-sections;-fdata-sections;-pipe>
   $<$<AND:$<CONFIG:Debug>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-O0;-pipe>
-  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GS-;/Gy>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<C_COMPILER_ID:MSVC>>:/O2;/fp:fast;/Gy>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<C_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<C_COMPILER_ID:MSVC>>:/arch:AVX2>)
 
@@ -240,17 +240,19 @@ target_compile_options(rasterminal_warnings INTERFACE
 # Release optimization flags
 # Every non-Debug configuration uses the same CPU-independent speed tier. Explicit -O3
 # overrides the RelWithDebInfo and MinSizeRel defaults.
+# Release builds retain the compiler's hardening defaults. Any exception requires a repeatable
+# end-to-end benchmark and a documented security tradeoff.
 set(RASTERMINAL_RELEASE_OPTS
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
     -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;
     -ffunction-sections;-fdata-sections;
     -fno-rtti;-fomit-frame-pointer;-fstrict-aliasing;
     -fmerge-all-constants;-fvisibility=hidden;-fvisibility-inlines-hidden;
-    -fno-stack-protector;-fno-asynchronous-unwind-tables;-pipe>
+    -fno-asynchronous-unwind-tables;-pipe>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU>>:
-    -fno-plt;-fno-semantic-interposition;-fno-stack-clash-protection;
+    -fno-plt;-fno-semantic-interposition;
     -fgcse-sm;-fgcse-las;-fipa-pta;-Wno-alloc-size-larger-than>
-  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR-;/GS-;/Gy>
+  $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:MSVC>>:/O2;/fp:fast;/GR-;/Gy>
   # Portable builds omit the machine-specific tier.
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-march=native>
   $<$<AND:$<NOT:$<CONFIG:Debug>>,$<NOT:$<BOOL:${RASTERMINAL_PORTABLE}>>,$<CXX_COMPILER_ID:MSVC>>:/arch:AVX2>
@@ -327,7 +329,7 @@ endif()
 
 # Test binary
 if(RASTERMINAL_BUILD_TESTS)
-  # The test framework needs RTTI. Tests also keep stack and fortify checks.
+  # The test framework needs RTTI. Non-Debug test builds explicitly enable stack and fortify checks.
   set(RASTERMINAL_TEST_OPTS
     $<$<AND:$<NOT:$<CONFIG:Debug>>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:
       -O3;-funroll-loops;-ffast-math;-fno-finite-math-only;

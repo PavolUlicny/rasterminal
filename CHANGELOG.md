@@ -7,6 +7,10 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
+
 ## [v0.1.0-alpha.2] - 2026-09-08
 
 ### Added
