@@ -378,6 +378,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/loaders/test_gltf_webp.cpp
     tests/loaders/test_mesh_geometry.cpp
     tests/loaders/test_mesh_vcache.cpp
+    tests/loaders/test_scoped_threads.cpp
     tests/texture/test_texture.cpp
     tests/texture/test_ktx2.cpp
     tests/texture/test_webp.cpp
