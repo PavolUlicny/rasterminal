@@ -1,4 +1,5 @@
 #include "src/loaders/mesh.h"
+#include "src/loaders/scoped_threads.h"
 #include "src/math/light.h"
 #include "src/math/linalg.h"
 #include "meshoptimizer.h"
@@ -12,7 +13,6 @@
 #include <cstdio>
 #include <exception>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -603,19 +603,14 @@ void Mesh::compute_ao(int n_threads)
     }
     else
     {
-        std::vector<std::thread> threads;
-        threads.reserve(static_cast<size_t>(eff_threads - 1));
+        loader_detail::ScopedThreads threads(static_cast<size_t>(eff_threads - 1));
         for (int t = 0; t < eff_threads - 1; t++)
         {
             const size_t begin = static_cast<size_t>(t) * n / static_cast<size_t>(eff_threads);
             const size_t end = static_cast<size_t>(t + 1) * n / static_cast<size_t>(eff_threads);
-            threads.emplace_back(ao_range, begin, end);
+            threads.launch(ao_range, begin, end);
         }
         ao_range(static_cast<size_t>(eff_threads - 1) * n / static_cast<size_t>(eff_threads), n);
-        for (auto &t : threads)
-        {
-            t.join();
-        }
     }
 }
 
@@ -718,17 +713,12 @@ void Mesh::optimize_vertex_cache(int n_threads)
             };
             // The main thread participates; never spawn more workers than groups.
             const size_t spawn = std::min<size_t>(static_cast<size_t>(n_threads), n_buckets) - 1;
-            std::vector<std::thread> threads;
-            threads.reserve(spawn);
+            loader_detail::ScopedThreads threads(spawn);
             for (size_t t = 0; t < spawn; t++)
             {
-                threads.emplace_back(worker);
+                threads.launch(worker);
             }
             worker();
-            for (auto &thr : threads)
-            {
-                thr.join();
-            }
         }
     }
     else

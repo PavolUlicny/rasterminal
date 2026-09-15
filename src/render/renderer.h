@@ -72,6 +72,7 @@ struct Renderer
     };
 
     void worker_func(int worker_id);
+    void stop_workers() noexcept;
 
     // Bump the generation, wake the workers on `pass`, block until all finish.
     void dispatch_pass(Pass pass);
@@ -190,7 +191,7 @@ struct Renderer
     // and the triangles-per-claim that produced it. render() feeds the first back into the second.
     std::vector<double> m_trans_ms;
     int m_trans_chunk = TRANS_CHUNK_MAX;
-    bool m_stop = false; // set by destructor to terminate worker loops
+    bool m_stop = false; // set by stop_workers() to terminate worker loops
     Pass m_pass = Pass::Opaque;
     // Borrowed for the duration of one run_on_workers call; null outside it.
     const std::function<void(int, int)> *m_task = nullptr;

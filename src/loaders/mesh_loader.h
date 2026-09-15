@@ -1,12 +1,12 @@
 #pragma once
 
 #include "src/loaders/mesh.h"
+#include "src/loaders/scoped_threads.h"
 
 #include <algorithm>
 #include <atomic>
 #include <cassert>
 #include <string>
-#include <thread>
 #include <vector>
 
 // Model directory with its trailing separator, or empty for the current directory.
@@ -104,17 +104,12 @@ inline void decode_textures(
                 decoded[i] = decode(i);
             }
         };
-        std::vector<std::thread> threads;
-        threads.reserve(static_cast<size_t>(eff - 1));
+        loader_detail::ScopedThreads threads(static_cast<size_t>(eff - 1));
         for (int t = 0; t < eff - 1; t++)
         {
-            threads.emplace_back(worker);
+            threads.launch(worker);
         }
         worker();
-        for (auto &th : threads)
-        {
-            th.join();
-        }
     }
 
     const bool any_failed = std::any_of(decoded.begin(), decoded.end(), [](const Texture &t) { return !t.valid(); });
