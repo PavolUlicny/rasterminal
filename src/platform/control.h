@@ -65,6 +65,7 @@ namespace platform
 #ifdef _WIN32
         inline std::atomic_bool console_input_wake_enabled = {};
         inline std::atomic_uint console_input_wake_handlers = {};
+        // Only the thread whose handle is passed to cancellation may set this.
         inline std::atomic_bool console_input_read_active = {};
         inline std::atomic<HANDLE> console_input_thread = {};
 
@@ -78,16 +79,23 @@ namespace platform
             }
             while (console_input_read_active.load())
             {
-                if (cancel(input_thread) != 0)
+                if (cancel(input_thread) == 0)
                 {
-                    return true;
+                    if (GetLastError() != ERROR_NOT_FOUND)
+                    {
+                        return false;
+                    }
+                    // The reader may start a console request after checking the flag.
+                    Sleep(0);
+                    continue;
                 }
-                if (GetLastError() != ERROR_NOT_FOUND)
+                // The cancel may hit a _getch mode request instead of the read. Waiting
+                // makes a retry unlikely to hit the mode restore.
+                const ULONGLONG settle_deadline = GetTickCount64() + 50;
+                while (console_input_read_active.load() && GetTickCount64() < settle_deadline)
                 {
-                    return false;
+                    Sleep(1);
                 }
-                // The reader may start a console request after checking the flag.
-                Sleep(0);
             }
             return true;
         }

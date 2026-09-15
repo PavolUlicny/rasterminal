@@ -11,6 +11,10 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
 
+### Fixed
+
+- On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
+
 ## [v0.1.0-alpha.2] - 2026-09-08
 
 ### Added

@@ -390,6 +390,17 @@ namespace
             SetLastError(ERROR_NOT_FOUND);
             return FALSE;
         }
+        platform::detail::console_input_read_active.store(false);
+        return TRUE;
+    }
+
+    // The first cancel lands on a console request that is not the blocking read.
+    BOOL WINAPI cancel_console_input_after_other_request(HANDLE /*thread*/)
+    {
+        if (cancel_console_input_call_count().fetch_add(1) != 0)
+        {
+            platform::detail::console_input_read_active.store(false);
+        }
         return TRUE;
     }
 
@@ -1016,6 +1027,23 @@ TEST(platform, console_input_cancellation_retries_when_read_has_not_started)
 
     ASSERT_TRUE(cancelled);
     ASSERT_EQ(cancel_console_input_call_count().load(), 2U);
+}
+
+TEST(platform, console_input_cancellation_retries_until_read_returns)
+{
+    platform::detail::console_input_read_active.store(true);
+    cancel_console_input_call_count().store(0);
+    const ULONGLONG start = GetTickCount64();
+    const bool cancelled = platform::detail::cancel_console_input_read(
+        reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(1)), cancel_console_input_after_other_request
+    );
+    const ULONGLONG elapsed = GetTickCount64() - start;
+    platform::detail::console_input_read_active.store(false);
+
+    ASSERT_TRUE(cancelled);
+    ASSERT_EQ(cancel_console_input_call_count().load(), 2U);
+    // The retry must wait out the settle deadline, which uses the same clock.
+    ASSERT_TRUE(elapsed >= 50);
 }
 
 TEST(platform, console_state_guard_rejects_each_failed_probe)
