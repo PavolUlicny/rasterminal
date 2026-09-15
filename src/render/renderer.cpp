@@ -20,6 +20,7 @@
 #include <limits>
 #include <mutex>
 #include <ratio>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -111,13 +112,32 @@ Renderer::Renderer(int n_threads) : m_n_workers(resolve_thread_count(n_threads))
     m_area2.assign(static_cast<size_t>(m_n_workers), 0.0);
     m_area_span.assign(static_cast<size_t>(m_n_workers), 0.0);
     m_threads.reserve(static_cast<size_t>(m_n_workers));
-    for (int t = 0; t < m_n_workers; t++)
+    // A failed constructor does not run ~Renderer(), so every startup failure must stop the partial pool here.
+    try
     {
-        m_threads.emplace_back(&Renderer::worker_func, this, t);
+        for (int t = 0; t < m_n_workers; t++)
+        {
+            m_threads.emplace_back(&Renderer::worker_func, this, t);
+        }
+    }
+    catch (const std::system_error &error)
+    {
+        stop_workers();
+        throw std::system_error(error.code(), "failed to start render workers");
+    }
+    catch (...)
+    {
+        stop_workers();
+        throw;
     }
 }
 
 Renderer::~Renderer()
+{
+    stop_workers();
+}
+
+void Renderer::stop_workers() noexcept
 {
     {
         const std::scoped_lock lk(m_mutex);
