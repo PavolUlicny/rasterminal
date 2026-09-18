@@ -1321,6 +1321,615 @@ namespace assimp_detail
     }
 } // namespace assimp_detail
 
+namespace
+{
+    // Disabling Unreal's flag handling exposes its weapon-attachment placeholder.
+    bool is_weapon_placeholder(const aiScene *scene, const std::string &extension, const aiMesh *mesh)
+    {
+        if ((extension != ".3d" && extension != ".uc") || mesh->mMaterialIndex >= scene->mNumMaterials)
+        {
+            return false;
+        }
+        aiString name;
+        return scene->mMaterials[mesh->mMaterialIndex]->Get(AI_MATKEY_NAME, name) == AI_SUCCESS &&
+               std::strcmp(name.C_Str(), "$WeaponTag$") == 0;
+    }
+
+    bool load_assimp_materials_uses_uv1(
+        Mesh &output, const aiScene *scene, const std::string &extension, const std::string &model_dir, int n_threads
+    )
+    {
+        auto &materials = output.materials;
+        auto &textures = output.textures;
+        materials.reserve(static_cast<size_t>(scene->mNumMaterials) + 1);
+        materials.push_back(Material{});
+        // Drop texture bindings if every mesh lacks UVs. RAW otherwise samples texel 0,0.
+        bool any_uv_channel = false;
+        for (unsigned int i = 0; i < scene->mNumMeshes; i++)
+        {
+            const aiMesh *mesh = scene->mMeshes[i];
+            if (is_weapon_placeholder(scene, extension, mesh))
+            {
+                continue;
+            }
+            any_uv_channel = any_uv_channel || mesh->HasTextureCoords(0) || mesh->HasTextureCoords(1);
+        }
+        std::unordered_map<std::string, int> texture_cache;
+        std::vector<TextureSource> texture_requests;
+        auto register_texture = [&](const TextureSource &source) -> TexSlot
+        {
+            TexSlot slot;
+            if (!source.valid || !any_uv_channel)
+            {
+                return slot;
+            }
+            if (texture_requests.size() >= static_cast<size_t>(std::numeric_limits<int>::max()))
+            {
+                return slot;
+            }
+            slot.uv_set = source.uv_set;
+            const std::string key = texture_key(source);
+            const auto found = texture_cache.find(key);
+            if (found != texture_cache.end())
+            {
+                slot.tex = found->second;
+                return slot;
+            }
+            slot.tex = static_cast<int>(texture_requests.size());
+            texture_requests.push_back(source);
+            texture_cache.emplace(key, slot.tex);
+            return slot;
+        };
+
+        for (unsigned int i = 0; i < scene->mNumMaterials; i++)
+        {
+            const aiMaterial *source = scene->mMaterials[i];
+            Material material;
+            int integer = 0;
+            aiColor4D color;
+            aiReturn color_result = source->Get(AI_MATKEY_BASE_COLOR, color);
+            if (color_result != AI_SUCCESS)
+            {
+                color_result = source->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+            }
+            if (color_result != AI_SUCCESS && extension == ".blend")
+            {
+                // Legacy Blender omits COLOR_DIFFUSE for black and keeps it in a private key.
+                aiColor3D blend_color;
+                if (source->Get("$mat.blend.diffuse.color", 0, 0, blend_color) == AI_SUCCESS)
+                {
+                    color = aiColor4D(blend_color.r, blend_color.g, blend_color.b, 1.0f);
+                    color_result = AI_SUCCESS;
+                }
+            }
+            if (color_result == AI_SUCCESS && finite(color))
+            {
+                material.diffuse = to_vec3(color);
+                // DXF and Irrlicht use synthetic or absent diffuse alpha. Zero means opaque.
+                float alpha = unit(color.a);
+                const bool synthetic_zero_alpha = extension == ".dxf" || extension == ".irr" || extension == ".irrmesh";
+                if (synthetic_zero_alpha && alpha == 0.0f)
+                {
+                    alpha = 1.0f;
+                }
+                material.alpha = alpha;
+            }
+            material.ambient = material.diffuse;
+            aiColor3D color3;
+            // Ignore importer template ambients that make Flat lighting nearly black.
+            bool synthetic_ambient =
+                extension == ".dxf" || extension == ".md2" || extension == ".md3" || extension == ".mdc";
+            if (extension == ".mdl" || extension == ".hmp" || extension == ".ase")
+            {
+                aiString material_name;
+                synthetic_ambient = source->Get(AI_MATKEY_NAME, material_name) != AI_SUCCESS ||
+                                    std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
+            }
+            if (!synthetic_ambient && source->Get(AI_MATKEY_COLOR_AMBIENT, color3) == AI_SUCCESS && finite(color3.r) &&
+                finite(color3.g) && finite(color3.b))
+            {
+                // NFF parses scalar Ka into red only.
+                if ((extension == ".nff" || extension == ".enff") && color3.g == 0.0f && color3.b == 0.0f &&
+                    color3.r > 0.0f)
+                {
+                    color3.g = color3.b = color3.r;
+                }
+                // All-zero and known template ambients mean absent.
+                const bool collada_default_ambient =
+                    ((extension == ".dae" && color3.r == 0.1f && color3.g == 0.1f && color3.b == 0.1f) ||
+                     // X3D defaults ambientIntensity to 0.2.
+                     ((extension == ".x3d" || extension == ".x3db") && color3.r == 0.2f && color3.g == 0.2f &&
+                      color3.b == 0.2f));
+                const bool ambient_zero = (color3.r == 0.0f && color3.g == 0.0f && color3.b == 0.0f);
+                if (!ambient_zero && !collada_default_ambient)
+                {
+                    material.ambient = to_vec3(color3);
+                }
+            }
+            // Ignore hardcoded specular values from importer template materials.
+            bool synthetic_specular =
+                extension == ".md2" || extension == ".md3" || extension == ".dxf" || extension == ".mdc";
+            if (extension == ".mdl" || extension == ".hmp" || extension == ".ase")
+            {
+                aiString material_name;
+                const bool template_material = source->Get(AI_MATKEY_NAME, material_name) != AI_SUCCESS ||
+                                               std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
+                synthetic_specular = synthetic_specular || template_material;
+            }
+            if (!synthetic_specular && source->Get(AI_MATKEY_COLOR_SPECULAR, color3) == AI_SUCCESS &&
+                finite(color3.r) && finite(color3.g) && finite(color3.b))
+            {
+                const bool collada_default_specular =
+                    extension == ".dae" && color3.r == 0.4f && color3.g == 0.4f && color3.b == 0.4f;
+                if (!collada_default_specular)
+                {
+                    material.specular = to_vec3(color3);
+                }
+            }
+            if (source->Get(AI_MATKEY_COLOR_EMISSIVE, color3) == AI_SUCCESS && finite(color3.r) && finite(color3.g) &&
+                finite(color3.b))
+            {
+                material.emissive = to_vec3(color3);
+                float emissive_intensity = 0.0f;
+                if (source->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS &&
+                    finite(emissive_intensity) && emissive_intensity > 0.0f)
+                {
+                    material.emissive *= emissive_intensity;
+                }
+            }
+
+            int blend_func = 0;
+            const bool has_blend_func = assimp_detail::get_blend_func(*source, blend_func);
+            ai_real scalar = 0.0f;
+            // LWO additive surfaces carry their ADTR glow amount in OPACITY. Treating it
+            // as alpha-OVER opacity renders them incorrectly translucent.
+            const bool additive_opacity = (extension == ".lwo" || extension == ".lxo" || extension == ".lws") &&
+                                          has_blend_func && blend_func == aiBlendMode_Additive;
+            // HMP/MDL7 write OPACITY from an often-uninitialized ambient alpha.
+            const bool synthetic_zero_opacity = extension == ".hmp" || extension == ".mdl";
+            if (!additive_opacity && source->Get(AI_MATKEY_OPACITY, scalar) == AI_SUCCESS && finite(scalar) &&
+                (scalar > 0.0f || has_blend_func || !synthetic_zero_opacity))
+            {
+                material.alpha *= unit(scalar);
+            }
+            bool have_shininess = false;
+            if (source->Get(AI_MATKEY_SHININESS, scalar) == AI_SUCCESS && finite(scalar) && scalar >= 0.0f)
+            {
+                // Collada's template shininess 10 means absent. Test after reading this key.
+                const bool collada_template_shininess = extension == ".dae" && scalar == 10.0f;
+                if (!collada_template_shininess)
+                {
+                    material.shininess = scalar;
+                    have_shininess = true;
+                }
+            }
+            if ((extension == ".ifc" || extension == ".ifczip" || extension == ".step" || extension == ".stp") &&
+                have_shininess && material.shininess < 2.0f)
+            {
+                // IFC conflates exponent and roughness; sub-2 values are useful only as roughness.
+                material.shininess = roughness_to_shininess(unit(material.shininess));
+            }
+            if (have_shininess)
+            {
+                // Collada and X3D write zero for an authored matte material.
+                material.shininess = std::max(material.shininess, roughness_to_shininess(1.0f));
+            }
+            if (source->Get(AI_MATKEY_SHININESS_STRENGTH, scalar) == AI_SUCCESS && finite(scalar))
+            {
+                // PMX stores an exponent here. Other importers store a strength multiplier.
+                if (extension == ".pmx")
+                {
+                    if (!have_shininess && scalar > 0.0f)
+                    {
+                        material.shininess = scalar;
+                        have_shininess = true;
+                    }
+                }
+                else
+                {
+                    material.specular *= unit(scalar);
+                }
+            }
+            // Blender's synthetic DefaultMaterial has uninitialized private fields.
+            bool is_blend_default_material = false;
+            if (extension == ".blend")
+            {
+                aiString material_name;
+                is_blend_default_material = source->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS &&
+                                            std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
+            }
+            if (extension == ".blend" && !is_blend_default_material)
+            {
+                // Legacy Blender Internal stores transparency in private keys.
+                int transparency_used = 0;
+                if (source->Get("$mat.blend.transparency.use", 0, 0, transparency_used) == AI_SUCCESS &&
+                    transparency_used != 0 &&
+                    source->Get("$mat.blend.transparency.alpha", 0, 0, scalar) == AI_SUCCESS && finite(scalar) &&
+                    scalar > 0.0f)
+                {
+                    material.alpha *= unit(scalar);
+                }
+                if (source->Get("$mat.blend.diffuse.intensity", 0, 0, scalar) == AI_SUCCESS && finite(scalar) &&
+                    scalar >= 0.0f)
+                {
+                    material.diffuse *= scalar;
+                }
+                if (source->Get("$mat.blend.specular.intensity", 0, 0, scalar) == AI_SUCCESS && finite(scalar) &&
+                    scalar >= 0.0f)
+                {
+                    material.specular *= scalar;
+                }
+            }
+            if ((extension == ".irr" || extension == ".irrmesh" || extension == ".nff" || extension == ".enff") &&
+                source->Get(AI_MATKEY_SHADING_MODEL, integer) == AI_SUCCESS && integer == aiShadingMode_NoShading)
+            {
+                // These importers write NoShading only when the file requests it.
+                material.unlit = true;
+            }
+            bool metallic_authored = false;
+            if (source->Get(AI_MATKEY_METALLIC_FACTOR, scalar) == AI_SUCCESS && finite(scalar))
+            {
+                metallic_authored = true;
+                material.metallic = unit(scalar);
+            }
+            if (source->Get(AI_MATKEY_ROUGHNESS_FACTOR, scalar) == AI_SUCCESS && finite(scalar))
+            {
+                material.roughness = unit(scalar);
+                // Classic FBX derives roughness from authored shininess. Metallic marks PBR
+                // data, where the shininess key is only a template default.
+                if (!have_shininess || metallic_authored)
+                {
+                    material.shininess = roughness_to_shininess(material.roughness);
+                }
+            }
+            if (source->Get(AI_MATKEY_TWOSIDED, integer) == AI_SUCCESS)
+            {
+                material.double_sided = integer != 0;
+            }
+            if (extension == ".irr")
+            {
+                // Irrlicht skybox faces are visible from inside.
+                aiString material_name;
+                if (source->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS &&
+                    std::strncmp(material_name.C_Str(), "SkyboxSide_", 11) == 0)
+                {
+                    material.double_sided = true;
+                }
+            }
+            TextureSource diffuse = texture_source(scene, source, aiTextureType_BASE_COLOR, model_dir, extension);
+            if (!diffuse.valid)
+            {
+                diffuse = texture_source(scene, source, aiTextureType_DIFFUSE, model_dir, extension);
+            }
+            material.diffuse_map = register_texture(diffuse);
+            TexSlot specular_slot =
+                register_texture(texture_source(scene, source, aiTextureType_SPECULAR, model_dir, extension));
+            if (specular_slot.tex < 0 && (extension == ".mesh" || extension == ".mesh.xml"))
+            {
+                // Ogre's "$specular_map" uses SHININESS. Elsewhere that type means gloss.
+                specular_slot =
+                    register_texture(texture_source(scene, source, aiTextureType_SHININESS, model_dir, extension));
+            }
+            material.specular_map = specular_slot;
+            TextureSource normal = texture_source(scene, source, aiTextureType_NORMALS, model_dir, extension);
+            if (!normal.valid)
+            {
+                // FBX presets bind normal maps to the camera-space slot.
+                normal = texture_source(scene, source, aiTextureType_NORMAL_CAMERA, model_dir, extension);
+            }
+            if (!normal.valid)
+            {
+                normal = texture_source(scene, source, aiTextureType_HEIGHT, model_dir, extension, true);
+            }
+            else if (extension == ".dae")
+            {
+                // Collada routes grayscale <bump> textures through NORMALS.
+                normal.maybe_height = true;
+            }
+            material.normal_map = register_texture(normal);
+            TextureSource emissive = texture_source(scene, source, aiTextureType_EMISSIVE, model_dir, extension);
+            if (!emissive.valid)
+            {
+                emissive = texture_source(scene, source, aiTextureType_EMISSION_COLOR, model_dir, extension);
+            }
+            material.emissive_map = register_texture(emissive);
+            material.occlusion_map =
+                register_texture(texture_source(scene, source, aiTextureType_AMBIENT_OCCLUSION, model_dir, extension));
+
+            const TextureSource metal = texture_source(scene, source, aiTextureType_METALNESS, model_dir, extension);
+            const TextureSource rough =
+                texture_source(scene, source, aiTextureType_DIFFUSE_ROUGHNESS, model_dir, extension);
+            if (same_texture_binding(metal, rough))
+            {
+                material.mr_map = register_texture(metal);
+            }
+            if (extension == ".3mf" && diffuse.valid && material.diffuse.x == 0.0f && material.diffuse.y == 0.0f &&
+                material.diffuse.z == 0.0f)
+            {
+                // 3MF supplies black template colors for textured materials.
+                const vec3 white = { 1.0f, 1.0f, 1.0f };
+                material.diffuse = white;
+                material.ambient = white;
+                material.specular = { 0.4f, 0.4f, 0.4f };
+            }
+
+            // Texture alpha alone does not select the transparent pass.
+            material.blend = material.alpha < 1.0f;
+            // MD3 uses BLEND_FUNC without OPACITY. LWO stamps the same key on every surface,
+            // so it cannot enable blending globally. Additive blending remains unsupported.
+            if (extension == ".md3" && has_blend_func && blend_func == aiBlendMode_Default)
+            {
+                material.blend = true;
+            }
+            materials.push_back(material);
+        }
+
+        decode_textures(
+            textures, materials, texture_requests.size(), n_threads,
+            [&](size_t i) { return decode_texture(texture_requests[i]); }
+        );
+        return std::any_of(
+            materials.begin(), materials.end(),
+            [](const Material &material)
+            {
+                const auto uses_uv1 = [](const TexSlot &slot) { return slot.tex >= 0 && slot.uv_set == 1; };
+                return uses_uv1(material.diffuse_map) || uses_uv1(material.specular_map) ||
+                       uses_uv1(material.normal_map) || uses_uv1(material.emissive_map) ||
+                       uses_uv1(material.occlusion_map) || uses_uv1(material.mr_map);
+            }
+        );
+    }
+
+    bool load_assimp_geometry(
+        Mesh &output,
+        const aiScene *scene,
+        const std::string &extension,
+        const std::string &path,
+        bool any_uv1_reference
+    )
+    {
+        auto &vertices = output.vertices;
+        auto &triangles = output.triangles;
+        auto &vertex_colors = output.vertex_colors;
+        auto &vertex_alpha = output.vertex_alpha;
+        auto &uv1 = output.uv1;
+        auto &has_vertex_colors = output.has_vertex_colors;
+        auto &has_vertex_alpha = output.has_vertex_alpha;
+        auto &has_uv1 = output.has_uv1;
+        bool any_colors = false;
+        bool any_alpha = false;
+        // Legacy Blender MCol may expose signed bytes; discard that unusable color stream.
+        bool blend_colors_garbage = false;
+        bool off_integer_colors = false;
+        uint64_t total_vertices = 0;
+        uint64_t total_triangles = 0;
+        for (unsigned int i = 0; i < scene->mNumMeshes; i++)
+        {
+            const aiMesh *mesh = scene->mMeshes[i];
+            if (!(mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) || is_weapon_placeholder(scene, extension, mesh))
+            {
+                continue;
+            }
+            total_vertices += mesh->mNumVertices;
+            total_triangles += mesh->mNumFaces;
+            if (total_vertices > std::numeric_limits<uint32_t>::max() ||
+                total_triangles > std::numeric_limits<uint32_t>::max())
+            {
+                return false;
+            }
+            any_colors = any_colors || mesh->HasVertexColors(0);
+            if (mesh->HasVertexColors(0))
+            {
+                for (unsigned int v = 0; v < mesh->mNumVertices; v++)
+                {
+                    const aiColor4D &vertex_color = mesh->mColors[0][v];
+                    if (!finite(vertex_color))
+                    {
+                        return false;
+                    }
+                    blend_colors_garbage = blend_colors_garbage ||
+                                           (extension == ".blend" && (vertex_color.r < 0.0f || vertex_color.g < 0.0f ||
+                                                                      vertex_color.b < 0.0f || vertex_color.a < 0.0f));
+                    const bool amf_default_color = extension == ".amf" && vertex_color.r == 0.0f &&
+                                                   vertex_color.g == 0.0f && vertex_color.b == 0.0f &&
+                                                   vertex_color.a == 0.0f;
+                    // COFF may use 0..255. Irrlicht and 3MF leave alpha at zero for RGB-only colors.
+                    const bool alpha_authored = [&]
+                    {
+                        if (extension == ".off")
+                        {
+                            return vertex_color.a != 1.0f && vertex_color.a != 255.0f;
+                        }
+                        if ((extension == ".irr" || extension == ".irrmesh"))
+                        {
+                            return vertex_color.a > 0.0f && vertex_color.a < 1.0f;
+                        }
+                        if (extension == ".3mf")
+                        {
+                            return vertex_color.a > 0.0f && vertex_color.a < 1.0f;
+                        }
+                        return vertex_color.a < 1.0f;
+                    }();
+                    // DXF stamps synthetic alpha on uncolored vertices.
+                    any_alpha = any_alpha || (extension != ".dxf" && !amf_default_color && alpha_authored);
+                    // A COFF channel above one selects the format's 0..255 interpretation.
+                    if (extension == ".off" &&
+                        (vertex_color.r > 1.0f || vertex_color.g > 1.0f || vertex_color.b > 1.0f))
+                    {
+                        off_integer_colors = true;
+                    }
+                }
+            }
+        }
+        has_vertex_colors = any_colors && !blend_colors_garbage;
+        has_vertex_alpha = any_alpha && !blend_colors_garbage;
+        // Duplicate UV0 when a material requests a second set the importer omitted.
+        has_uv1 = any_uv1_reference;
+        vertices.reserve(static_cast<size_t>(total_vertices));
+        bool saw_zero_normal = false;
+        triangles.reserve(static_cast<size_t>(total_triangles));
+        if (has_vertex_colors)
+        {
+            vertex_colors.reserve(static_cast<size_t>(total_vertices));
+        }
+        if (has_vertex_alpha)
+        {
+            vertex_alpha.reserve(static_cast<size_t>(total_vertices));
+        }
+        if (has_uv1)
+        {
+            uv1.reserve(static_cast<size_t>(total_vertices));
+        }
+
+        for (unsigned int i = 0; i < scene->mNumMeshes; i++)
+        {
+            const aiMesh *source = scene->mMeshes[i];
+            if (!(source->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) ||
+                is_weapon_placeholder(scene, extension, source))
+            {
+                continue;
+            }
+            const auto base = static_cast<uint32_t>(vertices.size());
+            for (unsigned int v = 0; v < source->mNumVertices; v++)
+            {
+                const aiVector3D position = source->mVertices[v];
+                const aiVector3D normal = source->HasNormals() ? source->mNormals[v] : aiVector3D(0.0f, 1.0f, 0.0f);
+                // Refill invalid normals below, but reject invalid positions and UVs.
+                const bool usable_normal = source->HasNormals() && finite(normal) &&
+                                           (normal.x * normal.x) + (normal.y * normal.y) + (normal.z * normal.z) > 0.0f;
+                if (!usable_normal)
+                {
+                    saw_zero_normal = true;
+                }
+                const aiVector3D texcoord = source->HasTextureCoords(0) ? source->mTextureCoords[0][v] : aiVector3D();
+                if (!finite(position) || !finite(texcoord))
+                {
+                    return false;
+                }
+                vertices.push_back({ { position.x, position.y, position.z },
+                                     usable_normal ? vec3(normal.x, normal.y, normal.z) : vec3(),
+                                     { texcoord.x, texcoord.y },
+                                     1.0f });
+                aiColor4D vertex_color = source->HasVertexColors(0) ? source->mColors[0][v] : aiColor4D(1.0f);
+                if (extension == ".amf" && vertex_color.r == 0.0f && vertex_color.g == 0.0f && vertex_color.b == 0.0f &&
+                    vertex_color.a == 0.0f)
+                {
+                    vertex_color = aiColor4D(1.0f);
+                }
+                else if ((extension == ".irr" || extension == ".irrmesh" || extension == ".3mf") &&
+                         vertex_color.a == 0.0f)
+                {
+                    vertex_color.a = 1.0f;
+                }
+                const float color_scale = off_integer_colors ? 1.0f / 255.0f : 1.0f;
+                if (has_vertex_colors)
+                {
+                    vertex_colors.emplace_back(
+                        vertex_color.r * color_scale, vertex_color.g * color_scale, vertex_color.b * color_scale
+                    );
+                }
+                if (has_vertex_alpha)
+                {
+                    vertex_alpha.push_back(unit(vertex_color.a * color_scale));
+                }
+                if (has_uv1)
+                {
+                    const aiVector3D second = source->HasTextureCoords(1) ? source->mTextureCoords[1][v] : texcoord;
+                    if (!finite(second))
+                    {
+                        return false;
+                    }
+                    uv1.emplace_back(second.x, second.y);
+                }
+            }
+
+            const uint32_t material = source->mMaterialIndex < scene->mNumMaterials ? source->mMaterialIndex + 1 : 0;
+            for (unsigned int f = 0; f < source->mNumFaces; f++)
+            {
+                const aiFace &face = source->mFaces[f];
+                if (face.mNumIndices != 3 || !face.mIndices || face.mIndices[0] >= source->mNumVertices ||
+                    face.mIndices[1] >= source->mNumVertices || face.mIndices[2] >= source->mNumVertices)
+                {
+                    return false;
+                }
+                triangles.push_back({ { base + face.mIndices[0], base + face.mIndices[1], base + face.mIndices[2] },
+                                      material });
+            }
+        }
+
+        // Refill missing normals from adjacent faces. Isolated vertices use the default up vector.
+        if (saw_zero_normal)
+        {
+            std::vector<vec3> accumulated(vertices.size());
+            for (const Triangle &triangle : triangles)
+            {
+                const vec3 face = cross(
+                    vertices[triangle.v[1]].pos - vertices[triangle.v[0]].pos,
+                    vertices[triangle.v[2]].pos - vertices[triangle.v[0]].pos
+                );
+                accumulated[triangle.v[0]] += face;
+                accumulated[triangle.v[1]] += face;
+                accumulated[triangle.v[2]] += face;
+            }
+            for (size_t i = 0; i < vertices.size(); i++)
+            {
+                if (vertices[i].normal.length_sq() > 0.0f)
+                {
+                    continue;
+                }
+                vertices[i].normal =
+                    accumulated[i].length_sq() > 0.0f ? normalize(accumulated[i]) : vec3(0.0f, 1.0f, 0.0f);
+            }
+        }
+
+        // Remap sources Assimp leaves Z-up. Terrain and BSP faces also need winding reversal.
+        const bool ogex_z_up = extension == ".ogex" && ogex_declared_up_axis(path) != 'y';
+        const bool z_up = extension == ".blend" || extension == ".smd" || extension == ".hmp" || extension == ".ter" ||
+                          extension == ".bsp" || extension == ".pk3" || extension == ".3d" || extension == ".cob" ||
+                          extension == ".scn" || extension == ".amf" || extension == ".3mf" || extension == ".ac" ||
+                          extension == ".acc" || extension == ".ac3d" || ogex_z_up;
+        if (z_up)
+        {
+            for (Vertex &vertex : vertices)
+            {
+                const vec3 pos = vertex.pos;
+                const vec3 normal = vertex.normal;
+                vertex.pos = { pos.x, pos.z, -pos.y };
+                vertex.normal = { normal.x, normal.z, -normal.y };
+            }
+        }
+        if (extension == ".ter" || extension == ".hmp" || extension == ".bsp" || extension == ".pk3")
+        {
+            for (Triangle &triangle : triangles)
+            {
+                std::swap(triangle.v[1], triangle.v[2]);
+            }
+        }
+        if (extension == ".ter")
+        {
+            // Terragen normals were generated before the winding reversal.
+            for (Vertex &vertex : vertices)
+            {
+                vertex.normal = { -vertex.normal.x, -vertex.normal.y, -vertex.normal.z };
+            }
+        }
+        if (extension == ".hmp" || extension == ".bsp" || extension == ".pk3")
+        {
+            // HMP and BSP texture coordinates are top-down.
+            for (Vertex &vertex : vertices)
+            {
+                vertex.uv.y = 1.0f - vertex.uv.y;
+            }
+        }
+
+        if (vertices.empty() || triangles.empty())
+        {
+            return false;
+        }
+        return true;
+    }
+} // namespace
+
 bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angle_deg)
 {
     MeshSnapshot snapshot(*this);
@@ -1456,580 +2065,12 @@ bool Mesh::load_assimp(const std::string &path, int n_threads, float crease_angl
         return false;
     }
 
-    materials.reserve(static_cast<size_t>(scene->mNumMaterials) + 1);
-    materials.push_back(Material{});
-    // Drop texture bindings if every mesh lacks UVs. RAW otherwise samples texel 0,0.
-    bool any_uv_channel = false;
-    // Disabling Unreal's flag handling exposes its weapon-attachment placeholder.
-    const bool unreal_weapon_placeholders = extension == ".3d" || extension == ".uc";
-    auto is_weapon_placeholder = [&](const aiMesh *mesh)
-    {
-        if (!unreal_weapon_placeholders || mesh->mMaterialIndex >= scene->mNumMaterials)
-        {
-            return false;
-        }
-        aiString name;
-        return scene->mMaterials[mesh->mMaterialIndex]->Get(AI_MATKEY_NAME, name) == AI_SUCCESS &&
-               std::strcmp(name.C_Str(), "$WeaponTag$") == 0;
-    };
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
-    {
-        const aiMesh *mesh = scene->mMeshes[i];
-        if (is_weapon_placeholder(mesh))
-        {
-            continue;
-        }
-        any_uv_channel = any_uv_channel || mesh->HasTextureCoords(0) || mesh->HasTextureCoords(1);
-    }
-    std::unordered_map<std::string, int> texture_cache;
-    std::vector<TextureSource> texture_requests;
-    auto register_texture = [&](const TextureSource &source) -> TexSlot
-    {
-        TexSlot slot;
-        if (!source.valid || !any_uv_channel)
-        {
-            return slot;
-        }
-        if (texture_requests.size() >= static_cast<size_t>(std::numeric_limits<int>::max()))
-        {
-            return slot;
-        }
-        slot.uv_set = source.uv_set;
-        const std::string key = texture_key(source);
-        const auto found = texture_cache.find(key);
-        if (found != texture_cache.end())
-        {
-            slot.tex = found->second;
-            return slot;
-        }
-        slot.tex = static_cast<int>(texture_requests.size());
-        texture_requests.push_back(source);
-        texture_cache.emplace(key, slot.tex);
-        return slot;
-    };
-
-    for (unsigned int i = 0; i < scene->mNumMaterials; i++)
-    {
-        const aiMaterial *source = scene->mMaterials[i];
-        Material material;
-        int integer = 0;
-        aiColor4D color;
-        aiReturn color_result = source->Get(AI_MATKEY_BASE_COLOR, color);
-        if (color_result != AI_SUCCESS)
-        {
-            color_result = source->Get(AI_MATKEY_COLOR_DIFFUSE, color);
-        }
-        if (color_result != AI_SUCCESS && extension == ".blend")
-        {
-            // Legacy Blender omits COLOR_DIFFUSE for black and keeps it in a private key.
-            aiColor3D blend_color;
-            if (source->Get("$mat.blend.diffuse.color", 0, 0, blend_color) == AI_SUCCESS)
-            {
-                color = aiColor4D(blend_color.r, blend_color.g, blend_color.b, 1.0f);
-                color_result = AI_SUCCESS;
-            }
-        }
-        if (color_result == AI_SUCCESS && finite(color))
-        {
-            material.diffuse = to_vec3(color);
-            // DXF and Irrlicht use synthetic or absent diffuse alpha. Zero means opaque.
-            float alpha = unit(color.a);
-            const bool synthetic_zero_alpha = extension == ".dxf" || extension == ".irr" || extension == ".irrmesh";
-            if (synthetic_zero_alpha && alpha == 0.0f)
-            {
-                alpha = 1.0f;
-            }
-            material.alpha = alpha;
-        }
-        material.ambient = material.diffuse;
-        aiColor3D color3;
-        // Ignore importer template ambients that make Flat lighting nearly black.
-        bool synthetic_ambient =
-            extension == ".dxf" || extension == ".md2" || extension == ".md3" || extension == ".mdc";
-        if (extension == ".mdl" || extension == ".hmp" || extension == ".ase")
-        {
-            aiString material_name;
-            synthetic_ambient = source->Get(AI_MATKEY_NAME, material_name) != AI_SUCCESS ||
-                                std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
-        }
-        if (!synthetic_ambient && source->Get(AI_MATKEY_COLOR_AMBIENT, color3) == AI_SUCCESS && finite(color3.r) &&
-            finite(color3.g) && finite(color3.b))
-        {
-            // NFF parses scalar Ka into red only.
-            if ((extension == ".nff" || extension == ".enff") && color3.g == 0.0f && color3.b == 0.0f &&
-                color3.r > 0.0f)
-            {
-                color3.g = color3.b = color3.r;
-            }
-            // All-zero and known template ambients mean absent.
-            const bool collada_default_ambient =
-                ((extension == ".dae" && color3.r == 0.1f && color3.g == 0.1f && color3.b == 0.1f) ||
-                 // X3D defaults ambientIntensity to 0.2.
-                 ((extension == ".x3d" || extension == ".x3db") && color3.r == 0.2f && color3.g == 0.2f &&
-                  color3.b == 0.2f));
-            const bool ambient_zero = (color3.r == 0.0f && color3.g == 0.0f && color3.b == 0.0f);
-            if (!ambient_zero && !collada_default_ambient)
-            {
-                material.ambient = to_vec3(color3);
-            }
-        }
-        // Ignore hardcoded specular values from importer template materials.
-        bool synthetic_specular =
-            extension == ".md2" || extension == ".md3" || extension == ".dxf" || extension == ".mdc";
-        if (extension == ".mdl" || extension == ".hmp" || extension == ".ase")
-        {
-            aiString material_name;
-            const bool template_material = source->Get(AI_MATKEY_NAME, material_name) != AI_SUCCESS ||
-                                           std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
-            synthetic_specular = synthetic_specular || template_material;
-        }
-        if (!synthetic_specular && source->Get(AI_MATKEY_COLOR_SPECULAR, color3) == AI_SUCCESS && finite(color3.r) &&
-            finite(color3.g) && finite(color3.b))
-        {
-            const bool collada_default_specular =
-                extension == ".dae" && color3.r == 0.4f && color3.g == 0.4f && color3.b == 0.4f;
-            if (!collada_default_specular)
-            {
-                material.specular = to_vec3(color3);
-            }
-        }
-        if (source->Get(AI_MATKEY_COLOR_EMISSIVE, color3) == AI_SUCCESS && finite(color3.r) && finite(color3.g) &&
-            finite(color3.b))
-        {
-            material.emissive = to_vec3(color3);
-            float emissive_intensity = 0.0f;
-            if (source->Get(AI_MATKEY_EMISSIVE_INTENSITY, emissive_intensity) == AI_SUCCESS &&
-                finite(emissive_intensity) && emissive_intensity > 0.0f)
-            {
-                material.emissive *= emissive_intensity;
-            }
-        }
-
-        int blend_func = 0;
-        const bool has_blend_func = assimp_detail::get_blend_func(*source, blend_func);
-        ai_real scalar = 0.0f;
-        // LWO additive surfaces carry their ADTR glow amount in OPACITY. Treating it
-        // as alpha-OVER opacity renders them incorrectly translucent.
-        const bool additive_opacity = (extension == ".lwo" || extension == ".lxo" || extension == ".lws") &&
-                                      has_blend_func && blend_func == aiBlendMode_Additive;
-        // HMP/MDL7 write OPACITY from an often-uninitialized ambient alpha.
-        const bool synthetic_zero_opacity = extension == ".hmp" || extension == ".mdl";
-        if (!additive_opacity && source->Get(AI_MATKEY_OPACITY, scalar) == AI_SUCCESS && finite(scalar) &&
-            (scalar > 0.0f || has_blend_func || !synthetic_zero_opacity))
-        {
-            material.alpha *= unit(scalar);
-        }
-        bool have_shininess = false;
-        if (source->Get(AI_MATKEY_SHININESS, scalar) == AI_SUCCESS && finite(scalar) && scalar >= 0.0f)
-        {
-            // Collada's template shininess 10 means absent. Test after reading this key.
-            const bool collada_template_shininess = extension == ".dae" && scalar == 10.0f;
-            if (!collada_template_shininess)
-            {
-                material.shininess = scalar;
-                have_shininess = true;
-            }
-        }
-        if ((extension == ".ifc" || extension == ".ifczip" || extension == ".step" || extension == ".stp") &&
-            have_shininess && material.shininess < 2.0f)
-        {
-            // IFC conflates exponent and roughness; sub-2 values are useful only as roughness.
-            material.shininess = roughness_to_shininess(unit(material.shininess));
-        }
-        if (have_shininess)
-        {
-            // Collada and X3D write zero for an authored matte material.
-            material.shininess = std::max(material.shininess, roughness_to_shininess(1.0f));
-        }
-        if (source->Get(AI_MATKEY_SHININESS_STRENGTH, scalar) == AI_SUCCESS && finite(scalar))
-        {
-            // PMX stores an exponent here. Other importers store a strength multiplier.
-            if (extension == ".pmx")
-            {
-                if (!have_shininess && scalar > 0.0f)
-                {
-                    material.shininess = scalar;
-                    have_shininess = true;
-                }
-            }
-            else
-            {
-                material.specular *= unit(scalar);
-            }
-        }
-        // Blender's synthetic DefaultMaterial has uninitialized private fields.
-        bool is_blend_default_material = false;
-        if (extension == ".blend")
-        {
-            aiString material_name;
-            is_blend_default_material = source->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS &&
-                                        std::strcmp(material_name.C_Str(), "DefaultMaterial") == 0;
-        }
-        if (extension == ".blend" && !is_blend_default_material)
-        {
-            // Legacy Blender Internal stores transparency in private keys.
-            int transparency_used = 0;
-            if (source->Get("$mat.blend.transparency.use", 0, 0, transparency_used) == AI_SUCCESS &&
-                transparency_used != 0 && source->Get("$mat.blend.transparency.alpha", 0, 0, scalar) == AI_SUCCESS &&
-                finite(scalar) && scalar > 0.0f)
-            {
-                material.alpha *= unit(scalar);
-            }
-            if (source->Get("$mat.blend.diffuse.intensity", 0, 0, scalar) == AI_SUCCESS && finite(scalar) &&
-                scalar >= 0.0f)
-            {
-                material.diffuse *= scalar;
-            }
-            if (source->Get("$mat.blend.specular.intensity", 0, 0, scalar) == AI_SUCCESS && finite(scalar) &&
-                scalar >= 0.0f)
-            {
-                material.specular *= scalar;
-            }
-        }
-        if ((extension == ".irr" || extension == ".irrmesh" || extension == ".nff" || extension == ".enff") &&
-            source->Get(AI_MATKEY_SHADING_MODEL, integer) == AI_SUCCESS && integer == aiShadingMode_NoShading)
-        {
-            // These importers write NoShading only when the file requests it.
-            material.unlit = true;
-        }
-        bool metallic_authored = false;
-        if (source->Get(AI_MATKEY_METALLIC_FACTOR, scalar) == AI_SUCCESS && finite(scalar))
-        {
-            metallic_authored = true;
-            material.metallic = unit(scalar);
-        }
-        if (source->Get(AI_MATKEY_ROUGHNESS_FACTOR, scalar) == AI_SUCCESS && finite(scalar))
-        {
-            material.roughness = unit(scalar);
-            // Classic FBX derives roughness from authored shininess. Metallic marks PBR
-            // data, where the shininess key is only a template default.
-            if (!have_shininess || metallic_authored)
-            {
-                material.shininess = roughness_to_shininess(material.roughness);
-            }
-        }
-        if (source->Get(AI_MATKEY_TWOSIDED, integer) == AI_SUCCESS)
-        {
-            material.double_sided = integer != 0;
-        }
-        if (extension == ".irr")
-        {
-            // Irrlicht skybox faces are visible from inside.
-            aiString material_name;
-            if (source->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS &&
-                std::strncmp(material_name.C_Str(), "SkyboxSide_", 11) == 0)
-            {
-                material.double_sided = true;
-            }
-        }
-        TextureSource diffuse = texture_source(scene, source, aiTextureType_BASE_COLOR, model_dir, extension);
-        if (!diffuse.valid)
-        {
-            diffuse = texture_source(scene, source, aiTextureType_DIFFUSE, model_dir, extension);
-        }
-        material.diffuse_map = register_texture(diffuse);
-        TexSlot specular_slot =
-            register_texture(texture_source(scene, source, aiTextureType_SPECULAR, model_dir, extension));
-        if (specular_slot.tex < 0 && (extension == ".mesh" || extension == ".mesh.xml"))
-        {
-            // Ogre's "$specular_map" uses SHININESS. Elsewhere that type means gloss.
-            specular_slot =
-                register_texture(texture_source(scene, source, aiTextureType_SHININESS, model_dir, extension));
-        }
-        material.specular_map = specular_slot;
-        TextureSource normal = texture_source(scene, source, aiTextureType_NORMALS, model_dir, extension);
-        if (!normal.valid)
-        {
-            // FBX presets bind normal maps to the camera-space slot.
-            normal = texture_source(scene, source, aiTextureType_NORMAL_CAMERA, model_dir, extension);
-        }
-        if (!normal.valid)
-        {
-            normal = texture_source(scene, source, aiTextureType_HEIGHT, model_dir, extension, true);
-        }
-        else if (extension == ".dae")
-        {
-            // Collada routes grayscale <bump> textures through NORMALS.
-            normal.maybe_height = true;
-        }
-        material.normal_map = register_texture(normal);
-        TextureSource emissive = texture_source(scene, source, aiTextureType_EMISSIVE, model_dir, extension);
-        if (!emissive.valid)
-        {
-            emissive = texture_source(scene, source, aiTextureType_EMISSION_COLOR, model_dir, extension);
-        }
-        material.emissive_map = register_texture(emissive);
-        material.occlusion_map =
-            register_texture(texture_source(scene, source, aiTextureType_AMBIENT_OCCLUSION, model_dir, extension));
-
-        const TextureSource metal = texture_source(scene, source, aiTextureType_METALNESS, model_dir, extension);
-        const TextureSource rough =
-            texture_source(scene, source, aiTextureType_DIFFUSE_ROUGHNESS, model_dir, extension);
-        if (same_texture_binding(metal, rough))
-        {
-            material.mr_map = register_texture(metal);
-        }
-        if (extension == ".3mf" && diffuse.valid && material.diffuse.x == 0.0f && material.diffuse.y == 0.0f &&
-            material.diffuse.z == 0.0f)
-        {
-            // 3MF supplies black template colors for textured materials.
-            const vec3 white = { 1.0f, 1.0f, 1.0f };
-            material.diffuse = white;
-            material.ambient = white;
-            material.specular = { 0.4f, 0.4f, 0.4f };
-        }
-
-        // Texture alpha alone does not select the transparent pass.
-        material.blend = material.alpha < 1.0f;
-        // MD3 uses BLEND_FUNC without OPACITY. LWO stamps the same key on every surface,
-        // so it cannot enable blending globally. Additive blending remains unsupported.
-        if (extension == ".md3" && has_blend_func && blend_func == aiBlendMode_Default)
-        {
-            material.blend = true;
-        }
-        materials.push_back(material);
-    }
-
-    decode_textures(
-        textures, materials, texture_requests.size(), n_threads,
-        [&](size_t i) { return decode_texture(texture_requests[i]); }
-    );
-    const bool any_uv1_reference = std::any_of(
-        materials.begin(), materials.end(),
-        [](const Material &material)
-        {
-            const auto uses_uv1 = [](const TexSlot &slot) { return slot.tex >= 0 && slot.uv_set == 1; };
-            return uses_uv1(material.diffuse_map) || uses_uv1(material.specular_map) || uses_uv1(material.normal_map) ||
-                   uses_uv1(material.emissive_map) || uses_uv1(material.occlusion_map) || uses_uv1(material.mr_map);
-        }
-    );
-
-    bool any_colors = false;
-    bool any_alpha = false;
-    // Legacy Blender MCol may expose signed bytes; discard that unusable color stream.
-    bool blend_colors_garbage = false;
-    bool off_integer_colors = false;
-    uint64_t total_vertices = 0;
-    uint64_t total_triangles = 0;
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
-    {
-        const aiMesh *mesh = scene->mMeshes[i];
-        if (!(mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) || is_weapon_placeholder(mesh))
-        {
-            continue;
-        }
-        total_vertices += mesh->mNumVertices;
-        total_triangles += mesh->mNumFaces;
-        if (total_vertices > std::numeric_limits<uint32_t>::max() ||
-            total_triangles > std::numeric_limits<uint32_t>::max())
-        {
-            return false;
-        }
-        any_colors = any_colors || mesh->HasVertexColors(0);
-        if (mesh->HasVertexColors(0))
-        {
-            for (unsigned int v = 0; v < mesh->mNumVertices; v++)
-            {
-                const aiColor4D &vertex_color = mesh->mColors[0][v];
-                if (!finite(vertex_color))
-                {
-                    return false;
-                }
-                blend_colors_garbage =
-                    blend_colors_garbage || (extension == ".blend" && (vertex_color.r < 0.0f || vertex_color.g < 0.0f ||
-                                                                       vertex_color.b < 0.0f || vertex_color.a < 0.0f));
-                const bool amf_default_color = extension == ".amf" && vertex_color.r == 0.0f &&
-                                               vertex_color.g == 0.0f && vertex_color.b == 0.0f &&
-                                               vertex_color.a == 0.0f;
-                // COFF may use 0..255. Irrlicht and 3MF leave alpha at zero for RGB-only colors.
-                const bool alpha_authored = [&]
-                {
-                    if (extension == ".off")
-                    {
-                        return vertex_color.a != 1.0f && vertex_color.a != 255.0f;
-                    }
-                    if ((extension == ".irr" || extension == ".irrmesh"))
-                    {
-                        return vertex_color.a > 0.0f && vertex_color.a < 1.0f;
-                    }
-                    if (extension == ".3mf")
-                    {
-                        return vertex_color.a > 0.0f && vertex_color.a < 1.0f;
-                    }
-                    return vertex_color.a < 1.0f;
-                }();
-                // DXF stamps synthetic alpha on uncolored vertices.
-                any_alpha = any_alpha || (extension != ".dxf" && !amf_default_color && alpha_authored);
-                // A COFF channel above one selects the format's 0..255 interpretation.
-                if (extension == ".off" && (vertex_color.r > 1.0f || vertex_color.g > 1.0f || vertex_color.b > 1.0f))
-                {
-                    off_integer_colors = true;
-                }
-            }
-        }
-    }
-    has_vertex_colors = any_colors && !blend_colors_garbage;
-    has_vertex_alpha = any_alpha && !blend_colors_garbage;
-    // Duplicate UV0 when a material requests a second set the importer omitted.
-    has_uv1 = any_uv1_reference;
-    vertices.reserve(static_cast<size_t>(total_vertices));
-    bool saw_zero_normal = false;
-    triangles.reserve(static_cast<size_t>(total_triangles));
-    if (has_vertex_colors)
-    {
-        vertex_colors.reserve(static_cast<size_t>(total_vertices));
-    }
-    if (has_vertex_alpha)
-    {
-        vertex_alpha.reserve(static_cast<size_t>(total_vertices));
-    }
-    if (has_uv1)
-    {
-        uv1.reserve(static_cast<size_t>(total_vertices));
-    }
-
-    for (unsigned int i = 0; i < scene->mNumMeshes; i++)
-    {
-        const aiMesh *source = scene->mMeshes[i];
-        if (!(source->mPrimitiveTypes & aiPrimitiveType_TRIANGLE) || is_weapon_placeholder(source))
-        {
-            continue;
-        }
-        const auto base = static_cast<uint32_t>(vertices.size());
-        for (unsigned int v = 0; v < source->mNumVertices; v++)
-        {
-            const aiVector3D position = source->mVertices[v];
-            const aiVector3D normal = source->HasNormals() ? source->mNormals[v] : aiVector3D(0.0f, 1.0f, 0.0f);
-            // Refill invalid normals below, but reject invalid positions and UVs.
-            const bool usable_normal = source->HasNormals() && finite(normal) &&
-                                       (normal.x * normal.x) + (normal.y * normal.y) + (normal.z * normal.z) > 0.0f;
-            if (!usable_normal)
-            {
-                saw_zero_normal = true;
-            }
-            const aiVector3D texcoord = source->HasTextureCoords(0) ? source->mTextureCoords[0][v] : aiVector3D();
-            if (!finite(position) || !finite(texcoord))
-            {
-                return false;
-            }
-            vertices.push_back({ { position.x, position.y, position.z },
-                                 usable_normal ? vec3(normal.x, normal.y, normal.z) : vec3(),
-                                 { texcoord.x, texcoord.y },
-                                 1.0f });
-            aiColor4D vertex_color = source->HasVertexColors(0) ? source->mColors[0][v] : aiColor4D(1.0f);
-            if (extension == ".amf" && vertex_color.r == 0.0f && vertex_color.g == 0.0f && vertex_color.b == 0.0f &&
-                vertex_color.a == 0.0f)
-            {
-                vertex_color = aiColor4D(1.0f);
-            }
-            else if ((extension == ".irr" || extension == ".irrmesh" || extension == ".3mf") && vertex_color.a == 0.0f)
-            {
-                vertex_color.a = 1.0f;
-            }
-            const float color_scale = off_integer_colors ? 1.0f / 255.0f : 1.0f;
-            if (has_vertex_colors)
-            {
-                vertex_colors.emplace_back(
-                    vertex_color.r * color_scale, vertex_color.g * color_scale, vertex_color.b * color_scale
-                );
-            }
-            if (has_vertex_alpha)
-            {
-                vertex_alpha.push_back(unit(vertex_color.a * color_scale));
-            }
-            if (has_uv1)
-            {
-                const aiVector3D second = source->HasTextureCoords(1) ? source->mTextureCoords[1][v] : texcoord;
-                if (!finite(second))
-                {
-                    return false;
-                }
-                uv1.emplace_back(second.x, second.y);
-            }
-        }
-
-        const uint32_t material = source->mMaterialIndex < scene->mNumMaterials ? source->mMaterialIndex + 1 : 0;
-        for (unsigned int f = 0; f < source->mNumFaces; f++)
-        {
-            const aiFace &face = source->mFaces[f];
-            if (face.mNumIndices != 3 || !face.mIndices || face.mIndices[0] >= source->mNumVertices ||
-                face.mIndices[1] >= source->mNumVertices || face.mIndices[2] >= source->mNumVertices)
-            {
-                return false;
-            }
-            triangles.push_back({ { base + face.mIndices[0], base + face.mIndices[1], base + face.mIndices[2] },
-                                  material });
-        }
-    }
-
-    // Refill missing normals from adjacent faces. Isolated vertices use the default up vector.
-    if (saw_zero_normal)
-    {
-        std::vector<vec3> accumulated(vertices.size());
-        for (const Triangle &triangle : triangles)
-        {
-            const vec3 face = cross(
-                vertices[triangle.v[1]].pos - vertices[triangle.v[0]].pos,
-                vertices[triangle.v[2]].pos - vertices[triangle.v[0]].pos
-            );
-            accumulated[triangle.v[0]] += face;
-            accumulated[triangle.v[1]] += face;
-            accumulated[triangle.v[2]] += face;
-        }
-        for (size_t i = 0; i < vertices.size(); i++)
-        {
-            if (vertices[i].normal.length_sq() > 0.0f)
-            {
-                continue;
-            }
-            vertices[i].normal = accumulated[i].length_sq() > 0.0f ? normalize(accumulated[i]) : vec3(0.0f, 1.0f, 0.0f);
-        }
-    }
-
-    // Remap sources Assimp leaves Z-up. Terrain and BSP faces also need winding reversal.
-    const bool ogex_z_up = extension == ".ogex" && ogex_declared_up_axis(path) != 'y';
-    const bool z_up = extension == ".blend" || extension == ".smd" || extension == ".hmp" || extension == ".ter" ||
-                      extension == ".bsp" || extension == ".pk3" || extension == ".3d" || extension == ".cob" ||
-                      extension == ".scn" || extension == ".amf" || extension == ".3mf" || extension == ".ac" ||
-                      extension == ".acc" || extension == ".ac3d" || ogex_z_up;
-    if (z_up)
-    {
-        for (Vertex &vertex : vertices)
-        {
-            const vec3 pos = vertex.pos;
-            const vec3 normal = vertex.normal;
-            vertex.pos = { pos.x, pos.z, -pos.y };
-            vertex.normal = { normal.x, normal.z, -normal.y };
-        }
-    }
-    if (extension == ".ter" || extension == ".hmp" || extension == ".bsp" || extension == ".pk3")
-    {
-        for (Triangle &triangle : triangles)
-        {
-            std::swap(triangle.v[1], triangle.v[2]);
-        }
-    }
-    if (extension == ".ter")
-    {
-        // Terragen normals were generated before the winding reversal.
-        for (Vertex &vertex : vertices)
-        {
-            vertex.normal = { -vertex.normal.x, -vertex.normal.y, -vertex.normal.z };
-        }
-    }
-    if (extension == ".hmp" || extension == ".bsp" || extension == ".pk3")
-    {
-        // HMP and BSP texture coordinates are top-down.
-        for (Vertex &vertex : vertices)
-        {
-            vertex.uv.y = 1.0f - vertex.uv.y;
-        }
-    }
-
-    if (vertices.empty() || triangles.empty())
+    const bool any_uv1_reference = load_assimp_materials_uses_uv1(*this, scene, extension, model_dir, n_threads);
+    if (!load_assimp_geometry(*this, scene, extension, path, any_uv1_reference))
     {
         return false;
     }
+
     snapshot.commit();
     return true;
 }
