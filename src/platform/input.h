@@ -185,7 +185,7 @@ namespace platform
             return c == ']' || c == 'P' || c == 'X' || c == '^' || c == '_';
         }
 
-        // Parser sanity ceiling; main.cpp validates against the actual grid.
+        // Parser sanity ceiling; InputController rejects drag deltas larger than the grid.
         constexpr int MAX_MOUSE_COORD = 10000;
 
         // SGR mouse encodes the button and flags in one byte.

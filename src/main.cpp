@@ -14,9 +14,13 @@
 #include "src/shading.h"
 #include "src/terminal/color.h"
 #include "src/terminal/framebuffer.h"
+#include "src/terminal/geometry.h"
 #include "src/terminal/graphics.h"
 #include "src/terminal/hud.h"
 #include "src/terminal/text.h"
+#include "src/viewer/frame_timing.h"
+#include "src/viewer/input_controller.h"
+#include "src/viewer/state.h"
 
 #include <algorithm>
 #include <chrono>
@@ -146,92 +150,17 @@ namespace
         return "dual";
     }
 
-    // Advance to the next enumerator, wrapping after count (the B/L/C keybindings).
-    template <typename E> constexpr E cycle(E v, int count) noexcept
-    {
-        return static_cast<E>((static_cast<int>(v) + 1) % count);
-    }
-
     // Apply the escape-reply sanity bound to ioctl-derived cell sizes too.
     constexpr bool valid_cell_px(int v) noexcept
     {
         return v >= 1 && v <= platform::detail::MAX_CELL_REPORT_PX;
     }
 
-    // Bound hostile grid-by-cell products and scale both axes to preserve aspect.
-    constexpr int MAX_FB_DIM_PX = 8192;
-
-    struct FbSize
-    {
-        int w = 0;
-        int h = 0;
-        // 1-based sixel origin; kitty and blocks stay at (1, 1).
-        int origin_col = 1;
-        int origin_row = 1;
-    };
-
-    // Sixel always reserves the last row because a bottom-touching image scrolls.
-    int image_rows_for(GraphicsBackend backend, int rows, int hud_rows) noexcept
-    {
-        const int reserved = (backend == GraphicsBackend::Sixel) ? 1 : hud_rows;
-        return rows - reserved;
-    }
-
-    // Terminal-reported sixel cell and image limits; zero means unknown.
-    // xterm discards, rather than clips, an image beyond either axis limit.
-    struct SixelBounds
-    {
-        int max_cell_w = 0;
-        int max_cell_h = 0;
-        int max_img_w = 0;
-        int max_img_h = 0;
-        bool cell_trusted = false;
-    };
-
-    // Size native-resolution image backends. Sixel caps axes independently and
-    // letterboxes because it paints 1:1; kitty stretches to its cell rectangle.
-    FbSize pixel_fb_size(
-        GraphicsBackend backend, int cols, int image_rows, int cell_w, int cell_h, const SixelBounds &lim
-    ) noexcept
-    {
-        if (backend == GraphicsBackend::Sixel)
-        {
-            cell_w = (lim.max_cell_w > 0) ? std::min(cell_w, lim.max_cell_w) : cell_w;
-            cell_h = (lim.max_cell_h > 0) ? std::min(cell_h, lim.max_cell_h) : cell_h;
-        }
-        int w = cols * cell_w;
-        int h = image_rows * cell_h;
-        if (backend == GraphicsBackend::Sixel)
-        {
-            w = (lim.max_img_w > 0) ? std::min(w, lim.max_img_w) : w;
-            h = (lim.max_img_h > 0) ? std::min(h, lim.max_img_h) : h;
-        }
-        const int longest = std::max(w, h);
-        if (longest > MAX_FB_DIM_PX)
-        {
-            const int sw = static_cast<int>(static_cast<long long>(w) * MAX_FB_DIM_PX / longest);
-            const int sh = static_cast<int>(static_cast<long long>(h) * MAX_FB_DIM_PX / longest);
-            // A nonzero axis stays nonzero: rounding the short axis to zero would
-            // blank the image where a 1 px sliver still renders. A legitimately
-            // zero axis (one-row terminal, HUD shown) stays zero.
-            w = (w > 0) ? std::max(1, sw) : 0;
-            h = (h > 0) ? std::max(1, sh) : 0;
-        }
-        if (backend == GraphicsBackend::Sixel)
-        {
-            // Whole sixel bands avoid terminals rounding a partial band into a scroll.
-            h -= h % 6;
-            if (lim.cell_trusted && w > 0 && h > 0)
-            {
-                // Center only with a trusted cell size; a guessed size could move the
-                // image into the reserved row or past the right edge.
-                const int used_cols = (w + cell_w - 1) / cell_w;
-                const int used_rows = (h + cell_h - 1) / cell_h;
-                return { w, h, 1 + ((cols - used_cols) / 2), 1 + ((image_rows - used_rows) / 2) };
-            }
-        }
-        return { w, h };
-    }
+    using terminal_geometry::FbSize;
+    using terminal_geometry::TerminalGeometry;
+    using viewer::FrameTiming;
+    using viewer::InputController;
+    using viewer::ViewerState;
 
     // Derive cell size as floor(px / cells) for startup and resize polling.
     // Accept only complete, valid reports; leave outputs unchanged on failure.
@@ -252,6 +181,58 @@ namespace
         }
         cell_w = w;
         cell_h = h;
+        return true;
+    }
+
+    terminal_geometry::Observation read_geometry(bool pixel_backend)
+    {
+        terminal_geometry::Observation observed;
+        platform::get_terminal_size(observed.cols, observed.rows);
+        if (pixel_backend)
+        {
+            observed.has_pixel_report =
+                derive_cell_from_pixels(observed.cols, observed.rows, observed.pixel_cell_w, observed.pixel_cell_h);
+        }
+        return observed;
+    }
+
+    void request_geometry(const terminal_geometry::Requests &requests)
+    {
+        if (requests.cell_size)
+        {
+            platform::request_cell_size();
+        }
+        if (requests.sixel_geometry)
+        {
+            platform::request_sixel_geometry();
+        }
+    }
+
+    bool poll_geometry(TerminalGeometry &geometry, Framebuffer &fb)
+    {
+        const terminal_geometry::Observation observed = read_geometry(geometry.pixel_backend());
+        const FbSize presented = { fb.width(), fb.height(), fb.origin_col(), fb.origin_row() };
+        const terminal_geometry::Update update = geometry.observe(observed, presented);
+        if (update.cell_size_before_resize)
+        {
+            platform::request_cell_size();
+        }
+        if (!update.resize)
+        {
+            return false;
+        }
+        if (geometry.pixel_backend())
+        {
+            fb.resize(
+                update.size.w, update.size.h, geometry.cols(), geometry.image_rows(), update.size.origin_col,
+                update.size.origin_row
+            );
+        }
+        else
+        {
+            fb.resize(update.size.w, update.size.h);
+        }
+        request_geometry(update.after_resize);
         return true;
     }
 
@@ -712,9 +693,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
         return 0;
     }
 
-    // Snapshotted before the loop so the R reset returns to the flag-specified launch state.
-    Camera camera = auto_fit_camera(mesh, args, args.first_person);
-    const Camera initial_camera = camera;
+    ViewerState state(args, auto_fit_camera(mesh, args, args.first_person));
 
     // Use a control-safe basename in the HUD; the composer handles truncation.
     std::string model_name = args.model_path;
@@ -788,71 +767,26 @@ const auto run_main = [](int argc, char *argv[]) -> int
             return gfx.exit_code;
         }
         const GraphicsBackend backend = gfx.backend;
-        const bool pixel_backend = backend != GraphicsBackend::Blocks;
-        // Mutable copies: the cell-size tiers below and the resize poll refine them.
-        int cell_w = gfx.cell_w;
-        int cell_h = gfx.cell_h;
+        TerminalGeometry geometry(
+            backend, args.hud ? 1 : 0, gfx.cell_w, gfx.cell_h, gfx.sixel_max_w, gfx.sixel_max_h,
+            read_geometry(backend != GraphicsBackend::Blocks)
+        );
 
         // Arm cleanup before deferred framebuffer and mouse setup.
         terminal.mouse_enabled = true;
         terminal.reacquisition_pending = true;
 
-        int cols = 0;
-        int rows = 0;
-        platform::get_terminal_size(cols, rows);
-
-        // Cell size priority: query, ioctl-derived pixels, then 8x16. Track the ioctl
-        // value separately so its stable approximation never replaces an exact reply.
-        int ioctl_cell_w = 0;
-        int ioctl_cell_h = 0;
-        bool have_pixel_report = false;
-        if (pixel_backend)
-        {
-            have_pixel_report = derive_cell_from_pixels(cols, rows, ioctl_cell_w, ioctl_cell_h);
-            if (cell_w <= 0 || cell_h <= 0)
-            {
-                cell_w = ioctl_cell_w;
-                cell_h = ioctl_cell_h;
-            }
-        }
-        // A guessed cell size disables sixel centering until a real source arrives.
-        bool cell_guessed = false;
-        if (pixel_backend && (cell_w <= 0 || cell_h <= 0))
-        {
-            cell_w = 8;
-            cell_h = 16;
-            cell_guessed = true;
-        }
-        // The terminal's max sixel image size, refreshed mid-session (the value is
-        // window-tied on xterm and foot): the resize path re-requests it on a grid
-        // change and the SixelGeometry drain arm updates these.
-        int sixel_geom_w = gfx.sixel_max_w;
-        int sixel_geom_h = gfx.sixel_max_h;
-
-        // Blocks use two vertical pixels per cell; image backends use native pixels.
-        const int hud_rows = args.hud ? 1 : 0;
         GraphicsConfig gfx_cfg;
-        int fb_w = cols;
-        int fb_h = (rows - hud_rows) * 2;
-        if (pixel_backend)
+        const FbSize initial_size = geometry.framebuffer_size();
+        if (geometry.pixel_backend())
         {
             gfx_cfg.backend = backend;
             // Use kitty shm only after the end-to-end probe succeeds.
             gfx_cfg.shm = gfx.shm_ok;
-            gfx_cfg.cols = cols;
-            const int image_rows = image_rows_for(backend, rows, hud_rows);
-            gfx_cfg.rows = image_rows;
-            // The same gated bound spelling as the resize poll, so the two sites
-            // read identically (ioctl_cell_* is 0 on a failed derive either way).
-            const FbSize fbs = pixel_fb_size(
-                backend, cols, image_rows, cell_w, cell_h,
-                { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w,
-                  sixel_geom_h, !cell_guessed }
-            );
-            fb_w = fbs.w;
-            fb_h = fbs.h;
-            gfx_cfg.origin_col = fbs.origin_col;
-            gfx_cfg.origin_row = fbs.origin_row;
+            gfx_cfg.cols = geometry.cols();
+            gfx_cfg.rows = geometry.image_rows();
+            gfx_cfg.origin_col = initial_size.origin_col;
+            gfx_cfg.origin_row = initial_size.origin_row;
         }
 
         // Renderer must outlive Framebuffer because its borrowed runner captures it.
@@ -867,7 +801,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }();
 
         Framebuffer fb(
-            fb_w, fb_h, /*headless=*/false, color_mode, gfx_cfg, /*adopt_alt_screen=*/terminal.alt_screen_owned,
+            initial_size.w, initial_size.h, /*headless=*/false, color_mode, gfx_cfg,
+            /*adopt_alt_screen=*/terminal.alt_screen_owned,
             /*write_frame=*/nullptr
         );
         terminal.alt_screen_owned = false;
@@ -894,58 +829,14 @@ const auto run_main = [](int argc, char *argv[]) -> int
                                  renderer.worker_count() });
 
         const bool has_textures = !mesh.textures.empty();
-        // --no-input locks every binding but the quit key; see the drain loop below.
-        const bool input_enabled = args.input;
-        float fps_smooth = -1.0f;    // per-frame EMA of the framerate; -1 = uninitialised
-        float fps_display = -1.0f;   // value shown in the HUD, latched from fps_smooth; -1 = none yet
-        float fps_latch_time = 0.0f; // seconds since the HUD value was last latched
-        int mouse_last_x = 0;        // last seen drag position (terminal cells)
-        int mouse_last_y = 0;
-        // Seed motion without a preceding press instead of applying a stale delta. No timeout:
-        // slow cell-based drags may legitimately pause for seconds.
-        bool mouse_dragging = false;
+        InputController input(args.input, has_textures);
         // Conservative image invalidation; unchanged frames neither render nor transmit.
         bool scene_dirty = true;
-        // Flag-driven runtime state; value-initialised only pro forma, the real launch
-        // values come from reset_to_launch_state() below.
-        bool spinning{};
-        bool culling{};
-        bool texturing{};
-        Background bg_mode{};
-        LightingMode lighting_mode{};
-        WireframeColor wf_color{};
         // Positive world-Y rotation moves an upright model left on screen. Keep the
         // world direction fixed even when an upside-down view reads oppositely.
         const float spin_speed =
             to_radians(args.spin_speed) * (args.spin_direction == SpinDirection::Left ? 1.0f : -1.0f);
-        constexpr float FPS_LATCH = 0.1f; // seconds between HUD fps refreshes (~10 Hz)
-        // Responsiveness floor for uncapped idle loops; capped sessions use their own cap.
-        constexpr int IDLE_FPS = 60;
-        // Feed FPS only intervals that ended in rendering, not the idle-loop rate.
-        bool prev_frame_rendered = true;
-
-        using clock = std::chrono::steady_clock;
-        auto prev = clock::now();
-        bool first_frame = true; // frame 1's dt is only the setup gap, not a real frame
-        platform::Key held_cam_key = platform::Key::None;
-        clock::time_point held_cam_key_tp = clock::now();
-
-        // Share flag-specified launch state between startup and R-reset. Clear a
-        // latched camera key so it cannot move the reset camera for the rest of its
-        // 100 ms hold window.
-        const auto reset_to_launch_state = [&]()
-        {
-            camera = initial_camera;
-            renderer.mode = args.shading;
-            spinning = args.spin;
-            culling = args.cull;
-            texturing = args.texture;
-            bg_mode = args.bg;
-            lighting_mode = args.lighting;
-            wf_color = args.wireframe_color;
-            held_cam_key = platform::Key::None;
-        };
-        reset_to_launch_state();
+        FrameTiming timing(FrameTiming::Clock::now());
 
         bool running = true;
         while (running)
@@ -964,48 +855,12 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 {
                     continue;
                 }
-                held_cam_key = platform::Key::None;
-                mouse_dragging = false;
+                input.clear_motion();
                 scene_dirty = true;
-                first_frame = true;
-                fps_smooth = -1.0f;
-                fps_display = -1.0f;
-                fps_latch_time = 0.0f;
-                prev = clock::now();
-                cols = 0;
-                rows = 0;
-                if (pixel_backend)
-                {
-                    platform::request_cell_size();
-                    if (backend == GraphicsBackend::Sixel)
-                    {
-                        platform::request_sixel_geometry();
-                    }
-                }
+                timing.after_resume(FrameTiming::Clock::now());
+                request_geometry(geometry.after_resume());
             }
-            auto now = clock::now();
-            const float raw_dt = std::chrono::duration<float>(now - prev).count();
-            prev = now;
-            // Cap stalls at the held-key window so camera motion cannot jump and
-            // +/- taps retain the same timing basis as wheel steps.
-            const float dt = std::min(raw_dt, Camera::HELD_KEY_WINDOW);
-
-            // Feed the FPS EMA complete rendered intervals only. Use uncapped raw_dt so
-            // slow frames remain accurate; ignore a zero-duration clock tick.
-            if (!first_frame && raw_dt > 0.0f && prev_frame_rendered)
-            {
-                const float fps = 1.0f / raw_dt;
-                fps_smooth = (fps_smooth < 0.0f) ? fps : (fps_smooth * 0.9f) + (fps * 0.1f);
-            }
-            first_frame = false;
-            // Latch the HUD value at a fixed ~10 Hz so the digits stay readable instead of
-            // blurring at very high frame rates; seed immediately once fps_smooth is valid.
-            fps_latch_time += raw_dt;
-            if (fps_latch_time >= FPS_LATCH || (fps_display < 0.0f && fps_smooth >= 0.0f))
-            {
-                fps_display = fps_smooth;
-                fps_latch_time = 0.0f;
-            }
+            const float dt = timing.begin_frame(FrameTiming::Clock::now());
 
             if (platform::interrupt_requested())
             {
@@ -1026,179 +881,26 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 {
                     break;
                 }
-                // Q quits in every mode, --no-input included, so it is checked here rather
-                // than inside the key chain below.
+                // Q quits even with --no-input, so handle it before the input controller.
                 if (ev.type == platform::InputEvent::Type::Key && ev.key == platform::Key::Q)
                 {
                     running = false;
                     break;
                 }
 
-                // Cell-size replies are resize machinery and bypass --no-input.
+                // Geometry replies must update the resize tracker even with --no-input.
                 if (ev.type == platform::InputEvent::Type::CellSize)
                 {
-                    // Record now and resize once after draining, coalescing report floods
-                    // and same-frame grid changes.
-                    if (pixel_backend)
-                    {
-                        cell_w = ev.x;
-                        cell_h = ev.y;
-                        cell_guessed = false;
-                    }
+                    geometry.accept_cell_size(ev.x, ev.y);
                     continue;
                 }
-
-                // The sixel-geometry reply to the resize path's re-request; same
-                // machinery shape as CellSize, applied by the resize block's
-                // every-frame recomputation.
                 if (ev.type == platform::InputEvent::Type::SixelGeometry)
                 {
-                    if (backend == GraphicsBackend::Sixel)
-                    {
-                        sixel_geom_w = ev.x;
-                        sixel_geom_h = ev.y;
-                    }
+                    geometry.accept_sixel_geometry(ev.x, ev.y);
                     continue;
                 }
 
-                // --no-input still drains bytes and keeps mouse tracking active, but
-                // ignored events do not trigger a render or transmission.
-                if (!input_enabled)
-                {
-                    continue;
-                }
-
-                // Mark all enabled events dirty. A rare extra frame is safer than a
-                // missed state change; idle mouse hover produces no tracked event.
-                scene_dirty = true;
-
-                if (ev.type == platform::InputEvent::Type::Key)
-                {
-                    const platform::Key k = ev.key;
-                    if (k == platform::Key::Space)
-                    {
-                        spinning = !spinning;
-                    }
-                    else if (k == platform::Key::Num1)
-                    {
-                        renderer.mode = ShadingMode::Wireframe;
-                    }
-                    else if (k == platform::Key::Num2)
-                    {
-                        renderer.mode = ShadingMode::Flat;
-                    }
-                    else if (k == platform::Key::Num3)
-                    {
-                        renderer.mode = ShadingMode::Phong;
-                    }
-                    else if (k == platform::Key::B)
-                    {
-                        bg_mode = cycle(bg_mode, BACKGROUND_COUNT);
-                    }
-                    else if (k == platform::Key::L)
-                    {
-                        lighting_mode = cycle(lighting_mode, LIGHTING_MODE_COUNT);
-                    }
-                    else if (k == platform::Key::C)
-                    {
-                        wf_color = cycle(wf_color, WIREFRAME_COLOR_COUNT);
-                    }
-                    else if (k == platform::Key::K)
-                    {
-                        culling = !culling;
-                    }
-                    else if (k == platform::Key::T)
-                    {
-                        if (has_textures)
-                        {
-                            texturing = !texturing;
-                        }
-                    }
-                    else if (k == platform::Key::R)
-                    {
-                        reset_to_launch_state();
-                    }
-                    else if (k == platform::Key::E || k == platform::Key::V)
-                    {
-                        // Vertical movement exists only in first-person. In orbit mode
-                        // these are unbound, and an unbound key must not cancel a held
-                        // camera key, so they are dropped here rather than latched.
-                        if (args.first_person)
-                        {
-                            held_cam_key = k;
-                            held_cam_key_tp = clock::now();
-                        }
-                    }
-                    else
-                    {
-                        // Every remaining key is a camera movement: the parser drops bytes
-                        // with no binding rather than reporting them, so nothing unbound
-                        // reaches here to cancel a movement in progress.
-                        held_cam_key = k;
-                        held_cam_key_tp = clock::now();
-                    }
-                }
-                else if (ev.type == platform::InputEvent::Type::ScrollUp)
-                {
-                    // Reports carry no magnitude, so preserve one fixed step per event.
-                    // First-person uses reciprocal speed steps so opposite notches cancel.
-                    if (args.first_person)
-                    {
-                        camera.adjust_speed(Camera::FP_SPEED_WHEEL_STEP);
-                    }
-                    else
-                    {
-                        camera.distance *= 0.92f;
-                        camera.distance = std::max(camera.distance, camera.near_plane * 2.0f);
-                    }
-                }
-                else if (ev.type == platform::InputEvent::Type::ScrollDown)
-                {
-                    if (args.first_person)
-                    {
-                        camera.adjust_speed(1.0f / Camera::FP_SPEED_WHEEL_STEP);
-                    }
-                    else
-                    {
-                        camera.distance *= 1.08f;
-                        camera.distance = std::min(camera.distance, camera.max_eye_distance());
-                    }
-                }
-                else if (ev.type == platform::InputEvent::Type::MousePress)
-                {
-                    // Record position so the first drag delta starts from here.
-                    mouse_last_x = ev.x;
-                    mouse_last_y = ev.y;
-                    mouse_dragging = true;
-                }
-                else if (ev.type == platform::InputEvent::Type::MouseRelease)
-                {
-                    // Any button release ends the drag; button numbers are not decoded.
-                    // Releasing a second button mid-orbit therefore makes the next motion
-                    // re-seed instead of risking a jump.
-                    mouse_dragging = false;
-                }
-                else if (ev.type == platform::InputEvent::Type::MouseMove)
-                {
-                    // A delta larger than the grid means a stale or impossible origin.
-                    // Re-seed instead of clamping, which would invent movement.
-                    const bool implausible =
-                        std::abs(ev.x - mouse_last_x) > cols || std::abs(ev.y - mouse_last_y) > rows;
-                    if (mouse_dragging && !implausible)
-                    {
-                        const float dx_rad =
-                            static_cast<float>(ev.x - mouse_last_x) / static_cast<float>(cols) * 6.2832f;
-                        const float dy_rad =
-                            static_cast<float>(ev.y - mouse_last_y) / static_cast<float>(rows) * 3.1416f;
-                        camera.look(dx_rad, -dy_rad);
-                    }
-                    // Seeded either way, so a drag that began without its opening report
-                    // (or was interrupted by one of the above) continues from here rather
-                    // than from wherever the pointer last was.
-                    mouse_last_x = ev.x;
-                    mouse_last_y = ev.y;
-                    mouse_dragging = true;
-                }
+                scene_dirty |= input.handle(ev, state, geometry.cols(), geometry.rows(), FrameTiming::Clock::now());
             }
             // The drain is over however it ended. poll_event releases its per-pass read
             // budget on its own only when it reports Type::None, and the loop above has two
@@ -1214,112 +916,19 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 continue;
             }
 
-            // Camera key movement (once per frame, frame-rate independent)
-            if (held_cam_key != platform::Key::None)
-            {
-                const float since = std::chrono::duration<float>(clock::now() - held_cam_key_tp).count();
-                if (since > Camera::HELD_KEY_WINDOW)
-                {
-                    held_cam_key = platform::Key::None; // key released
-                }
-                else
-                {
-                    camera.process_key(held_cam_key, dt);
-                    scene_dirty = true; // the latch outlives the key events by up to 100 ms
-                }
-            }
+            scene_dirty |= input.advance(state, dt, FrameTiming::Clock::now());
 
-            if (spinning)
+            if (state.settings.spinning)
             {
-                camera.spin_world_y(spin_speed * dt);
+                state.camera.spin_world_y(spin_speed * dt);
                 scene_dirty = true;
             }
 
+            // Poll every frame: font zoom can change pixel dimensions without a
+            // grid change, and sixel replies can arrive between grid changes.
+            if (poll_geometry(geometry, fb))
             {
-                int new_cols = 0;
-                int new_rows = 0;
-                platform::get_terminal_size(new_cols, new_rows);
-                // Poll pixel geometry every frame because sub-cell resizes may not change
-                // the terminal grid. Missing pixel fields retain the adopted cell size.
-                int new_cell_w = cell_w;
-                int new_cell_h = cell_h;
-                have_pixel_report = false; // re-derived every frame; the startup derive seeded it
-                if (pixel_backend)
-                {
-                    int derived_w = 0;
-                    int derived_h = 0;
-                    if (derive_cell_from_pixels(new_cols, new_rows, derived_w, derived_h))
-                    {
-                        have_pixel_report = true;
-                        // Adopted only when the derived value itself moves; a stable
-                        // disagreement with the query's exact answer is not a change
-                        // (see the startup tracker comment).
-                        if (derived_w != ioctl_cell_w || derived_h != ioctl_cell_h)
-                        {
-                            ioctl_cell_w = derived_w;
-                            ioctl_cell_h = derived_h;
-                            new_cell_w = derived_w;
-                            new_cell_h = derived_h;
-                            cell_guessed = false;
-                            // Padding can inflate floor(px/cells), so re-query the exact
-                            // cell size. A stable derived value prevents ping-pong.
-                            platform::request_cell_size();
-                        }
-                    }
-                }
-                // Recompute every frame because live pixel and sixel bounds can change
-                // without a grid or adopted-cell change.
-                FbSize fbs{};
-                int image_rows = 0;
-                bool fb_size_changed = false;
-                if (pixel_backend)
-                {
-                    image_rows = image_rows_for(backend, new_rows, hud_rows);
-                    // Use containment only from this poll's live pixel report; retained
-                    // ioctl values track adoption and must not become stale bounds.
-                    fbs = pixel_fb_size(
-                        backend, new_cols, image_rows, new_cell_w, new_cell_h,
-                        { have_pixel_report ? ioctl_cell_w : 0, have_pixel_report ? ioctl_cell_h : 0, sixel_geom_w,
-                          sixel_geom_h, !cell_guessed }
-                    );
-                    // Font zoom can move a capped image's origin without changing its
-                    // dimensions, so origin changes also require resize and re-home.
-                    fb_size_changed = fbs.w != fb.width() || fbs.h != fb.height() ||
-                                      fbs.origin_col != fb.origin_col() || fbs.origin_row != fb.origin_row();
-                }
-                const bool grid_changed = new_cols != cols || new_rows != rows;
-                // Update trackers even when dimensions stay unchanged; the next grid
-                // change must use the latest cell size.
-                cols = new_cols;
-                rows = new_rows;
-                cell_w = new_cell_w;
-                cell_h = new_cell_h;
-                // Grid changes also update image placement and HUD rows even when pixel
-                // dimensions match. CellSize replies already feed the same comparison.
-                if (grid_changed || fb_size_changed)
-                {
-                    if (pixel_backend)
-                    {
-                        fb.resize(fbs.w, fbs.h, cols, image_rows, fbs.origin_col, fbs.origin_row);
-                        // Without ioctl pixels, asynchronously refresh the cell size after
-                        // a grid change. Non-answering terminals keep the startup value.
-                        if (grid_changed && !have_pixel_report)
-                        {
-                            platform::request_cell_size();
-                        }
-                        // Refresh a known window-tied sixel maximum on grid changes.
-                        // Sub-cell changes remain bounded by live pixel containment.
-                        if (grid_changed && backend == GraphicsBackend::Sixel && sixel_geom_w > 0)
-                        {
-                            platform::request_sixel_geometry();
-                        }
-                    }
-                    else
-                    {
-                        fb.resize(cols, (rows - hud_rows) * 2);
-                    }
-                    scene_dirty = true;
-                }
+                scene_dirty = true;
             }
 
             // Compose every frame; present() cheaply drops an unchanged HUD before output.
@@ -1327,23 +936,23 @@ const auto run_main = [](int argc, char *argv[]) -> int
             {
                 HudInfo info;
                 info.model_name = model_name;
-                info.shading_name = hud_shading_name(renderer.mode);
-                info.light_name = lighting_name(lighting_mode);
-                info.bg_name = background_name(bg_mode);
-                if (renderer.mode == ShadingMode::Wireframe)
+                info.shading_name = hud_shading_name(state.settings.shading);
+                info.light_name = lighting_name(state.settings.lighting);
+                info.bg_name = background_name(state.settings.background);
+                if (state.settings.shading == ShadingMode::Wireframe)
                 {
-                    info.wf_name = wireframe_name(wf_color);
-                    info.wf_color = wireframe_color_of(wf_color);
+                    info.wf_name = wireframe_name(state.settings.wireframe_color);
+                    info.wf_color = wireframe_color_of(state.settings.wireframe_color);
                 }
-                info.spinning = spinning;
-                info.culling = culling;
-                info.texturing = texturing;
+                info.spinning = state.settings.spinning;
+                info.culling = state.settings.culling;
+                info.texturing = state.settings.texturing;
                 info.has_textures = has_textures;
-                info.first_person = args.first_person;
-                info.fp_speed = camera.fp_speed;
-                info.fps = (fps_display < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display));
+                info.first_person = state.camera.first_person;
+                info.fp_speed = state.camera.fp_speed;
+                info.fps = timing.hud_fps();
 
-                fb.set_hud(compose_hud(info, cols, color_mode));
+                fb.set_hud(compose_hud(info, geometry.cols(), color_mode));
             }
 
             // Render. A clean frame skips it (see scene_dirty), and on the pixel
@@ -1351,30 +960,21 @@ const auto run_main = [](int argc, char *argv[]) -> int
             const bool rendered = scene_dirty;
             if (rendered)
             {
-                fb.clear(background_color(bg_mode));
-                const int n_lights = light_count(lighting_mode);
-                const vec3 cur_ambient = lighting_ambient(lighting_mode, ambient);
-                renderer.wireframe_color = wireframe_color_of(wf_color);
-                renderer.cull_backfaces = culling;
-                renderer.show_texture = texturing;
-                renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
+                fb.clear(background_color(state.settings.background));
+                const int n_lights = light_count(state.settings.lighting);
+                const vec3 cur_ambient = lighting_ambient(state.settings.lighting, ambient);
+                renderer.mode = state.settings.shading;
+                renderer.wireframe_color = wireframe_color_of(state.settings.wireframe_color);
+                renderer.cull_backfaces = state.settings.culling;
+                renderer.show_texture = state.settings.texturing;
+                renderer.render(mesh, state.camera, lights, n_lights, cur_ambient, fb);
             }
             fb.present();
             scene_dirty = false;
-            prev_frame_rendered = rendered;
-
-            // Keep uncapped rendered frames unrestricted, but pace idle frames so
-            // an unchanged display does not consume a core.
-            const int frame_cap = (!rendered && args.fps == 0) ? IDLE_FPS : args.fps;
-            if (frame_cap > 0)
+            const auto remaining = timing.end_frame(rendered, args.fps, FrameTiming::Clock::now());
+            if (remaining > std::chrono::duration<float>::zero())
             {
-                const float target_dt = 1.0f / static_cast<float>(frame_cap);
-                auto frame_end = clock::now();
-                const float elapsed = std::chrono::duration<float>(frame_end - now).count();
-                if (elapsed < target_dt)
-                {
-                    platform::wait_frame(std::chrono::duration<float>(target_dt - elapsed));
-                }
+                platform::wait_frame(remaining);
             }
         }
         return 0;
