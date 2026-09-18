@@ -59,23 +59,37 @@ namespace terminal_geometry
         Requests after_resize;
     };
 
+    // Startup query replies; zero means unreported. The explicit constructors
+    // reject bare braces, so a swapped cell size and sixel limit cannot compile.
+    struct ExactCellSize
+    {
+        explicit ExactCellSize(int width, int height) noexcept : w(width), h(height) {}
+        int w;
+        int h;
+    };
+
+    struct SixelMaxSize
+    {
+        explicit SixelMaxSize(int width, int height) noexcept : w(width), h(height) {}
+        int w;
+        int h;
+    };
+
     class TerminalGeometry
     {
       public:
         TerminalGeometry(
             GraphicsBackend backend,
             int hud_rows,
-            int exact_cell_w,
-            int exact_cell_h,
-            int sixel_max_w,
-            int sixel_max_h,
+            ExactCellSize exact_cell,
+            SixelMaxSize sixel_max,
             const Observation &initial
         ) noexcept;
 
-        [[nodiscard]] bool pixel_backend() const noexcept;
-        [[nodiscard]] int cols() const noexcept;
-        [[nodiscard]] int rows() const noexcept;
-        [[nodiscard]] int image_rows() const noexcept;
+        [[nodiscard]] bool pixel_backend() const noexcept { return backend_ != GraphicsBackend::Blocks; }
+        [[nodiscard]] int cols() const noexcept { return cols_; }
+        [[nodiscard]] int rows() const noexcept { return rows_; }
+        [[nodiscard]] int image_rows() const noexcept { return image_rows_for(backend_, rows_, hud_rows_); }
         [[nodiscard]] FbSize framebuffer_size() const noexcept;
 
         void accept_cell_size(int width, int height) noexcept;

@@ -1,10 +1,12 @@
 #include "src/terminal/geometry.h"
 #include "tests/test.h"
 
+using terminal_geometry::ExactCellSize;
 using terminal_geometry::FbSize;
 using terminal_geometry::image_rows_for;
 using terminal_geometry::pixel_fb_size;
 using terminal_geometry::Requests;
+using terminal_geometry::SixelMaxSize;
 using terminal_geometry::TerminalGeometry;
 using terminal_geometry::Update;
 
@@ -48,7 +50,9 @@ TEST(geometry, kitty_scales_large_frame_without_losing_short_axis)
 
 TEST(geometry, missing_exact_reply_uses_ioctl_cell_size)
 {
-    TerminalGeometry geometry(GraphicsBackend::Kitty, 0, 0, 0, 0, 0, { 80, 24, true, 9, 18 });
+    TerminalGeometry geometry(
+        GraphicsBackend::Kitty, 0, ExactCellSize{ 0, 0 }, SixelMaxSize{ 0, 0 }, { 80, 24, true, 9, 18 }
+    );
     const FbSize size = geometry.framebuffer_size();
     ASSERT_EQ(size.w, 720);
     ASSERT_EQ(size.h, 432);
@@ -56,7 +60,7 @@ TEST(geometry, missing_exact_reply_uses_ioctl_cell_size)
 
 TEST(geometry, missing_cell_sources_guess_and_disable_centering)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 0, 0, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 0, 0 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const FbSize size = geometry.framebuffer_size();
     ASSERT_EQ(size.w, 400);
     ASSERT_EQ(size.h, 300);
@@ -66,7 +70,7 @@ TEST(geometry, missing_cell_sources_guess_and_disable_centering)
 
 TEST(geometry, exact_reply_trusts_guessed_cell_size)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 0, 0, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 0, 0 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const FbSize guessed = geometry.framebuffer_size();
     geometry.accept_cell_size(10, 20);
     const Update trusted = geometry.observe({ 80, 24 }, guessed);
@@ -77,7 +81,7 @@ TEST(geometry, exact_reply_trusts_guessed_cell_size)
 
 TEST(geometry, changed_ioctl_size_trusts_guessed_cell_size)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 0, 0, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 0, 0 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const Update trusted = geometry.observe({ 80, 24, true, 10, 20 }, geometry.framebuffer_size());
     ASSERT_TRUE(trusted.cell_size_before_resize);
     ASSERT_TRUE(trusted.resize);
@@ -87,7 +91,7 @@ TEST(geometry, changed_ioctl_size_trusts_guessed_cell_size)
 
 TEST(geometry, unknown_sixel_limit_is_not_requested_on_grid_change)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 10, 20, 0, 0, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24 });
     const Update changed = geometry.observe({ 81, 24 }, geometry.framebuffer_size());
     ASSERT_TRUE(changed.resize);
     ASSERT_TRUE(changed.after_resize.cell_size);
@@ -96,7 +100,9 @@ TEST(geometry, unknown_sixel_limit_is_not_requested_on_grid_change)
 
 TEST(geometry, stable_ioctl_disagreement_does_not_replace_exact_reply)
 {
-    TerminalGeometry geometry(GraphicsBackend::Kitty, 1, 10, 20, 0, 0, { 80, 24, true, 11, 20 });
+    TerminalGeometry geometry(
+        GraphicsBackend::Kitty, 1, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24, true, 11, 20 }
+    );
     const FbSize initial = geometry.framebuffer_size();
     ASSERT_EQ(initial.w, 800);
     const Update unchanged = geometry.observe({ 80, 24, true, 11, 20 }, initial);
@@ -112,7 +118,9 @@ TEST(geometry, stable_ioctl_disagreement_does_not_replace_exact_reply)
 
 TEST(geometry, missing_pixel_report_drops_live_sixel_containment)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 10, 20, 0, 0, { 80, 24, true, 7, 14 });
+    TerminalGeometry geometry(
+        GraphicsBackend::Sixel, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24, true, 7, 14 }
+    );
     const FbSize bounded = geometry.framebuffer_size();
     ASSERT_EQ(bounded.w, 560);
     const Update missing = geometry.observe({ 80, 24, false, 0, 0 }, bounded);
@@ -124,7 +132,7 @@ TEST(geometry, missing_pixel_report_drops_live_sixel_containment)
 
 TEST(geometry, sixel_origin_change_resizes_with_same_dimensions)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 10, 20, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const FbSize initial = geometry.framebuffer_size();
     geometry.accept_cell_size(8, 20);
     const Update moved = geometry.observe({ 80, 24 }, initial);
@@ -136,7 +144,9 @@ TEST(geometry, sixel_origin_change_resizes_with_same_dimensions)
 
 TEST(geometry, changed_ioctl_size_requests_exact_reply)
 {
-    TerminalGeometry geometry(GraphicsBackend::Kitty, 0, 10, 20, 0, 0, { 80, 24, true, 10, 20 });
+    TerminalGeometry geometry(
+        GraphicsBackend::Kitty, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24, true, 10, 20 }
+    );
     const Update changed = geometry.observe({ 80, 24, true, 12, 20 }, geometry.framebuffer_size());
     ASSERT_TRUE(changed.cell_size_before_resize);
     ASSERT_TRUE(changed.resize);
@@ -145,7 +155,7 @@ TEST(geometry, changed_ioctl_size_requests_exact_reply)
 
 TEST(geometry, resume_requests_reports_and_forces_grid_reapplication)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 10, 20, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const FbSize presented = geometry.framebuffer_size();
     const Requests resume = geometry.after_resume();
     ASSERT_TRUE(resume.cell_size);
@@ -156,9 +166,37 @@ TEST(geometry, resume_requests_reports_and_forces_grid_reapplication)
     ASSERT_TRUE(restored.after_resize.sixel_geometry);
 }
 
+TEST(geometry, kitty_resume_requests_cell_size_without_sixel_query)
+{
+    TerminalGeometry geometry(GraphicsBackend::Kitty, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24 });
+    const FbSize presented = geometry.framebuffer_size();
+    const Requests resume = geometry.after_resume();
+    ASSERT_TRUE(resume.cell_size);
+    ASSERT_FALSE(resume.sixel_geometry);
+    const Update restored = geometry.observe({ 80, 24 }, presented);
+    ASSERT_TRUE(restored.resize);
+    ASSERT_TRUE(restored.after_resize.cell_size);
+    ASSERT_FALSE(restored.after_resize.sixel_geometry);
+}
+
+TEST(geometry, blocks_resume_requests_nothing_and_reapplies_grid)
+{
+    TerminalGeometry geometry(GraphicsBackend::Blocks, 1, ExactCellSize{ 0, 0 }, SixelMaxSize{ 0, 0 }, { 80, 24 });
+    const FbSize presented = geometry.framebuffer_size();
+    const Requests resume = geometry.after_resume();
+    ASSERT_FALSE(resume.cell_size);
+    ASSERT_FALSE(resume.sixel_geometry);
+    const Update restored = geometry.observe({ 80, 24 }, presented);
+    ASSERT_TRUE(restored.resize);
+    ASSERT_EQ(restored.size.w, 80);
+    ASSERT_EQ(restored.size.h, 46);
+    ASSERT_FALSE(restored.after_resize.cell_size);
+    ASSERT_FALSE(restored.after_resize.sixel_geometry);
+}
+
 TEST(geometry, blocks_resize_only_on_grid_change)
 {
-    TerminalGeometry geometry(GraphicsBackend::Blocks, 1, 0, 0, 0, 0, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Blocks, 1, ExactCellSize{ 0, 0 }, SixelMaxSize{ 0, 0 }, { 80, 24 });
     const FbSize initial = geometry.framebuffer_size();
     ASSERT_FALSE(geometry.observe({ 80, 24 }, initial).resize);
     const Update changed = geometry.observe({ 81, 24 }, initial);
@@ -172,7 +210,9 @@ TEST(geometry, blocks_resize_only_on_grid_change)
 
 TEST(geometry, live_pixel_report_avoids_redundant_grid_query)
 {
-    TerminalGeometry geometry(GraphicsBackend::Kitty, 0, 10, 20, 0, 0, { 80, 24, true, 10, 20 });
+    TerminalGeometry geometry(
+        GraphicsBackend::Kitty, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 0, 0 }, { 80, 24, true, 10, 20 }
+    );
     const Update changed = geometry.observe({ 81, 24, true, 10, 20 }, geometry.framebuffer_size());
     ASSERT_TRUE(changed.resize);
     ASSERT_FALSE(changed.cell_size_before_resize);
@@ -181,7 +221,7 @@ TEST(geometry, live_pixel_report_avoids_redundant_grid_query)
 
 TEST(geometry, sixel_geometry_reply_changes_framebuffer_size)
 {
-    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, 10, 20, 400, 300, { 80, 24 });
+    TerminalGeometry geometry(GraphicsBackend::Sixel, 0, ExactCellSize{ 10, 20 }, SixelMaxSize{ 400, 300 }, { 80, 24 });
     const FbSize initial = geometry.framebuffer_size();
     geometry.accept_sixel_geometry(600, 360);
     const Update grown = geometry.observe({ 80, 24 }, initial);

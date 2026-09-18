@@ -58,14 +58,12 @@ namespace terminal_geometry
     TerminalGeometry::TerminalGeometry(
         GraphicsBackend backend,
         int hud_rows,
-        int exact_cell_w,
-        int exact_cell_h,
-        int sixel_max_w,
-        int sixel_max_h,
+        ExactCellSize exact_cell,
+        SixelMaxSize sixel_max,
         const Observation &initial
     ) noexcept
-        : backend_(backend), hud_rows_(hud_rows), cols_(initial.cols), rows_(initial.rows), cell_w_(exact_cell_w),
-          cell_h_(exact_cell_h), sixel_geom_w_(sixel_max_w), sixel_geom_h_(sixel_max_h)
+        : backend_(backend), hud_rows_(hud_rows), cols_(initial.cols), rows_(initial.rows), cell_w_(exact_cell.w),
+          cell_h_(exact_cell.h), sixel_geom_w_(sixel_max.w), sixel_geom_h_(sixel_max.h)
     {
         if (pixel_backend())
         {
@@ -89,23 +87,6 @@ namespace terminal_geometry
                 cell_guessed_ = true;
             }
         }
-    }
-
-    bool TerminalGeometry::pixel_backend() const noexcept
-    {
-        return backend_ != GraphicsBackend::Blocks;
-    }
-    int TerminalGeometry::cols() const noexcept
-    {
-        return cols_;
-    }
-    int TerminalGeometry::rows() const noexcept
-    {
-        return rows_;
-    }
-    int TerminalGeometry::image_rows() const noexcept
-    {
-        return image_rows_for(backend_, rows_, hud_rows_);
     }
 
     FbSize TerminalGeometry::framebuffer_size() const noexcept

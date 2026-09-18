@@ -768,7 +768,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
         const GraphicsBackend backend = gfx.backend;
         TerminalGeometry geometry(
-            backend, args.hud ? 1 : 0, gfx.cell_w, gfx.cell_h, gfx.sixel_max_w, gfx.sixel_max_h,
+            backend, args.hud ? 1 : 0, terminal_geometry::ExactCellSize{ gfx.cell_w, gfx.cell_h },
+            terminal_geometry::SixelMaxSize{ gfx.sixel_max_w, gfx.sixel_max_h },
             read_geometry(backend != GraphicsBackend::Blocks)
         );
 
