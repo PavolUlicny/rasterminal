@@ -460,8 +460,7 @@ TEST(camera, fp_look_negative_dx_turns_the_view_left)
 
 TEST(camera, fp_look_positive_dy_looks_up)
 {
-    // main.cpp negates the screen delta before calling, so a downward drag arrives as
-    // a negative dy and lowers the view; positive raises it.
+    // InputController negates screen dy, so a downward drag lowers the view.
     Camera c = fp_camera();
     c.look(0.0f, 0.3f);
     ASSERT_TRUE(c.forward().y > 0.0f);
@@ -885,7 +884,6 @@ TEST(camera, fp_process_key_plus_and_minus_retune_speed)
 TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
 {
     // Deltas summing to the latch window multiply to exactly one wheel notch.
-    // The end-to-end tap below allows one frame of timing error.
     for (int frames : { 1, 6, 60 }) // one slow frame, 60 fps, 600 fps: same total
     {
         Camera c = fp_camera();
@@ -895,43 +893,6 @@ TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
             c.process_key(platform::Key::Plus, dt);
         }
         ASSERT_NEAR(c.fp_speed, Camera::FP_SPEED_WHEEL_STEP, 1e-4f);
-    }
-}
-
-TEST(camera, fp_key_tap_lands_within_a_frame_of_one_wheel_notch)
-{
-    // Replay main.cpp's latch using real time since the key byte. The first applied
-    // dt began before that byte, making the one-frame error two-sided; uneven pacing
-    // is required to expose undershoot.
-    struct Pacing
-    {
-        float press_frame, rest;
-    };
-    const Pacing pacings[] = {
-        { 1.0f / 60.0f, 1.0f / 60.0f }, // even, 60 fps
-        { 0.05f, 0.05f },               // even, 20 fps
-        { 0.005f, 0.030f },             // short frame at the press, then longer
-        { 0.001f, 0.049f },             // the same, more extreme
-        { 0.050f, 0.005f },             // long frame at the press, then shorter
-    };
-    for (const Pacing &p : pacings)
-    {
-        const float widest = (p.press_frame > p.rest) ? p.press_frame : p.rest;
-        const float slack = std::pow(Camera::FP_SPEED_WHEEL_STEP, widest / Camera::HELD_KEY_WINDOW);
-        for (int i = 0; i <= 16; i++)
-        {
-            Camera c = fp_camera();
-            float since = p.press_frame * (static_cast<float>(i) / 16.0f); // where the byte fell
-            bool first = true;
-            while (since <= Camera::HELD_KEY_WINDOW)
-            {
-                c.process_key(platform::Key::Plus, first ? p.press_frame : p.rest);
-                first = false;
-                since += p.rest;
-            }
-            ASSERT_TRUE(c.fp_speed >= (Camera::FP_SPEED_WHEEL_STEP / slack) - 1e-4f);
-            ASSERT_TRUE(c.fp_speed <= (Camera::FP_SPEED_WHEEL_STEP * slack) + 1e-4f);
-        }
     }
 }
 
