@@ -40,65 +40,57 @@ namespace viewer
             {
                 ViewerSettings &settings = state.settings;
                 const platform::Key k = ev.key;
-                if (k == platform::Key::Space)
+                switch (k)
                 {
+                case platform::Key::Space:
                     settings.spinning = !settings.spinning;
-                }
-                else if (k == platform::Key::Num1)
-                {
+                    break;
+                case platform::Key::Num1:
                     settings.shading = ShadingMode::Wireframe;
-                }
-                else if (k == platform::Key::Num2)
-                {
+                    break;
+                case platform::Key::Num2:
                     settings.shading = ShadingMode::Flat;
-                }
-                else if (k == platform::Key::Num3)
-                {
+                    break;
+                case platform::Key::Num3:
                     settings.shading = ShadingMode::Phong;
-                }
-                else if (k == platform::Key::B)
-                {
+                    break;
+                case platform::Key::B:
                     settings.background = cycle(settings.background, BACKGROUND_COUNT);
-                }
-                else if (k == platform::Key::L)
-                {
+                    break;
+                case platform::Key::L:
                     settings.lighting = cycle(settings.lighting, LIGHTING_MODE_COUNT);
-                }
-                else if (k == platform::Key::C)
-                {
+                    break;
+                case platform::Key::C:
                     settings.wireframe_color = cycle(settings.wireframe_color, WIREFRAME_COLOR_COUNT);
-                }
-                else if (k == platform::Key::K)
-                {
+                    break;
+                case platform::Key::K:
                     settings.culling = !settings.culling;
-                }
-                else if (k == platform::Key::T)
-                {
+                    break;
+                case platform::Key::T:
                     if (has_textures_)
                     {
                         settings.texturing = !settings.texturing;
                     }
-                }
-                else if (k == platform::Key::R)
-                {
+                    break;
+                case platform::Key::R:
                     // Cancel held movement when restoring the launch camera.
                     state.reset();
                     held_cam_key_ = platform::Key::None;
-                }
-                else if (k == platform::Key::E || k == platform::Key::V)
-                {
+                    break;
+                case platform::Key::E:
+                case platform::Key::V:
                     // In orbit mode, E/V leave the previous movement key latched.
                     if (camera.first_person)
                     {
                         held_cam_key_ = k;
                         held_cam_key_tp_ = now;
                     }
-                }
-                else
-                {
+                    break;
+                default:
                     // The parser drops unbound keys before they reach this branch.
                     held_cam_key_ = k;
                     held_cam_key_tp_ = now;
+                    break;
                 }
             }
             else if (ev.type == platform::InputEvent::Type::ScrollUp)
