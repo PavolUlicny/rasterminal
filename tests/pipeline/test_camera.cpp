@@ -460,8 +460,7 @@ TEST(camera, fp_look_negative_dx_turns_the_view_left)
 
 TEST(camera, fp_look_positive_dy_looks_up)
 {
-    // InputController negates the screen delta before calling, so a downward drag arrives as
-    // a negative dy and lowers the view; positive raises it.
+    // InputController negates screen dy, so a downward drag lowers the view.
     Camera c = fp_camera();
     c.look(0.0f, 0.3f);
     ASSERT_TRUE(c.forward().y > 0.0f);
@@ -885,7 +884,6 @@ TEST(camera, fp_process_key_plus_and_minus_retune_speed)
 TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
 {
     // Deltas summing to the latch window multiply to exactly one wheel notch.
-    // The end-to-end tap in the viewer tests allows one frame of timing error.
     for (int frames : { 1, 6, 60 }) // one slow frame, 60 fps, 600 fps: same total
     {
         Camera c = fp_camera();

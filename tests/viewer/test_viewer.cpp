@@ -78,18 +78,13 @@ TEST(viewer, held_key_expires_from_supplied_time)
 
 TEST(viewer, key_tap_lands_within_a_frame_of_one_wheel_notch)
 {
-    // The first applied dt began before the key byte, making the one-frame error
-    // two-sided; uneven pacing is required to expose undershoot.
+    // The first dt starts before the key arrives. Uneven pacing exposes both error directions.
     struct Pacing
     {
         float press_frame, rest;
     };
     const Pacing pacings[] = {
-        { 1.0f / 60.0f, 1.0f / 60.0f }, // even, 60 fps
-        { 0.05f, 0.05f },               // even, 20 fps
-        { 0.005f, 0.030f },             // short frame at the press, then longer
-        { 0.001f, 0.049f },             // the same, more extreme
-        { 0.050f, 0.005f },             // long frame at the press, then shorter
+        { 1.0f / 60.0f, 1.0f / 60.0f }, { 0.05f, 0.05f }, { 0.005f, 0.030f }, { 0.001f, 0.049f }, { 0.050f, 0.005f },
     };
     ParsedArgs args;
     Camera launch;
@@ -128,7 +123,6 @@ TEST(viewer, idle_interval_does_not_change_rendered_fps)
     ASSERT_EQ(timing.hud_fps(), 50);
     const auto idle_wait = timing.end_frame(false, 0, start + std::chrono::milliseconds(20));
     ASSERT_TRUE(idle_wait.count() > 0.0f);
-    // The 200 ms idle interval would pull the EMA down to 45.5 FPS if counted.
     timing.begin_frame(start + std::chrono::milliseconds(220));
     ASSERT_EQ(timing.hud_fps(), 50);
 }

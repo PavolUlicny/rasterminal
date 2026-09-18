@@ -882,14 +882,14 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 {
                     break;
                 }
-                // Q quits even with --no-input, so handle it before the input controller.
+                // Q remains active with --no-input.
                 if (ev.type == platform::InputEvent::Type::Key && ev.key == platform::Key::Q)
                 {
                     running = false;
                     break;
                 }
 
-                // Geometry replies must update the resize tracker even with --no-input.
+                // Terminal geometry remains active with --no-input.
                 if (ev.type == platform::InputEvent::Type::CellSize)
                 {
                     geometry.accept_cell_size(ev.x, ev.y);
@@ -903,9 +903,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
 
                 scene_dirty |= input.handle(ev, state, geometry.cols(), geometry.rows(), FrameTiming::Clock::now());
             }
-            // The drain is over however it ended. poll_event releases its per-pass read
-            // budget on its own only when it reports Type::None, and the loop above has two
-            // other exits (the event cap, and the quit key), so say so unconditionally.
+            // Release the read budget even when the event cap or quit key ends the pass.
             platform::end_input_pass();
 
             if (!running)
@@ -925,8 +923,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 scene_dirty = true;
             }
 
-            // Poll every frame: font zoom can change pixel dimensions without a
-            // grid change, and sixel replies can arrive between grid changes.
+            // Font zoom and sixel replies can change the image without changing the grid.
             if (poll_geometry(geometry, fb))
             {
                 scene_dirty = true;

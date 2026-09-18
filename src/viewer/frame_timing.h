@@ -12,9 +12,9 @@ namespace viewer
     {
       public:
         using Clock = std::chrono::steady_clock;
-        // Refresh HUD digits at 10 Hz so high frame rates remain readable.
+        // Refresh HUD digits at 10 Hz.
         static constexpr float FPS_LATCH = 0.1f;
-        // Uncapped idle sessions still wait so an unchanged view does not consume a core.
+        // Cap otherwise uncapped idle loops.
         static constexpr int IDLE_FPS = 60;
 
         explicit FrameTiming(Clock::time_point start) : prev_(start), frame_start_(start) {}
@@ -33,8 +33,7 @@ namespace viewer
             frame_start_ = now;
             const float raw_dt = std::chrono::duration<float>(frame_start_ - prev_).count();
             prev_ = frame_start_;
-            // Idle intervals and the setup gap do not describe rendered FPS. The EMA uses
-            // the uncapped interval so slow frames stay accurate.
+            // Count rendered intervals only. Use raw time so slow frames count accurately.
             if (!first_frame_ && raw_dt > 0.0f && prev_frame_rendered_)
             {
                 const float fps = 1.0f / raw_dt;
@@ -47,7 +46,7 @@ namespace viewer
                 fps_display_ = fps_smooth_;
                 fps_latch_time_ = 0.0f;
             }
-            // Bound camera motion and held-key steps after a stall.
+            // Limit movement after a stall to one held-key window.
             return std::min(raw_dt, Camera::HELD_KEY_WINDOW);
         }
 

@@ -20,8 +20,7 @@ namespace viewer
             mouse_dragging_ = false;
         }
 
-        // Every enabled input event reports a change. A rare extra frame is safer
-        // than a missed state change, and idle mouse hover produces no tracked event.
+        // Enabled input conservatively marks the scene dirty, even if state did not change.
         bool handle(
             const platform::InputEvent &ev,
             ViewerState &state,
@@ -30,11 +29,7 @@ namespace viewer
             std::chrono::steady_clock::time_point now
         )
         {
-            // With --no-input, poll_event has already consumed the bytes and mouse
-            // tracking stays on by design, so ignored events only skip the render.
-            // The main loop hands terminal replies to the geometry tracker and never
-            // passes them here. They are rejected anyway because a reply never
-            // changes viewer state, and the return value must say so for any caller.
+            // Terminal replies belong to geometry, even if a caller passes them here.
             if (!enabled_ || ev.type == platform::InputEvent::Type::None ||
                 ev.type == platform::InputEvent::Type::CellSize || ev.type == platform::InputEvent::Type::SixelGeometry)
             {
@@ -86,15 +81,13 @@ namespace viewer
                 }
                 else if (k == platform::Key::R)
                 {
-                    // Clear a latched key so it cannot move the reset camera
-                    // for the rest of its hold window.
+                    // Cancel held movement when restoring the launch camera.
                     state.reset();
                     held_cam_key_ = platform::Key::None;
                 }
                 else if (k == platform::Key::E || k == platform::Key::V)
                 {
-                    // Orbit mode has no vertical movement. Dropping E/V keeps
-                    // the previous camera key latched.
+                    // In orbit mode, E/V leave the previous movement key latched.
                     if (camera.first_person)
                     {
                         held_cam_key_ = k;
@@ -103,17 +96,14 @@ namespace viewer
                 }
                 else
                 {
-                    // Every remaining key is camera movement. The parser drops bytes
-                    // with no binding, so nothing unbound reaches here to cancel a
-                    // movement in progress.
+                    // The parser drops unbound keys before they reach this branch.
                     held_cam_key_ = k;
                     held_cam_key_tp_ = now;
                 }
             }
             else if (ev.type == platform::InputEvent::Type::ScrollUp)
             {
-                // Reports carry no magnitude, so each event is one fixed step. First-person
-                // uses reciprocal speed steps so opposite notches cancel.
+                // Wheel reports have no magnitude. Reciprocal speed steps cancel.
                 if (camera.first_person)
                 {
                     camera.adjust_speed(Camera::FP_SPEED_WHEEL_STEP);
@@ -144,14 +134,12 @@ namespace viewer
             }
             else if (ev.type == platform::InputEvent::Type::MouseRelease)
             {
-                // Button numbers are not decoded, so any release ends the drag and a
-                // second button released mid-orbit makes the next motion re-seed.
+                // Button identity is unknown; any release ends the drag.
                 mouse_dragging_ = false;
             }
             else if (ev.type == platform::InputEvent::Type::MouseMove)
             {
-                // Re-seed after a missing press, an impossible delta, or the
-                // zero grid used briefly after resume. Never divide by that grid.
+                // A missing press, impossible delta, or zero grid resets the drag origin.
                 const bool implausible = cols <= 0 || rows <= 0 || std::abs(ev.x - mouse_last_x_) > cols ||
                                          std::abs(ev.y - mouse_last_y_) > rows;
                 if (mouse_dragging_ && !implausible)

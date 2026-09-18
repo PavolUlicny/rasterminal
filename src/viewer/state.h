@@ -40,7 +40,6 @@ namespace viewer
         }
 
       private:
-        // Flag-specified launch state that R restores.
         Camera launch_camera_;
         ViewerSettings launch_settings_;
     };

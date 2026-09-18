@@ -33,9 +33,7 @@ namespace terminal_geometry
         {
             const int sw = static_cast<int>(static_cast<long long>(w) * MAX_FB_DIM_PX / longest);
             const int sh = static_cast<int>(static_cast<long long>(h) * MAX_FB_DIM_PX / longest);
-            // A nonzero axis stays nonzero: rounding the short axis to zero would
-            // blank the image where a 1 px sliver still renders. A legitimately
-            // zero axis (one-row terminal, HUD shown) stays zero.
+            // Keep a nonzero short axis visible after integer scaling.
             w = (w > 0) ? std::max(1, sw) : 0;
             h = (h > 0) ? std::max(1, sh) : 0;
         }
@@ -67,8 +65,7 @@ namespace terminal_geometry
     {
         if (pixel_backend())
         {
-            // Exact query, ioctl-derived size, then a guess. A guess cannot
-            // establish a safe sixel centering origin.
+            // Prefer the exact reply, then ioctl pixels. A guess cannot safely center sixel.
             have_pixel_report_ = initial.has_pixel_report;
             if (have_pixel_report_)
             {
@@ -139,8 +136,7 @@ namespace terminal_geometry
         if (have_pixel_report_ &&
             (observation.pixel_cell_w != ioctl_cell_w_ || observation.pixel_cell_h != ioctl_cell_h_))
         {
-            // A stable disagreement with an exact reply is not a resize.
-            // Padding can inflate the quotient, so re-query after a change.
+            // Padding can inflate the ioctl quotient. Adopt changes, but ignore stable disagreement.
             ioctl_cell_w_ = observation.pixel_cell_w;
             ioctl_cell_h_ = observation.pixel_cell_h;
             next_cell_w = ioctl_cell_w_;
@@ -161,8 +157,7 @@ namespace terminal_geometry
         update.resize = grid_changed || size_changed;
         if (update.resize && pixel_backend())
         {
-            // Without ioctl pixels, refresh the cell size after a grid change.
-            // Terminals that never answer keep the startup value.
+            // Without ioctl pixels, query after a grid change. Keep the old size until a reply.
             update.after_resize.cell_size = grid_changed && !have_pixel_report_;
             // xterm and foot report sixel limits tied to the window size.
             update.after_resize.sixel_geometry =

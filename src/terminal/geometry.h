@@ -4,7 +4,7 @@
 
 namespace terminal_geometry
 {
-    // Bound hostile grid-by-cell products and scale both axes to preserve aspect.
+    // Limit framebuffer dimensions while preserving aspect ratio.
     constexpr int MAX_FB_DIM_PX = 8192;
 
     struct FbSize
@@ -30,8 +30,7 @@ namespace terminal_geometry
         bool cell_trusted = false;
     };
 
-    // Size native-resolution image backends. Sixel caps axes independently and
-    // letterboxes because it paints 1:1; kitty stretches to its cell rectangle.
+    // Sixel paints at 1:1 and needs letterboxing; kitty stretches to its cell rectangle.
     [[nodiscard]] FbSize pixel_fb_size(
         GraphicsBackend backend, int cols, int image_rows, int cell_w, int cell_h, const SixelBounds &lim
     ) noexcept;
@@ -59,8 +58,7 @@ namespace terminal_geometry
         Requests after_resize;
     };
 
-    // Startup query replies; zero means unreported. The explicit constructors
-    // reject bare braces, so a swapped cell size and sixel limit cannot compile.
+    // Startup query replies; zero means unreported. Separate types prevent swapping sizes.
     struct ExactCellSize
     {
         explicit ExactCellSize(int width, int height) noexcept : w(width), h(height) {}

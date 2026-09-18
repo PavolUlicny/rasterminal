@@ -13,7 +13,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- A mouse drag reported right after resuming from Ctrl+Z no longer corrupts the camera orientation until `R` resets it.
+- Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
 
 ## [v0.1.0-alpha.2] - 2026-09-08
