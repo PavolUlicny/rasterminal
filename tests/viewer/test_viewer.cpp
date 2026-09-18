@@ -165,6 +165,21 @@ TEST(viewer, disabled_input_drains_without_changing_state)
     ASSERT_EQ(state.camera.orientation.w, 1.0f);
 }
 
+TEST(viewer, terminal_replies_are_not_viewer_input)
+{
+    ParsedArgs args;
+    viewer::ViewerState state(args, Camera{});
+    viewer::InputController input(true, false);
+    const Clock::time_point start{};
+    ASSERT_FALSE(input.handle({ platform::InputEvent::Type::None }, state, 80, 24, start));
+    ASSERT_FALSE(
+        input.handle({ platform::InputEvent::Type::CellSize, platform::Key::None, 10, 20 }, state, 80, 24, start)
+    );
+    ASSERT_FALSE(
+        input.handle({ platform::InputEvent::Type::SixelGeometry, platform::Key::None, 400, 300 }, state, 80, 24, start)
+    );
+}
+
 TEST(viewer, texture_toggle_requires_a_texture)
 {
     ParsedArgs args;

@@ -20,8 +20,8 @@ namespace viewer
             mouse_dragging_ = false;
         }
 
-        // Every enabled event reports a change. A rare extra frame is safer than
-        // a missed state change, and idle mouse hover produces no tracked event.
+        // Every enabled input event reports a change. A rare extra frame is safer
+        // than a missed state change, and idle mouse hover produces no tracked event.
         bool handle(
             const platform::InputEvent &ev,
             ViewerState &state,
@@ -30,8 +30,13 @@ namespace viewer
             std::chrono::steady_clock::time_point now
         )
         {
-            // poll_event already consumed the bytes, including mouse reports.
-            if (!enabled_)
+            // With --no-input, poll_event has already consumed the bytes and mouse
+            // tracking stays on by design, so ignored events only skip the render.
+            // The main loop hands terminal replies to the geometry tracker and never
+            // passes them here. They are rejected anyway because a reply never
+            // changes viewer state, and the return value must say so for any caller.
+            if (!enabled_ || ev.type == platform::InputEvent::Type::None ||
+                ev.type == platform::InputEvent::Type::CellSize || ev.type == platform::InputEvent::Type::SixelGeometry)
             {
                 return false;
             }
