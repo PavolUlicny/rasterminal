@@ -14,7 +14,7 @@ enum class Background : std::uint8_t
     Gray,
     White
 };
-constexpr int BACKGROUND_COUNT = static_cast<int>(Background::White) + 1;
+inline constexpr int BACKGROUND_COUNT = static_cast<int>(Background::White) + 1;
 
 enum class LightingMode : std::uint8_t
 {
@@ -22,7 +22,7 @@ enum class LightingMode : std::uint8_t
     Single,
     Flat
 };
-constexpr int LIGHTING_MODE_COUNT = static_cast<int>(LightingMode::Flat) + 1;
+inline constexpr int LIGHTING_MODE_COUNT = static_cast<int>(LightingMode::Flat) + 1;
 
 enum class WireframeColor : std::uint8_t
 {
@@ -33,7 +33,7 @@ enum class WireframeColor : std::uint8_t
     Cyan,
     Magenta
 };
-constexpr int WIREFRAME_COLOR_COUNT = static_cast<int>(WireframeColor::Magenta) + 1;
+inline constexpr int WIREFRAME_COLOR_COUNT = static_cast<int>(WireframeColor::Magenta) + 1;
 
 // Auto detects color support. Forced modes still obey the TERM=dumb and Windows VT checks.
 enum class ColorChoice : std::uint8_t

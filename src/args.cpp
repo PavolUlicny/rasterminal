@@ -15,7 +15,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <iterator>
 #include <string>
+#include <string_view>
 #include <utility>
 
 const char *program_name(const char *argv0)
@@ -40,6 +42,24 @@ namespace
 
     // Measured frames for a bare --bench or -B.
     constexpr int BENCH_DEFAULT_FRAMES = 200;
+
+    struct ArgumentCursor
+    {
+        int argc;
+        const char *const *argv;
+        int index;
+        const char *prog;
+
+        const char *require_value(const char *flag)
+        {
+            if (index + 1 >= argc)
+            {
+                std::fprintf(stderr, "%s: %s requires a value\n", prog, flag);
+                return nullptr;
+            }
+            return argv[++index];
+        }
+    };
 
     // Cast through unsigned char because std::tolower is undefined for negative char values.
     std::string to_lower(const char *val)
@@ -73,36 +93,7 @@ namespace
         return true;
     }
 
-} // namespace
-
-ParseResult parse_args(int argc, char *argv[])
-{
-    ParseResult result;
-    ParsedArgs &args = result.args;
-
-    // Use the invoked basename in diagnostics.
-    const char *prog = program_name(argc > 0 ? argv[0] : nullptr);
-
-    auto fail = [&](int code) -> ParseResult &
-    {
-        result.ok = false;
-        result.exit_code = code;
-        return result;
-    };
-
-    // Consume a required value, or diagnose its absence.
-    auto require_val = [&](int &i, const char *flag) -> const char *
-    {
-        if (i + 1 >= argc)
-        {
-            std::fprintf(stderr, "%s: %s requires a value\n", prog, flag);
-            return nullptr;
-        }
-        return argv[++i];
-    };
-
-    // Positive integer parser shared by threads, fps and bench.
-    auto parse_pos_int = [prog](const char *flag, const char *val, int &out) -> bool
+    bool parse_positive_int(const char *prog, const char *flag, const char *val, int &out)
     {
         char *end = nullptr;
         errno = 0;
@@ -114,9 +105,9 @@ ParseResult parse_args(int argc, char *argv[])
         }
         out = static_cast<int>(v);
         return true;
-    };
+    }
 
-    auto parse_nonneg_int = [prog](const char *flag, const char *val, int &out) -> bool
+    bool parse_nonnegative_int(const char *prog, const char *flag, const char *val, int &out)
     {
         char *end = nullptr;
         errno = 0;
@@ -128,11 +119,11 @@ ParseResult parse_args(int argc, char *argv[])
         }
         out = static_cast<int>(v);
         return true;
-    };
+    }
 
-    auto parse_size = [prog](const char *flag, const char *val, int &w, int &h) -> bool
+    bool parse_size(const char *prog, const char *flag, const char *val, int &w, int &h)
     {
-        auto err = [prog, flag, val]() -> bool
+        const auto err = [prog, flag, val]() -> bool
         {
             std::fprintf(stderr, "%s: %s: invalid value '%s' (expected WxH, e.g. 400x240)\n", prog, flag, val);
             return false;
@@ -163,10 +154,9 @@ ParseResult parse_args(int argc, char *argv[])
         w = static_cast<int>(ww);
         h = static_cast<int>(hh);
         return true;
-    };
+    }
 
-    // True for a non-empty string of ASCII digits.
-    auto is_all_digits = [](const char *s) -> bool
+    bool is_all_digits(const char *s)
     {
         if (!s || !*s)
         {
@@ -181,33 +171,35 @@ ParseResult parse_args(int argc, char *argv[])
             ++s;
         }
         return true;
-    };
+    }
 
-    // Parse an attached value, or consume the next token only when it is a positive integer.
-    auto parse_opt_int = [&](int &arg_i, const char *flag, const char *attached, int &out, int bare_value) -> bool
+    // An attached value is always parsed. A separate token is consumed only when every character is an ASCII digit.
+    bool parse_optional_positive_int(
+        ArgumentCursor &cursor, const char *flag, const char *attached, int &out, int bare_value
+    )
     {
         if (attached != nullptr)
         {
-            return parse_pos_int(flag, attached, out);
+            return parse_positive_int(cursor.prog, flag, attached, out);
         }
-        if (arg_i + 1 < argc && is_all_digits(argv[arg_i + 1]))
+        if (cursor.index + 1 < cursor.argc && is_all_digits(cursor.argv[cursor.index + 1]))
         {
-            return parse_pos_int(flag, argv[++arg_i], out);
+            return parse_positive_int(cursor.prog, flag, cursor.argv[++cursor.index], out);
         }
         out = bare_value;
         return true;
-    };
+    }
 
-    auto parse_shading = [prog](const char *flag, const char *val, ShadingMode &out) -> bool
+    bool parse_shading(const char *prog, const char *flag, const char *val, ShadingMode &out)
     {
         return parse_enum(
             prog, flag, val,
             { { "wireframe", ShadingMode::Wireframe }, { "flat", ShadingMode::Flat }, { "phong", ShadingMode::Phong } },
             "wireframe|flat|phong", out
         );
-    };
+    }
 
-    auto parse_bg = [prog](const char *flag, const char *val, Background &out) -> bool
+    bool parse_background(const char *prog, const char *flag, const char *val, Background &out)
     {
         return parse_enum(
             prog, flag, val,
@@ -217,18 +209,18 @@ ParseResult parse_args(int argc, char *argv[])
               { "white", Background::White } },
             "black|gray|white", out
         );
-    };
+    }
 
-    auto parse_lighting = [prog](const char *flag, const char *val, LightingMode &out) -> bool
+    bool parse_lighting(const char *prog, const char *flag, const char *val, LightingMode &out)
     {
         return parse_enum(
             prog, flag, val,
             { { "dual", LightingMode::Dual }, { "single", LightingMode::Single }, { "flat", LightingMode::Flat } },
             "dual|single|flat", out
         );
-    };
+    }
 
-    auto parse_wireframe_color = [prog](const char *flag, const char *val, WireframeColor &out) -> bool
+    bool parse_wireframe_color(const char *prog, const char *flag, const char *val, WireframeColor &out)
     {
         return parse_enum(
             prog, flag, val,
@@ -240,9 +232,9 @@ ParseResult parse_args(int argc, char *argv[])
               { "magenta", WireframeColor::Magenta } },
             "white|red|green|yellow|cyan|magenta", out
         );
-    };
+    }
 
-    auto parse_color = [prog](const char *flag, const char *val, ColorChoice &out) -> bool
+    bool parse_color(const char *prog, const char *flag, const char *val, ColorChoice &out)
     {
         return parse_enum(
             prog, flag, val,
@@ -252,9 +244,9 @@ ParseResult parse_args(int argc, char *argv[])
               { "256", ColorChoice::Palette256 } },
             "truecolor|24bit|256|auto", out
         );
-    };
+    }
 
-    auto parse_graphics = [prog](const char *flag, const char *val, GraphicsChoice &out) -> bool
+    bool parse_graphics(const char *prog, const char *flag, const char *val, GraphicsChoice &out)
     {
         return parse_enum(
             prog, flag, val,
@@ -264,11 +256,12 @@ ParseResult parse_args(int argc, char *argv[])
               { "blocks", GraphicsChoice::Blocks } },
             "kitty|sixel|blocks|auto", out
         );
-    };
+    }
 
     // ERANGE also rejects subnormal values, which are useless for these flags.
-    auto parse_float =
-        [prog](const char *flag, const char *val, bool (*valid)(float), const char *expected, float &out) -> bool
+    bool parse_float(
+        const char *prog, const char *flag, const char *val, bool (*valid)(float), const char *expected, float &out
+    )
     {
         char *end = nullptr;
         errno = 0;
@@ -280,42 +273,246 @@ ParseResult parse_args(int argc, char *argv[])
         }
         out = v;
         return true;
-    };
+    }
 
-    auto parse_angle = [&parse_float](const char *flag, const char *val, float &out) -> bool
-    { return parse_float(flag, val, [](float v) { return v >= 0.0f && v <= 180.0f; }, "a number in [0, 180]", out); };
-
-    auto parse_spin_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
-    { return parse_float(flag, val, [](float v) { return v > 0.0f; }, "a positive number", out); };
-
-    // Yaw and pitch share the same full-turn range.
-    auto parse_orbit_angle = [&parse_float](const char *flag, const char *val, float &out) -> bool {
-        return parse_float(
-            flag, val, [](float v) { return v >= -180.0f && v <= 180.0f; }, "a number in [-180, 180]", out
-        );
-    };
-
-    // These bounds match the interactive zoom range around the auto-fit distance.
-    auto parse_zoom = [&parse_float](const char *flag, const char *val, float &out) -> bool
-    { return parse_float(flag, val, [](float v) { return v >= 0.2f && v <= 100.0f; }, "a number in [0.2, 100]", out); };
-
-    // Read Camera's bounds so the CLI and interactive controls cannot drift apart.
-    auto parse_fp_speed = [&parse_float](const char *flag, const char *val, float &out) -> bool
+    bool parse_angle(const char *prog, const char *flag, const char *val, float &out)
     {
         return parse_float(
-            flag, val, [](float v) { return v >= Camera::FP_SPEED_MIN && v <= Camera::FP_SPEED_MAX; },
+            prog, flag, val, [](float v) { return v >= 0.0f && v <= 180.0f; }, "a number in [0, 180]", out
+        );
+    }
+
+    bool parse_spin_speed(const char *prog, const char *flag, const char *val, float &out)
+    {
+        return parse_float(prog, flag, val, [](float v) { return v > 0.0f; }, "a positive number", out);
+    }
+
+    bool parse_orbit_angle(const char *prog, const char *flag, const char *val, float &out)
+    {
+        return parse_float(
+            prog, flag, val, [](float v) { return v >= -180.0f && v <= 180.0f; }, "a number in [-180, 180]", out
+        );
+    }
+
+    bool parse_zoom(const char *prog, const char *flag, const char *val, float &out)
+    {
+        // These bounds keep the initial camera distance inside the interactive zoom range.
+        return parse_float(
+            prog, flag, val, [](float v) { return v >= 0.2f && v <= 100.0f; }, "a number in [0.2, 100]", out
+        );
+    }
+
+    bool parse_first_person_speed(const char *prog, const char *flag, const char *val, float &out)
+    {
+        return parse_float(
+            prog, flag, val, [](float v) { return v >= Camera::FP_SPEED_MIN && v <= Camera::FP_SPEED_MAX; },
             "a number in [0.05, 20]", out
         );
-    };
+    }
 
-    auto parse_spin_direction = [prog](const char *flag, const char *val, SpinDirection &out) -> bool
+    bool parse_spin_direction(const char *prog, const char *flag, const char *val, SpinDirection &out)
     {
         return parse_enum(
             prog, flag, val, { { "left", SpinDirection::Left }, { "right", SpinDirection::Right } }, "left|right", out
         );
+    }
+
+    struct BooleanOption
+    {
+        bool ParsedArgs::*field;
+        std::string_view long_name;
+        char short_name;
+        bool value;
     };
 
-    auto print_version = []()
+    constexpr BooleanOption BOOLEAN_OPTIONS[] = {
+        { &ParsedArgs::spin, "--spin", 'S', true },
+        { &ParsedArgs::spin, "--no-spin", '\0', false },
+        { &ParsedArgs::ao, "--ao", '\0', true },
+        { &ParsedArgs::ao, "--no-ao", '\0', false },
+        { &ParsedArgs::hud, "--hud", '\0', true },
+        { &ParsedArgs::hud, "--no-hud", '\0', false },
+        { &ParsedArgs::input, "--input", '\0', true },
+        { &ParsedArgs::input, "--no-input", '\0', false },
+        { &ParsedArgs::first_person, "--first-person", '\0', true },
+        { &ParsedArgs::first_person, "--no-first-person", '\0', false },
+        { &ParsedArgs::cull, "--cull", '\0', true },
+        { &ParsedArgs::cull, "--no-cull", '\0', false },
+        { &ParsedArgs::texture, "--texture", '\0', true },
+        { &ParsedArgs::texture, "--no-texture", '\0', false },
+    };
+
+    struct SeenOptions
+    {
+        bool bench_size = false;
+        bool first_person_speed = false;
+        bool bench_warmup = false;
+    };
+
+    using ValueHandler =
+        bool (*)(const char *prog, const char *flag, const char *value, ParsedArgs &args, SeenOptions &seen);
+
+    template <auto Field, auto Parser>
+    // cppcheck-suppress unusedFunction -- instantiated as VALUE_OPTIONS function-pointer handlers.
+    bool parse_member_value(
+        const char *prog, const char *flag, const char *value, ParsedArgs &args, [[maybe_unused]] SeenOptions &seen
+    )
+    {
+        return Parser(prog, flag, value, args.*Field);
+    }
+
+    struct ValueOptionSpec
+    {
+        std::string_view long_name;
+        char short_name;
+        ValueHandler handler;
+    };
+
+    constexpr ValueOptionSpec VALUE_OPTIONS[] = {
+        { "--bench-size", '\0',
+          [](const char *prog, const char *flag, const char *value, ParsedArgs &args, SeenOptions &seen)
+          {
+              seen.bench_size = true;
+              return parse_size(prog, flag, value, args.bench_width, args.bench_height);
+          } },
+        { "--bench-warmup", '\0',
+          [](const char *prog, const char *flag, const char *value, ParsedArgs &args, SeenOptions &seen)
+          {
+              seen.bench_warmup = true;
+              return parse_nonnegative_int(prog, flag, value, args.bench_warmup);
+          } },
+        { "--smooth-angle", '\0', parse_member_value<&ParsedArgs::smooth_angle, parse_angle> },
+        { "--color", '\0', parse_member_value<&ParsedArgs::color, parse_color> },
+        { "--graphics", '\0', parse_member_value<&ParsedArgs::graphics, parse_graphics> },
+        { "--spin-speed", '\0', parse_member_value<&ParsedArgs::spin_speed, parse_spin_speed> },
+        { "--spin-direction", '\0', parse_member_value<&ParsedArgs::spin_direction, parse_spin_direction> },
+        { "--yaw", '\0', parse_member_value<&ParsedArgs::yaw, parse_orbit_angle> },
+        { "--pitch", '\0', parse_member_value<&ParsedArgs::pitch, parse_orbit_angle> },
+        { "--zoom", '\0', parse_member_value<&ParsedArgs::zoom, parse_zoom> },
+        { "--shading", 's', parse_member_value<&ParsedArgs::shading, parse_shading> },
+        { "--bg", 'b', parse_member_value<&ParsedArgs::bg, parse_background> },
+        { "--lighting", 'l', parse_member_value<&ParsedArgs::lighting, parse_lighting> },
+        { "--first-person-speed", '\0',
+          [](const char *prog, const char *flag, const char *value, ParsedArgs &args, SeenOptions &seen)
+          {
+              seen.first_person_speed = true;
+              return parse_first_person_speed(prog, flag, value, args.first_person_speed);
+          } },
+        { "--wireframe-color", 'w', parse_member_value<&ParsedArgs::wireframe_color, parse_wireframe_color> },
+    };
+
+    struct OptionalIntegerSpec
+    {
+        std::string_view long_name;
+        char short_name;
+        int bare_value;
+        int ParsedArgs::*field;
+    };
+
+    constexpr int ALL_THREADS = 0;
+    constexpr int UNCAPPED_FPS = 0;
+
+    constexpr OptionalIntegerSpec OPTIONAL_INTEGER_OPTIONS[] = {
+        { "--threads", 'j', ALL_THREADS, &ParsedArgs::n_threads },
+        { "--fps", 'f', UNCAPPED_FPS, &ParsedArgs::fps },
+        { "--bench", 'B', BENCH_DEFAULT_FRAMES, &ParsedArgs::bench },
+    };
+
+    void print_help(const char *prog);
+    void print_version();
+
+    using ActionHandler = void (*)(const char *prog);
+
+    struct ActionOption
+    {
+        std::string_view long_name;
+        char short_name;
+        ActionHandler handler;
+    };
+
+    constexpr ActionOption ACTION_OPTIONS[] = {
+        { "--help", 'h', print_help },
+        { "--version", 'V', [](const char *) { print_version(); } },
+    };
+
+    template <typename Option, size_t N>
+    const Option *find_long_option(const Option (&options)[N], std::string_view name)
+    {
+        const auto *hit = std::find_if(
+            std::begin(options), std::end(options), [name](const Option &option) { return option.long_name == name; }
+        );
+        return hit == std::end(options) ? nullptr : hit;
+    }
+
+    template <typename Option, size_t N> const Option *find_short_option(const Option (&options)[N], char name)
+    {
+        const auto *hit = std::find_if(
+            std::begin(options), std::end(options), [name](const Option &option) { return option.short_name == name; }
+        );
+        return hit == std::end(options) ? nullptr : hit;
+    }
+
+    template <typename Option, size_t N> constexpr bool option_names_are_unique(const Option (&options)[N])
+    {
+        for (size_t i = 0; i < N; ++i)
+        {
+            for (size_t j = i + 1; j < N; ++j)
+            {
+                if (options[i].long_name == options[j].long_name ||
+                    (options[i].short_name != '\0' && options[i].short_name == options[j].short_name))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    template <typename Left, size_t L, typename Right, size_t R>
+    constexpr bool option_names_are_disjoint(const Left (&left)[L], const Right (&right)[R])
+    {
+        for (size_t i = 0; i < L; ++i)
+        {
+            for (size_t j = 0; j < R; ++j)
+            {
+                if (left[i].long_name == right[j].long_name ||
+                    (left[i].short_name != '\0' && left[i].short_name == right[j].short_name))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    template <typename Option, size_t N> constexpr bool option_tables_are_unique(const Option (&options)[N])
+    {
+        return option_names_are_unique(options);
+    }
+
+    template <typename First, size_t N, typename... Rest>
+    constexpr bool option_tables_are_unique(const First (&first)[N], const Rest &...rest)
+    {
+        return option_names_are_unique(first) && (option_names_are_disjoint(first, rest) && ...) &&
+               option_tables_are_unique(rest...);
+    }
+
+    static_assert(
+        option_tables_are_unique(BOOLEAN_OPTIONS, ACTION_OPTIONS, OPTIONAL_INTEGER_OPTIONS, VALUE_OPTIONS),
+        "CLI option names must be unique"
+    );
+
+    bool reject_attached_value(const char *prog, const char *flag, const char *attached)
+    {
+        if (attached == nullptr)
+        {
+            return true;
+        }
+        std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
+        return false;
+    }
+
+    void print_version()
     {
         // GNU-style version block. Program identity is canonical, not argv[0].
         char text[512];
@@ -331,10 +528,10 @@ ParseResult parse_args(int argc, char *argv[])
             RASTERMINAL_VERSION, RASTERMINAL_COPYRIGHT_YEAR, RASTERMINAL_AUTHOR, RASTERMINAL_AUTHOR
         );
         platform::write_utf8_stdout(text);
-    };
+    }
 
     // As in git, a short flag beside --[no-]name means only the positive form.
-    auto print_help = [prog]()
+    void print_help(const char *prog)
     {
         std::printf(
             "Usage: %s [options] <model>\n"
@@ -419,17 +616,34 @@ ParseResult parse_args(int argc, char *argv[])
             "Home page: <%s>\n",
             prog, RASTERMINAL_HOMEPAGE, RASTERMINAL_HOMEPAGE
         );
+    }
+
+} // namespace
+
+ParseResult parse_args(int argc, char *argv[])
+{
+    ParseResult result;
+    ParsedArgs &args = result.args;
+
+    // Use the invoked basename in diagnostics.
+    const char *prog = program_name(argc > 0 ? argv[0] : nullptr);
+
+    auto fail = [&](int code) -> ParseResult &
+    {
+        result.ok = false;
+        result.exit_code = code;
+        return result;
     };
 
-    bool saw_bench_size = false;
-    bool saw_fp_speed = false;
-    bool saw_bench_warmup = false;
+    SeenOptions seen;
     bool end_of_options = false;
 
-    for (int i = 1; i < argc; i++)
+    ArgumentCursor cursor{ argc, argv, 1, prog };
+    for (; cursor.index < argc; ++cursor.index)
     {
+        const char *current = argv[cursor.index];
         // POSIX Guideline 10: "--" ends option parsing.
-        if (!end_of_options && std::strcmp(argv[i], "--") == 0)
+        if (!end_of_options && std::strcmp(current, "--") == 0)
         {
             end_of_options = true;
             continue;
@@ -438,430 +652,155 @@ ParseResult parse_args(int argc, char *argv[])
         {
             if (!args.model_path.empty())
             {
-                std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, argv[i]);
+                std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, current);
                 return fail(1);
             }
-            args.model_path = argv[i];
+            args.model_path = current;
             continue;
         }
 
         // Split --flag=value. Other forms leave eq_val null.
         const char *eq_val = nullptr;
-        std::string arg = argv[i];
+        std::string arg = current;
         if (arg.size() > 2 && arg[0] == '-' && arg[1] == '-')
         {
             const size_t eq = arg.find('=');
             if (eq != std::string::npos)
             {
-                eq_val = argv[i] + eq + 1;
+                eq_val = current + eq + 1;
                 arg.resize(eq);
             }
         }
         const char *flag = arg.c_str();
 
         // Prefer =value, otherwise consume the next token.
-        auto get_val = [&](int &arg_i) -> const char *
+        auto get_val = [&]() -> const char *
         {
             if (eq_val != nullptr)
             {
                 return eq_val;
             }
-            return require_val(arg_i, flag);
+            return cursor.require_value(flag);
         };
 
-        // Boolean long flags reject =value.
-        auto no_value = [&]() -> bool
+        if (const auto *option = find_long_option(BOOLEAN_OPTIONS, arg))
         {
-            if (eq_val != nullptr)
+            if (!reject_attached_value(prog, flag, eq_val))
             {
-                std::fprintf(stderr, "%s: %s does not take a value\n", prog, flag);
-                return false;
+                return fail(1);
             }
-            return true;
-        };
+            args.*(option->field) = option->value;
+            continue;
+        }
 
-        if (arg == "--threads")
+        if (const auto *option = find_long_option(ACTION_OPTIONS, arg))
         {
-            // Zero means all threads.
-            if (!parse_opt_int(i, flag, eq_val, args.n_threads, 0))
+            if (!reject_attached_value(prog, flag, eq_val))
             {
                 return fail(1);
             }
-        }
-        else if (arg == "--fps")
-        {
-            // Zero means uncapped.
-            if (!parse_opt_int(i, flag, eq_val, args.fps, 0))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--bench")
-        {
-            if (!parse_opt_int(i, flag, eq_val, args.bench, BENCH_DEFAULT_FRAMES))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--bench-size")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_size(flag, val, args.bench_width, args.bench_height))
-            {
-                return fail(1);
-            }
-            saw_bench_size = true;
-        }
-        else if (arg == "--bench-warmup")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_nonneg_int(flag, val, args.bench_warmup))
-            {
-                return fail(1);
-            }
-            saw_bench_warmup = true;
-        }
-        else if (arg == "--smooth-angle")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_angle(flag, val, args.smooth_angle))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--color")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_color(flag, val, args.color))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--graphics")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_graphics(flag, val, args.graphics))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--spin-speed")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_spin_speed(flag, val, args.spin_speed))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--spin-direction")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_spin_direction(flag, val, args.spin_direction))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--yaw")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_orbit_angle(flag, val, args.yaw))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--pitch")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_orbit_angle(flag, val, args.pitch))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--zoom")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_zoom(flag, val, args.zoom))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--shading")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_shading(flag, val, args.shading))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--bg")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_bg(flag, val, args.bg))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--lighting")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_lighting(flag, val, args.lighting))
-            {
-                return fail(1);
-            }
-        }
-        else if (arg == "--help")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            print_help();
+            option->handler(prog);
             return fail(0);
         }
-        else if (arg == "--version")
+
+        if (const auto *option = find_long_option(OPTIONAL_INTEGER_OPTIONS, arg))
         {
-            if (!no_value())
+            if (!parse_optional_positive_int(cursor, flag, eq_val, args.*(option->field), option->bare_value))
             {
                 return fail(1);
             }
-            print_version();
-            return fail(0);
+            continue;
         }
-        else if (arg == "--spin")
+
+        if (const auto *option = find_long_option(VALUE_OPTIONS, arg))
         {
-            if (!no_value())
+            const char *value = get_val();
+            if (!value || !option->handler(prog, flag, value, args, seen))
             {
                 return fail(1);
             }
-            args.spin = true;
-        }
-        else if (arg == "--no-spin")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.spin = false;
-        }
-        else if (arg == "--ao")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.ao = true;
-        }
-        else if (arg == "--no-ao")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.ao = false;
-        }
-        else if (arg == "--hud")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.hud = true;
-        }
-        else if (arg == "--no-hud")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.hud = false;
-        }
-        else if (arg == "--input")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.input = true;
-        }
-        else if (arg == "--no-input")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.input = false;
-        }
-        else if (arg == "--first-person-speed")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_fp_speed(flag, val, args.first_person_speed))
-            {
-                return fail(1);
-            }
-            saw_fp_speed = true;
-        }
-        else if (arg == "--first-person")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.first_person = true;
-        }
-        else if (arg == "--no-first-person")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.first_person = false;
-        }
-        else if (arg == "--cull")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.cull = true;
-        }
-        else if (arg == "--no-cull")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.cull = false;
-        }
-        else if (arg == "--texture")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.texture = true;
-        }
-        else if (arg == "--no-texture")
-        {
-            if (!no_value())
-            {
-                return fail(1);
-            }
-            args.texture = false;
-        }
-        else if (arg == "--wireframe-color")
-        {
-            const char *val = get_val(i);
-            if (!val || !parse_wireframe_color(flag, val, args.wireframe_color))
-            {
-                return fail(1);
-            }
+            continue;
         }
         // POSIX Guideline 5: cluster boolean options and put a value-taking option last.
         // Like getopt, -s=phong passes "=phong" as the value.
-        else if (argv[i][0] == '-' && argv[i][1] != '\0' && argv[i][1] != '-')
+        if (current[0] == '-' && current[1] != '\0' && current[1] != '-')
         {
-            const char *tok = argv[i];
             bool value_consumed = false; // a value flag ate the rest of the token
-            for (int k = 1; tok[k] != '\0' && !value_consumed; k++)
+            for (int k = 1; current[k] != '\0' && !value_consumed; k++)
             {
-                const char c = tok[k];
+                const char c = current[k];
                 const char short_flag[3] = { '-', c, '\0' };
-                const char *rest = tok + k + 1;
+                const char *rest = current + k + 1;
 
-                switch (c)
+                if (const auto *option = find_short_option(BOOLEAN_OPTIONS, c))
                 {
-                case 'S':
-                    args.spin = true;
-                    break;
-                case 'h':
-                    print_help();
-                    return fail(0);
-                case 'V':
-                    print_version();
-                    return fail(0);
-                case 's':
-                case 'b':
-                case 'l':
-                case 'w':
+                    args.*(option->field) = option->value;
+                    continue;
+                }
+
+                if (const auto *option = find_short_option(ACTION_OPTIONS, c))
                 {
-                    const char *val = (*rest != '\0') ? rest : require_val(i, short_flag);
-                    if (!val)
-                    {
-                        return fail(1);
-                    }
-                    bool valid = false;
-                    switch (c)
-                    {
-                    case 's':
-                        valid = parse_shading(short_flag, val, args.shading);
-                        break;
-                    case 'b':
-                        valid = parse_bg(short_flag, val, args.bg);
-                        break;
-                    case 'l':
-                        valid = parse_lighting(short_flag, val, args.lighting);
-                        break;
-                    case 'w':
-                        valid = parse_wireframe_color(short_flag, val, args.wireframe_color);
-                        break;
-                    default:
-                        break; // unreachable (outer case labels); valid stays false -> fail
-                    }
-                    if (!valid)
+                    option->handler(prog);
+                    return fail(0);
+                }
+
+                if (const auto *option = find_short_option(OPTIONAL_INTEGER_OPTIONS, c))
+                {
+                    if (!parse_optional_positive_int(
+                            cursor, short_flag, (*rest != '\0') ? rest : nullptr, args.*(option->field),
+                            option->bare_value
+                        ))
                     {
                         return fail(1);
                     }
                     value_consumed = true;
-                    break;
+                    continue;
                 }
-                case 'j':
-                case 'f':
-                case 'B':
+
+                if (const auto *option = find_short_option(VALUE_OPTIONS, c))
                 {
-                    int &out = (c == 'j') ? args.n_threads : (c == 'f') ? args.fps : args.bench;
-                    const int bare = (c == 'B') ? BENCH_DEFAULT_FRAMES : 0;
-                    if (!parse_opt_int(i, short_flag, (*rest != '\0') ? rest : nullptr, out, bare))
+                    const char *value = (*rest != '\0') ? rest : cursor.require_value(short_flag);
+                    if (!value || !option->handler(prog, short_flag, value, args, seen))
                     {
                         return fail(1);
                     }
                     value_consumed = true;
-                    break;
+                    continue;
                 }
-                default:
-                    std::fprintf(stderr, "%s: unknown flag '-%c'\n", prog, c);
-                    return fail(1);
-                }
+
+                std::fprintf(stderr, "%s: unknown flag '-%c'\n", prog, c);
+                return fail(1);
             }
         }
         // A lone "-" is an operand. Any other leading dash here is an unknown flag.
-        else if (argv[i][0] == '-' && argv[i][1] != '\0')
+        else if (current[0] == '-' && current[1] != '\0')
         {
-            std::fprintf(stderr, "%s: unknown flag '%s'\n", prog, argv[i]);
+            std::fprintf(stderr, "%s: unknown flag '%s'\n", prog, current);
             return fail(1);
         }
         else if (!args.model_path.empty())
         {
-            std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, argv[i]);
+            std::fprintf(stderr, "%s: unexpected argument '%s'\n", prog, current);
             return fail(1);
         }
         else
         {
-            args.model_path = argv[i];
+            args.model_path = current;
         }
     }
 
-    if (saw_bench_size && args.bench < 1)
+    if (seen.bench_size && args.bench < 1)
     {
         std::fprintf(stderr, "%s: --bench-size requires --bench\n", prog);
         return fail(1);
     }
     // First-person mode is session-fixed, so reject a speed that could never take effect.
-    if (saw_fp_speed && !args.first_person)
+    if (seen.first_person_speed && !args.first_person)
     {
         std::fprintf(stderr, "%s: --first-person-speed requires --first-person\n", prog);
         return fail(1);
     }
-    if (saw_bench_warmup && args.bench < 1)
+    if (seen.bench_warmup && args.bench < 1)
     {
         std::fprintf(stderr, "%s: --bench-warmup requires --bench\n", prog);
         return fail(1);
