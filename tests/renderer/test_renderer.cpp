@@ -991,7 +991,8 @@ TEST(renderer, single_sided_cull_off_back_face_dark)
     }
 }
 
-TEST(renderer, double_sided_cull_off_back_face_dark)
+// Double-sidedness belongs to the material, so the normal flip must not depend on the cull toggle.
+TEST(renderer, double_sided_cull_off_back_face_lit)
 {
     Mesh mesh = make_back_facing_double_sided_triangle();
     Camera cam = make_test_camera();
@@ -1007,12 +1008,87 @@ TEST(renderer, double_sided_cull_off_back_face_dark)
 
     ASSERT_TRUE(was_drawn(fb, 20, 10));
     Color c = fb.get_pixel(20, 10);
-    if (c.r > 5)
+    if (c.r < 150)
     {
         ASSERT_FAIL(
-            "cull-off double-sided back-face R too high (" + std::to_string(static_cast<int>(c.r)) +
-            "), flip applied when cull is off"
+            "cull-off double-sided back-face R too low (" + std::to_string(static_cast<int>(c.r)) +
+            "), normal flip skipped with culling off"
         );
+    }
+}
+
+// Every pass that consumes the flip (immediate, tiled, transparent, near-clipped, Flat and
+// Phong) must produce the same image for a double-sided back face with culling on or off.
+TEST(renderer, double_sided_back_face_ignores_cull_toggle)
+{
+    constexpr int W = 40;
+    constexpr int H = 20;
+    for (const ShadingMode mode : { ShadingMode::Flat, ShadingMode::Phong })
+    {
+        for (const Renderer::OpaquePath path : { Renderer::OpaquePath::Immediate, Renderer::OpaquePath::Tiled })
+        {
+            for (const bool blend : { false, true })
+            {
+                for (const bool near_clipped : { false, true })
+                {
+                    Mesh mesh = make_back_facing_double_sided_triangle();
+                    if (blend)
+                    {
+                        mesh.materials[0].blend = true;
+                        mesh.materials[0].alpha = 0.5f;
+                        mesh.has_transparent = true;
+                        mesh.opaque_count = 0;
+                    }
+                    if (near_clipped)
+                    {
+                        // The apex moves behind the camera at z=5 and the triangle stays back-facing.
+                        mesh.vertices[1].pos.z = 6.0f;
+                    }
+                    const std::string what = std::string(mode == ShadingMode::Flat ? "flat" : "phong") +
+                                             (path == Renderer::OpaquePath::Tiled ? " tiled" : " immediate") +
+                                             (blend ? " blend" : " opaque") + (near_clipped ? " near-clipped" : "");
+
+                    Framebuffer fb_on(W, H, /*headless=*/true);
+                    Framebuffer fb_off(W, H, /*headless=*/true);
+                    for (const bool cull : { true, false })
+                    {
+                        Renderer r(2);
+                        r.mode = mode;
+                        r.opaque_path = path;
+                        r.cull_backfaces = cull;
+                        Camera cam = make_test_camera();
+                        Light light = make_key_light_z({ 1.0f, 0.0f, 0.0f });
+                        Framebuffer &fb = cull ? fb_on : fb_off;
+                        fb.clear();
+                        r.render(mesh, cam, &light, 1, { 0.0f, 0.0f, 0.0f }, fb);
+                    }
+
+                    // With zero ambient an unflipped normal renders black, so a black centre means
+                    // the flip never ran even if both images agree. The tilted near-clipped face
+                    // receives only part of the light, hence the low threshold.
+                    if (fb_off.get_pixel(20, 10).r < 10)
+                    {
+                        ASSERT_FAIL(what + ": centre pixel unlit, back-face normal flip missing");
+                    }
+                    for (int y = 0; y < H; y++)
+                    {
+                        for (int x = 0; x < W; x++)
+                        {
+                            const Color a = fb_on.get_pixel(x, y);
+                            const Color b = fb_off.get_pixel(x, y);
+                            if (was_drawn(fb_on, x, y) != was_drawn(fb_off, x, y) || a.r != b.r || a.g != b.g ||
+                                a.b != b.b)
+                            {
+                                ASSERT_FAIL(
+                                    what + ": pixel (" + std::to_string(x) + "," + std::to_string(y) +
+                                    ") differs between cull on and off"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

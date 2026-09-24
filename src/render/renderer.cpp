@@ -166,6 +166,8 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
     const int width = m_width;
     const int height = m_height;
     const bool do_cull = m_cull_backfaces;
+    const bool any_double_sided = mesh->has_double_sided;
+    const bool test_facing = do_cull || any_double_sided;
     const bool show_tex = m_show_texture;
     // Texture toggle gates only the emissive texture sample. The authored factor
     // (mat.emissive) always passes through, mirroring how mat.diffuse stays in effect
@@ -377,19 +379,23 @@ template <Sink S, ShadingMode M> void Renderer::raster_triangles(int worker_id)
                 const Vertex &vb = mesh->vertices[tri.v[1]];
                 const Vertex &vc = mesh->vertices[tri.v[2]];
 
-                // Cull the world-space face plane before matrix transforms. Closed
-                // meshes reject about half their triangles here; CCW remains front-facing.
+                // Test the world-space face plane before matrix transforms; CCW is front-facing.
+                // Closed meshes cull about half their triangles here. Double-sided back faces
+                // need the test even with culling off, because their normals must still flip.
                 bool flip_normals = false;
-                if (do_cull)
+                if (test_facing)
                 {
                     const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
                     if (dot(face_normal, eye - va.pos) <= 0.0f)
                     {
-                        if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
+                        if (any_double_sided && mesh->mat_at(tri.material_idx).double_sided)
+                        {
+                            flip_normals = true;
+                        }
+                        else if (do_cull)
                         {
                             continue;
                         }
-                        flip_normals = true;
                     }
                 }
 
@@ -543,6 +549,8 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
     const int width = m_width;
     const int height = m_height;
     const bool do_cull = m_cull_backfaces;
+    const bool any_double_sided = mesh->has_double_sided;
+    const bool test_facing = do_cull || any_double_sided;
     const int tiles_x = m_tiles_x;
     const int tiles_y = m_tiles_y;
     const int n_tiles = tiles_x * tiles_y;
@@ -637,16 +645,19 @@ template <ShadingMode M> void Renderer::bin_triangles(int worker_id)
             const Vertex &vc = mesh->vertices[tri.v[2]];
 
             bool flip_normals = false;
-            if (do_cull)
+            if (test_facing)
             {
                 const vec3 face_normal = cross(vb.pos - va.pos, vc.pos - va.pos);
                 if (dot(face_normal, eye - va.pos) <= 0.0f)
                 {
-                    if (!mesh->has_double_sided || !mesh->mat_at(tri.material_idx).double_sided)
+                    if (any_double_sided && mesh->mat_at(tri.material_idx).double_sided)
+                    {
+                        flip_normals = true;
+                    }
+                    else if (do_cull)
                     {
                         continue;
                     }
-                    flip_normals = true;
                 }
             }
 

@@ -15,6 +15,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
+- Turning off backface culling no longer changes how double-sided surfaces are lit. Their back sides were lit as if they faced away from the viewer.
 
 ## [v0.1.0-alpha.2] - 2026-09-08
 
