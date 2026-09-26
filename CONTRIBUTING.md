@@ -11,9 +11,12 @@ Before starting anything larger than a small fix, open a feature request to disc
 
 ```sh
 cmake -B build                            # configure
-cmake --build build -j                    # build the viewer
-cmake --build build --target check -j     # build and run the test suite
+cmake --build build -j 8                  # build the viewer
+cmake --build build --target check -j 8   # build and run the test suite
 ```
+
+Give `-j` a job count. Without one, the Makefiles generator starts an unlimited number of
+compiler processes.
 
 The default build omits the test binary. Building the `check` target compiles it and runs
 the suite.
@@ -22,17 +25,26 @@ You need CMake 3.22 or newer, a C++17 compiler and a C compiler. GCC, Clang,
 AppleClang and MSVC are supported. Third-party code is vendored under `vendor/`. See the README's
 [build section](README.md#build) for other configurations and platforms.
 
-### Adding a source or test file
+### Code organization
 
-`CMakeLists.txt` lists source files explicitly. Add a new `src/` file to `rasterminal`,
-and to `rasterminal_tests` if the tests link it. Add test files only to
-`rasterminal_tests`. Vendored C files belong in the shared `rasterminal_c` object library,
-which uses separate flags and disables LTO.
+`CMakeLists.txt` lists files explicitly. Add a `src/` file to `rasterminal`, and to
+`rasterminal_tests` if the tests link it; test files go only in `rasterminal_tests`.
+Vendored C files go in the `rasterminal_c` object library, which has its own flags and no LTO.
 
 Includes in `src/` and `tests/` are root-relative, such as
 `#include "src/render/renderer.h"` and `#include "tests/foo.h"`. Do not use `../` paths or
 bare neighboring filenames. Put test sources under `tests/<subsystem>/`; shared helpers
 and fixtures stay at `tests/` root.
+
+Only `src/platform/` includes OS headers (`<windows.h>`, `<unistd.h>`, `<termios.h>`,
+`<sys/...>`) or branches on the target OS. Other code calls the interfaces in
+`src/platform/`. Compiler- and CPU-specific code, such as intrinsics, diagnostic
+pragmas and inlining attributes, stays next to the code that uses it.
+
+Headers use `.h`.
+
+Keep implementation details near the code and user-facing behavior in the README,
+man page and CLI help.
 
 ## Code style
 
