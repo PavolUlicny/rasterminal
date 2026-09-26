@@ -1,10 +1,10 @@
 #pragma once
 
-// Stateless terminal escape-sequence grammar. input_reader.h owns buffering and timing.
+// Stateless terminal escape-sequence grammar. src/platform/input_reader.h owns buffering and timing.
 
 #include <cstdint>
 
-namespace platform
+namespace terminal_input
 {
 
     enum class Key : std::uint8_t
@@ -674,4 +674,4 @@ namespace platform
             return parse_complete(s.index + 1, ev);
         }
     } // namespace detail
-} // namespace platform
+} // namespace terminal_input

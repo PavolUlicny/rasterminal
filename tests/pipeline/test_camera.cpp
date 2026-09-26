@@ -139,7 +139,7 @@ TEST(camera, process_key_A_model_moves_left)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::Key::A, 0.1f);
+    c.process_key(terminal_input::Key::A, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.x > 0.0f);
 }
@@ -149,7 +149,7 @@ TEST(camera, process_key_D_model_moves_right)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::Key::D, 0.1f);
+    c.process_key(terminal_input::Key::D, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.x < 0.0f);
 }
@@ -160,7 +160,7 @@ TEST(camera, process_key_W_model_moves_up)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::Key::W, 0.1f);
+    c.process_key(terminal_input::Key::W, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.y < 0.0f);
 }
@@ -170,7 +170,7 @@ TEST(camera, process_key_S_model_moves_down)
     Camera c;
     c.distance = 5.0f;
     c.orientation = quat::identity();
-    c.process_key(platform::Key::S, 0.1f);
+    c.process_key(terminal_input::Key::S, 0.1f);
     vec3 e = c.eye();
     ASSERT_TRUE(e.y > 0.0f);
 }
@@ -180,8 +180,8 @@ TEST(camera, process_key_LEFT_same_as_A)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::Key::Left, 0.1f);
-    c2.process_key(platform::Key::A, 0.1f);
+    c1.process_key(terminal_input::Key::Left, 0.1f);
+    c2.process_key(terminal_input::Key::A, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -193,8 +193,8 @@ TEST(camera, process_key_RIGHT_same_as_D)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::Key::Right, 0.1f);
-    c2.process_key(platform::Key::D, 0.1f);
+    c1.process_key(terminal_input::Key::Right, 0.1f);
+    c2.process_key(terminal_input::Key::D, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -206,8 +206,8 @@ TEST(camera, process_key_UP_same_as_W)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::Key::Up, 0.1f);
-    c2.process_key(platform::Key::W, 0.1f);
+    c1.process_key(terminal_input::Key::Up, 0.1f);
+    c2.process_key(terminal_input::Key::W, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -219,8 +219,8 @@ TEST(camera, process_key_DOWN_same_as_S)
     Camera c1, c2;
     c1.distance = c2.distance = 5.0f;
     c1.orientation = c2.orientation = quat::identity();
-    c1.process_key(platform::Key::Down, 0.1f);
-    c2.process_key(platform::Key::S, 0.1f);
+    c1.process_key(terminal_input::Key::Down, 0.1f);
+    c2.process_key(terminal_input::Key::S, 0.1f);
     vec3 e1 = c1.eye(), e2 = c2.eye();
     ASSERT_NEAR(e1.x, e2.x, EPS);
     ASSERT_NEAR(e1.y, e2.y, EPS);
@@ -231,7 +231,7 @@ TEST(camera, process_key_PLUS_decreases_distance)
 {
     Camera c;
     c.distance = 3.0f;
-    c.process_key(platform::Key::Plus, 0.1f);
+    c.process_key(terminal_input::Key::Plus, 0.1f);
     // zoom_speed = 3.0 * 1.5 = 4.5; distance -= 4.5 * 0.1 = 0.45
     ASSERT_NEAR(c.distance, 2.55f, 1e-3f);
 }
@@ -240,7 +240,7 @@ TEST(camera, process_key_MINUS_increases_distance)
 {
     Camera c;
     c.distance = 3.0f;
-    c.process_key(platform::Key::Minus, 0.1f);
+    c.process_key(terminal_input::Key::Minus, 0.1f);
     ASSERT_NEAR(c.distance, 3.45f, 1e-3f);
 }
 
@@ -250,7 +250,7 @@ TEST(camera, process_key_distance_clamped_at_near)
     c.distance = 3.0f;
     c.near_plane = 0.01f;
     c.far_plane = 100.0f;
-    c.process_key(platform::Key::Plus, 100.0f);
+    c.process_key(terminal_input::Key::Plus, 100.0f);
     ASSERT_NEAR(c.distance, c.near_plane * 2.0f, EPS);
 }
 
@@ -260,7 +260,7 @@ TEST(camera, process_key_distance_clamped_at_far)
     c.distance = 3.0f;
     c.near_plane = 0.01f;
     c.far_plane = 100.0f;
-    c.process_key(platform::Key::Minus, 100.0f);
+    c.process_key(terminal_input::Key::Minus, 100.0f);
     ASSERT_NEAR(c.distance, c.far_plane * 0.5f, EPS);
 }
 
@@ -271,7 +271,7 @@ TEST(camera, process_key_unknown_does_not_change_state)
     c.orientation = quat::identity();
     vec3 e_before = c.eye();
     float d_before = c.distance;
-    c.process_key(platform::Key::Space, 1.0f);
+    c.process_key(terminal_input::Key::Space, 1.0f);
     ASSERT_NEAR(c.distance, d_before, EPS);
     vec3 e_after = c.eye();
     ASSERT_NEAR(e_after.x, e_before.x, EPS);
@@ -794,7 +794,7 @@ TEST(camera, fp_process_key_WASD_moves_without_rotating)
     Camera c = fp_camera();
     c.fp_base_speed = 4.0f;
     const vec3 fwd_before = c.forward();
-    c.process_key(platform::Key::W, 0.1f);
+    c.process_key(terminal_input::Key::W, 0.1f);
     ASSERT_TRUE(c.eye().z < -0.01f); // advanced along -Z
     const vec3 fwd_after = c.forward();
     ASSERT_NEAR(fwd_after.z, fwd_before.z, EPS);
@@ -804,8 +804,8 @@ TEST(camera, fp_process_key_A_and_D_strafe)
 {
     Camera c1 = fp_camera(), c2 = fp_camera();
     c1.fp_base_speed = c2.fp_base_speed = 4.0f;
-    c1.process_key(platform::Key::A, 0.1f);
-    c2.process_key(platform::Key::D, 0.1f);
+    c1.process_key(terminal_input::Key::A, 0.1f);
+    c2.process_key(terminal_input::Key::D, 0.1f);
     ASSERT_TRUE(c1.eye().x < 0.0f);
     ASSERT_TRUE(c2.eye().x > 0.0f);
 }
@@ -814,8 +814,8 @@ TEST(camera, fp_process_key_E_and_V_move_vertically)
 {
     Camera c1 = fp_camera(), c2 = fp_camera();
     c1.fp_base_speed = c2.fp_base_speed = 4.0f;
-    c1.process_key(platform::Key::E, 0.1f);
-    c2.process_key(platform::Key::V, 0.1f);
+    c1.process_key(terminal_input::Key::E, 0.1f);
+    c2.process_key(terminal_input::Key::V, 0.1f);
     ASSERT_TRUE(c1.eye().y > 0.0f);
     ASSERT_TRUE(c2.eye().y < 0.0f);
 }
@@ -825,7 +825,7 @@ TEST(camera, fp_process_key_arrows_look_without_moving)
     // The arrows are the keyboard look here, so the eye must stay put.
     Camera c = fp_camera();
     const vec3 e_before = c.eye();
-    c.process_key(platform::Key::Left, 0.1f);
+    c.process_key(terminal_input::Key::Left, 0.1f);
     ASSERT_NEAR(c.eye().x, e_before.x, EPS);
     ASSERT_NEAR(c.eye().z, e_before.z, EPS);
     ASSERT_TRUE(c.forward().x < 0.0f); // Left turns the view left
@@ -834,9 +834,9 @@ TEST(camera, fp_process_key_arrows_look_without_moving)
 TEST(camera, fp_process_key_arrow_directions)
 {
     Camera right = fp_camera(), up = fp_camera(), down = fp_camera();
-    right.process_key(platform::Key::Right, 0.1f);
-    up.process_key(platform::Key::Up, 0.1f);
-    down.process_key(platform::Key::Down, 0.1f);
+    right.process_key(terminal_input::Key::Right, 0.1f);
+    up.process_key(terminal_input::Key::Up, 0.1f);
+    down.process_key(terminal_input::Key::Down, 0.1f);
     ASSERT_TRUE(right.forward().x > 0.0f);
     ASSERT_TRUE(up.forward().y > 0.0f);
     ASSERT_TRUE(down.forward().y < 0.0f);
@@ -849,7 +849,7 @@ TEST(camera, fp_process_key_arrow_look_rate_is_one_fov_per_second)
     // looking moves the whole scene rather than turning a model that stays centred.
     Camera c = fp_camera();
     const vec3 before = c.forward();
-    c.process_key(platform::Key::Right, 1.0f);
+    c.process_key(terminal_input::Key::Right, 1.0f);
     const float swept = std::acos(clamp(dot(before, c.forward()), -1.0f, 1.0f));
     ASSERT_NEAR(swept, c.fov, 1e-3f);
 }
@@ -864,8 +864,8 @@ TEST(camera, fp_process_key_look_is_slower_than_orbit)
     orb.orientation = quat::identity();
     const vec3 fp_before = fp.forward();
     const vec3 orb_before = orb.orientation.rotate({ 0.0f, 0.0f, -1.0f });
-    fp.process_key(platform::Key::Right, 0.5f);
-    orb.process_key(platform::Key::D, 0.5f);
+    fp.process_key(terminal_input::Key::Right, 0.5f);
+    orb.process_key(terminal_input::Key::D, 0.5f);
     const float fp_swept = std::acos(clamp(dot(fp_before, fp.forward()), -1.0f, 1.0f));
     const float orb_swept =
         std::acos(clamp(dot(orb_before, orb.orientation.rotate({ 0.0f, 0.0f, -1.0f })), -1.0f, 1.0f));
@@ -875,8 +875,8 @@ TEST(camera, fp_process_key_look_is_slower_than_orbit)
 TEST(camera, fp_process_key_plus_and_minus_retune_speed)
 {
     Camera up = fp_camera(), down = fp_camera();
-    up.process_key(platform::Key::Plus, 0.1f);
-    down.process_key(platform::Key::Minus, 0.1f);
+    up.process_key(terminal_input::Key::Plus, 0.1f);
+    down.process_key(terminal_input::Key::Minus, 0.1f);
     ASSERT_TRUE(up.fp_speed > 1.0f);
     ASSERT_TRUE(down.fp_speed < 1.0f);
 }
@@ -890,7 +890,7 @@ TEST(camera, fp_speed_key_factor_integrates_to_one_wheel_notch)
         const float dt = Camera::HELD_KEY_WINDOW / static_cast<float>(frames);
         for (int i = 0; i < frames; i++)
         {
-            c.process_key(platform::Key::Plus, dt);
+            c.process_key(terminal_input::Key::Plus, dt);
         }
         ASSERT_NEAR(c.fp_speed, Camera::FP_SPEED_WHEEL_STEP, 1e-4f);
     }
@@ -901,8 +901,8 @@ TEST(camera, fp_key_speed_steps_are_exact_inverses)
     // A tap up and a tap down must return to where it started, as the wheel's exact
     // reciprocal does; the HUD shows this number, so any drift is visible.
     Camera c = fp_camera();
-    c.process_key(platform::Key::Plus, Camera::HELD_KEY_WINDOW);
-    c.process_key(platform::Key::Minus, Camera::HELD_KEY_WINDOW);
+    c.process_key(terminal_input::Key::Plus, Camera::HELD_KEY_WINDOW);
+    c.process_key(terminal_input::Key::Minus, Camera::HELD_KEY_WINDOW);
     ASSERT_NEAR(c.fp_speed, 1.0f, 1e-5f);
 }
 
@@ -914,7 +914,8 @@ TEST(camera, fp_process_key_leaves_distance_alone)
     c.distance = 5.0f;
     c.near_plane = 0.01f;
     c.far_plane = 100.0f;
-    for (auto key : { platform::Key::Plus, platform::Key::Minus, platform::Key::W, platform::Key::Up })
+    for (auto key :
+         { terminal_input::Key::Plus, terminal_input::Key::Minus, terminal_input::Key::W, terminal_input::Key::Up })
     {
         c.process_key(key, 0.5f);
     }
@@ -1166,8 +1167,8 @@ TEST(camera, process_key_dt_zero_is_noop)
     c.orientation = quat::identity();
     const vec3 e_before = c.eye();
     const float d_before = c.distance;
-    for (auto key : { platform::Key::A, platform::Key::D, platform::Key::W, platform::Key::S, platform::Key::Plus,
-                      platform::Key::Minus })
+    for (auto key : { terminal_input::Key::A, terminal_input::Key::D, terminal_input::Key::W, terminal_input::Key::S,
+                      terminal_input::Key::Plus, terminal_input::Key::Minus })
     {
         c.process_key(key, 0.0f);
     }

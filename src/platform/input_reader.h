@@ -1,6 +1,6 @@
 #pragma once
 
-#include "src/platform/input.h"
+#include "src/terminal/input.h"
 
 #include <algorithm>
 #include <chrono>
@@ -158,7 +158,7 @@ namespace platform
         detail::pending().refills = 0;
     }
 
-    inline InputEvent poll_event()
+    inline terminal_input::InputEvent poll_event()
     {
         detail::Pending &p = detail::pending();
 
@@ -181,7 +181,7 @@ namespace platform
             if (p.skipping)
             {
                 // A skipped sequence has a missing middle and must never be decoded.
-                const int end = detail::skip_scan(p.buf, p.len);
+                const int end = terminal_input::detail::skip_scan(p.buf, p.len);
                 if (end > 0)
                 {
                     consume(end);
@@ -192,11 +192,11 @@ namespace platform
             }
             else
             {
-                const detail::ParseResult r = detail::parse_input(p.buf, p.len);
-                if (r.kind != detail::ParseResult::Kind::Incomplete)
+                const terminal_input::detail::ParseResult r = terminal_input::detail::parse_input(p.buf, p.len);
+                if (r.kind != terminal_input::detail::ParseResult::Kind::Incomplete)
                 {
                     consume(r.consumed);
-                    if (r.kind == detail::ParseResult::Kind::Complete)
+                    if (r.kind == terminal_input::detail::ParseResult::Kind::Complete)
                     {
                         return r.event;
                     }
@@ -215,7 +215,7 @@ namespace platform
             if (p.refills >= detail::MAX_REFILLS_PER_PASS)
             {
                 end_input_pass();
-                return InputEvent{};
+                return terminal_input::InputEvent{};
             }
             p.refills++;
             const int just_read = detail::refill(p);
@@ -254,7 +254,7 @@ namespace platform
 
             // Type::None ends the caller's drain pass.
             end_input_pass();
-            return InputEvent{};
+            return terminal_input::InputEvent{};
         }
     }
 
