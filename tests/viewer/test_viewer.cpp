@@ -10,9 +10,9 @@ namespace
 {
     using Clock = std::chrono::steady_clock;
 
-    platform::InputEvent key(platform::Key value)
+    terminal_input::InputEvent key(terminal_input::Key value)
     {
-        return { platform::InputEvent::Type::Key, value };
+        return { terminal_input::InputEvent::Type::Key, value };
     }
 
     Clock::duration seconds(float value)
@@ -20,9 +20,9 @@ namespace
         return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<float>(value));
     }
 
-    platform::InputEvent mouse(platform::InputEvent::Type type, int x, int y)
+    terminal_input::InputEvent mouse(terminal_input::InputEvent::Type type, int x, int y)
     {
-        return { type, platform::Key::None, x, y };
+        return { type, terminal_input::Key::None, x, y };
     }
 } // namespace
 
@@ -37,11 +37,12 @@ TEST(viewer, reset_restores_launch_settings_and_clears_held_key)
     viewer::InputController input(true, true);
     const Clock::time_point start{};
 
-    ASSERT_TRUE(input.handle(key(platform::Key::Plus), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::Plus), state, 80, 24, start));
     ASSERT_TRUE(input.advance(state, 0.05f, start + std::chrono::milliseconds(50)));
     ASSERT_TRUE(state.camera.distance != launch.distance);
-    for (const platform::Key k : { platform::Key::Num1, platform::Key::B, platform::Key::K, platform::Key::Space,
-                                   platform::Key::L, platform::Key::C, platform::Key::T })
+    for (const terminal_input::Key k :
+         { terminal_input::Key::Num1, terminal_input::Key::B, terminal_input::Key::K, terminal_input::Key::Space,
+           terminal_input::Key::L, terminal_input::Key::C, terminal_input::Key::T })
     {
         ASSERT_TRUE(input.handle(key(k), state, 80, 24, start));
     }
@@ -52,7 +53,7 @@ TEST(viewer, reset_restores_launch_settings_and_clears_held_key)
     ASSERT_TRUE(state.settings.lighting != LightingMode::Dual);
     ASSERT_TRUE(state.settings.wireframe_color != WireframeColor::White);
     ASSERT_FALSE(state.settings.texturing);
-    ASSERT_TRUE(input.handle(key(platform::Key::R), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::R), state, 80, 24, start));
 
     ASSERT_EQ(state.settings.shading, ShadingMode::Flat);
     ASSERT_EQ(state.settings.background, Background::Gray);
@@ -71,7 +72,7 @@ TEST(viewer, held_key_expires_from_supplied_time)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(true, false);
     const Clock::time_point start{};
-    ASSERT_TRUE(input.handle(key(platform::Key::Plus), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::Plus), state, 80, 24, start));
     ASSERT_TRUE(input.advance(state, 0.01f, start + std::chrono::milliseconds(99)));
     ASSERT_FALSE(input.advance(state, 0.01f, start + std::chrono::milliseconds(101)));
 }
@@ -98,7 +99,7 @@ TEST(viewer, key_tap_lands_within_a_frame_of_one_wheel_notch)
             viewer::ViewerState state(args, launch);
             viewer::InputController input(true, false);
             const Clock::time_point pressed{};
-            ASSERT_TRUE(input.handle(key(platform::Key::Plus), state, 80, 24, pressed));
+            ASSERT_TRUE(input.handle(key(terminal_input::Key::Plus), state, 80, 24, pressed));
             Clock::time_point now = pressed + seconds(p.press_frame * (static_cast<float>(i) / 16.0f));
             float dt = p.press_frame;
             while (input.advance(state, dt, now))
@@ -152,9 +153,9 @@ TEST(viewer, disabled_input_drains_without_changing_state)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(false, true);
     const Clock::time_point start{};
-    ASSERT_FALSE(input.handle(key(platform::Key::Num1), state, 80, 24, start));
-    ASSERT_FALSE(input.handle(mouse(platform::InputEvent::Type::MousePress, 1, 1), state, 80, 24, start));
-    ASSERT_FALSE(input.handle(mouse(platform::InputEvent::Type::MouseMove, 2, 1), state, 80, 24, start));
+    ASSERT_FALSE(input.handle(key(terminal_input::Key::Num1), state, 80, 24, start));
+    ASSERT_FALSE(input.handle(mouse(terminal_input::InputEvent::Type::MousePress, 1, 1), state, 80, 24, start));
+    ASSERT_FALSE(input.handle(mouse(terminal_input::InputEvent::Type::MouseMove, 2, 1), state, 80, 24, start));
     ASSERT_EQ(state.settings.shading, ShadingMode::Phong);
     ASSERT_EQ(state.camera.orientation.w, 1.0f);
 }
@@ -165,13 +166,13 @@ TEST(viewer, terminal_replies_are_not_viewer_input)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(true, false);
     const Clock::time_point start{};
-    ASSERT_FALSE(input.handle({ platform::InputEvent::Type::None }, state, 80, 24, start));
-    ASSERT_FALSE(
-        input.handle({ platform::InputEvent::Type::CellSize, platform::Key::None, 10, 20 }, state, 80, 24, start)
-    );
-    ASSERT_FALSE(
-        input.handle({ platform::InputEvent::Type::SixelGeometry, platform::Key::None, 400, 300 }, state, 80, 24, start)
-    );
+    ASSERT_FALSE(input.handle({ terminal_input::InputEvent::Type::None }, state, 80, 24, start));
+    ASSERT_FALSE(input.handle(
+        { terminal_input::InputEvent::Type::CellSize, terminal_input::Key::None, 10, 20 }, state, 80, 24, start
+    ));
+    ASSERT_FALSE(input.handle(
+        { terminal_input::InputEvent::Type::SixelGeometry, terminal_input::Key::None, 400, 300 }, state, 80, 24, start
+    ));
 }
 
 TEST(viewer, texture_toggle_requires_a_texture)
@@ -180,10 +181,10 @@ TEST(viewer, texture_toggle_requires_a_texture)
     viewer::ViewerState state(args, Camera{});
     const Clock::time_point start{};
     viewer::InputController no_textures(true, false);
-    ASSERT_TRUE(no_textures.handle(key(platform::Key::T), state, 80, 24, start));
+    ASSERT_TRUE(no_textures.handle(key(terminal_input::Key::T), state, 80, 24, start));
     ASSERT_TRUE(state.settings.texturing);
     viewer::InputController textures(true, true);
-    ASSERT_TRUE(textures.handle(key(platform::Key::T), state, 80, 24, start));
+    ASSERT_TRUE(textures.handle(key(terminal_input::Key::T), state, 80, 24, start));
     ASSERT_FALSE(state.settings.texturing);
 }
 
@@ -193,9 +194,9 @@ TEST(viewer, orbit_vertical_keys_leave_held_movement_intact)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(true, false);
     const Clock::time_point start{};
-    ASSERT_TRUE(input.handle(key(platform::Key::Plus), state, 80, 24, start));
-    ASSERT_TRUE(input.handle(key(platform::Key::E), state, 80, 24, start + std::chrono::milliseconds(10)));
-    ASSERT_TRUE(input.handle(key(platform::Key::V), state, 80, 24, start + std::chrono::milliseconds(20)));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::Plus), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::E), state, 80, 24, start + std::chrono::milliseconds(10)));
+    ASSERT_TRUE(input.handle(key(terminal_input::Key::V), state, 80, 24, start + std::chrono::milliseconds(20)));
     ASSERT_TRUE(input.advance(state, 0.05f, start + std::chrono::milliseconds(90)));
     ASSERT_TRUE(state.camera.distance < Camera{}.distance);
 }
@@ -206,10 +207,10 @@ TEST(viewer, impossible_mouse_delta_reseeds_drag)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(true, false);
     const Clock::time_point start{};
-    ASSERT_TRUE(input.handle(mouse(platform::InputEvent::Type::MousePress, 1, 1), state, 80, 24, start));
-    ASSERT_TRUE(input.handle(mouse(platform::InputEvent::Type::MouseMove, 100, 100), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(mouse(terminal_input::InputEvent::Type::MousePress, 1, 1), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(mouse(terminal_input::InputEvent::Type::MouseMove, 100, 100), state, 80, 24, start));
     ASSERT_EQ(state.camera.orientation.w, 1.0f);
-    ASSERT_TRUE(input.handle(mouse(platform::InputEvent::Type::MouseMove, 101, 100), state, 80, 24, start));
+    ASSERT_TRUE(input.handle(mouse(terminal_input::InputEvent::Type::MouseMove, 101, 100), state, 80, 24, start));
     ASSERT_TRUE(state.camera.orientation.w < 1.0f);
 }
 
@@ -219,8 +220,8 @@ TEST(viewer, zero_grid_mouse_move_does_not_corrupt_camera)
     viewer::ViewerState state(args, Camera{});
     viewer::InputController input(true, false);
     const Clock::time_point start{};
-    ASSERT_TRUE(input.handle(mouse(platform::InputEvent::Type::MousePress, 3, 3), state, 0, 0, start));
-    ASSERT_TRUE(input.handle(mouse(platform::InputEvent::Type::MouseMove, 3, 3), state, 0, 0, start));
+    ASSERT_TRUE(input.handle(mouse(terminal_input::InputEvent::Type::MousePress, 3, 3), state, 0, 0, start));
+    ASSERT_TRUE(input.handle(mouse(terminal_input::InputEvent::Type::MouseMove, 3, 3), state, 0, 0, start));
     ASSERT_TRUE(std::isfinite(state.camera.orientation.x));
     ASSERT_TRUE(std::isfinite(state.camera.orientation.y));
     ASSERT_TRUE(std::isfinite(state.camera.orientation.z));
@@ -234,16 +235,16 @@ TEST(viewer, scroll_respects_orbit_bounds_and_first_person_steps)
     viewer::InputController input(true, false);
     const Clock::time_point start{};
     state.camera.distance = state.camera.near_plane * 2.01f;
-    ASSERT_TRUE(input.handle({ platform::InputEvent::Type::ScrollUp }, state, 80, 24, start));
+    ASSERT_TRUE(input.handle({ terminal_input::InputEvent::Type::ScrollUp }, state, 80, 24, start));
     ASSERT_NEAR(state.camera.distance, state.camera.near_plane * 2.0f, 1e-6f);
     state.camera.distance = state.camera.max_eye_distance();
-    ASSERT_TRUE(input.handle({ platform::InputEvent::Type::ScrollDown }, state, 80, 24, start));
+    ASSERT_TRUE(input.handle({ terminal_input::InputEvent::Type::ScrollDown }, state, 80, 24, start));
     ASSERT_NEAR(state.camera.distance, state.camera.max_eye_distance(), 1e-6f);
 
     state.camera.first_person = true;
     const float speed = state.camera.fp_speed;
-    ASSERT_TRUE(input.handle({ platform::InputEvent::Type::ScrollUp }, state, 80, 24, start));
+    ASSERT_TRUE(input.handle({ terminal_input::InputEvent::Type::ScrollUp }, state, 80, 24, start));
     ASSERT_NEAR(state.camera.fp_speed, speed * Camera::FP_SPEED_WHEEL_STEP, 1e-6f);
-    ASSERT_TRUE(input.handle({ platform::InputEvent::Type::ScrollDown }, state, 80, 24, start));
+    ASSERT_TRUE(input.handle({ terminal_input::InputEvent::Type::ScrollDown }, state, 80, 24, start));
     ASSERT_NEAR(state.camera.fp_speed, speed, 1e-6f);
 }

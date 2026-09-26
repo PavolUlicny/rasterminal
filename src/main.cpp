@@ -4,7 +4,6 @@
 #include "src/math/linalg.h"
 #include "src/platform/console.h"
 #include "src/platform/control.h"
-#include "src/platform/input.h"
 #include "src/platform/input_reader.h"
 #include "src/platform/terminal_io.h"
 #include "src/platform/terminal_query.h"
@@ -17,6 +16,7 @@
 #include "src/terminal/geometry.h"
 #include "src/terminal/graphics.h"
 #include "src/terminal/hud.h"
+#include "src/terminal/input.h"
 #include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/input_controller.h"
@@ -153,7 +153,7 @@ namespace
     // Apply the escape-reply sanity bound to ioctl-derived cell sizes too.
     constexpr bool valid_cell_px(int v) noexcept
     {
-        return v >= 1 && v <= platform::detail::MAX_CELL_REPORT_PX;
+        return v >= 1 && v <= terminal_input::detail::MAX_CELL_REPORT_PX;
     }
 
     using terminal_geometry::FbSize;
@@ -877,25 +877,25 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 {
                     break;
                 }
-                const platform::InputEvent ev = platform::poll_event();
-                if (ev.type == platform::InputEvent::Type::None)
+                const terminal_input::InputEvent ev = platform::poll_event();
+                if (ev.type == terminal_input::InputEvent::Type::None)
                 {
                     break;
                 }
                 // Q remains active with --no-input.
-                if (ev.type == platform::InputEvent::Type::Key && ev.key == platform::Key::Q)
+                if (ev.type == terminal_input::InputEvent::Type::Key && ev.key == terminal_input::Key::Q)
                 {
                     running = false;
                     break;
                 }
 
                 // Terminal geometry remains active with --no-input.
-                if (ev.type == platform::InputEvent::Type::CellSize)
+                if (ev.type == terminal_input::InputEvent::Type::CellSize)
                 {
                     geometry.accept_cell_size(ev.x, ev.y);
                     continue;
                 }
-                if (ev.type == platform::InputEvent::Type::SixelGeometry)
+                if (ev.type == terminal_input::InputEvent::Type::SixelGeometry)
                 {
                     geometry.accept_sixel_geometry(ev.x, ev.y);
                     continue;

@@ -1,6 +1,6 @@
 #include "src/render/camera.h"
 #include "src/math/linalg.h"
-#include "src/platform/input.h"
+#include "src/terminal/input.h"
 
 #include <cmath>
 
@@ -141,7 +141,7 @@ void Camera::spin_world_y(float radians)
     orientation = normalize(r * orientation);
 }
 
-void Camera::process_key(platform::Key key, float dt)
+void Camera::process_key(terminal_input::Key key, float dt)
 {
     const float orbit_speed = 2.5f;
 
@@ -152,40 +152,40 @@ void Camera::process_key(platform::Key key, float dt)
         const float look_speed = fov;
         switch (key)
         {
-        case platform::Key::W:
+        case terminal_input::Key::W:
             move(1.0f, 0.0f, 0.0f, dt);
             break;
-        case platform::Key::S:
+        case terminal_input::Key::S:
             move(-1.0f, 0.0f, 0.0f, dt);
             break;
-        case platform::Key::D:
+        case terminal_input::Key::D:
             move(0.0f, 1.0f, 0.0f, dt);
             break;
-        case platform::Key::A:
+        case terminal_input::Key::A:
             move(0.0f, -1.0f, 0.0f, dt);
             break;
-        case platform::Key::E:
+        case terminal_input::Key::E:
             move(0.0f, 0.0f, 1.0f, dt);
             break;
-        case platform::Key::V:
+        case terminal_input::Key::V:
             move(0.0f, 0.0f, -1.0f, dt);
             break;
-        case platform::Key::Left:
+        case terminal_input::Key::Left:
             look(-look_speed * dt, 0.0f);
             break;
-        case platform::Key::Right:
+        case terminal_input::Key::Right:
             look(look_speed * dt, 0.0f);
             break;
-        case platform::Key::Up:
+        case terminal_input::Key::Up:
             look(0.0f, look_speed * dt);
             break;
-        case platform::Key::Down:
+        case terminal_input::Key::Down:
             look(0.0f, -look_speed * dt);
             break;
-        case platform::Key::Plus:
+        case terminal_input::Key::Plus:
             adjust_speed(speed_key_factor(dt));
             break;
-        case platform::Key::Minus:
+        case terminal_input::Key::Minus:
             adjust_speed(1.0f / speed_key_factor(dt));
             break;
         default:
@@ -198,26 +198,26 @@ void Camera::process_key(platform::Key key, float dt)
 
     switch (key)
     {
-    case platform::Key::A:
-    case platform::Key::Left:
+    case terminal_input::Key::A:
+    case terminal_input::Key::Left:
         orbit(-orbit_speed * dt, 0.0f);
         break;
-    case platform::Key::D:
-    case platform::Key::Right:
+    case terminal_input::Key::D:
+    case terminal_input::Key::Right:
         orbit(orbit_speed * dt, 0.0f);
         break;
-    case platform::Key::W:
-    case platform::Key::Up:
+    case terminal_input::Key::W:
+    case terminal_input::Key::Up:
         orbit(0.0f, orbit_speed * dt);
         break;
-    case platform::Key::S:
-    case platform::Key::Down:
+    case terminal_input::Key::S:
+    case terminal_input::Key::Down:
         orbit(0.0f, -orbit_speed * dt);
         break;
-    case platform::Key::Plus:
+    case terminal_input::Key::Plus:
         distance -= zoom_speed * dt;
         break;
-    case platform::Key::Minus:
+    case terminal_input::Key::Minus:
         distance += zoom_speed * dt;
         break;
     default:

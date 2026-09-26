@@ -1,7 +1,7 @@
 #pragma once
 
 #include "src/math/linalg.h"
-#include "src/platform/input.h"
+#include "src/terminal/input.h"
 
 struct Camera
 {
@@ -46,7 +46,7 @@ struct Camera
     [[nodiscard]] mat4 projection(int pixel_width, int pixel_height) const;
 
     // Apply one key for `dt` seconds.
-    void process_key(platform::Key key, float dt);
+    void process_key(terminal_input::Key key, float dt);
 
     // Rotate using the active mode's pivot and pitch rules.
     void look(float dx, float dy);

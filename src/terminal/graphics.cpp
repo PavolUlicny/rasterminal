@@ -1,6 +1,6 @@
 #include "src/terminal/graphics.h"
 
-#include "src/platform/input.h" // the shared grammar: detail::is_string_introducer / scan_to_csi_final /
+#include "src/terminal/input.h" // the shared grammar: detail::is_string_introducer / scan_to_csi_final /
                                 // parse_cell_size_body / parse_sixel_geometry_body / MAX_CSI_PARAM_VALUE
 #include "src/terminal/kitty.h" // QUERY_ID, so the reply match cannot drift from the query
 
@@ -26,7 +26,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
         }
         const char c1 = buf[i + 1];
 
-        if (platform::detail::is_string_introducer(c1))
+        if (terminal_input::detail::is_string_introducer(c1))
         {
             // BEL ends OSC; ST ends every string family. Kitty replies use APC.
             const bool bel_terminates = c1 == ']';
@@ -109,12 +109,12 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
 
         if (c1 == '[')
         {
-            const platform::detail::Scan s = platform::detail::scan_to_csi_final(buf, len, i + 2);
-            if (s.kind == platform::detail::Scan::Kind::Incomplete)
+            const terminal_input::detail::Scan s = terminal_input::detail::scan_to_csi_final(buf, len, i + 2);
+            if (s.kind == terminal_input::detail::Scan::Kind::Incomplete)
             {
                 break;
             }
-            if (s.kind == platform::detail::Scan::Kind::Boundary)
+            if (s.kind == terminal_input::detail::Scan::Kind::Boundary)
             {
                 // Drop a truncated CSI but preserve the next introducer.
                 i = s.index;
@@ -135,7 +135,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                 // Reuse the mid-session XTWINOPS cell-size parser.
                 int w = 0;
                 int h = 0;
-                if (platform::detail::parse_cell_size_body(buf, i + 2, s.index, w, h))
+                if (terminal_input::detail::parse_cell_size_body(buf, i + 2, s.index, w, h))
                 {
                     out.cell_w = w;
                     out.cell_h = h;
@@ -146,7 +146,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                 // Reuse the mid-session XTSMGRAPHICS parser; ignore other items and failures.
                 int w = 0;
                 int h = 0;
-                if (platform::detail::parse_sixel_geometry_body(buf, i + 2, s.index, w, h))
+                if (terminal_input::detail::parse_sixel_geometry_body(buf, i + 2, s.index, w, h))
                 {
                     out.sixel_max_w = w;
                     out.sixel_max_h = h;
@@ -177,7 +177,7 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
                         tainted = true;
                         continue;
                     }
-                    if (v <= platform::detail::MAX_CSI_PARAM_VALUE)
+                    if (v <= terminal_input::detail::MAX_CSI_PARAM_VALUE)
                     {
                         v = (v * 10) + (ch - '0');
                     }
