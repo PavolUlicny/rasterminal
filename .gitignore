@@ -41,6 +41,8 @@ rasterminal_tests
 build*/
 
 .vscode/
+.claude/plans/
+.claude/settings.local.json
 
 perf.data
 perf.data.old
