@@ -6,8 +6,8 @@
 #include <string>
 
 // compose_hud is pure (state in, styled string out), so the whole layout is testable here with
-// no framebuffer and no fd redirection. What no byte-level test can decide (last-column erase
-// order, wrap state) lives in the framebuffer tests and the tmux recipe in CLAUDE.md.
+// no framebuffer and no fd redirection. Last-column erase order and wrap state depend on terminal
+// state; the framebuffer tests pin the byte order, and only a real terminal shows the result.
 
 namespace
 {

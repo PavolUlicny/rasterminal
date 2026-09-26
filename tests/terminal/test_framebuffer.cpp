@@ -640,7 +640,7 @@ TEST(framebuffer, hud_empty_emits_no_hud_escape)
 TEST(framebuffer, hud_erase_precedes_text_never_follows)
 {
     // Erase before drawing; trailing EL0 would remove a full-width line's last cell.
-    // Byte order is the unit-testable proxy for the rendered tmux check in CLAUDE.md.
+    // Only a real terminal shows the lost cell; byte order is the unit-testable proxy.
     Framebuffer fb(10, 4, /*headless=*/true);
     CaptureStdout cap;
     fb.set_hud("HUDMARK");
