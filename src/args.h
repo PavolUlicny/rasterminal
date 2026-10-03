@@ -1,6 +1,7 @@
 #pragma once
 
 #include "src/shading.h"
+#include "src/terminal/sixel.h"
 
 #include <cstdint>
 #include <string>
@@ -71,13 +72,14 @@ struct ParsedArgs
     WireframeColor wireframe_color = WireframeColor::White;
     ColorChoice color = ColorChoice::Auto;
     GraphicsChoice graphics = GraphicsChoice::Auto;
-    int fps = 30;               // 0 = uncapped (set by bare -f), >0 = cap at this value
-    int bench = -1;             // -1 = off; >=1 = run this many measured frames headlessly
-    int bench_width = 200;      // headless framebuffer width in pixels
-    int bench_height = 120;     // headless framebuffer height in pixels
-    int bench_warmup = 20;      // warmup frames discarded before measurement (0 = none)
-    float smooth_angle = 60.0f; // crease angle (deg) for computed normals; 0=faceted, 180=fully smooth
-    float spin_speed = 45.0f;   // auto-rotation speed in degrees/sec; magnitude only, always > 0
+    sixel::ColorRange sixel_colors; // palette size range; min == max is a fixed size
+    int fps = 30;                   // 0 = uncapped (set by bare -f), >0 = cap at this value
+    int bench = -1;                 // -1 = off; >=1 = run this many measured frames headlessly
+    int bench_width = 200;          // headless framebuffer width in pixels
+    int bench_height = 120;         // headless framebuffer height in pixels
+    int bench_warmup = 20;          // warmup frames discarded before measurement (0 = none)
+    float smooth_angle = 60.0f;     // crease angle (deg) for computed normals; 0=faceted, 180=fully smooth
+    float spin_speed = 45.0f;       // auto-rotation speed in degrees/sec; magnitude only, always > 0
     SpinDirection spin_direction = SpinDirection::Left;
     float yaw = 0.0f;     // initial camera yaw in degrees, [-180, 180]
     float pitch = -17.2f; // initial camera pitch in degrees, [-180, 180] (rounding of the old fixed -0.3 rad tilt)

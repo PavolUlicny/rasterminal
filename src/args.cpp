@@ -3,6 +3,7 @@
 #include "src/platform/console.h"
 #include "src/render/camera.h" // FP_SPEED_{MIN,MAX}: --first-person-speed parses the interactive range
 #include "src/shading.h"
+#include "src/terminal/sixel.h"
 #include "src/version.h"
 
 #include <algorithm>
@@ -258,6 +259,57 @@ namespace
         );
     }
 
+    // auto (any case), N or MIN-MAX, each value a plain decimal in [2, MAX_REGISTERS], MIN <= MAX.
+    bool parse_sixel_colors(const char *prog, const char *flag, const char *val, sixel::ColorRange &out)
+    {
+        const auto fail = [prog, flag, val]()
+        {
+            std::fprintf(
+                stderr, "%s: %s: invalid value '%s' (expected auto, N or MIN-MAX with values in [2, %d])\n", prog, flag,
+                val, sixel::MAX_REGISTERS
+            );
+            return false;
+        };
+        if (to_lower(val) == "auto")
+        {
+            out = sixel::ColorRange{};
+            return true;
+        }
+        // Digits only: strtol would accept a sign or leading spaces, which a range cannot have.
+        const auto read = [](const char *&p, int &v)
+        {
+            v = 0;
+            const char *start = p;
+            while (*p >= '0' && *p <= '9' && p - start < 4)
+            {
+                v = (v * 10) + (*p - '0');
+                p++;
+            }
+            return p != start && v >= 2 && v <= sixel::MAX_REGISTERS;
+        };
+        const char *p = val;
+        int min = 0;
+        if (!read(p, min))
+        {
+            return fail();
+        }
+        int max = min;
+        if (*p == '-')
+        {
+            p++;
+            if (!read(p, max))
+            {
+                return fail();
+            }
+        }
+        if (*p != '\0' || min > max)
+        {
+            return fail();
+        }
+        out = { min, max };
+        return true;
+    }
+
     // ERANGE also rejects subnormal values, which are useless for these flags.
     bool parse_float(
         const char *prog, const char *flag, const char *val, bool (*valid)(float), const char *expected, float &out
@@ -384,6 +436,7 @@ namespace
         { "--smooth-angle", '\0', parse_member_value<&ParsedArgs::smooth_angle, parse_angle> },
         { "--color", '\0', parse_member_value<&ParsedArgs::color, parse_color> },
         { "--graphics", '\0', parse_member_value<&ParsedArgs::graphics, parse_graphics> },
+        { "--sixel-colors", '\0', parse_member_value<&ParsedArgs::sixel_colors, parse_sixel_colors> },
         { "--spin-speed", '\0', parse_member_value<&ParsedArgs::spin_speed, parse_spin_speed> },
         { "--spin-direction", '\0', parse_member_value<&ParsedArgs::spin_direction, parse_spin_direction> },
         { "--yaw", '\0', parse_member_value<&ParsedArgs::yaw, parse_orbit_angle> },
@@ -586,6 +639,11 @@ namespace
             "          --graphics <mode>      Rendering backend (default: auto)\n"
             "                                  kitty|sixel|blocks|auto\n"
             "                                  auto prefers kitty, then sixel, then blocks\n"
+            "          --sixel-colors <range> Sixel palette size (default: auto)\n"
+            "                                  auto|N|MIN-MAX, in [2, 256]; auto is 24-64\n"
+            "                                  a range adapts the size to each scene\n"
+            "                                  capped to the terminal's color registers\n"
+            "                                  no effect on kitty or blocks\n"
             "          --spin-speed DEG/S     Speed in degrees/sec (default: 45)\n"
             "          --spin-direction <d>   Auto-rotation direction (default: left)\n"
             "                                  left|right: model movement on screen\n"

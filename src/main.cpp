@@ -758,7 +758,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             gfx_cfg.rows = geometry.image_rows();
             gfx_cfg.origin_col = initial_size.origin_col;
             gfx_cfg.origin_row = initial_size.origin_row;
-            gfx_cfg.sixel_colors = sixel::cap_to_registers(sixel::ColorRange{}, gfx.sixel_registers);
+            gfx_cfg.sixel_colors = sixel::cap_to_registers(args.sixel_colors, gfx.sixel_registers);
         }
 
         // Renderer must outlive Framebuffer because its borrowed runner captures it.
