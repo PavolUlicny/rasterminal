@@ -56,12 +56,12 @@ At startup, rasterminal queries the terminal. It prefers kitty graphics, then si
 | Backend | Output | Notes |
 | --- | --- | --- |
 | Kitty | Native-resolution 24-bit image | Uses shared memory locally and compressed inline data over SSH |
-| Sixel | Native-resolution 240-color image | Supported by terminals such as foot, mlterm, xterm with sixel enabled, and Windows Terminal 1.22 or later |
+| Sixel | Native-resolution image with a palette fitted to each frame, 24 to 64 colors by default | Supported by terminals such as foot, mlterm, xterm with sixel enabled, and Windows Terminal 1.22 or later |
 | Half-blocks | Two vertical pixels per cell | Works in terminals with UTF-8 and ANSI color |
 
 Use `--graphics` to choose a backend. Kitty and sixel are unavailable under tmux and GNU screen because rasterminal does not implement protocol pass-through for those multiplexers.
 
-Busy sixel frames can exceed xterm's default `maxStringParse` limit. If frames disappear, start xterm with:
+Busy sixel frames can exceed xterm's default `maxStringParse` limit. Muted, detailed scenes produce the largest frames and reach it first. If frames disappear, start xterm with:
 
 ```sh
 xterm -xrm '*maxStringParse: 10000000'
@@ -208,6 +208,7 @@ String values are case-insensitive. Value flags accept `--flag value`, `--flag=v
 | --- | --- | --- | --- |
 | `--graphics` | none | `auto` | `kitty`, `sixel`, `blocks`, `auto` |
 | `--color` | none | `auto` | `truecolor`/`24bit`, `256`, `auto` |
+| `--sixel-colors` | none | `auto` | Sixel palette size: `N`, or `MIN-MAX` to adapt to each scene, in `[2, 256]`; `auto` is `24-64`. Smaller draws faster, larger keeps more colors. Capped to the terminal's color registers; no effect on kitty or blocks |
 | `--threads [N]` | `-j [N]` | hardware concurrency | Worker threads for loading and rendering; bare `-j` uses the default, and `N` is clamped to the CPU thread count |
 | `--fps [N]` | `-f [N]` | `30` | Frame cap; bare `-f` uncaps |
 | `--hud` / `--no-hud` | none | `shown` | HUD status line |
