@@ -451,6 +451,48 @@ namespace terminal_input
             return true;
         }
 
+        // Parse strict successful XTSMGRAPHICS `?1;0;<registers>` replies, the sixel colour
+        // register count. Only the startup batch asks for it.
+        inline bool parse_sixel_registers_body(const char *buf, int from, int to, int &registers)
+        {
+            if (from >= to || buf[from] != '?')
+            {
+                return false;
+            }
+            int nums[3] = {};
+            bool given[3] = {};
+            int ni = 0;
+            for (int i = from + 1; i < to; i++)
+            {
+                const char d = buf[i];
+                if (d == ';')
+                {
+                    if (ni >= 2)
+                    {
+                        return false; // a fourth parameter
+                    }
+                    ni++;
+                    continue;
+                }
+                if (!is_csi_param(d))
+                {
+                    return false;
+                }
+                nums[ni] = (nums[ni] * 10) + (d - '0');
+                given[ni] = true;
+                if (nums[ni] > MAX_CSI_PARAM_VALUE)
+                {
+                    return false; // bounds the multiply, like the SGR arm
+                }
+            }
+            if (ni != 2 || !given[0] || !given[1] || !given[2] || nums[0] != 1 || nums[1] != 0 || nums[2] < 1)
+            {
+                return false;
+            }
+            registers = nums[2];
+            return true;
+        }
+
         // Decode the resize-time XTSMGRAPHICS geometry reply.
         inline ParseResult parse_sixel_geometry_report(const char *buf, int fin)
         {

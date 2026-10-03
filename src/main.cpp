@@ -17,6 +17,7 @@
 #include "src/terminal/graphics.h"
 #include "src/terminal/hud.h"
 #include "src/terminal/input.h"
+#include "src/terminal/sixel.h"
 #include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/input_controller.h"
@@ -214,6 +215,8 @@ namespace
         // The terminal's max sixel image size (0 = unreported); see TermGraphics.
         int sixel_max_w = 0;
         int sixel_max_h = 0;
+        // The terminal's sixel colour register count (0 = unreported).
+        int sixel_registers = 0;
         // Set with exit_code 1; main prints it after restoring the terminal.
         const char *error = nullptr;
         int exit_code = -1;
@@ -369,6 +372,7 @@ namespace
             gfx.cell_h = tg.cell_h;
             gfx.sixel_max_w = tg.sixel_max_w;
             gfx.sixel_max_h = tg.sixel_max_h;
+            gfx.sixel_registers = tg.sixel_registers;
             // Auto prefers kitty to sixel. A forced choice masks the other pixel
             // backend, so --graphics sixel exercises sixel on terminals with both.
             if (tg.kitty && choice != GraphicsChoice::Sixel)
@@ -754,6 +758,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             gfx_cfg.rows = geometry.image_rows();
             gfx_cfg.origin_col = initial_size.origin_col;
             gfx_cfg.origin_row = initial_size.origin_row;
+            gfx_cfg.sixel_colors = sixel::cap_to_registers(sixel::ColorRange{}, gfx.sixel_registers);
         }
 
         // Renderer must outlive Framebuffer because its borrowed runner captures it.

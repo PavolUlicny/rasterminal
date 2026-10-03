@@ -21,6 +21,7 @@ namespace platform
         constexpr int GRAPHICS_REPLY_BUF = 512;
         inline constexpr char QUERY_CELL_SIZE[] = "\033[16t";
         inline constexpr char QUERY_SIXEL_GEOMETRY[] = "\033[?2;1;0S";
+        inline constexpr char QUERY_SIXEL_REGISTERS[] = "\033[?1;1;0S";
         constexpr int GRAPHICS_QUERY_TIMEOUT_MS = 1000;
 
         // Bounded query read: positive bytes, zero to retry, negative to stop.
@@ -152,6 +153,7 @@ namespace platform
         query += detail::QUERY_CELL_SIZE;
         query += "\033[c";
         query += detail::QUERY_SIXEL_GEOMETRY;
+        query += detail::QUERY_SIXEL_REGISTERS;
         query += "\033[5n";
         bool canceled = false;
         const bool flushed = std::fflush(stdout) == 0;
