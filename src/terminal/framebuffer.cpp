@@ -6,6 +6,7 @@
 #include "src/terminal/graphics.h" // GraphicsBackend
 #include "src/terminal/kitty.h"    // escape composition for the kitty backend
 #include "src/terminal/sixel.h"    // escape composition for the sixel backend
+#include "src/terminal/sixel_palette.h"
 
 #include "miniz.h" // zlib deflate for the kitty direct transport; config macros come from the build
 
@@ -16,6 +17,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace
@@ -115,21 +117,6 @@ namespace
             buf.reset(new unsigned char[need]);
             cap = need;
         }
-    }
-
-    // Redefine all registers each frame because the palette is shared terminal state.
-    const std::string &xterm_register_block()
-    {
-        static const std::string block = []
-        {
-            std::string s;
-            for (int j = 0; j < 240; j++)
-            {
-                sixel::append_register(s, j, quant256_palette_entry(j));
-            }
-            return s;
-        }();
-        return block;
     }
 
     // Synchronized-output open bracket (mode 2026); end_frame keys its empty-frame
@@ -737,35 +724,28 @@ void Framebuffer::present_kitty()
     end_frame();
 }
 
-// Map pixels onto the fixed 240-entry palette, splitting independent ranges
-// across the borrowed worker pool.
-void Framebuffer::quantize_to_palette(size_t npx)
+// Map rows onto the fitted palette, splitting row ranges across the borrowed worker pool.
+// Rows are independent: the run bias never crosses a row boundary.
+void Framebuffer::map_to_palette()
 {
-    const uint8_t *lut = quant256_lut().data();
+    const sixel::FittedPalette *palette = m_palette.get();
     unsigned char *idx = m_idx.get();
     const std::atomic<uint64_t> *px = m_pixel.data();
+    const int px_w = m_width;
 
-    const auto quantize_range = [lut, idx, px](size_t lo, size_t hi) noexcept
-    {
-        for (size_t i = lo; i < hi; i++)
-        {
-            // Packed-word indexing: quant256_idx_packed ignores bits 24+, so
-            // neither COLOR_MASK nor the Color round trip is needed.
-            idx[i] = static_cast<unsigned char>(
-                lut[quant256_idx_packed(static_cast<uint32_t>(px[i].load(std::memory_order_relaxed)))] - 16u
-            );
-        }
-    };
+    const auto map_range = [palette, idx, px, px_w](size_t lo, size_t hi) noexcept
+    { palette->map_rows(px, px_w, static_cast<int>(lo), static_cast<int>(hi), idx); };
 
     // Below this the dispatch round trip costs more than the loop it saves.
     constexpr size_t MIN_PARALLEL_PIXELS = size_t{ 1 } << 18u;
-    if (!m_par.usable() || npx < MIN_PARALLEL_PIXELS)
+    const auto rows = static_cast<size_t>(m_height);
+    if (!m_par.usable() || m_pixel.size() < MIN_PARALLEL_PIXELS)
     {
-        quantize_range(0, npx);
+        map_range(0, rows);
         return;
     }
-    // An uncovered range leaves indices uninitialized; split_ranges redoes it serially.
-    split_ranges(m_par, m_par_covered, npx, quantize_range);
+    // An uncovered range leaves registers uninitialized; split_ranges redoes it serially.
+    split_ranges(m_par, m_par_covered, rows, map_range);
 }
 
 // Encode independent sixel band ranges in parallel, then concatenate them in
@@ -778,7 +758,7 @@ void Framebuffer::encode_sixel_frame()
     // so header, bands, and footer agree on whether a frame exists.
     if (m_width <= 0 || !m_par.usable() || bands < workers * 2)
     {
-        sixel::append_frame(m_buf, idx_plane(), m_width, m_height, xterm_register_block(), m_sixel_scratch);
+        sixel::append_frame(m_buf, idx_plane(), m_width, m_height, m_palette->register_block(), m_sixel_scratch);
         return;
     }
 
@@ -799,7 +779,7 @@ void Framebuffer::encode_sixel_frame()
     std::vector<uint8_t> *covered = &m_par_covered;
 
     const size_t before_header = m_buf.size();
-    sixel::append_header(m_buf, px_w, px_h, xterm_register_block());
+    sixel::append_header(m_buf, px_w, px_h, m_palette->register_block());
     m_par.run(
         [parts, scratch, covered, idx, px_w, px_h, bands](int worker_id, int n_workers)
         {
@@ -826,7 +806,7 @@ void Framebuffer::encode_sixel_frame()
     if (!complete)
     {
         m_buf.resize(before_header);
-        sixel::append_frame(m_buf, idx, px_w, px_h, xterm_register_block(), m_sixel_scratch);
+        sixel::append_frame(m_buf, idx, px_w, px_h, m_palette->register_block(), m_sixel_scratch);
         return;
     }
     for (const std::string &part : m_sixel_parts)
@@ -849,9 +829,18 @@ void Framebuffer::present_sixel()
         // Position the cursor before sixel paints, accounting for centered capped
         // images. Its final cursor position is irrelevant because the HUD uses absolute positioning.
         append_cursor_pos(m_gfx.origin_row, m_gfx.origin_col);
-        const size_t npx = m_pixel.size();
-        ensure_capacity(m_idx, m_idx_cap, npx);
-        quantize_to_palette(npx);
+        ensure_capacity(m_idx, m_idx_cap, m_pixel.size());
+        if (!m_palette)
+        {
+            m_palette = std::make_unique<sixel::FittedPalette>(24);
+        }
+        std::optional<uint32_t> required;
+        if (m_required)
+        {
+            required = pack_color(*m_required);
+        }
+        m_palette->update(m_pixel.data(), m_width, m_height, m_clear_rgb, required);
+        map_to_palette();
         encode_sixel_frame();
         m_image_dirty = false;
     }

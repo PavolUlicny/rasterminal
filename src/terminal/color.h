@@ -31,7 +31,7 @@ enum class ColorMode : uint8_t
 };
 
 // A 256 KB LUT maps six high bits per RGB channel to the nearest non-system xterm color
-// by deltaE76. Palette colors round-trip exactly. The first 256-color or sixel frame builds it.
+// by deltaE76. Palette colors round-trip exactly. The first 256-color blocks frame builds it.
 inline constexpr size_t QUANT256_LUT_SIZE = size_t{ 64 } * 64u * 64u;
 
 // Defined in color.cpp; the first call builds the table (thread-safe magic static).

@@ -71,6 +71,6 @@ inline Color srgb8_from_cielab(Lab lab)
     const float r = (3.2404542f * x) - (1.5371385f * y) - (0.4985314f * z);
     const float g = (-0.9692660f * x) + (1.8760108f * y) + (0.0415560f * z);
     const float b = (0.0556434f * x) - (0.2040259f * y) + (1.0572252f * z);
-    const auto to8 = [](float v) { return static_cast<uint8_t>((linear_to_srgb(v) * 255.0f) + 0.5f); };
+    const auto to8 = [](float v) { return static_cast<uint8_t>(std::lround(linear_to_srgb(v) * 255.0f)); };
     return { to8(r), to8(g), to8(b) };
 }

@@ -34,6 +34,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -928,6 +929,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 const vec3 cur_ambient = lighting_ambient(state.settings.lighting, ambient);
                 renderer.mode = state.settings.shading;
                 renderer.wireframe_color = wireframe_color_of(state.settings.wireframe_color);
+                fb.set_required_color(
+                    state.settings.shading == ShadingMode::Wireframe ? std::optional<Color>(renderer.wireframe_color)
+                                                                     : std::nullopt
+                );
                 renderer.cull_backfaces = state.settings.culling;
                 renderer.show_texture = state.settings.texturing;
                 renderer.render(mesh, state.camera, lights, n_lights, cur_ambient, fb);
