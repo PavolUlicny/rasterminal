@@ -53,6 +53,8 @@ struct GraphicsConfig
     // 1-based sixel origin; ignored by kitty.
     int origin_col = 1;
     int origin_row = 1;
+    // Sixel palette size range, already capped to the terminal's register count.
+    sixel::ColorRange sixel_colors;
 };
 
 class Framebuffer

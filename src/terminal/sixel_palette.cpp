@@ -27,6 +27,21 @@ namespace
     // 0.05 dE when the fresh fit is nearly exact.
     constexpr double KEEP_RATIO = 1.05;
     constexpr double KEEP_SLACK = 0.05;
+    // The mean hides small regions: 0.1% of the frame shown 40 dE off adds 0.04 dE. So a cell
+    // also refits when the current entries show it this many dE worse than a fresh fit does
+    // and it holds this per mille of the unpinned samples and at least this many. Below the
+    // floor a region keeps its old entry until the next refit, so stray samples of a tiny model
+    // cannot refit every frame. On rotating scenes this showed as few colours badly as
+    // refitting every frame, at about twice the refits of the mean test alone.
+    constexpr double STALE_DE = 8.0;
+    constexpr std::size_t STALE_SHARE_PERMILLE = 1;
+    constexpr float STALE_MIN_SAMPLES = 2.0f;
+    // Adaptive ranges step up while a fit's mean error over the unpinned samples exceeds this
+    // many dE. Counting the exact pinned samples would tie the size to the background's
+    // coverage. A smaller size must beat the threshold by this factor, so a scene sitting at
+    // the threshold does not flap between two sizes.
+    constexpr double STEP_UP_DE = 2.5;
+    constexpr double STEP_DOWN_BAND = 1.1;
 
     constexpr std::size_t TABLE_CELLS = QUANT256_LUT_SIZE;
 
@@ -44,10 +59,13 @@ namespace
         return (dl * dl) + (da * da) + (db * db);
     }
 
-    // Nearest entry to each cell, written to `assignment` when given; returns the
-    // count-weighted sum of distances and the total weight.
+    // Nearest entry to each cell, written to `assignment` when given, and its distance, written
+    // to `distances` when given; returns the count-weighted sum of distances and the total weight.
     std::pair<double, double> assign_cells(
-        const sixel::detail::Cells &cells, const sixel::detail::LabEntries &e, std::vector<uint8_t> *assignment
+        const sixel::detail::Cells &cells,
+        const sixel::detail::LabEntries &e,
+        std::vector<uint8_t> *assignment,
+        std::vector<float> *distances
     )
     {
         double sum = 0.0;
@@ -85,7 +103,12 @@ namespace
                 {
                     (*assignment)[i0 + i] = static_cast<uint8_t>(best_j[i]);
                 }
-                sum += static_cast<double>(cells.weight[i0 + i]) * static_cast<double>(std::sqrt(best_d[i]));
+                const float d = std::sqrt(best_d[i]);
+                if (distances != nullptr)
+                {
+                    (*distances)[i0 + i] = d;
+                }
+                sum += static_cast<double>(cells.weight[i0 + i]) * static_cast<double>(d);
                 weight += static_cast<double>(cells.weight[i0 + i]);
             }
         }
@@ -97,6 +120,22 @@ namespace sixel
 {
     namespace detail
     {
+        std::vector<int> ladder(ColorRange range)
+        {
+            const int min = std::clamp(range.min, 1, MAX_REGISTERS);
+            const int max = std::clamp(range.max, min, MAX_REGISTERS);
+            std::vector<int> sizes = { min };
+            while (sizes.back() < max)
+            {
+                const int prev = sizes.back();
+                const int next = ((prev * 4) + 2) / 3; // ceil(prev * 4 / 3)
+                const int step = next < 16 ? 4 : 8;
+                const int rounded = ((next + step - 1) / step) * step;
+                sizes.push_back(std::min(std::max(rounded, prev + 1), max));
+            }
+            return sizes;
+        }
+
         int sample_positions(int width, int height, std::vector<std::size_t> &out)
         {
             if (width <= 0 || height <= 0)
@@ -403,9 +442,13 @@ namespace sixel
             }
         }
 
-        double mean_error(const Cells &cells, const LabEntries &entries)
+        double mean_error(const Cells &cells, const LabEntries &entries, std::vector<float> *distances)
         {
-            const auto [sum, weight] = assign_cells(cells, entries, nullptr);
+            if (distances != nullptr)
+            {
+                distances->resize(cells.size());
+            }
+            const auto [sum, weight] = assign_cells(cells, entries, nullptr, distances);
             return weight > 0.0 ? sum / weight : 0.0;
         }
 
@@ -421,7 +464,7 @@ namespace sixel
             std::array<double, 256> sum_w{};
             for (int pass = 0; pass < passes; pass++)
             {
-                (void)assign_cells(cells, centroids, &assignment);
+                (void)assign_cells(cells, centroids, &assignment, nullptr);
                 if (pass > 0 && assignment == previous)
                 {
                     return;
@@ -570,10 +613,10 @@ namespace sixel
         }
     } // namespace detail
 
-    FittedPalette::FittedPalette(int colors)
-        : m_budget(std::clamp(colors, 1, MAX_REGISTERS)),
-          m_table(std::make_unique<std::atomic<uint32_t>[]>(TABLE_CELLS))
+    FittedPalette::FittedPalette(ColorRange range)
+        : m_ladder(detail::ladder(range)), m_table(std::make_unique<std::atomic<uint32_t>[]>(TABLE_CELLS))
     {
+        m_snapshots.resize(m_ladder.size());
         m_sample.reserve(static_cast<std::size_t>(detail::MAX_SAMPLES));
         for (std::size_t i = 0; i < TABLE_CELLS; i++)
         {
@@ -587,51 +630,54 @@ namespace sixel
     {
         m_prev_pins.swap(m_pins);
         m_pins.clear();
-        const auto add = [this](Color c)
+        std::size_t pinned = 0;
+        const auto add = [this, &pinned](uint32_t rgb, std::size_t samples)
         {
+            const Color c = unpack(rgb);
             if (std::find(m_pins.begin(), m_pins.end(), c) == m_pins.end())
             {
                 m_pins.push_back(c);
+                pinned += samples;
             }
         };
+        const auto samples_of = [this](uint32_t rgb)
+        { return static_cast<std::size_t>(std::count(m_sample.begin(), m_sample.end(), rgb)); };
         if (required)
         {
-            add(unpack(*required & 0x00FFFFFFu));
+            const uint32_t rgb = *required & 0x00FFFFFFu;
+            add(rgb, samples_of(rgb));
         }
         // Count after `required` so a colour pinned for both reasons keeps the higher priority.
-        const auto covers = [this](uint32_t rgb)
+        for (const uint32_t rgb : { clear_rgb & 0x00FFFFFFu, 0u })
         {
-            const auto n = static_cast<std::size_t>(std::count(m_sample.begin(), m_sample.end(), rgb));
-            return n * 100u >= m_sample.size() * PIN_COVERAGE_PCT;
-        };
-        clear_rgb &= 0x00FFFFFFu;
-        if (covers(clear_rgb))
-        {
-            add(unpack(clear_rgb));
+            const std::size_t n = samples_of(rgb);
+            if (n * 100u >= m_sample.size() * PIN_COVERAGE_PCT)
+            {
+                add(rgb, n);
+            }
         }
-        if (covers(0u))
-        {
-            add(Color{ 0, 0, 0 });
-        }
-        if (static_cast<int>(m_pins.size()) > m_budget)
-        {
-            m_pins.resize(static_cast<std::size_t>(m_budget));
-        }
+        m_unpinned = m_sample.size() - pinned;
     }
 
-    void FittedPalette::fit(int budget, Fit &out)
+    void FittedPalette::fit(std::size_t step, Fit &out)
     {
-        m_wu.split_to(budget);
-        m_wu.box_means(m_means);
+        while (m_snapshot_count <= step)
+        {
+            m_wu.split_to(m_ladder[m_snapshot_count]);
+            m_wu.box_means(m_snapshots[m_snapshot_count]);
+            m_snapshot_count++;
+        }
+        const int size = m_ladder[step];
+        const std::vector<std::array<float, 3>> &means = m_snapshots[step];
         std::vector<Color> &palette = out.entries;
         palette.clear();
         detail::LabEntries &lab = out.lab;
-        lab.count = static_cast<int>(m_means.size());
-        for (std::size_t j = 0; j < m_means.size(); j++)
+        lab.count = static_cast<int>(means.size());
+        for (std::size_t j = 0; j < means.size(); j++)
         {
             const Lab c = cielab_from_linear(
-                srgb_to_linear(m_means[j][0] / 255.0f), srgb_to_linear(m_means[j][1] / 255.0f),
-                srgb_to_linear(m_means[j][2] / 255.0f)
+                srgb_to_linear(means[j][0] / 255.0f), srgb_to_linear(means[j][1] / 255.0f),
+                srgb_to_linear(means[j][2] / 255.0f)
             );
             lab.L[j] = c.L;
             lab.a[j] = c.a;
@@ -648,12 +694,36 @@ namespace sixel
                 palette.push_back(c);
             }
         }
-        std::vector<Color> rounded_pins(m_pins.size());
-        std::transform(m_pins.begin(), m_pins.end(), rounded_pins.begin(), detail::percent_round_trip);
+        // At most `size` pins, highest priority first, so each finds an entry no earlier pin holds.
+        std::vector<Color> rounded_pins(std::min(m_pins.size(), static_cast<std::size_t>(size)));
+        std::transform(
+            m_pins.begin(), m_pins.begin() + static_cast<std::ptrdiff_t>(rounded_pins.size()), rounded_pins.begin(),
+            detail::percent_round_trip
+        );
         // The table pins cells from the current pin set each frame, so the indices are not kept.
-        (void)detail::place_pins(palette, rounded_pins, budget);
+        (void)detail::place_pins(palette, rounded_pins, size);
         lab.set(palette);
-        out.error = detail::mean_error(m_cells, lab);
+        out.error = detail::mean_error(m_cells, lab, &out.distances);
+        // Pinned samples sit on exact entries and add almost nothing to the error, so dividing by
+        // the unpinned share removes them from the mean. An exact recomputation chose the same
+        // size on every measured frame.
+        out.size_error =
+            m_unpinned == 0 ? 0.0 : out.error * static_cast<double>(m_sample.size()) / static_cast<double>(m_unpinned);
+    }
+
+    bool FittedPalette::has_stale_colour() const noexcept
+    {
+        const float min_samples =
+            std::max(STALE_MIN_SAMPLES, static_cast<float>(m_unpinned * STALE_SHARE_PERMILLE) / 1000.0f);
+        for (std::size_t i = 0; i < m_cells.size(); i++)
+        {
+            if (m_cells.weight[i] >= min_samples &&
+                static_cast<double>(m_distances[i] - m_fresh.distances[i]) > STALE_DE)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     bool FittedPalette::has_exact_entry(Color pin) const noexcept
@@ -661,8 +731,32 @@ namespace sixel
         return std::find(m_entries.begin(), m_entries.end(), detail::percent_round_trip(pin)) != m_entries.end();
     }
 
-    void FittedPalette::install(Fit &fit)
+    void FittedPalette::choose_size(int current)
     {
+        for (std::size_t step = 0;; step++)
+        {
+            const int size = m_ladder[step];
+            // The fit at the current budget is the one the step-up trigger saw; reuse it, so
+            // a size that failed the trigger cannot pass here.
+            Fit &candidate = size == current ? m_fresh : m_trial;
+            if (size != current)
+            {
+                fit(step, candidate);
+            }
+            const double limit = (current > 0 && size < current) ? STEP_UP_DE / STEP_DOWN_BAND : STEP_UP_DE;
+            // When no size passes, take the top of the ladder.
+            if (candidate.size_error <= limit || step + 1 == m_ladder.size())
+            {
+                install(candidate, size);
+                return;
+            }
+        }
+    }
+
+    void FittedPalette::install(Fit &fit, int budget)
+    {
+        m_budget = budget;
+        m_fit_error = fit.error;
         m_entries.swap(fit.entries);
         m_lab = fit.lab;
         // Every register is redefined each frame because the palette is shared terminal state.
@@ -723,15 +817,23 @@ namespace sixel
         m_cells.assign(m_hist);
         m_wu.build(m_hist);
         collect_pins(clear_rgb, required);
+        m_snapshot_count = 0;
 
-        fit(m_budget, m_fresh);
-        bool refit = m_entries.empty();
-        if (!refit)
+        if (m_entries.empty())
         {
-            const double current = detail::mean_error(m_cells, m_lab);
-            const double fresh = m_fresh.error;
-            refit = current > std::max(KEEP_RATIO * fresh, fresh + KEEP_SLACK);
+            // The first frame has no current budget, so no size needs the step-down band.
+            choose_size(0);
+            pin_table_cells();
+            return true;
         }
+
+        const auto step =
+            static_cast<std::size_t>(std::find(m_ladder.begin(), m_ladder.end(), m_budget) - m_ladder.begin());
+        fit(step, m_fresh);
+        m_fit_error = m_fresh.error;
+        const double current = detail::mean_error(m_cells, m_lab, &m_distances);
+        const double fresh = m_fresh.error;
+        bool refit = current > std::max(KEEP_RATIO * fresh, fresh + KEEP_SLACK) || has_stale_colour();
         if (!refit)
         {
             // A new pin without an exact entry refits now, so a background or wireframe colour
@@ -747,9 +849,14 @@ namespace sixel
                 }
             }
         }
-        if (refit)
+        // Without this, a scene that slowly gains colours keeps its size for as long as the
+        // current palette tracks a fresh fit of the same size.
+        const bool step_up = m_ladder.size() > 1 && m_fresh.size_error > STEP_UP_DE && m_budget < m_ladder.back();
+        if (refit || step_up)
         {
-            install(m_fresh);
+            // The size steps down only here, at a refit, which keeps it stable during motion.
+            choose_size(m_budget);
+            refit = true;
         }
         pin_table_cells();
         return refit;

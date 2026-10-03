@@ -4,6 +4,7 @@
 
 #include "src/terminal/cielab.h"
 #include "src/terminal/color.h"
+#include "src/terminal/sixel.h"
 
 #include <array>
 #include <atomic>
@@ -18,6 +19,10 @@ namespace sixel
 {
     namespace detail
     {
+        // Sizes a range's palette may take, from min to max: each step about 4/3 of the last,
+        // rounded up to a multiple of 4 below 16 and of 8 from there. 24-64 gives 24, 32, 48, 64.
+        std::vector<int> ladder(ColorRange range);
+
         // The fit reads at most this many pixels per frame, whatever the resolution.
         inline constexpr int MAX_SAMPLES = 32768;
 
@@ -108,8 +113,10 @@ namespace sixel
             void set(const std::vector<Color> &entries);
         };
 
-        // Count-weighted mean distance from each cell to its nearest entry, in dE.
-        [[nodiscard]] double mean_error(const Cells &cells, const LabEntries &entries);
+        // Count-weighted mean distance from each cell to its nearest entry, in dE. Writes each
+        // cell's distance to `distances` when given.
+        [[nodiscard]] double
+        mean_error(const Cells &cells, const LabEntries &entries, std::vector<float> *distances = nullptr);
 
         // Lloyd's k-means in CIELAB over the cells. An empty cluster keeps its centroid. Stops
         // early once no cell changes cluster, since every further pass would repeat it.
@@ -145,7 +152,7 @@ namespace sixel
     class FittedPalette
     {
       public:
-        explicit FittedPalette(int colors);
+        explicit FittedPalette(ColorRange range);
 
         FittedPalette(const FittedPalette &) = delete;
         FittedPalette &operator=(const FittedPalette &) = delete;
@@ -153,10 +160,10 @@ namespace sixel
         FittedPalette &operator=(FittedPalette &&) = delete;
         ~FittedPalette();
 
-        // Sample the frame and refit when the current palette's error exceeds a fresh fit's by
-        // more than 5% and more than 0.05 dE, or when a new pin has no exact entry. `required`
-        // must be an exact entry whether or not the sample saw it. Returns true when it installed
-        // a new palette. Calling thread only, before any map_rows call for this frame.
+        // Sample the frame and refit when the current palette falls behind a fresh fit, a new pin
+        // has no exact entry, or an adaptive range must step up. `required` must be an exact
+        // entry whether or not the sample saw it. Returns true when it installed a new palette.
+        // Calling thread only, before any map_rows call for this frame.
         bool update(
             const std::atomic<uint64_t> *px, int width, int height, uint32_t clear_rgb, std::optional<uint32_t> required
         );
@@ -169,9 +176,13 @@ namespace sixel
         // Registers emitted, at most budget().
         // cppcheck-suppress unusedFunction -- tests read it.
         [[nodiscard]] int entry_count() const noexcept { return static_cast<int>(m_entries.size()); }
-        // Size the fresh fits use.
+        // Ladder size selected at the last refit, which fresh fits use; 0 before the first frame.
         // cppcheck-suppress unusedFunction -- tests read it.
         [[nodiscard]] int budget() const noexcept { return m_budget; }
+        // Mean error in dE of the last frame's fit at budget(), pinned samples included. The size
+        // rule uses the error over the unpinned samples instead.
+        // cppcheck-suppress unusedFunction -- tests read it.
+        [[nodiscard]] double fit_error() const noexcept { return m_fit_error; }
         // Fits installed so far, the first frame's included, even those identical to the last.
         [[nodiscard]] unsigned generation() const noexcept { return m_generation; }
         // The installed colours, in register order, as the terminal shows them.
@@ -184,16 +195,29 @@ namespace sixel
             std::vector<Color> entries;
             detail::LabEntries lab;
             double error = 0.0;
+            // The error over the unpinned samples, which the size decisions use.
+            double size_error = 0.0;
+            // Each cell's distance to its nearest entry, in dE.
+            std::vector<float> distances;
         };
 
         void collect_pins(uint32_t clear_rgb, std::optional<uint32_t> required);
-        void fit(int budget, Fit &out);
-        void install(Fit &fit);
+        // Fit at ladder step `step` from the Wu snapshot for that size.
+        void fit(std::size_t step, Fit &out);
+        // Pick the smallest ladder size whose fit passes the threshold and install it.
+        // `current` is the budget in use, or 0 on the first frame.
+        void choose_size(int current);
+        void install(Fit &fit, int budget);
         void pin_table_cells();
+        // A colour cell common enough to matter that the current palette shows far worse than
+        // the fresh fit. Needs both distance lists from this frame.
+        [[nodiscard]] bool has_stale_colour() const noexcept;
         [[nodiscard]] bool has_exact_entry(Color pin) const noexcept;
         [[nodiscard]] uint32_t fill(std::size_t cell) const noexcept;
 
-        int m_budget;
+        std::vector<int> m_ladder;
+        int m_budget = 0;
+        double m_fit_error = 0.0;
         unsigned m_generation = 0;
 
         // Pixel indices the fit reads in frames of the recorded size. Hashing the positions costs
@@ -205,16 +229,24 @@ namespace sixel
         detail::Histogram m_hist;
         detail::Wu m_wu;
         detail::Cells m_cells;
-        std::vector<std::array<float, 3>> m_means;
+        // Wu's box means at each ladder size, taken as the splits grow. The splits are greedy, so
+        // each snapshot equals a fit run directly to that size.
+        std::vector<std::vector<std::array<float, 3>>> m_snapshots;
+        std::size_t m_snapshot_count = 0;
 
         // Pins of the current frame as source colours, highest priority first, and of the last.
         std::vector<Color> m_pins;
         std::vector<Color> m_prev_pins;
+        // Samples of this frame equal to none of its pins.
+        std::size_t m_unpinned = 0;
 
         std::vector<Color> m_entries;
         detail::LabEntries m_lab;
+        // Each cell's distance to its nearest current entry this frame, in dE.
+        std::vector<float> m_distances;
         std::string m_block;
         Fit m_fresh;
+        Fit m_trial;
 
         // Cells currently holding a pinned value, so a pin that goes away can be refilled.
         std::vector<std::size_t> m_pinned_cells;

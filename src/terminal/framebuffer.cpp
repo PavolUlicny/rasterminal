@@ -832,7 +832,7 @@ void Framebuffer::present_sixel()
         ensure_capacity(m_idx, m_idx_cap, m_pixel.size());
         if (!m_palette)
         {
-            m_palette = std::make_unique<sixel::FittedPalette>(24);
+            m_palette = std::make_unique<sixel::FittedPalette>(m_gfx.sixel_colors);
         }
         std::optional<uint32_t> required;
         if (m_required)

@@ -22,6 +22,26 @@ namespace sixel
     // the register plane stays in bounds.
     inline constexpr int MAX_REGISTERS = 256;
 
+    // Palette size bounds, 1 to MAX_REGISTERS. min == max is a fixed size; otherwise the size
+    // adapts to each scene within the range.
+    struct ColorRange
+    {
+        int min = 24;
+        int max = 64;
+    };
+
+    // Cap a range to the terminal's colour register count. A count below 2 is no answer:
+    // one register cannot show an image, and the range stays as it is.
+    [[nodiscard]] constexpr ColorRange cap_to_registers(ColorRange range, int registers) noexcept
+    {
+        if (registers < 2)
+        {
+            return range;
+        }
+        const int max = range.max < registers ? range.max : registers;
+        return { range.min < max ? range.min : max, max };
+    }
+
     // The longest register block: MAX_REGISTERS definitions of up to 18 bytes (`#255;2;100;100;100`).
     inline constexpr std::size_t MAX_REGISTER_BLOCK_BYTES = std::size_t{ MAX_REGISTERS } * 18u;
 
