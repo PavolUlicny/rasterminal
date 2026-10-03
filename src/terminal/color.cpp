@@ -1,5 +1,7 @@
 #include "src/terminal/color.h"
 
+#include "src/terminal/cielab.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -14,33 +16,6 @@
 namespace
 {
 
-    // sRGB EOTF (IEC 61966-2-1): non-linear [0,1] -> linear-light [0,1].
-    float srgb_to_linear(float v)
-    {
-        return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
-    }
-
-    struct Lab
-    {
-        float L, a, b;
-    };
-
-    // CIELAB preserves dark model hues better than OKLab here: 69.8% of measured pixels
-    // mapped to gray, compared with 90.9% under OKLab.
-    Lab cielab_from_linear(float r, float g, float b)
-    {
-        // sRGB -> XYZ (D65); X and Z rows pre-divided by the white point (Y's is 1).
-        const float x = ((0.4124564f / 0.95047f) * r) + ((0.3575761f / 0.95047f) * g) + ((0.1804375f / 0.95047f) * b);
-        const float y = (0.2126729f * r) + (0.7151522f * g) + (0.0721750f * b);
-        const float z = ((0.0193339f / 1.08883f) * r) + ((0.1191920f / 1.08883f) * g) + ((0.9503041f / 1.08883f) * b);
-        const auto f = [](float t)
-        { return t > 216.0f / 24389.0f ? std::cbrt(t) : (((24389.0f / 27.0f) * t) + 16.0f) / 116.0f; };
-        const float fx = f(x);
-        const float fy = f(y);
-        const float fz = f(z);
-        return { (116.0f * fy) - 16.0f, 500.0f * (fx - fy), 200.0f * (fy - fz) };
-    }
-
     // Map each 64^3 cell center to the nearest addressable xterm color by deltaE76.
     std::array<uint8_t, QUANT256_LUT_SIZE> build_quant256_lut()
     {
@@ -53,11 +28,7 @@ namespace
         for (int j = 0; j < n_pal; ++j)
         {
             const auto i = static_cast<size_t>(j);
-            const Color p = quant256_palette_entry(j);
-            const Lab o = cielab_from_linear(
-                srgb_to_linear(static_cast<float>(p.r) / 255.0f), srgb_to_linear(static_cast<float>(p.g) / 255.0f),
-                srgb_to_linear(static_cast<float>(p.b) / 255.0f)
-            );
+            const Lab o = cielab_from_srgb8(quant256_palette_entry(j));
             pl[i] = o.L;
             pa[i] = o.a;
             pb[i] = o.b;
