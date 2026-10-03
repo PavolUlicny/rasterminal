@@ -295,7 +295,7 @@ class Framebuffer
         {
             // Sixel has no useful worst-case bound. Let early frames grow the
             // buffer, whose capacity persists until resize.
-            return sixel::palette_block().size() + (static_cast<size_t>(m_width) * 4u) + 4096u;
+            return sixel::MAX_REGISTER_BLOCK_BYTES + (static_cast<size_t>(m_width) * 4u) + 4096u;
         }
         const size_t per_cell = (m_mode == ColorMode::TrueColor) ? 50u : 32u;
         return static_cast<size_t>(m_width) * static_cast<size_t>(m_height / 2) * per_cell;
@@ -327,8 +327,8 @@ class Framebuffer
     // Workers that completed the latest split. Shared by staging fill, palette
     // quantization, and sixel encoding, which never overlap.
     std::vector<uint8_t> m_par_covered;
-    // Sixel staging: the frame quantized to xterm-256 palette indices, the
-    // emitter's input plane. Same raw-array rationale as m_rgb/m_z above.
+    // Sixel staging: the frame as register numbers, the emitter's input plane.
+    // Same raw-array rationale as m_rgb/m_z above.
     std::unique_ptr<unsigned char[]> m_idx;
     size_t m_idx_cap = 0;
     // The sixel encoder's caller-owned band masks (grow-only, dirty between

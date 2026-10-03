@@ -117,6 +117,21 @@ namespace
         }
     }
 
+    // Redefine all registers each frame because the palette is shared terminal state.
+    const std::string &xterm_register_block()
+    {
+        static const std::string block = []
+        {
+            std::string s;
+            for (int j = 0; j < 240; j++)
+            {
+                sixel::append_register(s, j, quant256_palette_entry(j));
+            }
+            return s;
+        }();
+        return block;
+    }
+
     // Synchronized-output open bracket (mode 2026); end_frame keys its empty-frame
     // check on this literal's length.
     constexpr char SYNC_BEGIN[] = "\033[?2026h";
@@ -736,7 +751,9 @@ void Framebuffer::quantize_to_palette(size_t npx)
         {
             // Packed-word indexing: quant256_idx_packed ignores bits 24+, so
             // neither COLOR_MASK nor the Color round trip is needed.
-            idx[i] = lut[quant256_idx_packed(static_cast<uint32_t>(px[i].load(std::memory_order_relaxed)))];
+            idx[i] = static_cast<unsigned char>(
+                lut[quant256_idx_packed(static_cast<uint32_t>(px[i].load(std::memory_order_relaxed)))] - 16u
+            );
         }
     };
 
@@ -747,8 +764,7 @@ void Framebuffer::quantize_to_palette(size_t npx)
         quantize_range(0, npx);
         return;
     }
-    // An uncovered range leaves indices uninitialized; values below 16 would
-    // underflow the encoder's `index - 16` register lookup.
+    // An uncovered range leaves indices uninitialized; split_ranges redoes it serially.
     split_ranges(m_par, m_par_covered, npx, quantize_range);
 }
 
@@ -762,7 +778,7 @@ void Framebuffer::encode_sixel_frame()
     // so header, bands, and footer agree on whether a frame exists.
     if (m_width <= 0 || !m_par.usable() || bands < workers * 2)
     {
-        sixel::append_frame(m_buf, idx_plane(), m_width, m_height, m_sixel_scratch);
+        sixel::append_frame(m_buf, idx_plane(), m_width, m_height, xterm_register_block(), m_sixel_scratch);
         return;
     }
 
@@ -783,7 +799,7 @@ void Framebuffer::encode_sixel_frame()
     std::vector<uint8_t> *covered = &m_par_covered;
 
     const size_t before_header = m_buf.size();
-    sixel::append_header(m_buf, px_w, px_h);
+    sixel::append_header(m_buf, px_w, px_h, xterm_register_block());
     m_par.run(
         [parts, scratch, covered, idx, px_w, px_h, bands](int worker_id, int n_workers)
         {
@@ -810,7 +826,7 @@ void Framebuffer::encode_sixel_frame()
     if (!complete)
     {
         m_buf.resize(before_header);
-        sixel::append_frame(m_buf, idx, px_w, px_h, m_sixel_scratch);
+        sixel::append_frame(m_buf, idx, px_w, px_h, xterm_register_block(), m_sixel_scratch);
         return;
     }
     for (const std::string &part : m_sixel_parts)
