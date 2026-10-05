@@ -13,7 +13,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
-- Sixel images use a palette fitted to each frame instead of the fixed 240-color xterm palette. Colors are much closer to the rendered image, especially in dark and muted scenes, and only the palette's registers are sent. Frames are somewhat larger on average; muted, detailed scenes such as Sponza can be about twice the size, so they reach xterm's default `maxStringParse` limit at smaller windows.
+- Sixel images use a palette fitted to each frame instead of the fixed 240-color xterm palette. Colors are much closer to the rendered image, especially in dark and muted scenes, and only the palette's registers are sent. Frames are about the same size on average, because a color pass may also paint pixels that a later pass covers, which merges runs. Muted, detailed scenes such as Sponza are still larger, typically by about a quarter and at most about two and a half times, so they reach xterm's default `maxStringParse` limit at smaller windows.
 - The startup query asks for the terminal's sixel color register count, and the palette never uses more registers than the terminal reports.
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
 

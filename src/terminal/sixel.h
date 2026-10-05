@@ -11,7 +11,8 @@
 
 namespace sixel
 {
-    // Grow-only per-band masks. Stamps prevent stale bytes from being read.
+    // Grow-only per-band masks, plus one row of the bits earlier passes painted. Stamps prevent
+    // stale mask bytes from being read; the painted row is cleared per band.
     struct Scratch
     {
         std::unique_ptr<unsigned char[]> mask;
