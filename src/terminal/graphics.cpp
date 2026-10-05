@@ -1,7 +1,8 @@
 #include "src/terminal/graphics.h"
 
 #include "src/terminal/input.h" // the shared grammar: detail::is_string_introducer / scan_to_csi_final /
-                                // parse_cell_size_body / parse_sixel_geometry_body / MAX_CSI_PARAM_VALUE
+                                // parse_cell_size_body / parse_sixel_geometry_body /
+                                // parse_sixel_registers_body / MAX_CSI_PARAM_VALUE
 #include "src/terminal/kitty.h" // QUERY_ID, so the reply match cannot drift from the query
 
 #include <cstddef>
@@ -143,13 +144,19 @@ ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out)
             }
             else if (fin == 'S')
             {
-                // Reuse the mid-session XTSMGRAPHICS parser; ignore other items and failures.
+                // XTSMGRAPHICS: item 2 reuses the mid-session geometry parser, item 1 is the
+                // colour register count. Ignore other items and failures.
                 int w = 0;
                 int h = 0;
+                int registers = 0;
                 if (terminal_input::detail::parse_sixel_geometry_body(buf, i + 2, s.index, w, h))
                 {
                     out.sixel_max_w = w;
                     out.sixel_max_h = h;
+                }
+                else if (terminal_input::detail::parse_sixel_registers_body(buf, i + 2, s.index, registers))
+                {
+                    out.sixel_registers = registers;
                 }
             }
             else if (fin == 'c' && buf[i + 2] == '?')

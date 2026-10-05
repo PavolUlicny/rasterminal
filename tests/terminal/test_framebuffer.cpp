@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -1168,8 +1169,8 @@ TEST(framebuffer, quant256_idx_packed_matches_color_form)
 TEST(framebuffer, quant256_palette_entry_matches_reference)
 {
     // The exported table (color.h) against this file's independent copy of the xterm formulas:
-    // the sixel emitter derives its colour registers from the export, so a drift here would
-    // repaint every sixel frame in wrong colours while the quantizer tests stay green.
+    // 256-color output and the quantizer's exact round trips depend on the export, so a drift
+    // here would shift every palette colour while the quantizer tests stay green.
     ASSERT_TRUE(quant256_palette_entry(0) == Color(0, 0, 0));
     ASSERT_TRUE(quant256_palette_entry(215) == Color(255, 255, 255));
     ASSERT_TRUE(quant256_palette_entry(216) == Color(8, 8, 8));
@@ -2239,35 +2240,134 @@ TEST(framebuffer, sixel_survives_a_pool_reporting_a_different_worker_count)
     }
 }
 
+namespace
+{
+    // The sixel frame inside a present()'s output, decoded with the independent decoder,
+    // which also rejects a pixel painted twice.
+    SixelFrame decode_presented(const std::string &out)
+    {
+        const size_t dcs = out.find("\033P");
+        ASSERT_TRUE(dcs != std::string::npos);
+        const size_t st = out.find("\033\\", dcs);
+        ASSERT_TRUE(st != std::string::npos);
+        return sixel_decode(out.substr(dcs, (st + 2) - dcs));
+    }
+
+    // The colour a register shows, back in 8-bit channels.
+    Color shown(const SixelFrame &f, int reg)
+    {
+        ASSERT_TRUE(reg >= 0 && f.defined[static_cast<size_t>(reg)]);
+        const SixelRgb c = f.palette[static_cast<size_t>(reg)];
+        return { sixel::channel_from_pct(static_cast<unsigned>(c.r)),
+                 sixel::channel_from_pct(static_cast<unsigned>(c.g)),
+                 sixel::channel_from_pct(static_cast<unsigned>(c.b)) };
+    }
+
+    Color percent_round_trip(Color c)
+    {
+        return { sixel::channel_from_pct(sixel::channel_pct(c.r)), sixel::channel_from_pct(sixel::channel_pct(c.g)),
+                 sixel::channel_from_pct(sixel::channel_pct(c.b)) };
+    }
+} // namespace
+
 TEST(framebuffer, sixel_present_pixel_roundtrip)
 {
-    // The full path from the pixel slots to the wire: quantization into the
-    // index plane and the emitter, decoded back with the independent decoder.
+    // The full path from the pixel slots to the wire: palette fit, mapping into the register
+    // plane and the emitter. Each painted register is defined, and the colours are far apart
+    // in CIELAB, so no cell lists another as an alternate and each pixel shows its own colour.
     Framebuffer fb(8, 12, /*headless=*/true, ColorMode::TrueColor, sixel_config(4, 4));
     fb.clear({ 10, 20, 30 });
     (void)fb.commit_pixel(3, 2, 0.5f, { 200, 100, 50 });
+    for (int x = 0; x < 8; x++)
+    {
+        (void)fb.commit_pixel(x, 9, 0.5f, { 40, 200, 60 });
+    }
     CaptureStdout cap;
     fb.present();
     const std::string out = cap.read();
 
     ASSERT_TRUE(out.rfind("\033[?2026h\033[1;1H", 0) == 0); // sync open, image painted from home
-    const size_t dcs = out.find("\033P");
-    ASSERT_TRUE(dcs != std::string::npos);
-    const size_t st = out.find("\033\\", dcs);
-    ASSERT_TRUE(st != std::string::npos);
-    const SixelFrame f = sixel_decode(out.substr(dcs, (st + 2) - dcs));
+    const SixelFrame f = decode_presented(out);
     ASSERT_EQ(f.w, 8);
     ASSERT_EQ(f.h, 12);
-    const int bg_reg = quantize_256({ 10, 20, 30 }) - 16;
-    const int px_reg = quantize_256({ 200, 100, 50 }) - 16;
     for (int y = 0; y < 12; y++)
     {
         for (int x = 0; x < 8; x++)
         {
-            const int want = (x == 3 && y == 2) ? px_reg : bg_reg;
-            ASSERT_EQ(f.plane[(static_cast<size_t>(y) * 8u) + static_cast<size_t>(x)], want);
+            const Color want =
+                (x == 3 && y == 2) ? Color{ 200, 100, 50 } : (y == 9 ? Color{ 40, 200, 60 } : Color{ 10, 20, 30 });
+            ASSERT_TRUE(
+                shown(f, f.plane[(static_cast<size_t>(y) * 8u) + static_cast<size_t>(x)]) == percent_round_trip(want)
+            );
         }
     }
+}
+
+TEST(framebuffer, sixel_pins_the_background_and_required_colour)
+{
+    // A wireframe frame: the clear colour covers most of it, plus one short line in the
+    // required colour on pixels the palette's sample misses, so only the pin can make it exact.
+    const int w = 640;
+    const int h = 600;
+    std::vector<size_t> positions;
+    (void)sixel::detail::sample_positions(w, h, positions);
+    std::vector<bool> sampled(static_cast<size_t>(w) * static_cast<size_t>(h));
+    for (const size_t i : positions)
+    {
+        sampled[i] = true;
+    }
+    int line_y = 300;
+    for (; line_y < h; line_y++)
+    {
+        const auto row = sampled.begin() + (static_cast<std::ptrdiff_t>(line_y) * w);
+        if (std::find(row + 100, row + 140, true) == row + 140)
+        {
+            break;
+        }
+    }
+    ASSERT_TRUE(line_y < h);
+
+    Framebuffer fb(w, h, /*headless=*/true, ColorMode::TrueColor, sixel_config(80, 37));
+    fb.clear({ 128, 128, 128 });
+    fb.set_required_color(Color{ 220, 80, 80 });
+    for (int x = 100; x < 140; x++)
+    {
+        (void)fb.commit_pixel(x, line_y, 0.5f, { 220, 80, 80 });
+    }
+    CaptureStdout cap;
+    fb.present();
+    const SixelFrame f = decode_presented(cap.read());
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            const Color want = (y == line_y && x >= 100 && x < 140) ? Color{ 220, 80, 80 } : Color{ 128, 128, 128 };
+            ASSERT_TRUE(
+                shown(f, f.plane[(static_cast<size_t>(y) * static_cast<size_t>(w)) + static_cast<size_t>(x)]) ==
+                percent_round_trip(want)
+            );
+        }
+    }
+    ASSERT_EQ(fb.sixel_palette_generation(), 1u);
+}
+
+TEST(framebuffer, sixel_background_toggle_refits_on_its_frame)
+{
+    Framebuffer fb(64, 48, /*headless=*/true, ColorMode::TrueColor, sixel_config(8, 3));
+    fb.clear({ 0, 0, 0 });
+    (void)fb.commit_pixel(5, 5, 0.5f, { 200, 100, 50 });
+    {
+        CaptureStdout cap;
+        fb.present();
+    }
+    const unsigned gen = fb.sixel_palette_generation();
+    fb.clear({ 240, 240, 240 });
+    (void)fb.commit_pixel(5, 5, 0.5f, { 200, 100, 50 });
+    CaptureStdout cap;
+    fb.present();
+    ASSERT_EQ(fb.sixel_palette_generation(), gen + 1u);
+    const SixelFrame f = decode_presented(cap.read());
+    ASSERT_TRUE(shown(f, f.plane[0]) == percent_round_trip({ 240, 240, 240 }));
 }
 
 TEST(framebuffer, sixel_idle_present_emits_no_frame)

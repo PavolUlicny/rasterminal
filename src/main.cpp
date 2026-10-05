@@ -17,9 +17,11 @@
 #include "src/terminal/graphics.h"
 #include "src/terminal/hud.h"
 #include "src/terminal/input.h"
+#include "src/terminal/sixel.h"
 #include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/input_controller.h"
+#include "src/viewer/scene_colors.h"
 #include "src/viewer/state.h"
 
 #include <algorithm>
@@ -33,6 +35,7 @@
 #include <cstring>
 #include <exception>
 #include <functional>
+#include <optional>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -40,31 +43,7 @@
 namespace
 {
 
-    constexpr Color BG_BLACK = { 0, 0, 0 };
-    constexpr Color BG_GRAY = { 128, 128, 128 };
-    constexpr Color BG_WHITE = { 240, 240, 240 };
     constexpr vec3 FLAT_AMBIENT = { 0.85f, 0.85f, 0.85f };
-
-    // "_of" rather than "_color" to avoid reading like the Renderer::wireframe_color member.
-    constexpr Color wireframe_color_of(WireframeColor c) noexcept
-    {
-        switch (c)
-        {
-        case WireframeColor::White:
-            return { 200, 200, 200 };
-        case WireframeColor::Red:
-            return { 220, 80, 80 };
-        case WireframeColor::Green:
-            return { 80, 200, 120 };
-        case WireframeColor::Yellow:
-            return { 230, 200, 80 };
-        case WireframeColor::Cyan:
-            return { 100, 200, 220 };
-        case WireframeColor::Magenta:
-            return { 220, 120, 200 };
-        }
-        return { 200, 200, 200 };
-    }
 
     constexpr const char *wireframe_name(WireframeColor c) noexcept
     {
@@ -84,20 +63,6 @@ namespace
             return "magenta";
         }
         return "white";
-    }
-
-    constexpr Color background_color(Background b) noexcept
-    {
-        switch (b)
-        {
-        case Background::Gray:
-            return BG_GRAY;
-        case Background::White:
-            return BG_WHITE;
-        case Background::Black:
-            return BG_BLACK;
-        }
-        return BG_BLACK;
     }
 
     constexpr const char *background_name(Background b) noexcept
@@ -158,9 +123,11 @@ namespace
 
     using terminal_geometry::FbSize;
     using terminal_geometry::TerminalGeometry;
+    using viewer::background_color;
     using viewer::FrameTiming;
     using viewer::InputController;
     using viewer::ViewerState;
+    using viewer::wireframe_color_of;
 
     // Derive cell size as floor(px / cells) for startup and resize polling.
     // Accept only complete, valid reports; leave outputs unchanged on failure.
@@ -248,6 +215,8 @@ namespace
         // The terminal's max sixel image size (0 = unreported); see TermGraphics.
         int sixel_max_w = 0;
         int sixel_max_h = 0;
+        // The terminal's sixel colour register count (0 = unreported).
+        int sixel_registers = 0;
         // Set with exit_code 1; main prints it after restoring the terminal.
         const char *error = nullptr;
         int exit_code = -1;
@@ -403,6 +372,7 @@ namespace
             gfx.cell_h = tg.cell_h;
             gfx.sixel_max_w = tg.sixel_max_w;
             gfx.sixel_max_h = tg.sixel_max_h;
+            gfx.sixel_registers = tg.sixel_registers;
             // Auto prefers kitty to sixel. A forced choice masks the other pixel
             // backend, so --graphics sixel exercises sixel on terminals with both.
             if (tg.kitty && choice != GraphicsChoice::Sixel)
@@ -788,6 +758,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             gfx_cfg.rows = geometry.image_rows();
             gfx_cfg.origin_col = initial_size.origin_col;
             gfx_cfg.origin_row = initial_size.origin_row;
+            gfx_cfg.sixel_colors = sixel::cap_to_registers(args.sixel_colors, gfx.sixel_registers);
         }
 
         // Renderer must outlive Framebuffer because its borrowed runner captures it.
@@ -963,6 +934,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 const vec3 cur_ambient = lighting_ambient(state.settings.lighting, ambient);
                 renderer.mode = state.settings.shading;
                 renderer.wireframe_color = wireframe_color_of(state.settings.wireframe_color);
+                fb.set_required_color(
+                    state.settings.shading == ShadingMode::Wireframe ? std::optional<Color>(renderer.wireframe_color)
+                                                                     : std::nullopt
+                );
                 renderer.cull_backfaces = state.settings.culling;
                 renderer.show_texture = state.settings.texturing;
                 renderer.render(mesh, state.camera, lights, n_lights, cur_ambient, fb);

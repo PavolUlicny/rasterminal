@@ -24,8 +24,6 @@
 namespace
 {
 
-    constexpr int REGISTERS = 240;
-
 #ifdef SIXEL_LE_WORD_SCAN
     // Byte offset of the lowest-addressed differing byte in a nonzero XOR word.
     inline int first_diff_byte(uint64_t d) noexcept
@@ -61,13 +59,6 @@ namespace
         }
     }
 
-    // Sixel register channels are 0..100; round-to-nearest keeps the palette's
-    // exact endpoints (0 and 255) exact.
-    constexpr unsigned int channel_pct(uint8_t v)
-    {
-        return ((static_cast<unsigned int>(v) * 100u) + 127u) / 255u;
-    }
-
     // Counted RLE costs at least three bytes, so spell out runs of three or fewer.
     void append_run(std::string &out, int n, char ch)
     {
@@ -96,30 +87,19 @@ namespace
 namespace sixel
 {
 
-    // Redefine all registers each frame because the palette is shared terminal state.
-    const std::string &palette_block()
+    void append_register(std::string &out, int reg, Color c)
     {
-        static const std::string block = []
-        {
-            std::string s;
-            for (int j = 0; j < REGISTERS; j++)
-            {
-                const Color c = quant256_palette_entry(j);
-                s += '#';
-                append_uint(s, static_cast<unsigned int>(j));
-                s += ";2;";
-                append_uint(s, channel_pct(c.r));
-                s += ';';
-                append_uint(s, channel_pct(c.g));
-                s += ';';
-                append_uint(s, channel_pct(c.b));
-            }
-            return s;
-        }();
-        return block;
+        out += '#';
+        append_uint(out, static_cast<unsigned int>(reg));
+        out += ";2;";
+        append_uint(out, channel_pct(c.r));
+        out += ';';
+        append_uint(out, channel_pct(c.g));
+        out += ';';
+        append_uint(out, channel_pct(c.b));
     }
 
-    void append_header(std::string &out, int width, int height)
+    void append_header(std::string &out, int width, int height, const std::string &register_block)
     {
         if (width <= 0 || height <= 0)
         {
@@ -127,7 +107,7 @@ namespace sixel
         }
 
         // Reserve the fixed header and palette. Guard because pre-C++20 reserve may shrink.
-        const size_t need = out.size() + palette_block().size() + 64u;
+        const size_t need = out.size() + register_block.size() + 64u;
         if (need > out.capacity())
         {
             out.reserve(need);
@@ -138,7 +118,7 @@ namespace sixel
         append_uint(out, static_cast<unsigned int>(width));
         out += ';';
         append_uint(out, static_cast<unsigned int>(height));
-        out += palette_block();
+        out += register_block;
     }
 
     void append_footer(std::string &out)
@@ -147,7 +127,7 @@ namespace sixel
     }
 
     void append_bands(
-        std::string &out, const unsigned char *indices, int width, int height, int band0, int band1, Scratch &scratch
+        std::string &out, const unsigned char *registers, int width, int height, int band0, int band1, Scratch &scratch
     )
     {
         if (width <= 0 || height <= 0)
@@ -157,7 +137,7 @@ namespace sixel
 
         // Lazily clear masks only for palette registers used in this band.
         const auto w = static_cast<size_t>(width);
-        const size_t mask_bytes = static_cast<size_t>(REGISTERS) * w;
+        const size_t mask_bytes = static_cast<size_t>(MAX_REGISTERS) * w;
         if (mask_bytes > scratch.cap)
         {
             // NOLINTNEXTLINE(modernize-make-unique,cppcoreguidelines-owning-memory): value-init defeats the point
@@ -166,11 +146,11 @@ namespace sixel
         }
         unsigned char *mask = scratch.mask.get();
         // Reads are stamp-gated; value initialization remains for clang-tidy.
-        std::array<int, REGISTERS> stamp{};
+        std::array<int, MAX_REGISTERS> stamp{};
         stamp.fill(-1);
-        std::array<int, REGISTERS> min_x{};
-        std::array<int, REGISTERS> max_x{};
-        std::array<int, REGISTERS> colors{};
+        std::array<int, MAX_REGISTERS> min_x{};
+        std::array<int, MAX_REGISTERS> max_x{};
+        std::array<int, MAX_REGISTERS> colors{};
 
         const int bands = band_count(height);
         const int first_band = (band0 > 0) ? band0 : 0;
@@ -182,11 +162,11 @@ namespace sixel
             const int band_rows = (height - y0 < 6) ? height - y0 : 6;
             for (int dy = 0; dy < band_rows; dy++)
             {
-                const unsigned char *row = indices + ((static_cast<size_t>(y0) + static_cast<size_t>(dy)) * w);
+                const unsigned char *row = registers + ((static_cast<size_t>(y0) + static_cast<size_t>(dy)) * w);
                 const auto bit = static_cast<unsigned char>(1u << static_cast<unsigned int>(dy));
                 for (int x = 0; x < width; x++)
                 {
-                    const int reg = row[x] - 16;
+                    const int reg = row[x];
                     unsigned char *m = mask + (static_cast<size_t>(reg) * w);
                     if (stamp[static_cast<size_t>(reg)] != band)
                     {
@@ -256,14 +236,21 @@ namespace sixel
         }
     }
 
-    void append_frame(std::string &out, const unsigned char *indices, int width, int height, Scratch &scratch)
+    void append_frame(
+        std::string &out,
+        const unsigned char *registers,
+        int width,
+        int height,
+        const std::string &register_block,
+        Scratch &scratch
+    )
     {
         if (width <= 0 || height <= 0)
         {
             return;
         }
-        append_header(out, width, height);
-        append_bands(out, indices, width, height, 0, band_count(height), scratch);
+        append_header(out, width, height, register_block);
+        append_bands(out, registers, width, height, 0, band_count(height), scratch);
         append_footer(out);
     }
 

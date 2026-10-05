@@ -9,6 +9,7 @@
 
 // Independent sixel decoder. Execute raster attributes, register definitions,
 // repeats, motion, and data into a register plane while validating the wire grammar.
+// A pixel painted twice fails the decode.
 
 struct SixelRgb
 {
@@ -95,6 +96,10 @@ inline SixelFrame sixel_decode(const std::string &s)
                     {
                         const int y = (band * 6) + dy;
                         ASSERT_TRUE(y < f.h); // painting past the declared height
+                        // P2=1 frames paint each pixel in exactly one colour pass.
+                        ASSERT_EQ(
+                            f.plane[(static_cast<size_t>(y) * static_cast<size_t>(f.w)) + static_cast<size_t>(x)], -1
+                        );
                         f.plane[(static_cast<size_t>(y) * static_cast<size_t>(f.w)) + static_cast<size_t>(x)] = reg;
                     }
                 }

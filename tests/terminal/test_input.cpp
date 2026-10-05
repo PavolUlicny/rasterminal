@@ -164,6 +164,27 @@ TEST(parse_input, sixel_geometry_report_malformed_drops)
     expect_dropped_whole("\033[S");                // bare final (scroll-up CSI)
 }
 
+TEST(parse_input, sixel_register_body)
+{
+    // Only the startup scanner reads item 1; mid-session it drops whole (above).
+    const auto body = [](const std::string &csi, int &n)
+    { return terminal_input::detail::parse_sixel_registers_body(csi.data(), 2, static_cast<int>(csi.size()) - 1, n); };
+    int n = 0;
+    ASSERT_TRUE(body("\033[?1;0;1024S", n));
+    ASSERT_EQ(n, 1024);
+    ASSERT_TRUE(body("\033[?1;0;1S", n));
+    ASSERT_EQ(n, 1);
+    n = 7;
+    ASSERT_FALSE(body("\033[?1;0;0S", n));     // zero registers
+    ASSERT_FALSE(body("\033[?1;3;16S", n));    // failure status
+    ASSERT_FALSE(body("\033[?1;0;16;16S", n)); // a fourth parameter
+    ASSERT_FALSE(body("\033[?2;0;16S", n));    // another item
+    ASSERT_FALSE(body("\033[?1;;16S", n));     // empty status
+    ASSERT_FALSE(body("\033[1;0;16S", n));     // no private marker
+    ASSERT_FALSE(body("\033[?1;0;1:6S", n));   // sub-parameter colon
+    ASSERT_EQ(n, 7);
+}
+
 TEST(parse_input, device_attributes_reply_consumed_whole)
 {
     // This real xterm DA1 reply ends with live keybindings.

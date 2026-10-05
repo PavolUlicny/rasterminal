@@ -376,6 +376,26 @@ TEST(graphics, sixel_geometry_failure_or_other_item_is_ignored)
     ASSERT_EQ(tg2.sixel_max_h, 0);
 }
 
+TEST(graphics, sixel_register_reply_records_the_count)
+{
+    // XTSMGRAPHICS item-1 read reply: status 0 = success, then the register count.
+    TermGraphics tg;
+    ASSERT_TRUE(scan(std::string("\033[?1;0;1024S") + DSR, tg).done);
+    ASSERT_EQ(tg.sixel_registers, 1024);
+    ASSERT_EQ(tg.sixel_max_w, 0);
+}
+
+TEST(graphics, sixel_register_reply_failure_or_bad_shape_is_ignored)
+{
+    for (const char *reply : { "\033[?1;0;0S", "\033[?1;3;16S", "\033[?1;0;16;16S", "\033[?1;0S", "\033[?1;;16S",
+                               "\033[?1;0;1000001S", "\033[1;0;16S" })
+    {
+        TermGraphics tg;
+        ASSERT_TRUE(scan(std::string(reply) + DSR, tg).done);
+        ASSERT_EQ(tg.sixel_registers, 0);
+    }
+}
+
 TEST(graphics, sixel_geometry_empty_status_is_ignored)
 {
     // An empty status token accumulates to 0, which must not read as the
@@ -418,9 +438,11 @@ TEST(graphics, sixel_geometry_split_across_reads)
 TEST(graphics, full_batch_with_da1)
 {
     // The real reply order of the full query batch: kitty OK, cell size, DA1,
-    // sixel geometry, DSR.
+    // sixel geometry, sixel registers, DSR.
     TermGraphics tg;
-    const ReplyScan r = scan(std::string(KITTY_OK) + CELL_SIZE + "\033[?62;4;22c" + "\033[?2;0;1000;1000S" + DSR, tg);
+    const ReplyScan r = scan(
+        std::string(KITTY_OK) + CELL_SIZE + "\033[?62;4;22c" + "\033[?2;0;1000;1000S" + "\033[?1;0;1024S" + DSR, tg
+    );
     ASSERT_TRUE(r.done);
     ASSERT_TRUE(tg.kitty);
     ASSERT_TRUE(tg.sixel);
@@ -428,4 +450,5 @@ TEST(graphics, full_batch_with_da1)
     ASSERT_EQ(tg.cell_h, 33);
     ASSERT_EQ(tg.sixel_max_w, 1000);
     ASSERT_EQ(tg.sixel_max_h, 1000);
+    ASSERT_EQ(tg.sixel_registers, 1024);
 }

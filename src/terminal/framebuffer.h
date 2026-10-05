@@ -1,9 +1,10 @@
 #pragma once
 
-#include "src/math/linalg.h"       // vec3 (for vec3_to_color)
-#include "src/terminal/color.h"    // Color, ColorMode (re-exported: every includer of this header sees them)
-#include "src/terminal/graphics.h" // GraphicsBackend (GraphicsConfig tags the present() backend with it)
-#include "src/terminal/sixel.h"    // sixel::Scratch (the encoder's caller-owned staging)
+#include "src/math/linalg.h"            // vec3 (for vec3_to_color)
+#include "src/terminal/color.h"         // Color, ColorMode (re-exported: every includer of this header sees them)
+#include "src/terminal/graphics.h"      // GraphicsBackend (GraphicsConfig tags the present() backend with it)
+#include "src/terminal/sixel.h"         // sixel::Scratch (the encoder's caller-owned staging)
+#include "src/terminal/sixel_palette.h" // sixel::FittedPalette (the sixel backend's colour registers)
 
 #include <atomic>
 #include <cmath>
@@ -12,6 +13,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -51,6 +53,8 @@ struct GraphicsConfig
     // 1-based sixel origin; ignored by kitty.
     int origin_col = 1;
     int origin_row = 1;
+    // Sixel palette size range, already capped to the terminal's register count.
+    sixel::ColorRange sixel_colors;
 };
 
 class Framebuffer
@@ -186,6 +190,16 @@ class Framebuffer
     // Set the one-line HUD. SGR is allowed; newlines and cursor movement are not.
     void set_hud(std::string text) { m_hud = std::move(text); }
 
+    // A colour the sixel palette must hold exactly, such as the wireframe colour, which thin
+    // lines can hide from the palette's sample. Kitty and blocks ignore it.
+    void set_required_color(std::optional<Color> color) noexcept { m_required = color; }
+
+    // Sixel palette fits installed so far; 0 on other backends and before the first sixel frame.
+    [[nodiscard]] unsigned sixel_palette_generation() const noexcept
+    {
+        return m_palette ? m_palette->generation() : 0u;
+    }
+
     // Flush the pixel buffer, retrying short writes until complete or interrupted.
     void present();
 
@@ -197,8 +211,8 @@ class Framebuffer
     // the pixel buffer was not rewritten since the last present) plus the HUD row.
     void present_kitty();
 
-    // present() body for the sixel backend: quantize the pixel buffer to the
-    // xterm-240 palette (m_idx) and emit one full sixel frame, gated like kitty.
+    // present() body for the sixel backend: fit the palette, map the pixel buffer to its
+    // registers (m_idx) and emit one full sixel frame, gated like kitty.
     void present_sixel();
 
     // Compose and flush inside synchronized-output markers.
@@ -231,8 +245,8 @@ class Framebuffer
     size_t deflate_frame(size_t len);
     size_t deflate_frame_parallel(size_t len, int chunks);
 
-    // Quantize the frame's colours into m_idx, the sixel encoder's input plane.
-    void quantize_to_palette(size_t npx);
+    // Map the frame onto the fitted palette's registers in m_idx, the sixel encoder's input plane.
+    void map_to_palette();
     [[nodiscard]] const unsigned char *idx_plane() const noexcept { return m_idx.get(); }
 
     // Append one sixel frame to m_buf, split across the borrowed pool when there is one.
@@ -271,6 +285,7 @@ class Framebuffer
     // std::fill cannot assign non-copyable atomics.
     void fill_cleared(uint32_t bg_bits) noexcept
     {
+        m_clear_rgb = bg_bits;
         const uint64_t v = pack_pixel(std::numeric_limits<float>::infinity(), bg_bits);
         for (auto &p : m_pixel)
         {
@@ -294,8 +309,10 @@ class Framebuffer
         if (m_gfx.backend == GraphicsBackend::Sixel)
         {
             // Sixel has no useful worst-case bound. Let early frames grow the
-            // buffer, whose capacity persists until resize.
-            return sixel::palette_block().size() + (static_cast<size_t>(m_width) * 4u) + 4096u;
+            // buffer, whose capacity persists until resize. Before the first frame
+            // creates the palette, reserve for the longest register block.
+            const size_t block = m_palette ? m_palette->register_block().size() : sixel::MAX_REGISTER_BLOCK_BYTES;
+            return block + (static_cast<size_t>(m_width) * 4u) + 4096u;
         }
         const size_t per_cell = (m_mode == ColorMode::TrueColor) ? 50u : 32u;
         return static_cast<size_t>(m_width) * static_cast<size_t>(m_height / 2) * per_cell;
@@ -325,15 +342,21 @@ class Framebuffer
     // so the vendored header stays out of this one: the value is two 16-bit sums.
     std::vector<uint32_t> m_zchunk_adler;
     // Workers that completed the latest split. Shared by staging fill, palette
-    // quantization, and sixel encoding, which never overlap.
+    // mapping, and sixel encoding, which never overlap.
     std::vector<uint8_t> m_par_covered;
-    // Sixel staging: the frame quantized to xterm-256 palette indices, the
-    // emitter's input plane. Same raw-array rationale as m_rgb/m_z above.
+    // Sixel staging: the frame as register numbers, the emitter's input plane.
+    // Same raw-array rationale as m_rgb/m_z above.
     std::unique_ptr<unsigned char[]> m_idx;
     size_t m_idx_cap = 0;
     // The sixel encoder's caller-owned band masks (grow-only, dirty between
     // frames by contract; see sixel::Scratch).
     sixel::Scratch m_sixel_scratch;
+    // Created by the first sixel frame; kept across resize and suspension, since neither
+    // the palette nor its table depends on the frame size.
+    std::unique_ptr<sixel::FittedPalette> m_palette;
+    // Colour of the last clear() or resize, a candidate pin for the palette.
+    uint32_t m_clear_rgb = 0;
+    std::optional<Color> m_required;
     // Parallel sixel encode: one output buffer and one Scratch per worker because
     // staging is not shareable. Allocate only for a split and retain capacity.
     std::vector<std::string> m_sixel_parts;

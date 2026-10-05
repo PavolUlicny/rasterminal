@@ -28,6 +28,8 @@ struct TermGraphics
     // XTSMGRAPHICS size limit. xterm discards oversized images instead of clipping them.
     int sixel_max_w = 0;
     int sixel_max_h = 0;
+    // XTSMGRAPHICS colour register count; 0 when unreported.
+    int sixel_registers = 0;
 };
 
 // `done` means the DSR sentinel arrived. `consumed` excludes any partial sequence.
@@ -37,6 +39,6 @@ struct ReplyScan
     int consumed = 0;
 };
 
-// Parse kitty, cell-size, DA1, sixel-size and DSR replies. Skip unrelated complete
+// Parse kitty, cell-size, DA1, sixel-size, sixel-register and DSR replies. Skip unrelated complete
 // sequences and loose input. The caller may compact the buffer by `consumed`.
 ReplyScan parse_graphics_replies(const char *buf, int len, TermGraphics &out);

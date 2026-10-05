@@ -226,8 +226,8 @@ for the detection order.
 Forcing a color mode does not bypass the
 .B TERM=dumb
 rejection or the requirement for ANSI escape support on Windows.
-Kitty images remain 24-bit and sixel images use 240 colors, so this option
-affects only the HUD under those backends.
+Kitty images remain 24-bit and sixel images use their own fitted palette, so
+this option affects only the HUD under those backends.
 .TP
 .BI \-\-graphics " mode"
 Rendering backend.
@@ -241,15 +241,19 @@ draws Unicode half-block cells, and
 prefers kitty, then sixel, then blocks. The default is
 .BR auto .
 .IP
-A sixel image uses the 240-color xterm palette at native resolution. It uses
-whole 6-pixel bands and leaves the last terminal row clear to prevent scrolling,
+A sixel image is drawn at native resolution with a palette fitted to each
+frame; see
+.BR \-\-sixel\-colors .
+It uses whole 6-pixel bands and leaves the last terminal row clear to prevent scrolling,
 even under
 .BR \-\-no\-hud .
 It honors the terminal's advertised image limit and centers a limited image when
 the cell size is known. xterm defaults to 1000x1000 pixels and discards larger
 images. Its
 .B maxStringParse
-resource defaults to 600000 and drops larger sixel payloads. Raise it with
+resource defaults to 600000 and drops larger sixel payloads. Muted, detailed
+scenes produce the largest frames and reach this limit at smaller windows than
+other scenes. Raise it with
 .BR "xterm \-xrm '*maxStringParse: 10000000'" .
 .IP
 Forcing
@@ -258,6 +262,19 @@ or
 .B sixel
 requires successful detection. Both modes are unavailable under tmux and GNU
 screen.
+.TP
+.BI \-\-sixel\-colors " range"
+Size of the sixel palette.
+.I N
+fixes it at N colors, and
+.IR MIN \- MAX
+lets each scene take a size within that range: scenes with few colors stay at
+the bottom of the range, and colorful ones step up. Values are in [2, 256].
+.B auto
+is 24-64 and is the default.
+A smaller palette draws faster in the terminal; a larger one keeps more
+distinct colors. Both bounds are capped to the number of color registers the
+terminal reports. The option has no effect on kitty or blocks output.
 .TP
 .BI \-\-spin\-speed " DEG/S"
 Auto-rotation speed in degrees per second. It applies to

@@ -291,6 +291,7 @@ add_executable(rasterminal
   src/terminal/geometry.cpp
   src/terminal/kitty.cpp
   src/terminal/sixel.cpp
+  src/terminal/sixel_palette.cpp
   src/loaders/mesh.cpp
   src/loaders/mesh_obj.cpp
   src/loaders/mesh_ply.cpp
@@ -363,6 +364,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/terminal/test_input.cpp
     tests/terminal/test_kitty.cpp
     tests/terminal/test_sixel.cpp
+    tests/terminal/test_sixel_palette.cpp
     tests/terminal/test_text.cpp
     tests/terminal/test_hud.cpp
     tests/viewer/test_viewer.cpp
@@ -426,6 +428,7 @@ if(RASTERMINAL_BUILD_TESTS)
     src/terminal/geometry.cpp
     src/terminal/kitty.cpp
     src/terminal/sixel.cpp
+    src/terminal/sixel_palette.cpp
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp

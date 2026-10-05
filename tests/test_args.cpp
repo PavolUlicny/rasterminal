@@ -1366,6 +1366,47 @@ TEST(args, graphics_missing_value_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+// --sixel-colors
+
+TEST(args, sixel_colors_default_is_auto)
+{
+    const ParsedArgs a = run({ "m.obj" }).args;
+    ASSERT_EQ(a.sixel_colors.min, 24);
+    ASSERT_EQ(a.sixel_colors.max, 64);
+}
+
+TEST(args, sixel_colors_values)
+{
+    const auto range = [](const char *v)
+    {
+        const ParseResult r = run({ "--sixel-colors", v, "m.obj" });
+        ASSERT_TRUE(r.ok);
+        return r.args.sixel_colors;
+    };
+    ASSERT_EQ(range("auto").min, 24);
+    ASSERT_EQ(range("AUTO").max, 64);
+    ASSERT_EQ(range("16").min, 16);
+    ASSERT_EQ(range("16").max, 16);
+    ASSERT_EQ(range("16-64").min, 16);
+    ASSERT_EQ(range("16-64").max, 64);
+    ASSERT_EQ(range("64-64").min, 64);
+    ASSERT_EQ(range("2").min, 2);
+    ASSERT_EQ(range("2-256").max, 256);
+    ASSERT_EQ(run({ "--sixel-colors=8-24", "m.obj" }).args.sixel_colors.max, 24);
+}
+
+TEST(args, sixel_colors_invalid_value_is_error)
+{
+    for (const char *v : { "1", "257", "0", "64-16", "16-", "-16", "16-64-", "a-b", "", "16 ", " 16", "+16", "16-1000",
+                           "10000", "16x64", "auto-64" })
+    {
+        const ParseResult r = run({ "--sixel-colors", v, "m.obj" });
+        ASSERT_FALSE(r.ok);
+        ASSERT_EQ(r.exit_code, 1);
+    }
+    ASSERT_FALSE(run({ "--sixel-colors" }).ok);
+}
+
 // --fps
 
 TEST(args, fps_default)
