@@ -10,6 +10,16 @@
 namespace
 {
 
+    // A painting run stops before this many columns without its own pixels and skips them.
+    // Painting across saves a few bytes, but xterm's decode time follows pixel writes rather
+    // than bytes; 16 decoded fastest across the measured terminals.
+    constexpr int MIN_SKIP = 16;
+
+    inline bool has_zero_byte(uint64_t v) noexcept
+    {
+        return ((v - 0x0101010101010101ull) & ~v & 0x8080808080808080ull) != 0;
+    }
+
     // OR of the eight bytes of a word, which byte order cannot change.
     inline unsigned int or_bytes(uint64_t v) noexcept
     {
@@ -172,7 +182,7 @@ namespace sixel
             }
 
             // A pass may also set bits that a later pass of the band repaints, since the last
-            // write wins. Those free bits merge runs: a background pass becomes one run.
+            // write wins. Those free bits merge runs across colour edges and short gaps.
             std::memset(painted, 0, w);
             for (int ci = 0; ci < ncolors; ci++)
             {
@@ -202,6 +212,11 @@ namespace sixel
                         uint64_t done = 0;
                         std::memcpy(&own, m + x + run, 8);
                         std::memcpy(&done, painted + x + run, 8);
+                        // Columns without own pixels may end the run; the byte loop decides.
+                        if (need == 0 ? own != 0 : has_zero_byte(own))
+                        {
+                            break;
+                        }
                         const unsigned int next_need = need | or_bytes(own);
                         const unsigned int next_allowed = allowed & ~or_bytes(done);
                         if ((next_need & ~next_allowed) != 0)
@@ -214,6 +229,42 @@ namespace sixel
                     }
                     while (x + run <= hi_x)
                     {
+                        if (need != 0 && m[x + run] == 0)
+                        {
+                            // m[hi_x] is nonzero, so the count stays inside the span.
+                            int gap = 1;
+                            while (gap < MIN_SKIP && m[x + run + gap] == 0)
+                            {
+                                gap++;
+                            }
+                            if (gap == MIN_SKIP)
+                            {
+                                break;
+                            }
+                            // A short gap joins the run while its painted bits allow.
+                            int joined = 0;
+                            while (joined < gap)
+                            {
+                                const unsigned int next_allowed =
+                                    allowed & ~static_cast<unsigned int>(painted[x + run + joined]);
+                                if ((need & ~next_allowed) != 0)
+                                {
+                                    break;
+                                }
+                                allowed = next_allowed;
+                                joined++;
+                            }
+                            run += joined;
+                            if (joined < gap)
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+                        if (need == 0 && m[x + run] != 0 && run >= MIN_SKIP)
+                        {
+                            break; // a skip ends where own pixels start
+                        }
                         const unsigned int next_need = need | m[x + run];
                         const unsigned int next_allowed = allowed & ~static_cast<unsigned int>(painted[x + run]);
                         if ((next_need & ~next_allowed) != 0)

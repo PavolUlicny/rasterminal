@@ -204,18 +204,46 @@ TEST(sixel, earlier_pass_paints_under_later_colours)
     }
 }
 
+TEST(sixel, earlier_pass_skips_wide_gaps)
+{
+    // Painting the background under a shape writes its pixels twice. xterm's decode time follows
+    // those writes, so a shape 16 or more columns wide is skipped and a narrower one painted under.
+    const auto check = [](int shape, const char *expected)
+    {
+        const int w = 20 + shape;
+        auto plane = solid_plane(w, 6, 1);
+        for (int y = 0; y < 6; y++)
+        {
+            for (int x = 10; x < 10 + shape; x++)
+            {
+                plane[(static_cast<size_t>(y) * static_cast<size_t>(w)) + static_cast<size_t>(x)] = 2;
+            }
+        }
+        const std::string out = encode(plane, w, 6);
+        ASSERT_TRUE(out.find(expected) != std::string::npos);
+        const SixelFrame f = sixel_decode(out);
+        for (size_t i = 0; i < plane.size(); i++)
+        {
+            ASSERT_EQ(f.plane[i], plane[i]);
+        }
+    };
+    check(16, "#1!10~!16?!10~$#2!10?!16~");
+    check(15, "#1!35~$#2!10?!15~");
+}
+
 TEST(sixel, blocky_planes_roundtrip)
 {
-    // Few registers in short horizontal runs, so passes merge across columns of other colours
-    // and runs end inside and at the edges of the eight-column steps. Heights that are not a
-    // multiple of six check that no pass sets bits below the image.
+    // Few registers in horizontal runs up to 24 long, so passes merge across columns of other
+    // colours, skip gaps on both sides of the skip threshold, and runs end inside and at the
+    // edges of the eight-column steps. Heights that are not a multiple of six check that no pass
+    // sets bits below the image.
     unsigned int seed = 0xBEEFu;
     const auto next = [&seed]
     {
         seed = (seed * 1664525u) + 1013904223u;
         return seed >> 16u;
     };
-    for (int w = 1; w <= 70; w += 3)
+    for (int w = 1; w <= 100; w += 3)
     {
         for (const int h : { 1, 5, 6, 7, 13, 18 })
         {
@@ -224,7 +252,7 @@ TEST(sixel, blocky_planes_roundtrip)
             while (i < plane.size())
             {
                 const auto reg = static_cast<unsigned char>(next() % 4u);
-                const size_t len = 1u + (next() % 12u);
+                const size_t len = 1u + (next() % 24u);
                 for (size_t k = 0; k < len && i < plane.size(); k++)
                 {
                     plane[i++] = reg;
