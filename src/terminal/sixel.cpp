@@ -7,36 +7,27 @@
 #include <cstring>
 #include <string>
 
-// Enable word-at-a-time run scans only on little-endian targets with a 64-bit ctz.
-// Other targets keep the byte loop. clang-cl uses its builtin path.
-#if defined(_MSC_VER) && !defined(__clang__)
-#if defined(_M_X64) || defined(_M_ARM64)
-#define SIXEL_LE_WORD_SCAN
-#endif
-#elif defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define SIXEL_LE_WORD_SCAN
-#endif
-
-#if defined(SIXEL_LE_WORD_SCAN) && defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h> // _BitScanForward64 for the run scan
-#endif
-
 namespace
 {
 
-#ifdef SIXEL_LE_WORD_SCAN
-    // Byte offset of the lowest-addressed differing byte in a nonzero XOR word.
-    inline int first_diff_byte(uint64_t d) noexcept
+    // A painting run stops before this many columns without its own pixels and skips them.
+    // Painting across saves a few bytes, but xterm's decode time follows pixel writes rather
+    // than bytes; 16 decoded fastest across the measured terminals.
+    constexpr int MIN_SKIP = 16;
+
+    inline bool has_zero_byte(uint64_t v) noexcept
     {
-#if defined(_MSC_VER) && !defined(__clang__)
-        unsigned long i = 0;
-        _BitScanForward64(&i, d);
-        return static_cast<int>(i >> 3u);
-#else
-        return static_cast<int>(static_cast<unsigned int>(__builtin_ctzll(d)) >> 3u);
-#endif
+        return ((v - 0x0101010101010101ull) & ~v & 0x8080808080808080ull) != 0;
     }
-#endif
+
+    // OR of the eight bytes of a word, which byte order cannot change.
+    inline unsigned int or_bytes(uint64_t v) noexcept
+    {
+        v |= v >> 32u;
+        v |= v >> 16u;
+        v |= v >> 8u;
+        return static_cast<unsigned int>(v & 0xFFu);
+    }
 
     // Avoid std::to_string allocations in hot RLE output.
     void append_uint(std::string &out, unsigned int v)
@@ -113,7 +104,7 @@ namespace sixel
             out.reserve(need);
         }
 
-        // P2=1 leaves zero bits untouched. Every pixel is painted by one palette pass.
+        // P2=1 leaves zero bits untouched. Every pixel is painted, last by its own register's pass.
         out += "\033P0;1;0q\"1;1;";
         append_uint(out, static_cast<unsigned int>(width));
         out += ';';
@@ -135,9 +126,10 @@ namespace sixel
             return;
         }
 
-        // Lazily clear masks only for palette registers used in this band.
+        // Lazily clear masks only for palette registers used in this band. The row after the
+        // last register's mask holds the bits earlier passes of the band painted.
         const auto w = static_cast<size_t>(width);
-        const size_t mask_bytes = static_cast<size_t>(MAX_REGISTERS) * w;
+        const size_t mask_bytes = static_cast<size_t>(MAX_REGISTERS + 1) * w;
         if (mask_bytes > scratch.cap)
         {
             // NOLINTNEXTLINE(modernize-make-unique,cppcoreguidelines-owning-memory): value-init defeats the point
@@ -145,6 +137,7 @@ namespace sixel
             scratch.cap = mask_bytes;
         }
         unsigned char *mask = scratch.mask.get();
+        unsigned char *painted = mask + (static_cast<size_t>(MAX_REGISTERS) * w);
         // Reads are stamp-gated; value initialization remains for clang-tidy.
         std::array<int, MAX_REGISTERS> stamp{};
         stamp.fill(-1);
@@ -188,6 +181,9 @@ namespace sixel
                 }
             }
 
+            // A pass may also set bits that a later pass of the band repaints, since the last
+            // write wins. Those free bits merge runs across colour edges and short gaps.
+            std::memset(painted, 0, w);
             for (int ci = 0; ci < ncolors; ci++)
             {
                 if (ci > 0)
@@ -198,35 +194,96 @@ namespace sixel
                 out += '#';
                 append_uint(out, static_cast<unsigned int>(reg));
                 const unsigned char *m = mask + (reg * w);
-                const int hi = max_x[reg];
-                int x = min_x[reg];
+                const int lo_x = min_x[reg];
+                const int hi_x = max_x[reg];
+                int x = lo_x;
                 append_run(out, x, '?'); // Emit the leading gap; omit the trailing gap.
-                while (x <= hi)
+                while (x <= hi_x)
                 {
-                    const unsigned char v = m[x];
+                    // A run's value must hold each column's own bits and only bits free in
+                    // all its columns. Taking the longest run at each step gives the fewest.
+                    unsigned int need = m[x];
+                    unsigned int allowed = ~static_cast<unsigned int>(painted[x]);
                     int run = 1;
-#ifdef SIXEL_LE_WORD_SCAN
-                    // Compare eight columns at once; the byte loop handles the tail.
-                    const uint64_t bcast = 0x0101010101010101ull * v;
-                    while (x + run + 8 <= hi + 1)
+                    // Eight columns at once: if their union fits, so does every prefix.
+                    while (x + run + 8 <= hi_x + 1)
                     {
-                        uint64_t chunk = 0;
-                        std::memcpy(&chunk, m + x + run, 8);
-                        const uint64_t d = chunk ^ bcast;
-                        if (d != 0)
+                        uint64_t own = 0;
+                        uint64_t done = 0;
+                        std::memcpy(&own, m + x + run, 8);
+                        std::memcpy(&done, painted + x + run, 8);
+                        // Columns without own pixels may end the run; the byte loop decides.
+                        if (need == 0 ? own != 0 : has_zero_byte(own))
                         {
-                            run += first_diff_byte(d);
                             break;
                         }
+                        const unsigned int next_need = need | or_bytes(own);
+                        const unsigned int next_allowed = allowed & ~or_bytes(done);
+                        if ((next_need & ~next_allowed) != 0)
+                        {
+                            break;
+                        }
+                        need = next_need;
+                        allowed = next_allowed;
                         run += 8;
                     }
-#endif
-                    while (x + run <= hi && m[x + run] == v)
+                    while (x + run <= hi_x)
                     {
+                        if (need != 0 && m[x + run] == 0)
+                        {
+                            // m[hi_x] is nonzero, so the count stays inside the span.
+                            int gap = 1;
+                            while (gap < MIN_SKIP && m[x + run + gap] == 0)
+                            {
+                                gap++;
+                            }
+                            if (gap == MIN_SKIP)
+                            {
+                                break;
+                            }
+                            // A short gap joins the run while its painted bits allow.
+                            int joined = 0;
+                            while (joined < gap)
+                            {
+                                const unsigned int next_allowed =
+                                    allowed & ~static_cast<unsigned int>(painted[x + run + joined]);
+                                if ((need & ~next_allowed) != 0)
+                                {
+                                    break;
+                                }
+                                allowed = next_allowed;
+                                joined++;
+                            }
+                            run += joined;
+                            if (joined < gap)
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+                        if (need == 0 && m[x + run] != 0 && run >= MIN_SKIP)
+                        {
+                            break; // a skip ends where own pixels start
+                        }
+                        const unsigned int next_need = need | m[x + run];
+                        const unsigned int next_allowed = allowed & ~static_cast<unsigned int>(painted[x + run]);
+                        if ((next_need & ~next_allowed) != 0)
+                        {
+                            break;
+                        }
+                        need = next_need;
+                        allowed = next_allowed;
                         run++;
                     }
-                    append_run(out, run, static_cast<char>(0x3F + v));
+                    append_run(out, run, static_cast<char>(0x3F + need));
                     x += run;
+                }
+                if (ci + 1 < ncolors)
+                {
+                    for (int px = lo_x; px <= hi_x; px++)
+                    {
+                        painted[px] = static_cast<unsigned char>(painted[px] | m[px]);
+                    }
                 }
             }
             if (band + 1 < bands)

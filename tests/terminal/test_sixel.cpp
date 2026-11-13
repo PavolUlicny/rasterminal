@@ -183,6 +183,90 @@ TEST(sixel, two_color_split_uses_a_return_between_passes)
     }
 }
 
+TEST(sixel, earlier_pass_paints_under_later_colours)
+{
+    // A shape inside a background: the background pass may set the shape's bits too, since
+    // the shape's pass repaints them, so it is one run across the band.
+    auto plane = solid_plane(8, 6, 1);
+    for (int y = 2; y < 4; y++)
+    {
+        for (int x = 3; x < 5; x++)
+        {
+            plane[(static_cast<size_t>(y) * 8u) + static_cast<size_t>(x)] = 2;
+        }
+    }
+    const std::string out = encode(plane, 8, 6);
+    ASSERT_TRUE(out.find("#1!8~$#2") != std::string::npos);
+    const SixelFrame f = sixel_decode(out);
+    for (size_t i = 0; i < plane.size(); i++)
+    {
+        ASSERT_EQ(f.plane[i], plane[i]);
+    }
+}
+
+TEST(sixel, earlier_pass_skips_wide_gaps)
+{
+    // Painting the background under a shape writes its pixels twice. xterm's decode time follows
+    // those writes, so a shape 16 or more columns wide is skipped and a narrower one painted under.
+    const auto check = [](int shape, const char *expected)
+    {
+        const int w = 20 + shape;
+        auto plane = solid_plane(w, 6, 1);
+        for (int y = 0; y < 6; y++)
+        {
+            for (int x = 10; x < 10 + shape; x++)
+            {
+                plane[(static_cast<size_t>(y) * static_cast<size_t>(w)) + static_cast<size_t>(x)] = 2;
+            }
+        }
+        const std::string out = encode(plane, w, 6);
+        ASSERT_TRUE(out.find(expected) != std::string::npos);
+        const SixelFrame f = sixel_decode(out);
+        for (size_t i = 0; i < plane.size(); i++)
+        {
+            ASSERT_EQ(f.plane[i], plane[i]);
+        }
+    };
+    check(16, "#1!10~!16?!10~$#2!10?!16~");
+    check(15, "#1!35~$#2!10?!15~");
+}
+
+TEST(sixel, blocky_planes_roundtrip)
+{
+    // Few registers in horizontal runs up to 24 long, so passes merge across columns of other
+    // colours, skip gaps on both sides of the skip threshold, and runs end inside and at the
+    // edges of the eight-column steps. Heights that are not a multiple of six check that no pass
+    // sets bits below the image.
+    unsigned int seed = 0xBEEFu;
+    const auto next = [&seed]
+    {
+        seed = (seed * 1664525u) + 1013904223u;
+        return seed >> 16u;
+    };
+    for (int w = 1; w <= 100; w += 3)
+    {
+        for (const int h : { 1, 5, 6, 7, 13, 18 })
+        {
+            std::vector<unsigned char> plane(static_cast<size_t>(w) * static_cast<size_t>(h));
+            size_t i = 0;
+            while (i < plane.size())
+            {
+                const auto reg = static_cast<unsigned char>(next() % 4u);
+                const size_t len = 1u + (next() % 24u);
+                for (size_t k = 0; k < len && i < plane.size(); k++)
+                {
+                    plane[i++] = reg;
+                }
+            }
+            const SixelFrame f = sixel_decode(encode(plane, w, h));
+            for (size_t j = 0; j < plane.size(); j++)
+            {
+                ASSERT_EQ(f.plane[j], plane[j]);
+            }
+        }
+    }
+}
+
 TEST(sixel, pseudo_random_plane_roundtrip)
 {
     const int w = 31;
@@ -350,18 +434,9 @@ TEST(sixel, leading_gap_is_skipped_with_empty_sixels)
     }
 }
 
-TEST(sixel, decoder_rejects_a_second_paint)
+TEST(sixel, decoder_keeps_the_last_paint)
 {
-    // The roundtrip tests rely on the decoder catching a pixel that two passes paint.
-    bool rejected = false;
-    try
-    {
-        (void)sixel_decode("\033P0;1;0q\"1;1;1;1#0;2;0;0;0#1;2;100;0;0#0@$#1@\033\\");
-    }
-    catch (const testing::AssertionError &)
-    {
-        rejected = true;
-    }
-    ASSERT_TRUE(rejected);
-    (void)sixel_decode("\033P0;1;0q\"1;1;1;1#0;2;0;0;0#0@\033\\");
+    // The encoder relies on a later pass overwriting an earlier one, as terminals do.
+    const SixelFrame f = sixel_decode("\033P0;1;0q\"1;1;1;1#0;2;0;0;0#1;2;100;0;0#0@$#1@\033\\");
+    ASSERT_EQ(f.plane[0], 1);
 }

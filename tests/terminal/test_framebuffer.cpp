@@ -2242,8 +2242,7 @@ TEST(framebuffer, sixel_survives_a_pool_reporting_a_different_worker_count)
 
 namespace
 {
-    // The sixel frame inside a present()'s output, decoded with the independent decoder,
-    // which also rejects a pixel painted twice.
+    // The sixel frame inside a present()'s output, decoded with the independent decoder.
     SixelFrame decode_presented(const std::string &out)
     {
         const size_t dcs = out.find("\033P");
