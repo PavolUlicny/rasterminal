@@ -225,16 +225,19 @@ Texture height_to_normal_map(const Texture &src, char imfchan, float bm)
         {
             // Sobel derivatives suppress spikes from 8-bit quantization. Fixed per-texel
             // strength avoids resolution-dependent relief.
-            const float tl = height_at(x - 1, y - 1);
-            const float tc = height_at(x, y - 1);
-            const float tr = height_at(x + 1, y - 1);
-            const float ml = height_at(x - 1, y);
-            const float mr = height_at(x + 1, y);
-            const float bl = height_at(x - 1, y + 1);
-            const float bc = height_at(x, y + 1);
-            const float br = height_at(x + 1, y + 1);
-            const float dx = ((tr + (2.0f * mr) + br) - (tl + (2.0f * ml) + bl)) * 0.125f;
-            const float dy = ((bl + (2.0f * bc) + br) - (tl + (2.0f * tc) + tr)) * 0.125f;
+            // Heights are floats in [0, 1], so these sums are exact in double in any order:
+            // fast-math reassociation cannot turn a zero gradient into a residue that shifts
+            // the 127.5 encoding of a flat normal down to 127.
+            const auto tl = static_cast<double>(height_at(x - 1, y - 1));
+            const auto tc = static_cast<double>(height_at(x, y - 1));
+            const auto tr = static_cast<double>(height_at(x + 1, y - 1));
+            const auto ml = static_cast<double>(height_at(x - 1, y));
+            const auto mr = static_cast<double>(height_at(x + 1, y));
+            const auto bl = static_cast<double>(height_at(x - 1, y + 1));
+            const auto bc = static_cast<double>(height_at(x, y + 1));
+            const auto br = static_cast<double>(height_at(x + 1, y + 1));
+            const auto dx = static_cast<float>(((tr + (2.0 * mr) + br) - (tl + (2.0 * ml) + bl)) * 0.125);
+            const auto dy = static_cast<float>(((bl + (2.0 * bc) + br) - (tl + (2.0 * tc) + tr)) * 0.125);
 
             const vec3 n = normalize(vec3{ -bm_s * kHeightScale * dx, dy_sign * bm_s * kHeightScale * dy, 1.0f });
 

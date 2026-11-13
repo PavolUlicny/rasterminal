@@ -49,7 +49,7 @@ man page and CLI help.
 ## Code style
 
 Run `clang-format -i` on every C or C++ source and header you change under `src/`
-or `tests/`. Do not format `vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
+or `tests/`, using clang-format 18 as CI does (`pip install clang-format==18.1.3`). Do not format `vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
 
 ## Pull requests
 
