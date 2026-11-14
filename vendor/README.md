@@ -26,7 +26,7 @@ cmake --build build --target check -j
 | tinyobjloader | v2.0.0rc13 | `2945a967c5303b2c8c14174117c45f3302591150` | <https://github.com/tinyobjloader/tinyobjloader> | MIT |
 | stl_reader | v2.0 | `a130fe0b2ac15d7c2fd642bf1dcbdec600e69151` | <https://github.com/sreiter/stl_reader> | BSD-2-Clause |
 | meshoptimizer | v1.1 | `dc9d09ed83e1004aef47a1c3c597e0ec64848a37` | <https://github.com/zeux/meshoptimizer> | MIT |
-| draco | 1.5.7 | `8786740086a9f4d83f44aa83badfbea4dce7a1b5` | <https://github.com/google/draco> | Apache-2.0 |
+| draco | 1.5.9 | `554628821c3448319d7d4ae48db170b8c63e1aaf` | <https://github.com/google/draco> | Apache-2.0 |
 | basis_universal, `vendor/basisu/` | v2_50 | `9bebe16726b3a61c8c213eeee3b7cffb462ef34e` | <https://github.com/BinomialLLC/basis_universal> | Apache-2.0 |
 | zstd decode amalgamation | bundled with basis_universal `v2_50` | `9bebe16726b3a61c8c213eeee3b7cffb462ef34e` | <https://github.com/BinomialLLC/basis_universal> with a vendored copy of <https://github.com/facebook/zstd> | BSD-3-Clause |
 | libwebp decode subset, `vendor/libwebp/` | v1.6.0 | `4fa21912338357f89e4fd51cf2368325b59e9bd9` | <https://chromium.googlesource.com/webm/libwebp> | BSD-3-Clause + PATENTS |

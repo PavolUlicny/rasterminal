@@ -31,18 +31,18 @@ class MeshPredictionSchemeParallelogramDecoder
       typename PredictionSchemeDecoder<DataTypeT, TransformT>::CorrType;
   using CornerTable = typename MeshDataT::CornerTable;
   explicit MeshPredictionSchemeParallelogramDecoder(
-      const PointAttribute *attribute)
+      const PointAttribute* attribute)
       : MeshPredictionSchemeDecoder<DataTypeT, TransformT, MeshDataT>(
             attribute) {}
-  MeshPredictionSchemeParallelogramDecoder(const PointAttribute *attribute,
-                                           const TransformT &transform,
-                                           const MeshDataT &mesh_data)
+  MeshPredictionSchemeParallelogramDecoder(const PointAttribute* attribute,
+                                           const TransformT& transform,
+                                           const MeshDataT& mesh_data)
       : MeshPredictionSchemeDecoder<DataTypeT, TransformT, MeshDataT>(
             attribute, transform, mesh_data) {}
 
-  bool ComputeOriginalValues(const CorrType *in_corr, DataTypeT *out_data,
+  bool ComputeOriginalValues(const CorrType* in_corr, DataTypeT* out_data,
                              int size, int num_components,
-                             const PointIndex *entry_to_point_id_map) override;
+                             const PointIndex* entry_to_point_id_map) override;
   PredictionSchemeMethod GetPredictionMethod() const override {
     return MESH_PREDICTION_PARALLELOGRAM;
   }
@@ -55,13 +55,13 @@ class MeshPredictionSchemeParallelogramDecoder
 template <typename DataTypeT, class TransformT, class MeshDataT>
 bool MeshPredictionSchemeParallelogramDecoder<DataTypeT, TransformT,
                                               MeshDataT>::
-    ComputeOriginalValues(const CorrType *in_corr, DataTypeT *out_data,
-                          int /* size */, int num_components,
-                          const PointIndex * /* entry_to_point_id_map */) {
+    ComputeOriginalValues(const CorrType* in_corr, DataTypeT* out_data,
+                          int size, int num_components,
+                          const PointIndex* /* entry_to_point_id_map */) {
   this->transform().Init(num_components);
 
-  const CornerTable *const table = this->mesh_data().corner_table();
-  const std::vector<int32_t> *const vertex_to_data_map =
+  const CornerTable* const table = this->mesh_data().corner_table();
+  const std::vector<int32_t>* const vertex_to_data_map =
       this->mesh_data().vertex_to_data_map();
 
   // For storage of prediction values (already initialized to zero).
@@ -72,6 +72,9 @@ bool MeshPredictionSchemeParallelogramDecoder<DataTypeT, TransformT,
 
   const int corner_map_size =
       static_cast<int>(this->mesh_data().data_to_corner_map()->size());
+  if (corner_map_size * num_components > size) {
+    return false;
+  }
   for (int p = 1; p < corner_map_size; ++p) {
     const CornerIndex corner_id = this->mesh_data().data_to_corner_map()->at(p);
     const int dst_offset = p * num_components;

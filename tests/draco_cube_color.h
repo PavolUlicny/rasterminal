@@ -1,7 +1,7 @@
 #pragma once
 
 // Eight-vertex cube with RGBA COLOR_0, used to verify RGB decoding and alpha removal.
-// Regenerate with vendor/README.md's Draco recipe; the project vendors no encoder.
+// Encoded offline with upstream Draco's draco_encoder, which the project does not vendor.
 // Attribute IDs:
 //   POSITION -> 0
 //   COLOR_0  -> 1  (4 components / RGBA)

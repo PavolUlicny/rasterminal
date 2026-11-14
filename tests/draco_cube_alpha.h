@@ -1,7 +1,7 @@
 #pragma once
 
 // Eight-vertex cube with varying RGBA alpha, used to verify COLOR_0 reaches vertex_alpha.
-// Encoded with vendored Draco 1.5.7. Regenerate through vendor/README.md's recipe.
+// Encoded offline with upstream Draco's draco_encoder, which the project does not vendor.
 // Attribute IDs:
 //   POSITION -> 0  (3 components)
 //   COLOR_0  -> 1  (4 components / RGBA)

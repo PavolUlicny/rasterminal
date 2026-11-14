@@ -1,7 +1,7 @@
 #pragma once
 
-// Unit-cube Draco fixture: 24 unshared vertices and 12 triangles. Regenerate with
-// vendor/README.md's Draco recipe; the project vendors no encoder.
+// Unit-cube Draco fixture: 24 unshared vertices and 12 triangles. Encoded offline with
+// upstream Draco's draco_encoder, which the project does not vendor.
 // Attribute IDs:
 //   POSITION   -> 0
 //   TEXCOORD_0 -> 1
