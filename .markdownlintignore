@@ -1,0 +1,3 @@
+# Upstream documentation. Keep the project's vendor update guide in scope.
+vendor/**
+!vendor/README.md

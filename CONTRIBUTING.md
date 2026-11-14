@@ -48,6 +48,16 @@ man page and CLI help.
 
 ## Code style
 
+Check tracked Markdown files, including hidden directories, with:
+
+```sh
+git ls-files -z '*.md' ':!:vendor/*/**' | xargs -0 npx --yes markdownlint-cli@0.50.0
+```
+
+This excludes upstream documentation but includes the repository's `vendor/README.md`.
+Keep rule exceptions narrow; the changelog allows repeated section headings under
+different releases.
+
 Run `clang-format -i` on every C or C++ source and header you change under `src/`
 or `tests/`, using clang-format 18 as CI does (`pip install clang-format==18.1.3`). Do not format `vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
 
