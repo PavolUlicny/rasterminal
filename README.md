@@ -97,7 +97,7 @@ warning. See [Apple's instructions](https://support.apple.com/guide/mac-help/ope
 
 ### Windows
 
-Extract the `.zip` and run `rasterminal.exe` in Windows Terminal or another terminal with UTF-8 and ANSI escape support. Legacy `cmd.exe` is unsupported.
+Extract the `.zip` and run `rasterminal.exe` in Windows Terminal or another terminal with UTF-8 and ANSI escape support. Legacy `cmd.exe` is unsupported. Before Windows 10 version 1903, models may fail to open from paths with non-ASCII characters.
 
 ## Build
 

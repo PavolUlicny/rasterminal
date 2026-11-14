@@ -18,12 +18,14 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Sixel images use a palette fitted to each frame instead of the fixed 240-color xterm palette. Colors are much closer to the rendered image, especially in dark and muted scenes, and only the palette's registers are sent. Frames are about the same size on average, because a color pass may also paint pixels that a later pass covers, which merges runs. Muted, detailed scenes such as Sponza are still larger, typically by about a quarter and at most about two and a half times, so they reach xterm's default `maxStringParse` limit at smaller windows.
 - The startup query asks for the terminal's sixel color register count, and the palette never uses more registers than the terminal reports.
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
+- On Windows, texture names inside model files are read as UTF-8, as current exporters write them. A non-ASCII texture name that an older tool saved in the system's ANSI code page no longer opens.
 
 ### Fixed
 
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
 - Turning off backface culling no longer changes how double-sided surfaces are lit. Their back sides were lit as if they faced away from the viewer.
+- On Windows 10 version 1903 and later, models and their textures open from paths with non-ASCII characters, such as a user folder named `José`. Formats loaded through Assimp failed on any non-ASCII path, and the other formats failed on characters outside the system's ANSI code page.
 
 ## [v0.1.0-alpha.2] - 2026-09-08
 

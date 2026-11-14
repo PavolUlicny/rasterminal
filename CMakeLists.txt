@@ -280,6 +280,18 @@ if(NOT ipo_ok)
   message(STATUS "IPO/LTO not supported: ${ipo_msg}")
 endif()
 
+# Windows binaries embed a manifest that sets the process code page to UTF-8. CMake merges
+# .manifest sources only with MSVC-style linkers, so MinGW compiles a resource script instead.
+set(RASTERMINAL_WINDOWS_MANIFEST "")
+if(MINGW)
+  set(RASTERMINAL_WINDOWS_MANIFEST src/platform/rasterminal.rc)
+  # Dependency scanning follows only #include, not files named in resource statements.
+  set_source_files_properties(src/platform/rasterminal.rc PROPERTIES
+    OBJECT_DEPENDS ${PROJECT_SOURCE_DIR}/src/platform/rasterminal.manifest)
+elseif(WIN32)
+  set(RASTERMINAL_WINDOWS_MANIFEST src/platform/rasterminal.manifest)
+endif()
+
 # Main binary
 add_executable(rasterminal
   src/main.cpp
@@ -308,7 +320,8 @@ add_executable(rasterminal
   vendor/meshoptimizer/meshoptimizer_impl.cpp
   vendor/draco/draco_impl.cpp
   vendor/basisu/basisu_impl.cpp
-  $<TARGET_OBJECTS:rasterminal_c>)
+  $<TARGET_OBJECTS:rasterminal_c>
+  ${RASTERMINAL_WINDOWS_MANIFEST})
 # The repository root keeps project includes stable across source subdirectories.
 target_include_directories(rasterminal PRIVATE ${PROJECT_SOURCE_DIR})
 target_link_libraries(rasterminal PRIVATE
@@ -384,6 +397,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/loaders/test_gltf_webp.cpp
     tests/loaders/test_mesh_geometry.cpp
     tests/loaders/test_mesh_vcache.cpp
+    tests/loaders/test_non_ascii_paths.cpp
     tests/loaders/test_scoped_threads.cpp
     tests/texture/test_texture.cpp
     tests/texture/test_ktx2.cpp
@@ -432,7 +446,8 @@ if(RASTERMINAL_BUILD_TESTS)
     vendor/meshoptimizer/meshoptimizer_impl.cpp
     vendor/draco/draco_impl.cpp
     vendor/basisu/basisu_impl.cpp
-    $<TARGET_OBJECTS:rasterminal_c>)
+    $<TARGET_OBJECTS:rasterminal_c>
+    ${RASTERMINAL_WINDOWS_MANIFEST})
   # Tests use repository-root includes for project code and shared fixtures.
   target_include_directories(rasterminal_tests PRIVATE ${PROJECT_SOURCE_DIR})
   target_link_libraries(rasterminal_tests PRIVATE

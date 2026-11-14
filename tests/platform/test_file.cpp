@@ -5,6 +5,13 @@
 #include <cstdint>
 #include <cstdio>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 using platform_test::ScopedTmpFile;
 
 // Small fixtures use the same 64-bit seek and tell path as large files.
@@ -38,3 +45,12 @@ TEST(platform, file_size_empty_file_is_zero)
     std::fclose(f);
     ASSERT_EQ(size, int64_t{ 0 });
 }
+
+#ifdef _WIN32
+// The embedded manifest sets the process code page. Checking it directly tells a missing
+// manifest apart from a loader bug when the non-ASCII path tests fail.
+TEST(platform, process_code_page_is_utf8)
+{
+    ASSERT_EQ(GetACP(), static_cast<UINT>(CP_UTF8));
+}
+#endif
