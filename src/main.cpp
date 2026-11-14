@@ -20,6 +20,7 @@
 #include "src/terminal/sixel.h"
 #include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
+#include "src/viewer/frame_view.h"
 #include "src/viewer/input_controller.h"
 #include "src/viewer/scene_colors.h"
 #include "src/viewer/state.h"
@@ -125,7 +126,9 @@ namespace
     using terminal_geometry::TerminalGeometry;
     using viewer::background_color;
     using viewer::FrameTiming;
+    using viewer::FrameView;
     using viewer::InputController;
+    using viewer::same_image;
     using viewer::ViewerState;
     using viewer::wireframe_color_of;
 
@@ -802,8 +805,9 @@ const auto run_main = [](int argc, char *argv[]) -> int
 
         const bool has_textures = !mesh.textures.empty();
         InputController input(args.input, has_textures);
-        // Conservative image invalidation; unchanged frames neither render nor transmit.
-        bool scene_dirty = true;
+        // The view behind the image on screen. Clearing it forces a redraw when the
+        // framebuffer or terminal changes under an unchanged view.
+        std::optional<FrameView> rendered_view;
         // Positive world-Y rotation moves an upright model left on screen. Keep the
         // world direction fixed even when an upside-down view reads oppositely.
         const float spin_speed =
@@ -828,7 +832,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                     continue;
                 }
                 input.clear_motion();
-                scene_dirty = true;
+                rendered_view.reset();
                 timing.after_resume(FrameTiming::Clock::now());
                 request_geometry(geometry.after_resume());
             }
@@ -872,7 +876,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                     continue;
                 }
 
-                scene_dirty |= input.handle(ev, state, geometry.cols(), geometry.rows(), FrameTiming::Clock::now());
+                input.handle(ev, state, geometry.cols(), geometry.rows(), FrameTiming::Clock::now());
             }
             // Release the read budget even when the event cap or quit key ends the pass.
             platform::end_input_pass();
@@ -886,18 +890,17 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 continue;
             }
 
-            scene_dirty |= input.advance(state, dt, FrameTiming::Clock::now());
+            input.advance(state, dt, FrameTiming::Clock::now());
 
             if (state.settings.spinning)
             {
                 state.camera.spin_world_y(spin_speed * dt);
-                scene_dirty = true;
             }
 
             // Font zoom and sixel replies can change the image without changing the grid.
             if (poll_geometry(geometry, fb))
             {
-                scene_dirty = true;
+                rendered_view.reset();
             }
 
             // Compose every frame; present() cheaply drops an unchanged HUD before output.
@@ -924,26 +927,27 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 fb.set_hud(compose_hud(info, geometry.cols(), color_mode));
             }
 
-            // Render. A clean frame skips it (see scene_dirty), and on the pixel
-            // backends the retransmission with it; present() still runs for the HUD row.
-            const bool rendered = scene_dirty;
+            // An unchanged view skips the render, and on the pixel backends the
+            // retransmission with it; present() still runs for the HUD row.
+            const FrameView view(state);
+            const bool rendered = !rendered_view || !same_image(*rendered_view, view);
             if (rendered)
             {
-                fb.clear(background_color(state.settings.background));
-                const int n_lights = light_count(state.settings.lighting);
-                const vec3 cur_ambient = lighting_ambient(state.settings.lighting, ambient);
-                renderer.mode = state.settings.shading;
-                renderer.wireframe_color = wireframe_color_of(state.settings.wireframe_color);
+                fb.clear(background_color(view.background));
+                const int n_lights = light_count(view.lighting);
+                const vec3 cur_ambient = lighting_ambient(view.lighting, ambient);
+                renderer.mode = view.shading;
+                renderer.wireframe_color = wireframe_color_of(view.wireframe_color);
                 fb.set_required_color(
-                    state.settings.shading == ShadingMode::Wireframe ? std::optional<Color>(renderer.wireframe_color)
-                                                                     : std::nullopt
+                    view.shading == ShadingMode::Wireframe ? std::optional<Color>(renderer.wireframe_color)
+                                                           : std::nullopt
                 );
-                renderer.cull_backfaces = state.settings.culling;
-                renderer.show_texture = state.settings.texturing;
-                renderer.render(mesh, state.camera, lights, n_lights, cur_ambient, fb);
+                renderer.cull_backfaces = view.culling;
+                renderer.show_texture = view.texturing;
+                renderer.render(mesh, view.camera, lights, n_lights, cur_ambient, fb);
+                rendered_view = view;
             }
             fb.present();
-            scene_dirty = false;
             const auto remaining = timing.end_frame(rendered, args.fps, FrameTiming::Clock::now());
             if (remaining > std::chrono::duration<float>::zero())
             {

@@ -20,8 +20,7 @@ namespace viewer
             mouse_dragging_ = false;
         }
 
-        // Enabled input conservatively marks the scene dirty, even if state did not change.
-        bool handle(
+        void handle(
             const terminal_input::InputEvent &ev,
             ViewerState &state,
             int cols,
@@ -34,7 +33,7 @@ namespace viewer
                 ev.type == terminal_input::InputEvent::Type::CellSize ||
                 ev.type == terminal_input::InputEvent::Type::SixelGeometry)
             {
-                return false;
+                return;
             }
             Camera &camera = state.camera;
             if (ev.type == terminal_input::InputEvent::Type::Key)
@@ -145,9 +144,9 @@ namespace viewer
                 mouse_last_y_ = ev.y;
                 mouse_dragging_ = true;
             }
-            return true;
         }
 
+        // Returns whether a held key is still latched.
         bool advance(ViewerState &state, float dt, std::chrono::steady_clock::time_point now)
         {
             if (held_cam_key_ == terminal_input::Key::None)

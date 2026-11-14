@@ -68,6 +68,14 @@ mat4 Camera::projection(int pixel_width, int pixel_height) const
     return perspective(fov, aspect, near_plane, far_plane);
 }
 
+bool Camera::same_view(const Camera &other) const noexcept
+{
+    return target.x == other.target.x && target.y == other.target.y && target.z == other.target.z &&
+           distance == other.distance && orientation.x == other.orientation.x && orientation.y == other.orientation.y &&
+           orientation.z == other.orientation.z && orientation.w == other.orientation.w && fov == other.fov &&
+           near_plane == other.near_plane && far_plane == other.far_plane;
+}
+
 void Camera::orbit(float dx, float dy)
 {
     // World-Y yaw reverses on screen when upside down; invert it to preserve drag direction.

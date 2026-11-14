@@ -45,6 +45,11 @@ struct Camera
     [[nodiscard]] mat4 view(const vec3 &eye_pos) const;
     [[nodiscard]] mat4 projection(int pixel_width, int pixel_height) const;
 
+    // Exact match of every field Renderer::render reads, directly or through eye(), view()
+    // and projection(). A field it starts reading must join this comparison, or its changes
+    // stop redrawing.
+    [[nodiscard]] bool same_view(const Camera &other) const noexcept;
+
     // Apply one key for `dt` seconds.
     void process_key(terminal_input::Key key, float dt);
 
