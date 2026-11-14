@@ -550,9 +550,9 @@ TEST(camera, fp_look_pitch_clamp_is_reversible)
 
 TEST(camera, fp_look_view_is_finite_at_the_pitch_limit)
 {
-    // Looking straight up, forward is world +Y. look_at's up vector comes from the
-    // orientation quat rather than world Y, so it stays perpendicular and the cross
-    // product does not degenerate, so no epsilon backs the clamp off the pole.
+    // At the limit, forward is within FP_MAX_PITCH's margin of world +Y. look_at's up
+    // vector comes from the orientation quat rather than world Y, so it stays
+    // perpendicular and the cross product does not degenerate.
     Camera c = fp_camera();
     c.look(0.0f, 10.0f);
     const mat4 v = c.view();
@@ -561,6 +561,34 @@ TEST(camera, fp_look_view_is_finite_at_the_pitch_limit)
         for (float val : row)
         {
             ASSERT_TRUE(std::isfinite(val));
+        }
+    }
+}
+
+TEST(camera, fp_look_held_past_the_pitch_limit_keeps_the_view)
+{
+    // A key or drag held past the limit must leave the pose bit-identical, or every
+    // frame redraws an unchanged image. Yaw between pushes, as in a drag that wobbles
+    // sideways at the pole, leaves pitch a rounding error off the limit.
+    for (const float sign : { 1.0f, -1.0f })
+    {
+        for (const float distance : { 0.05f, 5.0f, 80.0f })
+        {
+            Camera c = fp_camera();
+            c.distance = distance;
+            c.target = c.eye() + c.forward() * c.distance;
+            for (int i = 0; i < 100; i++)
+            {
+                c.look(0.37f, sign * 0.05f);
+            }
+            c.look(0.0f, sign * 10.0f);
+            for (int i = 0; i < 50; i++)
+            {
+                c.look(0.013f * static_cast<float>((i % 5) - 2), 0.0f);
+                const Camera before = c;
+                c.look(0.0f, sign * (0.001f + (0.01f * static_cast<float>(i))));
+                ASSERT_TRUE(c.same_view(before));
+            }
         }
     }
 }
@@ -593,14 +621,16 @@ TEST(camera, fp_look_never_rolls)
 
 TEST(camera, fp_look_zero_is_noop)
 {
-    Camera c = fp_camera();
-    const vec3 e_before = c.eye();
-    const vec3 f_before = c.forward();
-    c.look(0.0f, 0.0f);
-    ASSERT_NEAR(c.eye().x, e_before.x, EPS);
-    ASSERT_NEAR(c.eye().y, e_before.y, EPS);
-    ASSERT_NEAR(c.eye().z, e_before.z, EPS);
-    ASSERT_NEAR(c.forward().y, f_before.y, EPS);
+    // From some rotated poses, renormalizing alone changes the low bits.
+    const float poses[][2] = { { 0.37f, 0.2f }, { 0.6f, -0.35f }, { -1.2f, -0.4f }, { 2.5f, 0.1f }, { 0.3f, 0.05f } };
+    for (const auto &p : poses)
+    {
+        Camera c = fp_camera();
+        c.look(p[0], p[1]);
+        const Camera before = c;
+        c.look(0.0f, 0.0f);
+        ASSERT_TRUE(c.same_view(before));
+    }
 }
 
 // move() / adjust_speed(): first-person
@@ -1094,16 +1124,17 @@ TEST(camera, view_eye_at_target_does_not_crash)
 
 TEST(camera, orbit_zero_is_noop)
 {
-    Camera c;
-    c.target = { 0.0f, 0.0f, 0.0f };
-    c.distance = 5.0f;
-    c.orientation = quat::from_axis_angle({ 0.0f, 1.0f, 0.0f }, to_radians(20.0f));
-    vec3 e_before = c.eye();
-    c.orbit(0.0f, 0.0f);
-    vec3 e_after = c.eye();
-    ASSERT_NEAR(e_after.x, e_before.x, EPS);
-    ASSERT_NEAR(e_after.y, e_before.y, EPS);
-    ASSERT_NEAR(e_after.z, e_before.z, EPS);
+    // Terminals can report mouse motion within one cell, a zero drag. From some poses,
+    // renormalizing alone changes the low bits.
+    const float poses[][2] = { { 0.37f, 0.2f }, { 0.6f, -0.35f }, { -1.2f, -0.4f }, { 2.5f, 0.1f }, { 0.3f, 0.05f } };
+    for (const auto &p : poses)
+    {
+        Camera c;
+        c.orbit(p[0], p[1]);
+        const Camera before = c;
+        c.orbit(0.0f, 0.0f);
+        ASSERT_TRUE(c.same_view(before));
+    }
 }
 
 TEST(camera, orbit_compound_nonzero_matches_formula)

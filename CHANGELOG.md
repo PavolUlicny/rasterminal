@@ -19,7 +19,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The startup query asks for the terminal's sixel color register count, and the palette never uses more registers than the terminal reports.
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
 - On Windows, texture names inside model files are read as UTF-8, as current exporters write them. A non-ASCII texture name that an older tool saved in the system's ANSI code page no longer opens.
-- Controls that leave the image unchanged no longer redraw the model. Examples are changing first-person speed, cycling the wireframe color or lighting in a mode that ignores it, selecting the current shading mode, and zooming past a limit. The HUD still updates.
+- Controls that leave the image unchanged no longer redraw the model. Examples are changing first-person speed, cycling the wireframe color or lighting in a mode that ignores it, selecting the current shading mode, and zooming or looking past a limit. The HUD still updates.
 
 ### Fixed
 

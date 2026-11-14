@@ -78,6 +78,11 @@ bool Camera::same_view(const Camera &other) const noexcept
 
 void Camera::orbit(float dx, float dy)
 {
+    // Renormalizing a zero rotation would still change the orientation's low bits.
+    if (dx == 0.0f && dy == 0.0f)
+    {
+        return;
+    }
     // World-Y yaw reverses on screen when upside down; invert it to preserve drag direction.
     if (up().y < 0.0f)
     {
@@ -95,16 +100,29 @@ void Camera::look(float dx, float dy)
         return;
     }
 
-    // Recover pitch past a pole with up().y because asin alone cannot distinguish 90+d
-    // from 90-d. The clamp keeps first-person upright and prevents horizon inversion.
+    // Near the pole, asin(fwd.y) magnifies rounding about a thousandfold; atan2 stays accurate.
+    // Neither distinguishes 90+d from 90-d, so recover pitch past a pole with up().y.
+    // The clamp keeps first-person upright and prevents horizon inversion.
     constexpr float PI = 3.14159265f;
     const vec3 fwd = forward();
-    float pitch_now = std::asin(clamp(fwd.y, -1.0f, 1.0f));
+    float pitch_now = std::atan2(fwd.y, std::sqrt((fwd.x * fwd.x) + (fwd.z * fwd.z)));
     if (up().y < 0.0f)
     {
         pitch_now = (fwd.y >= 0.0f) ? (PI - pitch_now) : (-PI - pitch_now);
     }
-    dy = clamp(dy, -FP_MAX_PITCH - pitch_now, FP_MAX_PITCH - pitch_now);
+    // When the clamp cuts a request at the limit, the room left over is rounding noise
+    // (measured below 5e-7 rad). Applying it would change the pose, and redraw, on every
+    // frame a key or drag pushes past the limit. Dropping it lets pitch settle up to this
+    // far either side of the limit, well inside the pole margin.
+    constexpr float PITCH_NOISE = 1e-5f;
+    const float clamped = clamp(dy, -FP_MAX_PITCH - pitch_now, FP_MAX_PITCH - pitch_now);
+    dy = (clamped != dy && std::fabs(clamped) < PITCH_NOISE) ? 0.0f : clamped;
+    // A zero rotation would still renormalize the orientation and rebuild target, which
+    // changes their low bits.
+    if (dx == 0.0f && dy == 0.0f)
+    {
+        return;
+    }
 
     // The pitch clamp makes orbit()'s upside-down yaw correction unnecessary.
     reorient_about_eye(*this, rotated(orientation, dx, dy));
