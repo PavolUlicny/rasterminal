@@ -55,8 +55,13 @@ git ls-files -z '*.md' ':!:vendor/*/**' | xargs -0 npx --yes markdownlint-cli@0.
 ```
 
 This excludes upstream documentation but includes the repository's `vendor/README.md`.
-Keep rule exceptions narrow; the changelog allows repeated section headings under
-different releases.
+CI runs the same command in the `markdownlint` job.
+
+Fix Markdown lint findings where practical. If a rule conflicts with intentional
+formatting or document structure, use the narrowest exception and add a comment
+explaining why it is needed. Prefer line- or file-specific exceptions over disabling
+a rule repository-wide. For example, the changelog allows repeated section headings
+under different releases.
 
 Run `clang-format -i` on every C or C++ source and header you change under `src/`
 or `tests/`, using clang-format 18 as CI does (`pip install clang-format==18.1.3`). Do not format `vendor/`. CI also runs clang-tidy, cppcheck, sanitizers and 32-bit builds.
