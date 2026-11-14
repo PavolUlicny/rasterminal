@@ -3,8 +3,8 @@
 // KTX2 / Basis Universal test fixtures (binary byte arrays).
 //
 // There is no encoder vendored (rasterminal ships the decode-only transcoder), so these
-// were generated offline once with the upstream basis_universal `basisu` CLI at the same
-// tag we vendor (v2_1_0r). Reproduction:
+// were generated offline once with the upstream basis_universal `basisu` CLI at tag
+// v2_1_0r. Reproduction:
 //
 //   # 4x4 solid (200,90,40) opaque  ->  ETC1S (BASISLZ supercompression)
 //   python3 -c "from PIL import Image; Image.new('RGBA',(4,4),(200,90,40,255)).save('solid.png')"

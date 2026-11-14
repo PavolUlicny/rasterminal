@@ -2,7 +2,7 @@
 //
 // Like vendor/meshoptimizer/meshoptimizer_impl.cpp and vendor/draco/draco_impl.cpp,
 // the transcoder .cpp is compiled directly rather than reached through -isystem.
-// Unlike those, this TU is large (~1.5 MB) and trips a long, compiler-specific set of
+// Unlike those, this TU is large and trips a long, compiler-specific set of
 // warnings that would change on every upstream bump, so instead of a pragma list it is
 // built with blanket warning suppression (-w / /w) applied per-TU in the build files
 // (CMakeLists.txt), the same treatment the vendored zstd C TU gets. We do

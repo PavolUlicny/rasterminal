@@ -327,8 +327,8 @@ All third-party libraries are included under [`vendor/`](vendor/). See the [vend
 | [tinyply](https://github.com/ddiakopoulos/tinyply) | 3.0 | Public domain | PLY parsing |
 | [meshoptimizer](https://github.com/zeux/meshoptimizer) | v1.1 | MIT | Vertex cache / overdraw / fetch optimization |
 | [draco](https://github.com/google/draco) | 1.5.7 | Apache-2.0 | Draco mesh decompression for `KHR_draco_mesh_compression` |
-| [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_1_0r | Apache-2.0 | KTX2 / Basis Universal texture transcoding for `KHR_texture_basisu` |
-| [zstd](https://github.com/facebook/zstd) | bundled with basis_universal v2_1_0r | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
+| [basis_universal](https://github.com/BinomialLLC/basis_universal) | v2_50 | Apache-2.0 | KTX2 / Basis Universal texture transcoding for `KHR_texture_basisu` |
+| [zstd](https://github.com/facebook/zstd) | bundled with basis_universal v2_50 | BSD-3 | Zstd decompression for KTX2 UASTC payloads |
 | [libwebp](https://chromium.googlesource.com/webm/libwebp) | v1.6.0 | BSD-3 + PATENTS | WebP texture decoding for `EXT_texture_webp` |
 | [miniz](https://github.com/richgel999/miniz) | 3.1.2 | MIT | zlib deflate for the kitty graphics direct transport |
 
