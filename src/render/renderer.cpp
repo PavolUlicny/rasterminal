@@ -1414,7 +1414,7 @@ void Renderer::run_on_workers(const std::function<void(int, int)> &fn)
 
 void Renderer::worker_func(int worker_id)
 {
-    int my_gen = 0;
+    unsigned my_gen = 0;
     while (true)
     {
         Pass pass; // NOLINT(cppcoreguidelines-init-variables): assigned under the lock below before use

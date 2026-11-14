@@ -166,10 +166,12 @@ struct Renderer
     std::atomic<int> m_bin_done{ 0 };     // workers finished binning (the tiled pass's in-pass barrier)
     std::atomic<int> m_pixel_cursor{ 0 }; // row-band cursor for the Resolve pass
     std::atomic<int> m_active{ 0 };       // workers not yet done with the current frame
-    int m_generation = 0;                 // bumped before each dispatch to wake workers
-    int m_tiles_x = 0, m_tiles_y = 0;     // tile grid of the current frame
-    int m_tile = TILE_MAX;                // tile edge of the current frame (power of two)
-    uint32_t m_opaque_count = 0;          // triangle range split: [0,opaque) opaque, [opaque,total) blend
+    // Unsigned because an int would overflow into undefined behavior on a long run. Wrapping
+    // is harmless since workers only test it for inequality and lag by at most one dispatch.
+    unsigned m_generation = 0;        // bumped before each dispatch to wake workers
+    int m_tiles_x = 0, m_tiles_y = 0; // tile grid of the current frame
+    int m_tile = TILE_MAX;            // tile edge of the current frame (power of two)
+    uint32_t m_opaque_count = 0;      // triangle range split: [0,opaque) opaque, [opaque,total) blend
     int m_ab_width = 0, m_ab_height = 0;
     std::vector<WorkerBins> m_bins; // one per worker
     // Per-worker area statistics used to choose the next frame's opaque path.
