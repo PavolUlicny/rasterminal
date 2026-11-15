@@ -7,7 +7,6 @@
 #include "src/platform/input_reader.h"
 #include "src/platform/terminal_io.h"
 #include "src/platform/terminal_query.h"
-#include "src/platform/timing.h"
 #include "src/render/camera.h"
 #include "src/render/renderer.h"
 #include "src/shading.h"
@@ -39,6 +38,7 @@
 #include <optional>
 #include <string>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace
@@ -948,11 +948,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 rendered_view = view;
             }
             fb.present();
-            const auto remaining = timing.end_frame(rendered, args.fps, FrameTiming::Clock::now());
-            if (remaining > std::chrono::duration<float>::zero())
-            {
-                platform::wait_frame(remaining);
-            }
+            std::this_thread::sleep_for(timing.end_frame(rendered, args.fps, FrameTiming::Clock::now()));
         }
         return 0;
     }

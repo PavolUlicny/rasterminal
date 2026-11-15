@@ -6,7 +6,6 @@
 #include "src/platform/input_reader.h"
 #include "src/platform/terminal_io.h"
 #include "src/platform/terminal_query.h"
-#include "src/platform/timing.h"
 
 #include <chrono>
 #include <csignal>
@@ -16,7 +15,6 @@
 #include <cstring>
 #include <string>
 #include <thread>
-#include <vector>
 
 #ifndef _WIN32
 #include <fcntl.h>
@@ -1539,157 +1537,6 @@ TEST(platform, terminal_write_abandons_frame_but_finishes_cleanup_for_control_re
     ASSERT_EQ(script.calls, 3);
     ASSERT_EQ(script.size, static_cast<size_t>(16));
     ASSERT_TRUE(std::memcmp(script.output, "\033[?2026h\033[?2026l", 16) == 0);
-}
-
-TEST(platform, frame_deadline_preserves_precision_after_long_uptime)
-{
-    using Clock = std::chrono::steady_clock;
-    for (const auto uptime : { std::chrono::hours(24 * 7), std::chrono::hours(24 * 365) })
-    {
-        const Clock::time_point now(std::chrono::duration_cast<Clock::duration>(uptime));
-        for (const float fps : { 30.0f, 60.0f, 240.0f, 2000.0f })
-        {
-            const std::chrono::duration<float> delay(1.0f / fps);
-            const auto deadline = platform::detail::frame_deadline(now, delay);
-            ASSERT_TRUE(deadline - now == std::chrono::duration_cast<Clock::duration>(delay));
-        }
-    }
-}
-
-TEST(platform, frame_wait_preserves_submillisecond_timeouts)
-{
-    using Clock = std::chrono::steady_clock;
-    for (const float fps : { 240.0f, 2000.0f, 10000.0f })
-    {
-        auto now = Clock::time_point(std::chrono::hours(24 * 7));
-        const auto deadline = platform::detail::frame_deadline(now, std::chrono::duration<float>(1.0f / fps));
-        const auto expected = std::chrono::ceil<std::chrono::nanoseconds>(deadline - now);
-        int calls = 0;
-        platform::detail::wait_frame_until(
-            deadline, [&]() { return now; },
-            [&](const timespec *timeout, timespec *remainder)
-            {
-                ++calls;
-                ASSERT_TRUE(remainder == nullptr);
-                ASSERT_EQ(timeout->tv_sec, 0);
-                ASSERT_EQ(timeout->tv_nsec, expected.count());
-                now += std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(timeout->tv_nsec));
-                return 0;
-            }
-        );
-        ASSERT_EQ(calls, 1);
-    }
-}
-
-TEST(platform, frame_wait_bounds_long_sleeps_and_skips_expired_deadlines)
-{
-    using Clock = std::chrono::steady_clock;
-    for (const int milliseconds : { -1, 0, 125 })
-    {
-        Clock::time_point now;
-        const auto deadline = now + std::chrono::milliseconds(milliseconds);
-        std::vector<long> slices;
-        platform::detail::wait_frame_until(
-            deadline, [&]() { return now; },
-            [&](const timespec *timeout, timespec *)
-            {
-                ASSERT_EQ(timeout->tv_sec, 0);
-                slices.push_back(timeout->tv_nsec);
-                now += std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(timeout->tv_nsec));
-                return 0;
-            }
-        );
-        if (milliseconds > 0)
-        {
-            ASSERT_TRUE(slices == std::vector<long>({ 50000000, 50000000, 25000000 }));
-            ASSERT_TRUE(now == deadline);
-        }
-        else
-        {
-            ASSERT_TRUE(slices.empty());
-        }
-    }
-}
-
-TEST(platform, frame_wait_recomputes_deadline_after_unrelated_interruptions)
-{
-    using Clock = std::chrono::steady_clock;
-    Clock::time_point now;
-    const auto deadline = now + std::chrono::milliseconds(1);
-    std::vector<long> slices;
-    platform::detail::wait_frame_until(
-        deadline, [&]() { return now; },
-        [&](const timespec *timeout, timespec *)
-        {
-            slices.push_back(timeout->tv_nsec);
-            if (slices.size() < 3)
-            {
-                now += std::chrono::microseconds(125);
-                errno = EINTR;
-                return -1;
-            }
-            now += std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(timeout->tv_nsec));
-            return 0;
-        }
-    );
-    ASSERT_TRUE(slices == std::vector<long>({ 1000000, 875000, 750000 }));
-    ASSERT_TRUE(now == deadline);
-}
-
-TEST(platform, frame_wait_stops_for_control_requests_before_and_during_sleep)
-{
-    using Clock = std::chrono::steady_clock;
-    for (const int signal : { SIGTSTP, SIGTERM })
-    {
-        for (const bool already_pending : { false, true })
-        {
-            const auto request = [signal]()
-            {
-                if (signal == SIGTSTP)
-                {
-                    platform::detail::job_control_handler(signal);
-                }
-                else
-                {
-                    platform::detail::signal_handler(signal);
-                }
-            };
-            if (already_pending)
-            {
-                request();
-            }
-            int calls = 0;
-            platform::detail::wait_frame_until(
-                Clock::time_point(std::chrono::seconds(1)), []() { return Clock::time_point{}; },
-                [&](const timespec *, timespec *)
-                {
-                    ++calls;
-                    request();
-                    errno = EINTR;
-                    return -1;
-                }
-            );
-            platform::detail::interrupt_flag = 0;
-            platform::detail::suspend_flag = 0;
-            ASSERT_EQ(calls, already_pending ? 0 : 1);
-        }
-    }
-}
-
-TEST(platform, frame_wait_stops_on_permanent_sleep_error)
-{
-    using Clock = std::chrono::steady_clock;
-    int calls = 0;
-    platform::detail::wait_frame_until(
-        Clock::time_point(std::chrono::seconds(1)), []() { return Clock::time_point{}; },
-        [&](const timespec *, timespec *)
-        {
-            ++calls;
-            errno = EINVAL;
-            return -1;
-        }
-    );
-    ASSERT_EQ(calls, 1);
 }
 
 TEST(platform, graphics_query_write_records_control_cancellation_at_each_prefix)

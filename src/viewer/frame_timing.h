@@ -55,21 +55,22 @@ namespace viewer
             return (fps_display_ < 0.0f) ? 0 : static_cast<int>(std::lround(fps_display_));
         }
 
-        [[nodiscard]] std::chrono::duration<float>
-        end_frame(bool rendered, int configured_fps, Clock::time_point now) noexcept
+        // Keep the wait in integer ticks. MSVC's sleep_for adds a float duration to a boot-relative
+        // time point, which loses frame-sized steps after a few days of uptime.
+        [[nodiscard]] Clock::duration end_frame(bool rendered, int configured_fps, Clock::time_point now) noexcept
         {
             prev_frame_rendered_ = rendered;
             const int frame_cap = (!rendered && configured_fps == 0) ? IDLE_FPS : configured_fps;
             if (frame_cap > 0)
             {
-                const float target_dt = 1.0f / static_cast<float>(frame_cap);
-                const float elapsed = std::chrono::duration<float>(now - frame_start_).count();
-                if (elapsed < target_dt)
+                const Clock::duration target = Clock::duration(std::chrono::seconds(1)) / frame_cap;
+                const Clock::duration elapsed = now - frame_start_;
+                if (elapsed < target)
                 {
-                    return std::chrono::duration<float>(target_dt - elapsed);
+                    return target - elapsed;
                 }
             }
-            return std::chrono::duration<float>::zero();
+            return Clock::duration::zero();
         }
 
       private:

@@ -20,6 +20,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
 - On Windows, texture names inside model files are read as UTF-8, as current exporters write them. A non-ASCII texture name that an older tool saved in the system's ANSI code page no longer opens.
 - Controls that leave the image unchanged no longer redraw the model. Examples are changing first-person speed, cycling the wireframe color or lighting in a mode that ignores it, selecting the current shading mode, and zooming or looking past a limit. The HUD still updates.
+- On POSIX, Ctrl+C, Ctrl+Z and termination signals take effect after the current frame's wait, as on Windows. With a low `--fps` cap this can take up to one frame.
 
 ### Fixed
 
@@ -27,6 +28,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
 - Turning off backface culling no longer changes how double-sided surfaces are lit. Their back sides were lit as if they faced away from the viewer.
 - On Windows 10 version 1903 and later, models and their textures open from paths with non-ASCII characters, such as a user folder named `José`. Formats loaded through Assimp failed on any non-ASCII path, and the other formats failed on characters outside the system's ANSI code page.
+- On Windows builds made with MSVC, the frame cap no longer stops working after a few days of system uptime. The loop then stopped sleeping between frames and kept a CPU core busy, even with nothing to redraw.
 
 ## [v0.1.0-alpha.2] - 2026-09-08
 

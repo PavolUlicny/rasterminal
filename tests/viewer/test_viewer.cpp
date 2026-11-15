@@ -6,10 +6,17 @@
 
 #include <chrono>
 #include <cmath>
+#include <type_traits>
+#include <utility>
 
 namespace
 {
     using Clock = std::chrono::steady_clock;
+
+    // A float wait would still pass every value test here; only the type shows the uptime precision loss.
+    static_assert(std::is_same_v<
+                  decltype(std::declval<viewer::FrameTiming &>().end_frame(true, 30, Clock::time_point{})),
+                  Clock::duration>);
 
     terminal_input::InputEvent key(terminal_input::Key value)
     {
@@ -125,11 +132,11 @@ TEST(viewer, idle_interval_does_not_change_rendered_fps)
     viewer::FrameTiming timing(start);
     ASSERT_EQ(timing.hud_fps(), 0);
     timing.begin_frame(start);
-    ASSERT_EQ(timing.end_frame(true, 0, start).count(), 0.0f);
+    ASSERT_TRUE(timing.end_frame(true, 0, start) == Clock::duration::zero());
     timing.begin_frame(start + std::chrono::milliseconds(20));
     ASSERT_EQ(timing.hud_fps(), 50);
     const auto idle_wait = timing.end_frame(false, 0, start + std::chrono::milliseconds(20));
-    ASSERT_TRUE(idle_wait.count() > 0.0f);
+    ASSERT_TRUE(idle_wait > Clock::duration::zero());
     timing.begin_frame(start + std::chrono::milliseconds(220));
     ASSERT_EQ(timing.hud_fps(), 50);
 }
@@ -139,7 +146,7 @@ TEST(viewer, resume_discards_stall_and_first_frame_interval)
     const Clock::time_point start{};
     viewer::FrameTiming timing(start);
     timing.begin_frame(start);
-    ASSERT_TRUE(timing.end_frame(true, 30, start).count() > 0.0f);
+    ASSERT_TRUE(timing.end_frame(true, 30, start) > Clock::duration::zero());
     timing.begin_frame(start + std::chrono::milliseconds(20));
     ASSERT_EQ(timing.hud_fps(), 50);
 
@@ -148,7 +155,7 @@ TEST(viewer, resume_discards_stall_and_first_frame_interval)
     const float dt = timing.begin_frame(start + std::chrono::milliseconds(1010));
     ASSERT_NEAR(dt, 0.01f, 0.0001f);
     ASSERT_EQ(timing.hud_fps(), 0);
-    ASSERT_TRUE(timing.end_frame(true, 30, start + std::chrono::milliseconds(1015)).count() > 0.0f);
+    ASSERT_TRUE(timing.end_frame(true, 30, start + std::chrono::milliseconds(1015)) > Clock::duration::zero());
     timing.begin_frame(start + std::chrono::milliseconds(1040));
     ASSERT_EQ(timing.hud_fps(), 33);
 }
