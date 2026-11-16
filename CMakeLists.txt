@@ -296,6 +296,7 @@ endif()
 add_executable(rasterminal
   src/main.cpp
   src/args.cpp
+  src/bench.cpp
   src/terminal/color.cpp
   src/terminal/framebuffer.cpp
   src/terminal/hud.cpp
@@ -422,6 +423,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
     src/args.cpp
+    src/bench.cpp
     src/terminal/color.cpp
     src/render/renderer.cpp
     src/loaders/mesh.cpp

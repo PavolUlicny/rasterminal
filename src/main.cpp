@@ -1,4 +1,5 @@
 #include "src/args.h"
+#include "src/bench.h"
 #include "src/loaders/mesh.h"
 #include "src/math/linalg.h"
 #include "src/platform/console.h"
@@ -6,7 +7,6 @@
 #include "src/platform/input_reader.h"
 #include "src/platform/terminal_io.h"
 #include "src/platform/terminal_query.h"
-#include "src/render/camera.h"
 #include "src/render/renderer.h"
 #include "src/shading.h"
 #include "src/terminal/color.h"
@@ -25,21 +25,16 @@
 #include "src/viewer/scene_colors.h"
 #include "src/viewer/state.h"
 
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <ratio>
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <functional>
 #include <optional>
-#include <string>
+#include <ratio>
 #include <stdexcept>
+#include <string>
 #include <thread>
-#include <vector>
 
 namespace
 {
@@ -273,109 +268,6 @@ namespace
             reply = platform::query_term_graphics();
         }
         return viewer::resolve_graphics(choice, reply ? &*reply : nullptr, platform::control_requested());
-    }
-
-    constexpr const char *shading_mode_name(ShadingMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ShadingMode::Wireframe:
-            return "Wireframe";
-        case ShadingMode::Flat:
-            return "Flat";
-        case ShadingMode::Phong:
-            return "Phong";
-        }
-        return "Unknown";
-    }
-
-    void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double load_ms)
-    {
-        using clock = std::chrono::steady_clock;
-
-        Camera camera = viewer::auto_fit_camera(mesh, args, /*first_person=*/false);
-        const viewer::SceneLights scene = viewer::default_lights();
-
-        Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
-        Renderer renderer(n_threads);
-        renderer.mode = args.shading;
-        renderer.cull_backfaces = args.cull;
-        renderer.show_texture = args.texture;
-
-        const int n_lights = viewer::light_count(args.lighting);
-        const vec3 cur_ambient = viewer::lighting_ambient(args.lighting, scene.ambient);
-
-        const int n_warmup = args.bench_warmup;
-        const int n_measure = args.bench;
-        std::vector<int64_t> frame_ns;
-        frame_ns.reserve(static_cast<size_t>(n_measure));
-
-        auto loop_t0 = clock::now();
-        for (int i = 0; i < n_warmup + n_measure; i++)
-        {
-            camera.spin_world_y(0.8f / 60.0f);
-            fb.clear({ 0, 0, 0 });
-            auto t0 = clock::now();
-            renderer.render(mesh, camera, scene.lights, n_lights, cur_ambient, fb);
-            auto t1 = clock::now();
-            if (i >= n_warmup)
-            {
-                frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
-            }
-        }
-        const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
-
-        // Compute stats via nth_element (linear): no full sort needed.
-        auto ms = [](int64_t ns) { return static_cast<double>(ns) * 1e-6; };
-
-        auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
-        const int64_t mn = *mn_it;
-        const int64_t mx = *mx_it;
-
-        const size_t mid = static_cast<size_t>(n_measure) / 2;
-        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
-        const int64_t med = frame_ns[mid];
-
-        const auto p95i = static_cast<size_t>(n_measure * 95 / 100);
-        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
-        const int64_t p95 = frame_ns[p95i];
-
-        // Welford's online algorithm: single pass, numerically stable.
-        double welford_mean = 0.0;
-        double welford_m2 = 0.0;
-        for (int k = 0; k < n_measure; k++)
-        {
-            const auto x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
-            const double delta = x - welford_mean;
-            welford_mean += delta / (k + 1);
-            welford_m2 += delta * (x - welford_mean);
-        }
-        const double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
-
-        const double med_ms = ms(med);
-        const double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
-        const double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
-        const double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
-
-        std::fprintf(
-            stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  mesh=%zu Tris / %zu Verts\n", n_measure,
-            args.bench_width, args.bench_height, n_threads, shading_mode_name(renderer.mode), mesh.triangles.size(),
-            mesh.vertices.size()
-        );
-
-        std::fprintf(stderr, "startup:\n");
-        std::fprintf(stderr, "  load    %.2f ms\n", load_ms);
-
-        std::fprintf(stderr, "runtime:\n");
-        std::fprintf(stderr, "  min     %.2f ms\n", ms(mn));
-        std::fprintf(
-            stderr, "  median  %.2f ms   ~%d fps   %.1f MTri/s   %.1f MVert/s\n", med_ms,
-            static_cast<int>(std::lround(fps)), mtri_s, mvert_s
-        );
-        std::fprintf(stderr, "  p95     %.2f ms\n", ms(p95));
-        std::fprintf(stderr, "  max     %.2f ms\n", ms(mx));
-        std::fprintf(stderr, "  stddev  %.2f ms\n", stddev_ms);
-        std::fprintf(stderr, "  total   %.0f ms  %d frames including warmup\n", total_ms, n_warmup + n_measure);
     }
 
 } // namespace
