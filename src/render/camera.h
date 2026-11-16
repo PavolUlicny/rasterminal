@@ -15,7 +15,7 @@ struct Camera
     // First-person rotation pivots on the eye; target becomes a derived look-at point.
     bool first_person = false;
     vec3 fp_centre = { 0.0f, 0.0f, 0.0f }; // model centre; the outer position bound is measured from here
-    float fp_base_speed = 1.0f;            // world units/sec at fp_speed == 1; scaled to the model by main.cpp
+    float fp_base_speed = 1.0f;            // world units/sec at fp_speed == 1; scaled to the model by auto_fit_camera
     float fp_speed = 1.0f;                 // movement-speed multiplier, adjusted by +/- and the wheel
 
     // Shared by CLI validation and interactive controls.

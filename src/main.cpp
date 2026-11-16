@@ -1,6 +1,5 @@
 #include "src/args.h"
 #include "src/loaders/mesh.h"
-#include "src/math/light.h"
 #include "src/math/linalg.h"
 #include "src/platform/console.h"
 #include "src/platform/control.h"
@@ -21,6 +20,7 @@
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/frame_view.h"
 #include "src/viewer/input_controller.h"
+#include "src/viewer/scene.h"
 #include "src/viewer/scene_colors.h"
 #include "src/viewer/state.h"
 
@@ -43,8 +43,6 @@
 
 namespace
 {
-
-    constexpr vec3 FLAT_AMBIENT = { 0.85f, 0.85f, 0.85f };
 
     constexpr const char *wireframe_name(WireframeColor c) noexcept
     {
@@ -78,28 +76,6 @@ namespace
             return "black";
         }
         return "black";
-    }
-
-    // Directional lights active for a lighting mode; Flat is ambient-only.
-    constexpr int light_count(LightingMode m) noexcept
-    {
-        switch (m)
-        {
-        case LightingMode::Single:
-            return 1;
-        case LightingMode::Flat:
-            return 0;
-        case LightingMode::Dual:
-            return 2;
-        }
-        return 2;
-    }
-
-    // Flat mode swaps the scene ambient for the bright uniform FLAT_AMBIENT so the
-    // full model stays visible with no directional lights.
-    constexpr vec3 lighting_ambient(LightingMode m, const vec3 &ambient) noexcept
-    {
-        return m == LightingMode::Flat ? FLAT_AMBIENT : ambient;
     }
 
     constexpr const char *lighting_name(LightingMode m) noexcept
@@ -417,62 +393,6 @@ namespace
         return gfx;
     }
 
-    // The bench passes false because its spinning camera is a turntable operation;
-    // first-person would pan the model out of frame and clamp the requested pitch.
-    Camera auto_fit_camera(const Mesh &mesh, const ParsedArgs &args, bool first_person)
-    {
-        vec3 lo = mesh.vertices[0].pos;
-        vec3 hi = lo;
-        for (const Vertex &v : mesh.vertices)
-        {
-            lo.x = std::min(lo.x, v.pos.x);
-            lo.y = std::min(lo.y, v.pos.y);
-            lo.z = std::min(lo.z, v.pos.z);
-            hi.x = std::max(hi.x, v.pos.x);
-            hi.y = std::max(hi.y, v.pos.y);
-            hi.z = std::max(hi.z, v.pos.z);
-        }
-        const vec3 centre = (lo + hi) * 0.5f;
-        float radius = (hi - lo).length() * 0.5f;
-        if (radius < 1e-4f)
-        {
-            radius = 1.0f; // degenerate (all coincident vertices): use sane defaults
-        }
-
-        Camera camera;
-        camera.first_person = first_person;
-        camera.fp_centre = centre;
-        // Scale movement by bounding radius so multiplier 1 crosses the model in about
-        // two seconds. Long thin models therefore use their long axis.
-        camera.fp_base_speed = radius;
-        camera.fp_speed = args.first_person_speed;
-        camera.target = centre;
-        // --zoom's parse-time bound [0.2, 100] lands the distance inside the
-        // interactive clamp [near*2, far*0.5] by construction, so no clamp here.
-        camera.distance = radius * 2.0f / args.zoom;
-        // Scale clipping planes by model size. First-person may fly through the near
-        // plane; shrinking it would reduce depth precision for the whole scene.
-        camera.near_plane = radius * 0.01f;
-        camera.far_plane = radius * 20.0f;
-        // Build the launch pose through orbit(), matching drag composition and the
-        // first-person target invariant. Negate yaw for orbit's screen-drag convention.
-        // First-person uses the same pitch clamp as look().
-        const float pitch_rad = first_person
-                                    ? clamp(to_radians(args.pitch), -Camera::FP_MAX_PITCH, Camera::FP_MAX_PITCH)
-                                    : to_radians(args.pitch);
-        camera.orbit(-to_radians(args.yaw), pitch_rad);
-        return camera;
-    }
-
-    void make_default_lights(Light out[2], vec3 &ambient)
-    {
-        out[0].direction = { 0.408f, 0.816f, 0.408f };
-        out[0].color = { 0.85f, 0.77f, 0.64f };
-        out[1].direction = { -0.667f, -0.333f, -0.667f };
-        out[1].color = { 0.3f, 0.3f, 0.33f };
-        ambient = { 0.32f, 0.32f, 0.33f };
-    }
-
     constexpr const char *shading_mode_name(ShadingMode mode) noexcept
     {
         switch (mode)
@@ -507,10 +427,8 @@ namespace
     {
         using clock = std::chrono::steady_clock;
 
-        Camera camera = auto_fit_camera(mesh, args, /*first_person=*/false);
-        Light lights[2];
-        vec3 ambient;
-        make_default_lights(lights, ambient);
+        Camera camera = viewer::auto_fit_camera(mesh, args, /*first_person=*/false);
+        const viewer::SceneLights scene = viewer::default_lights();
 
         Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
         Renderer renderer(n_threads);
@@ -518,8 +436,8 @@ namespace
         renderer.cull_backfaces = args.cull;
         renderer.show_texture = args.texture;
 
-        const int n_lights = light_count(args.lighting);
-        const vec3 cur_ambient = lighting_ambient(args.lighting, ambient);
+        const int n_lights = viewer::light_count(args.lighting);
+        const vec3 cur_ambient = viewer::lighting_ambient(args.lighting, scene.ambient);
 
         const int n_warmup = args.bench_warmup;
         const int n_measure = args.bench;
@@ -532,7 +450,7 @@ namespace
             camera.spin_world_y(0.8f / 60.0f);
             fb.clear({ 0, 0, 0 });
             auto t0 = clock::now();
-            renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
+            renderer.render(mesh, camera, scene.lights, n_lights, cur_ambient, fb);
             auto t1 = clock::now();
             if (i >= n_warmup)
             {
@@ -666,7 +584,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
         return 0;
     }
 
-    ViewerState state(args, auto_fit_camera(mesh, args, args.first_person));
+    ViewerState state(args, viewer::auto_fit_camera(mesh, args, args.first_person));
 
     // Use a control-safe basename in the HUD; the composer handles truncation.
     std::string model_name = args.model_path;
@@ -793,11 +711,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             }
         }
 
-        // Key light: warm white from upper-right-front.
-        // Fill light: dim cool blue from lower-left-back, providing contrast.
-        Light lights[2];
-        vec3 ambient;
-        make_default_lights(lights, ambient);
+        const viewer::SceneLights scene = viewer::default_lights();
 
         // Borrow the idle render pool for presentation; tests and bench remain serial.
         fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
@@ -934,8 +848,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
             if (rendered)
             {
                 fb.clear(background_color(view.background));
-                const int n_lights = light_count(view.lighting);
-                const vec3 cur_ambient = lighting_ambient(view.lighting, ambient);
+                const int n_lights = viewer::light_count(view.lighting);
+                const vec3 cur_ambient = viewer::lighting_ambient(view.lighting, scene.ambient);
                 renderer.mode = view.shading;
                 renderer.wireframe_color = wireframe_color_of(view.wireframe_color);
                 fb.set_required_color(
@@ -944,7 +858,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 );
                 renderer.cull_backfaces = view.culling;
                 renderer.show_texture = view.texturing;
-                renderer.render(mesh, view.camera, lights, n_lights, cur_ambient, fb);
+                renderer.render(mesh, view.camera, scene.lights, n_lights, cur_ambient, fb);
                 rendered_view = view;
             }
             fb.present();
