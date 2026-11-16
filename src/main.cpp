@@ -270,100 +270,99 @@ namespace
         return viewer::resolve_graphics(choice, reply ? &*reply : nullptr, platform::control_requested());
     }
 
-} // namespace
-
-const auto run_main = [](int argc, char *argv[]) -> int
-{
-    const ParseResult parsed = parse_args(argc, argv);
-    if (!parsed.ok)
+    int run_main(int argc, char *argv[])
     {
-        return parsed.exit_code;
-    }
-    const ParsedArgs &args = parsed.args;
-
-    const bool bench_mode = args.bench > 0;
-
-    // Interactive mode requires terminal input and output. --no-input still accepts Q.
-    ColorMode color_mode = ColorMode::TrueColor;
-    if (!bench_mode)
-    {
-        if (!platform::is_tty(1))
+        const ParseResult parsed = parse_args(argc, argv);
+        if (!parsed.ok)
         {
-            std::fprintf(stderr, "%s: stdout is not a terminal\n", program_name(argv[0]));
+            return parsed.exit_code;
+        }
+        const ParsedArgs &args = parsed.args;
+
+        const bool bench_mode = args.bench > 0;
+
+        // Interactive mode requires terminal input and output. --no-input still accepts Q.
+        ColorMode color_mode = ColorMode::TrueColor;
+        if (!bench_mode)
+        {
+            if (!platform::is_tty(1))
+            {
+                std::fprintf(stderr, "%s: stdout is not a terminal\n", program_name(argv[0]));
+                return 1;
+            }
+            if (!platform::is_tty(0))
+            {
+                std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
+                return 1;
+            }
+            // Environment detection does not mutate the console; VT setup waits until after loading.
+            const platform::TermColor tc = platform::detect_term_color();
+            if (tc == platform::TermColor::Dumb)
+            {
+                std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
+                return 1;
+            }
+            // A forced color depth cannot override missing escape support.
+            switch (args.color)
+            {
+            case ColorChoice::TrueColor:
+                color_mode = ColorMode::TrueColor;
+                break;
+            case ColorChoice::Palette256:
+                color_mode = ColorMode::Palette256;
+                break;
+            case ColorChoice::Auto:
+                color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
+                break;
+            }
+        }
+
+        // Loading and rendering share one resolved thread count.
+        const int n_threads = Renderer::resolve_thread_count(args.n_threads);
+        Mesh mesh;
+        const auto load_t0 = std::chrono::steady_clock::now();
+        if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
+        {
+            std::fprintf(
+                stderr,
+                "%s: failed to load '%s'\n"
+                "Native formats: .obj, .ply, .stl, .gltf, .glb; see --help for Assimp-backed formats\n",
+                program_name(argv[0]), args.model_path.c_str()
+            );
             return 1;
         }
-        if (!platform::is_tty(0))
+
+        if (bench_mode)
         {
-            std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
+            const double load_ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
+            run_bench(mesh, args, n_threads, load_ms);
+            return 0;
+        }
+
+        ViewerState state(args, viewer::auto_fit_camera(mesh, args, args.first_person));
+        const std::string model_name = viewer::hud_model_name(args.model_path);
+
+        // The Windows job-control stub always succeeds.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
+        {
+            std::fprintf(stderr, "%s: failed to install signal handlers\n", program_name(argv[0]));
             return 1;
         }
-        // Environment detection does not mutate the console; VT setup waits until after loading.
-        const platform::TermColor tc = platform::detect_term_color();
-        if (tc == platform::TermColor::Dumb)
+
+        // Keep interrupt-handler resources alive through terminal cleanup.
+        const platform::InterruptHandlerGuard interrupt_handler;
+
+        // Capture terminal state only when this run is about to change it. Keep this
+        // outside the session guard so escape-based cleanup runs before final restoration.
+        platform::ConsoleStateGuard console_state;
+        if (!console_state.valid())
         {
-            std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
+            std::fprintf(stderr, "%s: failed to capture terminal state\n", program_name(argv[0]));
             return 1;
         }
-        // A forced color depth cannot override missing escape support.
-        switch (args.color)
-        {
-        case ColorChoice::TrueColor:
-            color_mode = ColorMode::TrueColor;
-            break;
-        case ColorChoice::Palette256:
-            color_mode = ColorMode::Palette256;
-            break;
-        case ColorChoice::Auto:
-            color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
-            break;
-        }
-    }
 
-    // Loading and rendering share one resolved thread count.
-    const int n_threads = Renderer::resolve_thread_count(args.n_threads);
-    Mesh mesh;
-    const auto load_t0 = std::chrono::steady_clock::now();
-    if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
-    {
-        std::fprintf(
-            stderr,
-            "%s: failed to load '%s'\n"
-            "Native formats: .obj, .ply, .stl, .gltf, .glb; see --help for Assimp-backed formats\n",
-            program_name(argv[0]), args.model_path.c_str()
-        );
-        return 1;
-    }
-
-    if (bench_mode)
-    {
-        const double load_ms =
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
-        run_bench(mesh, args, n_threads, load_ms);
-        return 0;
-    }
-
-    ViewerState state(args, viewer::auto_fit_camera(mesh, args, args.first_person));
-    const std::string model_name = viewer::hud_model_name(args.model_path);
-
-    if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
-    {
-        std::fprintf(stderr, "%s: failed to install signal handlers\n", program_name(argv[0]));
-        return 1;
-    }
-
-    // Keep interrupt-handler resources alive through terminal cleanup.
-    const platform::InterruptHandlerGuard interrupt_handler;
-
-    // Capture terminal state only when this run is about to change it. Keep this
-    // outside the session guard so escape-based cleanup runs before final restoration.
-    platform::ConsoleStateGuard console_state;
-    if (!console_state.valid())
-    {
-        std::fprintf(stderr, "%s: failed to capture terminal state\n", program_name(argv[0]));
-        return 1;
-    }
-
-    {
         TerminalSessionGuard terminal(program_name(argv[0]), console_state);
 
         // Defer persistent Windows VT mutation until loading succeeds. cppcheck sees
@@ -395,6 +394,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 return 0;
             }
             gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
+            // The Windows stub never requests suspension.
+            // cppcheck-suppress knownConditionTrueFalse
             if (!gfx.interrupted && !platform::suspend_requested())
             {
                 break;
@@ -599,7 +600,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
         return 0;
     }
-};
+
+} // namespace
 
 int main(int argc, char *argv[])
 {
