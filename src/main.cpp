@@ -1,13 +1,12 @@
 #include "src/args.h"
+#include "src/bench.h"
 #include "src/loaders/mesh.h"
-#include "src/math/light.h"
 #include "src/math/linalg.h"
 #include "src/platform/console.h"
 #include "src/platform/control.h"
 #include "src/platform/input_reader.h"
 #include "src/platform/terminal_io.h"
 #include "src/platform/terminal_query.h"
-#include "src/render/camera.h"
 #include "src/render/renderer.h"
 #include "src/shading.h"
 #include "src/terminal/color.h"
@@ -17,104 +16,28 @@
 #include "src/terminal/hud.h"
 #include "src/terminal/input.h"
 #include "src/terminal/sixel.h"
-#include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/frame_view.h"
+#include "src/viewer/graphics_setup.h"
+#include "src/viewer/hud_info.h"
 #include "src/viewer/input_controller.h"
+#include "src/viewer/scene.h"
 #include "src/viewer/scene_colors.h"
 #include "src/viewer/state.h"
 
-#include <algorithm>
 #include <chrono>
-#include <cmath>
-#include <ratio>
-#include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <functional>
 #include <optional>
-#include <string>
+#include <ratio>
 #include <stdexcept>
+#include <string>
 #include <thread>
-#include <vector>
 
 namespace
 {
-
-    constexpr vec3 FLAT_AMBIENT = { 0.85f, 0.85f, 0.85f };
-
-    constexpr const char *wireframe_name(WireframeColor c) noexcept
-    {
-        switch (c)
-        {
-        case WireframeColor::White:
-            return "white";
-        case WireframeColor::Red:
-            return "red";
-        case WireframeColor::Green:
-            return "green";
-        case WireframeColor::Yellow:
-            return "yellow";
-        case WireframeColor::Cyan:
-            return "cyan";
-        case WireframeColor::Magenta:
-            return "magenta";
-        }
-        return "white";
-    }
-
-    constexpr const char *background_name(Background b) noexcept
-    {
-        switch (b)
-        {
-        case Background::Gray:
-            return "gray";
-        case Background::White:
-            return "white";
-        case Background::Black:
-            return "black";
-        }
-        return "black";
-    }
-
-    // Directional lights active for a lighting mode; Flat is ambient-only.
-    constexpr int light_count(LightingMode m) noexcept
-    {
-        switch (m)
-        {
-        case LightingMode::Single:
-            return 1;
-        case LightingMode::Flat:
-            return 0;
-        case LightingMode::Dual:
-            return 2;
-        }
-        return 2;
-    }
-
-    // Flat mode swaps the scene ambient for the bright uniform FLAT_AMBIENT so the
-    // full model stays visible with no directional lights.
-    constexpr vec3 lighting_ambient(LightingMode m, const vec3 &ambient) noexcept
-    {
-        return m == LightingMode::Flat ? FLAT_AMBIENT : ambient;
-    }
-
-    constexpr const char *lighting_name(LightingMode m) noexcept
-    {
-        switch (m)
-        {
-        case LightingMode::Single:
-            return "single";
-        case LightingMode::Flat:
-            return "flat";
-        case LightingMode::Dual:
-            return "dual";
-        }
-        return "dual";
-    }
 
     // Apply the escape-reply sanity bound to ioctl-derived cell sizes too.
     constexpr bool valid_cell_px(int v) noexcept
@@ -127,6 +50,7 @@ namespace
     using viewer::background_color;
     using viewer::FrameTiming;
     using viewer::FrameView;
+    using viewer::GraphicsSetup;
     using viewer::InputController;
     using viewer::same_image;
     using viewer::ViewerState;
@@ -205,25 +129,6 @@ namespace
         request_geometry(update.after_resize);
         return true;
     }
-
-    // Interrupted queries must be retried. Detection errors are reported only
-    // after the caller releases the terminal state recorded here.
-    struct GraphicsSetup
-    {
-        GraphicsBackend backend = GraphicsBackend::Blocks;
-        bool shm_ok = false;
-        bool interrupted = false;
-        int cell_w = 0;
-        int cell_h = 0;
-        // The terminal's max sixel image size (0 = unreported); see TermGraphics.
-        int sixel_max_w = 0;
-        int sixel_max_h = 0;
-        // The terminal's sixel colour register count (0 = unreported).
-        int sixel_registers = 0;
-        // Set with exit_code 1; main prints it after restoring the terminal.
-        const char *error = nullptr;
-        int exit_code = -1;
-    };
 
     struct TerminalSessionGuard
     {
@@ -343,361 +248,121 @@ namespace
         TerminalSessionGuard &operator=(TerminalSessionGuard &&) = delete;
     };
 
-    // Query before mouse tracking and input parsing. tmux needs protocol
-    // passthrough this build does not implement, so it uses blocks. Record alternate-screen
+    // Query before mouse tracking and input parsing. Record alternate-screen
     // ownership before the query so the caller can clean up if the query throws.
     GraphicsSetup negotiate_graphics(GraphicsChoice choice, bool &alt_screen_owned)
     {
-        GraphicsSetup gfx;
         if (choice == GraphicsChoice::Blocks)
         {
-            return gfx;
+            return {};
         }
         // Single-threaded startup, same as detect_term_color's env reads.
-        const char *term_env = std::getenv("TERM");               // NOLINT(concurrency-mt-unsafe)
-        const bool under_tmux = std::getenv("TMUX") != nullptr || // NOLINT(concurrency-mt-unsafe)
-                                (term_env != nullptr &&
-                                 (std::strncmp(term_env, "screen", 6) == 0 || std::strncmp(term_env, "tmux", 4) == 0));
-        if (!under_tmux)
+        const bool multiplexed = viewer::under_multiplexer(
+            std::getenv("TMUX"), // NOLINT(concurrency-mt-unsafe)
+            std::getenv("TERM")  // NOLINT(concurrency-mt-unsafe)
+        );
+        std::optional<TermGraphics> reply;
+        if (!multiplexed)
         {
             alt_screen_owned = true;
-            const TermGraphics tg = platform::query_term_graphics();
-            gfx.interrupted = tg.interrupted;
-            if (tg.failed)
+            reply = platform::query_term_graphics();
+        }
+        return viewer::resolve_graphics(choice, reply ? &*reply : nullptr, platform::control_requested());
+    }
+
+    int run_main(int argc, char *argv[])
+    {
+        const ParseResult parsed = parse_args(argc, argv);
+        if (!parsed.ok)
+        {
+            return parsed.exit_code;
+        }
+        const ParsedArgs &args = parsed.args;
+
+        const bool bench_mode = args.bench > 0;
+
+        // Interactive mode requires terminal input and output. --no-input still accepts Q.
+        ColorMode color_mode = ColorMode::TrueColor;
+        if (!bench_mode)
+        {
+            if (!platform::is_tty(1))
             {
-                gfx.error = "failed to query terminal graphics";
-                gfx.exit_code = 1;
-                return gfx;
+                std::fprintf(stderr, "%s: stdout is not a terminal\n", program_name(argv[0]));
+                return 1;
             }
-            // Outside the backend selection: a sixel-only terminal's cell-size
-            // reply must not be thrown away with the kitty verdict.
-            gfx.cell_w = tg.cell_w;
-            gfx.cell_h = tg.cell_h;
-            gfx.sixel_max_w = tg.sixel_max_w;
-            gfx.sixel_max_h = tg.sixel_max_h;
-            gfx.sixel_registers = tg.sixel_registers;
-            // Auto prefers kitty to sixel. A forced choice masks the other pixel
-            // backend, so --graphics sixel exercises sixel on terminals with both.
-            if (tg.kitty && choice != GraphicsChoice::Sixel)
+            if (!platform::is_tty(0))
             {
-                gfx.backend = GraphicsBackend::Kitty;
-                gfx.shm_ok = tg.kitty_shm;
+                std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
+                return 1;
             }
-            else if (tg.sixel && choice != GraphicsChoice::Kitty)
+            // Environment detection does not mutate the console; VT setup waits until after loading.
+            const platform::TermColor tc = platform::detect_term_color();
+            if (tc == platform::TermColor::Dumb)
             {
-                gfx.backend = GraphicsBackend::Sixel;
+                std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
+                return 1;
             }
-        }
-        // Suspension restarts detection after continuation. Termination unwinds
-        // the terminal guards before finish_termination re-raises the signal.
-        if (gfx.interrupted || platform::control_requested())
-        {
-            gfx.interrupted = true;
-            return gfx;
-        }
-        // Forced pixel modes still require detection; unsupported escapes would
-        // otherwise produce a blank screen with no diagnostic.
-        if (gfx.backend == GraphicsBackend::Blocks &&
-            (choice == GraphicsChoice::Kitty || choice == GraphicsChoice::Sixel))
-        {
-            const bool kitty_choice = choice == GraphicsChoice::Kitty;
-            const char *reason = kitty_choice ? "terminal does not answer the kitty graphics query"
-                                              : "terminal does not report sixel support";
-            if (under_tmux)
+            // A forced color depth cannot override missing escape support.
+            switch (args.color)
             {
-                // The gate covers both multiplexers (TMUX env, TERM screen*/tmux*),
-                // so the message must not blame tmux for a GNU screen session.
-                reason = kitty_choice ? "kitty graphics is not supported under tmux or GNU screen"
-                                      : "sixel graphics is not supported under tmux or GNU screen";
-            }
-            gfx.error = reason;
-            gfx.exit_code = 1;
-            return gfx;
-        }
-        return gfx;
-    }
-
-    // The bench passes false because its spinning camera is a turntable operation;
-    // first-person would pan the model out of frame and clamp the requested pitch.
-    Camera auto_fit_camera(const Mesh &mesh, const ParsedArgs &args, bool first_person)
-    {
-        vec3 lo = mesh.vertices[0].pos;
-        vec3 hi = lo;
-        for (const Vertex &v : mesh.vertices)
-        {
-            lo.x = std::min(lo.x, v.pos.x);
-            lo.y = std::min(lo.y, v.pos.y);
-            lo.z = std::min(lo.z, v.pos.z);
-            hi.x = std::max(hi.x, v.pos.x);
-            hi.y = std::max(hi.y, v.pos.y);
-            hi.z = std::max(hi.z, v.pos.z);
-        }
-        const vec3 centre = (lo + hi) * 0.5f;
-        float radius = (hi - lo).length() * 0.5f;
-        if (radius < 1e-4f)
-        {
-            radius = 1.0f; // degenerate (all coincident vertices): use sane defaults
-        }
-
-        Camera camera;
-        camera.first_person = first_person;
-        camera.fp_centre = centre;
-        // Scale movement by bounding radius so multiplier 1 crosses the model in about
-        // two seconds. Long thin models therefore use their long axis.
-        camera.fp_base_speed = radius;
-        camera.fp_speed = args.first_person_speed;
-        camera.target = centre;
-        // --zoom's parse-time bound [0.2, 100] lands the distance inside the
-        // interactive clamp [near*2, far*0.5] by construction, so no clamp here.
-        camera.distance = radius * 2.0f / args.zoom;
-        // Scale clipping planes by model size. First-person may fly through the near
-        // plane; shrinking it would reduce depth precision for the whole scene.
-        camera.near_plane = radius * 0.01f;
-        camera.far_plane = radius * 20.0f;
-        // Build the launch pose through orbit(), matching drag composition and the
-        // first-person target invariant. Negate yaw for orbit's screen-drag convention.
-        // First-person uses the same pitch clamp as look().
-        const float pitch_rad = first_person
-                                    ? clamp(to_radians(args.pitch), -Camera::FP_MAX_PITCH, Camera::FP_MAX_PITCH)
-                                    : to_radians(args.pitch);
-        camera.orbit(-to_radians(args.yaw), pitch_rad);
-        return camera;
-    }
-
-    void make_default_lights(Light out[2], vec3 &ambient)
-    {
-        out[0].direction = { 0.408f, 0.816f, 0.408f };
-        out[0].color = { 0.85f, 0.77f, 0.64f };
-        out[1].direction = { -0.667f, -0.333f, -0.667f };
-        out[1].color = { 0.3f, 0.3f, 0.33f };
-        ambient = { 0.32f, 0.32f, 0.33f };
-    }
-
-    constexpr const char *shading_mode_name(ShadingMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ShadingMode::Wireframe:
-            return "Wireframe";
-        case ShadingMode::Flat:
-            return "Flat";
-        case ShadingMode::Phong:
-            return "Phong";
-        }
-        return "Unknown";
-    }
-
-    // Lowercase variant for the HUD, where the bar's fields are uniformly lowercase;
-    // shading_mode_name keeps the capitalized form for the --bench report.
-    constexpr const char *hud_shading_name(ShadingMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ShadingMode::Wireframe:
-            return "wireframe";
-        case ShadingMode::Flat:
-            return "flat";
-        case ShadingMode::Phong:
-            return "phong";
-        }
-        return "phong";
-    }
-
-    void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double load_ms)
-    {
-        using clock = std::chrono::steady_clock;
-
-        Camera camera = auto_fit_camera(mesh, args, /*first_person=*/false);
-        Light lights[2];
-        vec3 ambient;
-        make_default_lights(lights, ambient);
-
-        Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
-        Renderer renderer(n_threads);
-        renderer.mode = args.shading;
-        renderer.cull_backfaces = args.cull;
-        renderer.show_texture = args.texture;
-
-        const int n_lights = light_count(args.lighting);
-        const vec3 cur_ambient = lighting_ambient(args.lighting, ambient);
-
-        const int n_warmup = args.bench_warmup;
-        const int n_measure = args.bench;
-        std::vector<int64_t> frame_ns;
-        frame_ns.reserve(static_cast<size_t>(n_measure));
-
-        auto loop_t0 = clock::now();
-        for (int i = 0; i < n_warmup + n_measure; i++)
-        {
-            camera.spin_world_y(0.8f / 60.0f);
-            fb.clear({ 0, 0, 0 });
-            auto t0 = clock::now();
-            renderer.render(mesh, camera, lights, n_lights, cur_ambient, fb);
-            auto t1 = clock::now();
-            if (i >= n_warmup)
-            {
-                frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+            case ColorChoice::TrueColor:
+                color_mode = ColorMode::TrueColor;
+                break;
+            case ColorChoice::Palette256:
+                color_mode = ColorMode::Palette256;
+                break;
+            case ColorChoice::Auto:
+                color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
+                break;
             }
         }
-        const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
 
-        // Compute stats via nth_element (linear): no full sort needed.
-        auto ms = [](int64_t ns) { return static_cast<double>(ns) * 1e-6; };
-
-        auto [mn_it, mx_it] = std::minmax_element(frame_ns.begin(), frame_ns.end());
-        const int64_t mn = *mn_it;
-        const int64_t mx = *mx_it;
-
-        const size_t mid = static_cast<size_t>(n_measure) / 2;
-        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(mid), frame_ns.end());
-        const int64_t med = frame_ns[mid];
-
-        const auto p95i = static_cast<size_t>(n_measure * 95 / 100);
-        std::nth_element(frame_ns.begin(), frame_ns.begin() + static_cast<ptrdiff_t>(p95i), frame_ns.end());
-        const int64_t p95 = frame_ns[p95i];
-
-        // Welford's online algorithm: single pass, numerically stable.
-        double welford_mean = 0.0;
-        double welford_m2 = 0.0;
-        for (int k = 0; k < n_measure; k++)
+        // Loading and rendering share one resolved thread count.
+        const int n_threads = Renderer::resolve_thread_count(args.n_threads);
+        Mesh mesh;
+        const auto load_t0 = std::chrono::steady_clock::now();
+        if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
         {
-            const auto x = static_cast<double>(frame_ns[static_cast<size_t>(k)]);
-            const double delta = x - welford_mean;
-            welford_mean += delta / (k + 1);
-            welford_m2 += delta * (x - welford_mean);
-        }
-        const double stddev_ms = std::sqrt(welford_m2 / static_cast<double>(n_measure)) * 1e-6;
-
-        const double med_ms = ms(med);
-        const double fps = med_ms > 0.0 ? 1000.0 / med_ms : 0.0;
-        const double mtri_s = med_ms > 0.0 ? static_cast<double>(mesh.triangles.size()) / med_ms * 1e-3 : 0.0;
-        const double mvert_s = med_ms > 0.0 ? static_cast<double>(mesh.vertices.size()) / med_ms * 1e-3 : 0.0;
-
-        std::fprintf(
-            stderr, "bench: %d frames  %dx%d px  threads=%d  mode=%s  mesh=%zu Tris / %zu Verts\n", n_measure,
-            args.bench_width, args.bench_height, n_threads, shading_mode_name(renderer.mode), mesh.triangles.size(),
-            mesh.vertices.size()
-        );
-
-        std::fprintf(stderr, "startup:\n");
-        std::fprintf(stderr, "  load    %.2f ms\n", load_ms);
-
-        std::fprintf(stderr, "runtime:\n");
-        std::fprintf(stderr, "  min     %.2f ms\n", ms(mn));
-        std::fprintf(
-            stderr, "  median  %.2f ms   ~%d fps   %.1f MTri/s   %.1f MVert/s\n", med_ms,
-            static_cast<int>(std::lround(fps)), mtri_s, mvert_s
-        );
-        std::fprintf(stderr, "  p95     %.2f ms\n", ms(p95));
-        std::fprintf(stderr, "  max     %.2f ms\n", ms(mx));
-        std::fprintf(stderr, "  stddev  %.2f ms\n", stddev_ms);
-        std::fprintf(stderr, "  total   %.0f ms  %d frames including warmup\n", total_ms, n_warmup + n_measure);
-    }
-
-} // namespace
-
-const auto run_main = [](int argc, char *argv[]) -> int
-{
-    const ParseResult parsed = parse_args(argc, argv);
-    if (!parsed.ok)
-    {
-        return parsed.exit_code;
-    }
-    const ParsedArgs &args = parsed.args;
-
-    const bool bench_mode = args.bench > 0;
-
-    // Interactive mode requires terminal input and output. --no-input still accepts Q.
-    ColorMode color_mode = ColorMode::TrueColor;
-    if (!bench_mode)
-    {
-        if (!platform::is_tty(1))
-        {
-            std::fprintf(stderr, "%s: stdout is not a terminal\n", program_name(argv[0]));
+            std::fprintf(
+                stderr,
+                "%s: failed to load '%s'\n"
+                "Native formats: .obj, .ply, .stl, .gltf, .glb; see --help for Assimp-backed formats\n",
+                program_name(argv[0]), args.model_path.c_str()
+            );
             return 1;
         }
-        if (!platform::is_tty(0))
+
+        if (bench_mode)
         {
-            std::fprintf(stderr, "%s: stdin is not a terminal\n", program_name(argv[0]));
+            const double load_ms =
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
+            run_bench(mesh, args, n_threads, load_ms);
+            return 0;
+        }
+
+        ViewerState state(args, viewer::auto_fit_camera(mesh, args, args.first_person));
+        const std::string model_name = viewer::hud_model_name(args.model_path);
+
+        // The Windows job-control stub always succeeds.
+        // cppcheck-suppress knownConditionTrueFalse
+        if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
+        {
+            std::fprintf(stderr, "%s: failed to install signal handlers\n", program_name(argv[0]));
             return 1;
         }
-        // Environment detection does not mutate the console; VT setup waits until after loading.
-        const platform::TermColor tc = platform::detect_term_color();
-        if (tc == platform::TermColor::Dumb)
+
+        // Keep interrupt-handler resources alive through terminal cleanup.
+        const platform::InterruptHandlerGuard interrupt_handler;
+
+        // Capture terminal state only when this run is about to change it. Keep this
+        // outside the session guard so escape-based cleanup runs before final restoration.
+        platform::ConsoleStateGuard console_state;
+        if (!console_state.valid())
         {
-            std::fprintf(stderr, "%s: dumb terminal (TERM=dumb) cannot render\n", program_name(argv[0]));
+            std::fprintf(stderr, "%s: failed to capture terminal state\n", program_name(argv[0]));
             return 1;
         }
-        // A forced color depth cannot override missing escape support.
-        switch (args.color)
-        {
-        case ColorChoice::TrueColor:
-            color_mode = ColorMode::TrueColor;
-            break;
-        case ColorChoice::Palette256:
-            color_mode = ColorMode::Palette256;
-            break;
-        case ColorChoice::Auto:
-            color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
-            break;
-        }
-    }
 
-    // Loading and rendering share one resolved thread count.
-    const int n_threads = Renderer::resolve_thread_count(args.n_threads);
-    Mesh mesh;
-    const auto load_t0 = std::chrono::steady_clock::now();
-    if (!mesh.load_model(args.model_path, args.ao, n_threads, args.smooth_angle))
-    {
-        std::fprintf(
-            stderr,
-            "%s: failed to load '%s'\n"
-            "Native formats: .obj, .ply, .stl, .gltf, .glb; see --help for Assimp-backed formats\n",
-            program_name(argv[0]), args.model_path.c_str()
-        );
-        return 1;
-    }
-
-    if (bench_mode)
-    {
-        const double load_ms =
-            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - load_t0).count();
-        run_bench(mesh, args, n_threads, load_ms);
-        return 0;
-    }
-
-    ViewerState state(args, auto_fit_camera(mesh, args, args.first_person));
-
-    // Use a control-safe basename in the HUD; the composer handles truncation.
-    std::string model_name = args.model_path;
-    {
-        const size_t slash = model_name.find_last_of("/\\");
-        if (slash != std::string::npos)
-        {
-            model_name = model_name.substr(slash + 1);
-        }
-        model_name = sanitize_controls(model_name);
-    }
-
-    if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
-    {
-        std::fprintf(stderr, "%s: failed to install signal handlers\n", program_name(argv[0]));
-        return 1;
-    }
-
-    // Keep interrupt-handler resources alive through terminal cleanup.
-    const platform::InterruptHandlerGuard interrupt_handler;
-
-    // Capture terminal state only when this run is about to change it. Keep this
-    // outside the session guard so escape-based cleanup runs before final restoration.
-    platform::ConsoleStateGuard console_state;
-    if (!console_state.valid())
-    {
-        std::fprintf(stderr, "%s: failed to capture terminal state\n", program_name(argv[0]));
-        return 1;
-    }
-
-    {
         TerminalSessionGuard terminal(program_name(argv[0]), console_state);
 
         // Defer persistent Windows VT mutation until loading succeeds. cppcheck sees
@@ -729,6 +394,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 return 0;
             }
             gfx = negotiate_graphics(args.graphics, terminal.alt_screen_owned);
+            // The Windows stub never requests suspension.
+            // cppcheck-suppress knownConditionTrueFalse
             if (!gfx.interrupted && !platform::suspend_requested())
             {
                 break;
@@ -793,11 +460,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
             }
         }
 
-        // Key light: warm white from upper-right-front.
-        // Fill light: dim cool blue from lower-left-back, providing contrast.
-        Light lights[2];
-        vec3 ambient;
-        make_default_lights(lights, ambient);
+        const viewer::SceneLights scene = viewer::default_lights();
 
         // Borrow the idle render pool for presentation; tests and bench remain serial.
         fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
@@ -906,25 +569,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
             // Compose every frame; present() cheaply drops an unchanged HUD before output.
             if (args.hud)
             {
-                HudInfo info;
-                info.model_name = model_name;
-                info.shading_name = hud_shading_name(state.settings.shading);
-                info.light_name = lighting_name(state.settings.lighting);
-                info.bg_name = background_name(state.settings.background);
-                if (state.settings.shading == ShadingMode::Wireframe)
-                {
-                    info.wf_name = wireframe_name(state.settings.wireframe_color);
-                    info.wf_color = wireframe_color_of(state.settings.wireframe_color);
-                }
-                info.spinning = state.settings.spinning;
-                info.culling = state.settings.culling;
-                info.texturing = state.settings.texturing;
-                info.has_textures = has_textures;
-                info.first_person = state.camera.first_person;
-                info.fp_speed = state.camera.fp_speed;
-                info.fps = timing.hud_fps();
-
-                fb.set_hud(compose_hud(info, geometry.cols(), color_mode));
+                fb.set_hud(compose_hud(
+                    viewer::make_hud_info(state, model_name, has_textures, timing.hud_fps()), geometry.cols(),
+                    color_mode
+                ));
             }
 
             // An unchanged view skips the render, and on the pixel backends the
@@ -934,8 +582,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
             if (rendered)
             {
                 fb.clear(background_color(view.background));
-                const int n_lights = light_count(view.lighting);
-                const vec3 cur_ambient = lighting_ambient(view.lighting, ambient);
+                const int n_lights = viewer::light_count(view.lighting);
+                const vec3 cur_ambient = viewer::lighting_ambient(view.lighting, scene.ambient);
                 renderer.mode = view.shading;
                 renderer.wireframe_color = wireframe_color_of(view.wireframe_color);
                 fb.set_required_color(
@@ -944,7 +592,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
                 );
                 renderer.cull_backfaces = view.culling;
                 renderer.show_texture = view.texturing;
-                renderer.render(mesh, view.camera, lights, n_lights, cur_ambient, fb);
+                renderer.render(mesh, view.camera, scene.lights, n_lights, cur_ambient, fb);
                 rendered_view = view;
             }
             fb.present();
@@ -952,7 +600,8 @@ const auto run_main = [](int argc, char *argv[]) -> int
         }
         return 0;
     }
-};
+
+} // namespace
 
 int main(int argc, char *argv[])
 {

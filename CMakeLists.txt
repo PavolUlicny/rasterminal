@@ -296,6 +296,7 @@ endif()
 add_executable(rasterminal
   src/main.cpp
   src/args.cpp
+  src/bench.cpp
   src/terminal/color.cpp
   src/terminal/framebuffer.cpp
   src/terminal/hud.cpp
@@ -367,6 +368,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_assertions.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp
+    tests/test_bench.cpp
     tests/platform/test_console.cpp
     tests/platform/test_terminal_session.cpp
     tests/platform/test_file.cpp
@@ -381,6 +383,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/terminal/test_text.cpp
     tests/terminal/test_hud.cpp
     tests/viewer/test_viewer.cpp
+    tests/viewer/test_viewer_setup.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
@@ -422,6 +425,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/math/test_linalg.cpp
     tests/math/test_light.cpp
     src/args.cpp
+    src/bench.cpp
     src/terminal/color.cpp
     src/render/renderer.cpp
     src/loaders/mesh.cpp
