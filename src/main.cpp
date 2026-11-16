@@ -16,9 +16,9 @@
 #include "src/terminal/hud.h"
 #include "src/terminal/input.h"
 #include "src/terminal/sixel.h"
-#include "src/terminal/text.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/frame_view.h"
+#include "src/viewer/hud_info.h"
 #include "src/viewer/input_controller.h"
 #include "src/viewer/scene.h"
 #include "src/viewer/scene_colors.h"
@@ -43,54 +43,6 @@
 
 namespace
 {
-
-    constexpr const char *wireframe_name(WireframeColor c) noexcept
-    {
-        switch (c)
-        {
-        case WireframeColor::White:
-            return "white";
-        case WireframeColor::Red:
-            return "red";
-        case WireframeColor::Green:
-            return "green";
-        case WireframeColor::Yellow:
-            return "yellow";
-        case WireframeColor::Cyan:
-            return "cyan";
-        case WireframeColor::Magenta:
-            return "magenta";
-        }
-        return "white";
-    }
-
-    constexpr const char *background_name(Background b) noexcept
-    {
-        switch (b)
-        {
-        case Background::Gray:
-            return "gray";
-        case Background::White:
-            return "white";
-        case Background::Black:
-            return "black";
-        }
-        return "black";
-    }
-
-    constexpr const char *lighting_name(LightingMode m) noexcept
-    {
-        switch (m)
-        {
-        case LightingMode::Single:
-            return "single";
-        case LightingMode::Flat:
-            return "flat";
-        case LightingMode::Dual:
-            return "dual";
-        }
-        return "dual";
-    }
 
     // Apply the escape-reply sanity bound to ioctl-derived cell sizes too.
     constexpr bool valid_cell_px(int v) noexcept
@@ -407,22 +359,6 @@ namespace
         return "Unknown";
     }
 
-    // Lowercase variant for the HUD, where the bar's fields are uniformly lowercase;
-    // shading_mode_name keeps the capitalized form for the --bench report.
-    constexpr const char *hud_shading_name(ShadingMode mode) noexcept
-    {
-        switch (mode)
-        {
-        case ShadingMode::Wireframe:
-            return "wireframe";
-        case ShadingMode::Flat:
-            return "flat";
-        case ShadingMode::Phong:
-            return "phong";
-        }
-        return "phong";
-    }
-
     void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double load_ms)
     {
         using clock = std::chrono::steady_clock;
@@ -585,17 +521,7 @@ const auto run_main = [](int argc, char *argv[]) -> int
     }
 
     ViewerState state(args, viewer::auto_fit_camera(mesh, args, args.first_person));
-
-    // Use a control-safe basename in the HUD; the composer handles truncation.
-    std::string model_name = args.model_path;
-    {
-        const size_t slash = model_name.find_last_of("/\\");
-        if (slash != std::string::npos)
-        {
-            model_name = model_name.substr(slash + 1);
-        }
-        model_name = sanitize_controls(model_name);
-    }
+    const std::string model_name = viewer::hud_model_name(args.model_path);
 
     if (!platform::install_interrupt_handler() || !platform::install_job_control_handler())
     {
@@ -820,25 +746,10 @@ const auto run_main = [](int argc, char *argv[]) -> int
             // Compose every frame; present() cheaply drops an unchanged HUD before output.
             if (args.hud)
             {
-                HudInfo info;
-                info.model_name = model_name;
-                info.shading_name = hud_shading_name(state.settings.shading);
-                info.light_name = lighting_name(state.settings.lighting);
-                info.bg_name = background_name(state.settings.background);
-                if (state.settings.shading == ShadingMode::Wireframe)
-                {
-                    info.wf_name = wireframe_name(state.settings.wireframe_color);
-                    info.wf_color = wireframe_color_of(state.settings.wireframe_color);
-                }
-                info.spinning = state.settings.spinning;
-                info.culling = state.settings.culling;
-                info.texturing = state.settings.texturing;
-                info.has_textures = has_textures;
-                info.first_person = state.camera.first_person;
-                info.fp_speed = state.camera.fp_speed;
-                info.fps = timing.hud_fps();
-
-                fb.set_hud(compose_hud(info, geometry.cols(), color_mode));
+                fb.set_hud(compose_hud(
+                    viewer::make_hud_info(state, model_name, has_textures, timing.hud_fps()), geometry.cols(),
+                    color_mode
+                ));
             }
 
             // An unchanged view skips the render, and on the pixel backends the
