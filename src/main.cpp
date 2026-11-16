@@ -18,6 +18,7 @@
 #include "src/terminal/sixel.h"
 #include "src/viewer/frame_timing.h"
 #include "src/viewer/frame_view.h"
+#include "src/viewer/graphics_setup.h"
 #include "src/viewer/hud_info.h"
 #include "src/viewer/input_controller.h"
 #include "src/viewer/scene.h"
@@ -32,7 +33,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <functional>
 #include <optional>
@@ -55,6 +55,7 @@ namespace
     using viewer::background_color;
     using viewer::FrameTiming;
     using viewer::FrameView;
+    using viewer::GraphicsSetup;
     using viewer::InputController;
     using viewer::same_image;
     using viewer::ViewerState;
@@ -133,25 +134,6 @@ namespace
         request_geometry(update.after_resize);
         return true;
     }
-
-    // Interrupted queries must be retried. Detection errors are reported only
-    // after the caller releases the terminal state recorded here.
-    struct GraphicsSetup
-    {
-        GraphicsBackend backend = GraphicsBackend::Blocks;
-        bool shm_ok = false;
-        bool interrupted = false;
-        int cell_w = 0;
-        int cell_h = 0;
-        // The terminal's max sixel image size (0 = unreported); see TermGraphics.
-        int sixel_max_w = 0;
-        int sixel_max_h = 0;
-        // The terminal's sixel colour register count (0 = unreported).
-        int sixel_registers = 0;
-        // Set with exit_code 1; main prints it after restoring the terminal.
-        const char *error = nullptr;
-        int exit_code = -1;
-    };
 
     struct TerminalSessionGuard
     {
@@ -271,78 +253,26 @@ namespace
         TerminalSessionGuard &operator=(TerminalSessionGuard &&) = delete;
     };
 
-    // Query before mouse tracking and input parsing. tmux needs protocol
-    // passthrough this build does not implement, so it uses blocks. Record alternate-screen
+    // Query before mouse tracking and input parsing. Record alternate-screen
     // ownership before the query so the caller can clean up if the query throws.
     GraphicsSetup negotiate_graphics(GraphicsChoice choice, bool &alt_screen_owned)
     {
-        GraphicsSetup gfx;
         if (choice == GraphicsChoice::Blocks)
         {
-            return gfx;
+            return {};
         }
         // Single-threaded startup, same as detect_term_color's env reads.
-        const char *term_env = std::getenv("TERM");               // NOLINT(concurrency-mt-unsafe)
-        const bool under_tmux = std::getenv("TMUX") != nullptr || // NOLINT(concurrency-mt-unsafe)
-                                (term_env != nullptr &&
-                                 (std::strncmp(term_env, "screen", 6) == 0 || std::strncmp(term_env, "tmux", 4) == 0));
-        if (!under_tmux)
+        const bool multiplexed = viewer::under_multiplexer(
+            std::getenv("TMUX"), // NOLINT(concurrency-mt-unsafe)
+            std::getenv("TERM")  // NOLINT(concurrency-mt-unsafe)
+        );
+        std::optional<TermGraphics> reply;
+        if (!multiplexed)
         {
             alt_screen_owned = true;
-            const TermGraphics tg = platform::query_term_graphics();
-            gfx.interrupted = tg.interrupted;
-            if (tg.failed)
-            {
-                gfx.error = "failed to query terminal graphics";
-                gfx.exit_code = 1;
-                return gfx;
-            }
-            // Outside the backend selection: a sixel-only terminal's cell-size
-            // reply must not be thrown away with the kitty verdict.
-            gfx.cell_w = tg.cell_w;
-            gfx.cell_h = tg.cell_h;
-            gfx.sixel_max_w = tg.sixel_max_w;
-            gfx.sixel_max_h = tg.sixel_max_h;
-            gfx.sixel_registers = tg.sixel_registers;
-            // Auto prefers kitty to sixel. A forced choice masks the other pixel
-            // backend, so --graphics sixel exercises sixel on terminals with both.
-            if (tg.kitty && choice != GraphicsChoice::Sixel)
-            {
-                gfx.backend = GraphicsBackend::Kitty;
-                gfx.shm_ok = tg.kitty_shm;
-            }
-            else if (tg.sixel && choice != GraphicsChoice::Kitty)
-            {
-                gfx.backend = GraphicsBackend::Sixel;
-            }
+            reply = platform::query_term_graphics();
         }
-        // Suspension restarts detection after continuation. Termination unwinds
-        // the terminal guards before finish_termination re-raises the signal.
-        if (gfx.interrupted || platform::control_requested())
-        {
-            gfx.interrupted = true;
-            return gfx;
-        }
-        // Forced pixel modes still require detection; unsupported escapes would
-        // otherwise produce a blank screen with no diagnostic.
-        if (gfx.backend == GraphicsBackend::Blocks &&
-            (choice == GraphicsChoice::Kitty || choice == GraphicsChoice::Sixel))
-        {
-            const bool kitty_choice = choice == GraphicsChoice::Kitty;
-            const char *reason = kitty_choice ? "terminal does not answer the kitty graphics query"
-                                              : "terminal does not report sixel support";
-            if (under_tmux)
-            {
-                // The gate covers both multiplexers (TMUX env, TERM screen*/tmux*),
-                // so the message must not blame tmux for a GNU screen session.
-                reason = kitty_choice ? "kitty graphics is not supported under tmux or GNU screen"
-                                      : "sixel graphics is not supported under tmux or GNU screen";
-            }
-            gfx.error = reason;
-            gfx.exit_code = 1;
-            return gfx;
-        }
-        return gfx;
+        return viewer::resolve_graphics(choice, reply ? &*reply : nullptr, platform::control_requested());
     }
 
     constexpr const char *shading_mode_name(ShadingMode mode) noexcept
