@@ -382,6 +382,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/terminal/test_text.cpp
     tests/terminal/test_hud.cpp
     tests/viewer/test_viewer.cpp
+    tests/viewer/test_viewer_setup.cpp
     tests/loaders/test_obj.cpp
     tests/loaders/test_ply.cpp
     tests/loaders/test_stl.cpp
