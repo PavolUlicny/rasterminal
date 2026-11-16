@@ -368,6 +368,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/test_assertions.cpp
     tests/test_dispatch.cpp
     tests/test_args.cpp
+    tests/test_bench.cpp
     tests/platform/test_console.cpp
     tests/platform/test_terminal_session.cpp
     tests/platform/test_file.cpp
