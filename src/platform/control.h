@@ -555,7 +555,9 @@ namespace platform
     [[nodiscard]] inline int finish_termination(int status) noexcept
     {
 #ifdef _WIN32
-        return status;
+        // The default console handler exits with this code for both Ctrl+C and Ctrl+Break.
+        // Shells read it as a signed or unsigned 32-bit value, so the wrap to int is intended.
+        return interrupt_requested() ? static_cast<int>(STATUS_CONTROL_C_EXIT) : status;
 #else
         const uint32_t handler_mask = detail::termination_handler_mask;
         if (handler_mask == 0 && !detail::job_control_installed)

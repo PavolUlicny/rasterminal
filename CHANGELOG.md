@@ -26,6 +26,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
+- On Windows, quitting with Ctrl+C or Ctrl+Break exits with status `0xC000013A` (`STATUS_CONTROL_C_EXIT`) instead of 0, so `rasterminal model.obj && next` no longer runs `next` after an interrupt. cmd and PowerShell report it as `-1073741510`.
 - Turning off backface culling no longer changes how double-sided surfaces are lit. Their back sides were lit as if they faced away from the viewer.
 - On Windows 10 version 1903 and later, models and their textures open from paths with non-ASCII characters, such as a user folder named `José`. Formats loaded through Assimp failed on any non-ASCII path, and the other formats failed on characters outside the system's ANSI code page.
 - On Windows builds made with MSVC, the frame cap no longer stops working after a few days of system uptime. The loop then stopped sleeping between frames and kept a CPU core busy, even with nothing to redraw.

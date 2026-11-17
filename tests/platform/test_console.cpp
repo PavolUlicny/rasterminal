@@ -822,6 +822,21 @@ TEST(platform, query_read_interrupt_skips_record_fallback)
     ASSERT_EQ(query_record_read_call_count(), 1U);
 }
 
+// An interrupt overrides an error status too, as the POSIX re-raise does.
+TEST(platform, finish_termination_reports_console_interrupt)
+{
+    platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
+    const int clean = platform::finish_termination(17);
+    platform::detail::interrupt_flag.store(true, std::memory_order_release);
+    const int interrupted = platform::finish_termination(0);
+    const int interrupted_error = platform::finish_termination(1);
+    platform::detail::interrupt_flag.store(false, std::memory_order_relaxed);
+
+    ASSERT_EQ(clean, 17);
+    ASSERT_EQ(static_cast<DWORD>(interrupted), STATUS_CONTROL_C_EXIT);
+    ASSERT_EQ(static_cast<DWORD>(interrupted_error), STATUS_CONTROL_C_EXIT);
+}
+
 TEST(platform, version_output_preserves_windows_console_state_and_redirected_utf8)
 {
     ScopedWindowsConsole console;
