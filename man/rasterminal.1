@@ -463,6 +463,13 @@ On POSIX, termination by signal
 restores the terminal and then re-raises SIGHUP, SIGINT, SIGQUIT, or SIGTERM.
 Shells typically report these as 128 plus the signal number, including 130 for
 SIGINT and 143 for SIGTERM.
+.TP
+.B 0xC000013A
+On Windows, quit by Ctrl+C or Ctrl+Break.
+This is
+.BR STATUS_CONTROL_C_EXIT ,
+the status Windows gives any console program that Ctrl+C ends.
+cmd and PowerShell report it as \-1073741510.
 .SH ENVIRONMENT
 .B rasterminal
 reads these variables in interactive mode to choose color output and detect
