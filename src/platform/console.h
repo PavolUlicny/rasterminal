@@ -126,6 +126,8 @@ namespace platform
 
         void arm_input_restore() noexcept { m_input_mode_pending = m_snapshot_complete; }
 
+        bool discard_typeahead() noexcept { return m_discard_pending_input(); }
+
         bool cleanup_input() noexcept
         {
             if (!m_snapshot_complete)
@@ -460,6 +462,13 @@ namespace platform
         if (console_state != nullptr)
         {
             console_state->arm_input_restore();
+        }
+        // Drop typeahead as POSIX TCIFLUSH does, before a wake record can be queued.
+        const bool discarded =
+            console_state != nullptr ? console_state->discard_typeahead() : detail::discard_pending_standard_input();
+        if (!discarded)
+        {
+            return false;
         }
         detail::arm_console_input_wake();
         return true;

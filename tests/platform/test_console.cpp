@@ -1180,6 +1180,50 @@ TEST(platform, disable_raw_mode_discards_pending_windows_input)
     ASSERT_EQ(pending, static_cast<DWORD>(0));
 }
 
+// Keys typed while the model loads must not reach the viewer, matching POSIX TCIFLUSH.
+TEST(platform, enable_raw_mode_discards_windows_typeahead)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(FlushConsoleInputBuffer(console.input) != 0);
+
+    constexpr wchar_t typeahead[] = L"q";
+    ASSERT_TRUE(queue_console_bytes(console.input, typeahead, 1));
+    DWORD pending = 0;
+    ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
+    ASSERT_TRUE(pending >= 1);
+
+    platform::ConsoleStateGuard guard;
+    ASSERT_TRUE(guard.valid());
+    ASSERT_TRUE(platform::enable_raw_mode(&guard));
+    ASSERT_TRUE(GetNumberOfConsoleInputEvents(console.input, &pending) != 0);
+    ASSERT_EQ(pending, static_cast<DWORD>(0));
+    ASSERT_TRUE(platform::disable_raw_mode(&guard));
+}
+
+TEST(platform, enable_raw_mode_fails_when_windows_typeahead_survives)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    DWORD baseline_input_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &baseline_input_mode) != 0);
+    input_discard_attempts() = 0;
+    platform::detail::console_input_wake_enabled.store(false);
+
+    {
+        platform::ConsoleStateGuard guard(GetConsoleMode, GetConsoleOutputCP, SetConsoleMode, fail_first_input_discard);
+        ASSERT_TRUE(guard.valid());
+        ASSERT_FALSE(platform::enable_raw_mode(&guard));
+        ASSERT_EQ(input_discard_attempts(), 1);
+        ASSERT_FALSE(platform::detail::console_input_wake_enabled.load());
+    }
+
+    // The raw mode was already applied, so the guard must still restore it.
+    DWORD restored_input_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &restored_input_mode) != 0);
+    ASSERT_EQ(restored_input_mode, baseline_input_mode);
+}
+
 TEST(platform, console_state_guard_retries_input_cleanup_after_restore_failure)
 {
     ScopedWindowsConsole console;
