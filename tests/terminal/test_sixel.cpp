@@ -13,7 +13,8 @@ namespace
 
     std::vector<unsigned char> solid_plane(int w, int h, unsigned char index)
     {
-        return std::vector<unsigned char>(static_cast<size_t>(w) * static_cast<size_t>(h), index);
+        std::vector<unsigned char> plane(static_cast<size_t>(w) * static_cast<size_t>(h), index);
+        return plane;
     }
 
     // Definitions for registers 0..count-1, each a distinct colour.

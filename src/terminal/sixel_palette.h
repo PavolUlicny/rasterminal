@@ -45,6 +45,12 @@ namespace sixel
             static constexpr std::size_t CELLS = std::size_t{ SIDE } * SIDE * SIDE;
 
             Histogram();
+            // add() relies on m_occupied keeping its reserved capacity, which a copy drops.
+            Histogram(const Histogram &) = delete;
+            Histogram &operator=(const Histogram &) = delete;
+            Histogram(Histogram &&) noexcept = default;
+            Histogram &operator=(Histogram &&) noexcept = default;
+            ~Histogram() = default;
             // Clears only the cells the last fill occupied.
             void clear() noexcept;
             // Add `n` samples of one colour.

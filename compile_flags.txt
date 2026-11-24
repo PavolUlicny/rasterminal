@@ -1,3 +1,4 @@
+-std=c++17
 -I.
 -D_FILE_OFFSET_BITS=64
 -DRASTERMINAL_TEST_BINARY="rasterminal"

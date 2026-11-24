@@ -735,6 +735,7 @@ namespace
         ScopedFd release_read(release_fds[0]);
         ScopedFd release_write(release_fds[1]);
 
+        flush_test_output_before_fork();
         const pid_t supervisor_pid = fork();
         ASSERT_TRUE(supervisor_pid >= 0);
         if (supervisor_pid == 0)
@@ -815,7 +816,7 @@ namespace
         ASSERT_TRUE(read_pipe_value(app_pid_read.fd, &app_pid, sizeof app_pid));
         ASSERT_TRUE(app_pid > 0);
 
-        ScopedPosixSession session(supervisor_pid);
+        ScopedPosixSession session(supervisor_pid, &master.fd);
         const int flags = fcntl(master.fd, F_GETFL, 0);
         ASSERT_TRUE(flags >= 0);
         ASSERT_TRUE(fcntl(master.fd, F_SETFL, flags | O_NONBLOCK) == 0);
@@ -919,6 +920,7 @@ namespace
 
 TEST(platform, finish_termination_delivers_signal_pending_at_cleanup_boundary)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -950,6 +952,7 @@ TEST(platform, finish_termination_delivers_signal_pending_at_cleanup_boundary)
 
 TEST(platform, finish_termination_preserves_caller_signal_mask)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -987,6 +990,7 @@ TEST(platform, finish_termination_preserves_caller_signal_mask)
 
 TEST(platform, finish_termination_consumes_pending_suspend_during_clean_exit)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -1026,6 +1030,7 @@ TEST(platform, finish_termination_consumes_pending_suspend_during_clean_exit)
 
 TEST(platform, finish_termination_preserves_inherited_ignored_signal)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -1063,6 +1068,7 @@ TEST(platform, finish_termination_preserves_inherited_ignored_signal)
 
 TEST(platform, finish_termination_delivers_recorded_signal_before_later_pending_signal)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -1704,6 +1710,7 @@ namespace
         ASSERT_TRUE(pipe(app_pids) == 0);
         ScopedFd app_pid_read(app_pids[0]);
         ScopedFd app_pid_write(app_pids[1]);
+        flush_test_output_before_fork();
         const pid_t shell = fork();
         ASSERT_TRUE(shell >= 0);
         if (shell == 0)
@@ -1737,7 +1744,7 @@ namespace
             execl(shell_path, "sh", "-i", static_cast<char *>(nullptr));
             _exit(122);
         }
-        ScopedPosixSession session(shell);
+        ScopedPosixSession session(shell, &master.fd);
         const int flags = fcntl(master.fd, F_GETFL, 0);
         ASSERT_TRUE(flags >= 0);
         ASSERT_TRUE(fcntl(master.fd, F_SETFL, flags | O_NONBLOCK) == 0);
@@ -1898,6 +1905,7 @@ TEST(platform, job_control_terminates_during_continuation_with_output_still_paus
 
 TEST(platform, job_control_workers_inherit_blocked_signals)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -2021,6 +2029,7 @@ TEST(platform, job_control_handoff_preserves_continuation_at_each_stop_boundary)
         for (const bool ignored_continue : { false, true })
         {
             const bool expect_stop = when == ContinueAt::AfterStop;
+            flush_test_output_before_fork();
             const pid_t child = fork();
             ASSERT_TRUE(child >= 0);
             if (child == 0)
@@ -2119,6 +2128,7 @@ TEST(platform, job_control_handoff_preserves_termination_at_default_handler)
     {
         for (const bool initially_blocked : { false, true })
         {
+            flush_test_output_before_fork();
             const pid_t child = fork();
             ASSERT_TRUE(child >= 0);
             if (child == 0)
@@ -2180,6 +2190,7 @@ TEST(platform, job_control_handoff_preserves_termination_at_default_handler)
 
 TEST(platform, job_control_install_preserves_ignored_stop)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
@@ -2208,6 +2219,7 @@ TEST(platform, job_control_install_preserves_ignored_stop)
 
 TEST(platform, job_control_preserves_ignored_continue_through_cleanup)
 {
+    flush_test_output_before_fork();
     const pid_t child = fork();
     ASSERT_TRUE(child >= 0);
     if (child == 0)
