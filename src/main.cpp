@@ -149,13 +149,15 @@ namespace
         {
             // Framebuffer adopts a successful query's alternate screen and releases it
             // in its destructor. Until construction finishes, this guard owns it.
-            if (alt_screen_owned)
+            if (alt_screen_owned && !platform::exit_alt_screen())
             {
-                platform::exit_alt_screen();
+                platform::discard_terminal_output();
+                platform::exit_alt_screen(platform::write_terminal_final_cleanup);
             }
+            // Never discard here: the queue can still hold the framebuffer's release.
             if (mouse_enabled)
             {
-                platform::disable_mouse();
+                platform::disable_mouse(platform::write_terminal_final_cleanup);
             }
             if (raw_enabled)
             {

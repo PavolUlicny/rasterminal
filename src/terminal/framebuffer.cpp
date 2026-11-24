@@ -310,6 +310,14 @@ bool Framebuffer::resume_terminal(bool *canceled) noexcept
 Framebuffer::~Framebuffer() noexcept
 {
     suspend_terminal();
+    if (m_terminal_release_pending)
+    {
+        // Nothing retries a release after destruction. The queued frame is
+        // useless once the alternate screen goes, and the release ends any
+        // escape it leaves partial.
+        platform::discard_terminal_output();
+        suspend_terminal(platform::write_terminal_final_cleanup);
+    }
     // Headless mode suppresses escapes, not cleanup of shared-memory frames.
     if (m_gfx.backend == GraphicsBackend::Kitty)
     {

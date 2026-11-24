@@ -160,14 +160,14 @@ namespace platform
             return completed && restored;
         }
 
-        inline bool write_bounded_output(const char *text) noexcept
+        inline bool write_bounded_output(const char *text, std::chrono::milliseconds budget) noexcept
         {
             const int saved_flags = detail::make_output_nonblocking();
             if (saved_flags < 0)
             {
                 return false;
             }
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
+            const auto deadline = std::chrono::steady_clock::now() + budget;
             const size_t size = std::strlen(text);
             size_t offset = 0;
             while (offset < size && std::chrono::steady_clock::now() < deadline)
@@ -260,7 +260,44 @@ namespace platform
 #ifdef _WIN32
         return write_terminal(text);
 #else
-        return detail::with_sigttou_blocked([text]() { return detail::write_bounded_output(text); });
+        return detail::with_sigttou_blocked(
+            [text]() { return detail::write_bounded_output(text, std::chrono::milliseconds(50)); }
+        );
+#endif
+    }
+
+    // Exit has no later retry, so wait out a stalled consumer longer than a
+    // suspension would, but stay bounded so a dead terminal cannot hang exit.
+    inline bool write_terminal_final_cleanup(const char *text) noexcept
+    {
+#ifdef _WIN32
+        return write_terminal(text);
+#else
+        return detail::with_sigttou_blocked(
+            [text]() { return detail::write_bounded_output(text, std::chrono::milliseconds(1000)); }
+        );
+#endif
+    }
+
+    // Drop output the terminal has not consumed, such as an abandoned frame, so
+    // a following cleanup fits in the queue. This also drops other writers' queued
+    // bytes, and on Linux PTYs bytes already moved to the master side survive.
+    inline bool discard_terminal_output() noexcept
+    {
+#ifdef _WIN32
+        return true;
+#else
+        return detail::with_sigttou_blocked(
+            []()
+            {
+                int result = tcflush(STDOUT_FILENO, TCOFLUSH);
+                while (result < 0 && errno == EINTR)
+                {
+                    result = tcflush(STDOUT_FILENO, TCOFLUSH);
+                }
+                return result == 0;
+            }
+        );
 #endif
     }
 

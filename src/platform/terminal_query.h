@@ -101,10 +101,10 @@ namespace platform
     } // namespace detail
 
     // Bail paths reset partial escapes and leave the alternate screen.
-    inline bool exit_alt_screen()
+    inline bool exit_alt_screen(bool (*write_cleanup)(const char *) = write_terminal_cleanup)
     {
         const bool output_restarted = restart_terminal_output_for_cleanup();
-        const bool released = write_terminal_cleanup("\033\\\033[?1049l");
+        const bool released = write_cleanup("\033\\\033[?1049l");
         // cppcheck-suppress knownConditionTrueFalse
         return output_restarted && released;
     }

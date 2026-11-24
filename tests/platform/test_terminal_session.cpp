@@ -685,7 +685,8 @@ namespace
         ASSERT_EQ(WEXITSTATUS(status), 0);
     }
 
-    void verify_interactive_process_cleans_up_terminal(int exit_signal, bool exclusive = false)
+    void
+    verify_interactive_process_cleans_up_terminal(int exit_signal, bool exclusive = false, bool stalled_output = false)
     {
         static constexpr char model_data[] = "v -1 -1 0\nv 1 -1 0\nv 0 1 0\nf 1 2 3\n";
         const std::string model_name =
@@ -709,8 +710,9 @@ namespace
         ASSERT_TRUE(slave_flags >= 0);
 
         winsize size = {};
-        size.ws_row = 24;
-        size.ws_col = 80;
+        // A large blocks frame overflows the PTY queue while the reader is stalled.
+        size.ws_row = stalled_output ? 256 : 24;
+        size.ws_col = stalled_output ? 512 : 80;
         ASSERT_TRUE(ioctl(slave.fd, TIOCSWINSZ, &size) == 0);
 
         termios configured = {};
@@ -829,10 +831,19 @@ namespace
         std::string output;
         PtyProcessResult process_result = {};
         int status = 0;
+        // Outlast the 50 ms suspension budget so only the exit path can deliver cleanup.
+        std::chrono::steady_clock::time_point stall_started{};
+        std::chrono::steady_clock::time_point resume_reading{};
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
         while (std::chrono::steady_clock::now() < deadline)
         {
-            drain_pty_output(master.fd, output);
+            const auto now = std::chrono::steady_clock::now();
+            const bool stalled =
+                stall_started != std::chrono::steady_clock::time_point{} && (!requested_exit || now < resume_reading);
+            if (!stalled)
+            {
+                drain_pty_output(master.fd, output);
+            }
             termios active = {};
             if (tcgetattr(slave.fd, &active) == 0 && (active.c_lflag & static_cast<tcflag_t>(ECHO | ICANON)) == 0 &&
                 active.c_cc[VMIN] == 0 && active.c_cc[VTIME] == 0)
@@ -842,9 +853,21 @@ namespace
             const bool session_ready = output.find("\033[?1006h\033[?1002h") != std::string::npos &&
                                        output.find("\033[?1049h") != std::string::npos &&
                                        output.find("\033[?25l") != std::string::npos;
-            if (saw_raw_mode && session_ready && !requested_exit)
+            if (stalled_output && saw_raw_mode && session_ready &&
+                stall_started == std::chrono::steady_clock::time_point{})
             {
                 cleanup_offset = output.size();
+                stall_started = now;
+            }
+            const bool frame_blocked = !stalled_output || (stall_started != std::chrono::steady_clock::time_point{} &&
+                                                           now - stall_started >= std::chrono::milliseconds(200));
+            if (saw_raw_mode && session_ready && frame_blocked && !requested_exit)
+            {
+                if (!stalled_output)
+                {
+                    cleanup_offset = output.size();
+                }
+                resume_reading = now + std::chrono::milliseconds(500);
                 if (exit_signal == 0)
                 {
                     const char quit = 'Q';
@@ -1491,6 +1514,58 @@ TEST(platform, terminal_cleanup_bounds_full_pipe_writes_and_restores_flags)
         if (pthread_sigmask(SIG_SETMASK, nullptr, &before) != 0 || platform::write_terminal_cleanup("cleanup") ||
             fcntl(fds[1], F_GETFL, 0) != flags || pthread_sigmask(SIG_SETMASK, nullptr, &after) != 0 ||
             sigismember(&before, SIGTTOU) != sigismember(&after, SIGTTOU))
+        {
+            _exit(122);
+        }
+        _exit(0);
+    }
+    int status = 0;
+    pid_t waited = 0;
+    while ((waited = waitpid(child, &status, 0)) < 0 && errno == EINTR)
+    {
+    }
+    ASSERT_EQ(waited, child);
+    ASSERT_TRUE(WIFEXITED(status));
+    ASSERT_EQ(WEXITSTATUS(status), 0);
+}
+
+TEST(platform, terminal_final_cleanup_waits_out_a_stall_beyond_the_suspension_budget)
+{
+    flush_test_output_before_fork();
+    const pid_t child = fork();
+    ASSERT_TRUE(child >= 0);
+    if (child == 0)
+    {
+        std::signal(SIGALRM, SIG_DFL);
+        alarm(3);
+        int fds[2] = { -1, -1 };
+        if (pipe(fds) != 0 || fcntl(fds[1], F_SETFL, O_NONBLOCK) != 0)
+        {
+            _exit(120);
+        }
+        char padding[4096] = {};
+        while (write(fds[1], padding, sizeof padding) > 0)
+        {
+        }
+        if (errno != EAGAIN || fcntl(fds[1], F_SETFL, 0) != 0 || dup2(fds[1], STDOUT_FILENO) < 0)
+        {
+            _exit(121);
+        }
+        const int flags = fcntl(fds[1], F_GETFL, 0);
+        // Four times the suspension budget, well inside the exit budget.
+        std::thread consumer(
+            [reader = fds[0]]()
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                char buffer[4096];
+                while (read(reader, buffer, sizeof buffer) == static_cast<ssize_t>(sizeof buffer))
+                {
+                }
+            }
+        );
+        const bool written = platform::write_terminal_final_cleanup("cleanup");
+        consumer.join();
+        if (!written || fcntl(fds[1], F_GETFL, 0) != flags)
         {
             _exit(122);
         }
@@ -2266,5 +2341,10 @@ TEST(platform, interactive_process_cleans_up_terminal_after_sigquit)
 TEST(platform, interactive_process_cleans_up_terminal_after_sighup)
 {
     verify_interactive_process_cleans_up_terminal(SIGHUP);
+}
+
+TEST(platform, interactive_process_cleans_up_terminal_after_exit_with_stalled_output)
+{
+    verify_interactive_process_cleans_up_terminal(SIGTERM, false, true);
 }
 #endif

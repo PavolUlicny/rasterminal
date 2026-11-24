@@ -25,6 +25,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Fixed
 
 - Below 10 fps, from a low `--fps` cap or a slow machine, auto-rotation and keyboard camera controls run at their documented per-second rates. They used to slow down with the frame rate, so `--fps 5` spun at half the `--spin-speed`. A single key tap still moves as far as at higher frame rates.
+- On POSIX, quitting while the terminal or SSH link has stopped reading output no longer leaves the terminal on the alternate screen with the cursor hidden and mouse tracking or synchronized output still on. Exit discards the unsent frame and waits up to a second for each cleanup write.
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
 - On Windows, keys pressed while a model loads are discarded when the viewer starts, as on POSIX. A `Q` pressed during a slow load no longer quits before the first frame.
