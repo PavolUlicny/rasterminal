@@ -1,7 +1,5 @@
 #pragma once
 
-#include "src/render/camera.h"
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -16,6 +14,8 @@ namespace viewer
         static constexpr float FPS_LATCH = 0.1f;
         // Cap otherwise uncapped idle loops.
         static constexpr int IDLE_FPS = 60;
+        // Seconds; one frame at --fps 1.
+        static constexpr float MAX_MOTION_DT = 1.0f;
 
         explicit FrameTiming(Clock::time_point start) : prev_(start), frame_start_(start) {}
 
@@ -46,8 +46,9 @@ namespace viewer
                 fps_display_ = fps_smooth_;
                 fps_latch_time_ = 0.0f;
             }
-            // Limit movement after a stall to one held-key window.
-            return std::min(raw_dt, Camera::HELD_KEY_WINDOW);
+            // Limit movement after a stall to the slowest interval --fps can request, so no frame
+            // cap slows spin or held-key motion.
+            return std::min(raw_dt, MAX_MOTION_DT);
         }
 
         [[nodiscard]] int hud_fps() const noexcept
