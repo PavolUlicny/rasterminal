@@ -37,6 +37,12 @@ namespace
     {
         return viewer::same_image(viewer::FrameView(a), viewer::FrameView(b));
     }
+
+    // Plus scales speed by one wheel step per latch window, so the speed records how long the key acted.
+    float plus_seconds(const viewer::ViewerState &state)
+    {
+        return Camera::HELD_KEY_WINDOW * std::log(state.camera.fp_speed) / std::log(Camera::FP_SPEED_WHEEL_STEP);
+    }
 } // namespace
 
 TEST(viewer, reset_restores_launch_settings_and_clears_held_key)
@@ -158,6 +164,63 @@ TEST(viewer, resume_discards_stall_and_first_frame_interval)
     ASSERT_TRUE(timing.end_frame(true, 30, start + std::chrono::milliseconds(1015)) > Clock::duration::zero());
     timing.begin_frame(start + std::chrono::milliseconds(1040));
     ASSERT_EQ(timing.hud_fps(), 33);
+}
+
+TEST(viewer, slow_frames_keep_their_full_interval)
+{
+    // At --fps 5, a second of frames must spin a second's worth.
+    const Clock::time_point start{};
+    viewer::FrameTiming timing(start);
+    timing.begin_frame(start);
+    float total = 0.0f;
+    for (int i = 1; i <= 5; i++)
+    {
+        total += timing.begin_frame(start + std::chrono::milliseconds(200 * i));
+    }
+    ASSERT_NEAR(total, 1.0f, 1e-4f);
+    ASSERT_NEAR(timing.begin_frame(start + std::chrono::milliseconds(2000)), 1.0f, 1e-4f);
+    // A blocked terminal can stall one frame for seconds.
+    ASSERT_EQ(timing.begin_frame(start + std::chrono::seconds(12)), viewer::FrameTiming::MAX_MOTION_DT);
+}
+
+TEST(viewer, held_key_moves_for_whole_slow_frames)
+{
+    // A 30 Hz key repeat puts six bytes in each 200 ms frame.
+    ParsedArgs args;
+    Camera launch;
+    launch.first_person = true;
+    viewer::ViewerState state(args, launch);
+    viewer::InputController input(true, false);
+    const Clock::time_point start{};
+    for (int frame = 0; frame < 5; frame++)
+    {
+        const Clock::time_point now = start + std::chrono::milliseconds(200 * frame);
+        for (int i = 0; i < 6; i++)
+        {
+            input.handle(key(terminal_input::Key::Plus), state, 80, 24, now);
+        }
+        ASSERT_TRUE(input.advance(state, 0.2f, now));
+    }
+    ASSERT_NEAR(plus_seconds(state), 1.0f, 1e-3f);
+}
+
+TEST(viewer, taps_in_consecutive_slow_frames_each_act_for_one_window)
+{
+    // Read times cannot separate these taps from a held key, so the byte count must.
+    ParsedArgs args;
+    Camera launch;
+    launch.first_person = true;
+    viewer::ViewerState state(args, launch);
+    viewer::InputController input(true, false);
+    const Clock::time_point start{};
+    for (int frame = 0; frame < 2; frame++)
+    {
+        const Clock::time_point now = start + std::chrono::seconds(frame);
+        input.handle(key(terminal_input::Key::Plus), state, 80, 24, now);
+        ASSERT_TRUE(input.advance(state, 1.0f, now));
+    }
+    ASSERT_NEAR(plus_seconds(state), 2.0f * Camera::HELD_KEY_WINDOW, 1e-4f);
+    ASSERT_FALSE(input.advance(state, 1.0f, start + std::chrono::seconds(2)));
 }
 
 TEST(viewer, disabled_input_drains_without_changing_state)

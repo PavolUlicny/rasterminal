@@ -82,14 +82,12 @@ namespace viewer
                     // In orbit mode, E/V leave the previous movement key latched.
                     if (camera.first_person)
                     {
-                        held_cam_key_ = k;
-                        held_cam_key_tp_ = now;
+                        latch(k, now);
                     }
                     break;
                 default:
                     // The parser drops unbound keys before they reach this branch.
-                    held_cam_key_ = k;
-                    held_cam_key_tp_ = now;
+                    latch(k, now);
                     break;
                 }
             }
@@ -159,11 +157,31 @@ namespace viewer
                 held_cam_key_ = terminal_input::Key::None;
                 return false;
             }
-            state.camera.process_key(held_cam_key_, dt);
+            const float key_dt = std::min(dt, held_cam_credit_);
+            // Only the window after the last byte can extend into the next interval.
+            held_cam_credit_ = std::min(held_cam_credit_ - key_dt, Camera::HELD_KEY_WINDOW);
+            if (key_dt > 0.0f)
+            {
+                state.camera.process_key(held_cam_key_, key_dt);
+            }
             return true;
         }
 
       private:
+        // Bytes carry no arrival time, so a slow frame cannot tell one tap from a held key's repeats.
+        // Each byte holds the key for at most one latch window, as it does at frame rates above
+        // 10 fps, and a frame moves for no longer than its bytes could cover.
+        void latch(terminal_input::Key k, std::chrono::steady_clock::time_point now) noexcept
+        {
+            if (k != held_cam_key_)
+            {
+                held_cam_credit_ = 0.0f;
+            }
+            held_cam_key_ = k;
+            held_cam_key_tp_ = now;
+            held_cam_credit_ += Camera::HELD_KEY_WINDOW;
+        }
+
         template <typename E> static constexpr E cycle(E value, int count) noexcept
         {
             return static_cast<E>((static_cast<int>(value) + 1) % count);
@@ -173,6 +191,7 @@ namespace viewer
         bool has_textures_;
         terminal_input::Key held_cam_key_ = terminal_input::Key::None;
         std::chrono::steady_clock::time_point held_cam_key_tp_;
+        float held_cam_credit_ = 0.0f; // seconds of movement the latched key's bytes still cover
         int mouse_last_x_ = 0;
         int mouse_last_y_ = 0;
         bool mouse_dragging_ = false;
