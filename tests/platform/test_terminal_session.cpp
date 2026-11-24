@@ -735,6 +735,7 @@ namespace
         ScopedFd release_read(release_fds[0]);
         ScopedFd release_write(release_fds[1]);
 
+        flush_test_output_before_fork();
         const pid_t supervisor_pid = fork();
         ASSERT_TRUE(supervisor_pid >= 0);
         if (supervisor_pid == 0)
@@ -815,7 +816,7 @@ namespace
         ASSERT_TRUE(read_pipe_value(app_pid_read.fd, &app_pid, sizeof app_pid));
         ASSERT_TRUE(app_pid > 0);
 
-        ScopedPosixSession session(supervisor_pid);
+        ScopedPosixSession session(supervisor_pid, &master.fd);
         const int flags = fcntl(master.fd, F_GETFL, 0);
         ASSERT_TRUE(flags >= 0);
         ASSERT_TRUE(fcntl(master.fd, F_SETFL, flags | O_NONBLOCK) == 0);
@@ -1737,7 +1738,7 @@ namespace
             execl(shell_path, "sh", "-i", static_cast<char *>(nullptr));
             _exit(122);
         }
-        ScopedPosixSession session(shell);
+        ScopedPosixSession session(shell, &master.fd);
         const int flags = fcntl(master.fd, F_GETFL, 0);
         ASSERT_TRUE(flags >= 0);
         ASSERT_TRUE(fcntl(master.fd, F_SETFL, flags | O_NONBLOCK) == 0);
