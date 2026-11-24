@@ -32,7 +32,16 @@ struct MeshSnapshot
     {
         if (!m_done)
         {
-            rollback();
+            // rollback() grows vectors that a loader cleared, which can throw. Leave a
+            // consistent empty mesh rather than a partial rollback.
+            try
+            {
+                rollback();
+            }
+            catch (...)
+            {
+                m_mesh.clear();
+            }
         }
     }
 

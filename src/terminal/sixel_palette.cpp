@@ -208,7 +208,9 @@ namespace sixel
             m_occupied.clear();
         }
 
-        void Histogram::add(uint32_t rgb, uint32_t n) noexcept
+        // Keys are 15-bit and the constructor reserves MAX_SAMPLES (32768), so push_back
+        // never reallocates.
+        void Histogram::add(uint32_t rgb, uint32_t n) noexcept // NOLINT(bugprone-exception-escape)
         {
             const uint32_t r = rgb & 0xFFu;
             const uint32_t g = (rgb >> 8u) & 0xFFu;
