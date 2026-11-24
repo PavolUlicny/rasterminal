@@ -28,6 +28,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - On POSIX, quitting while the terminal or SSH link has stopped reading output no longer leaves the terminal on the alternate screen with the cursor hidden and mouse tracking or synchronized output still on. Exit discards the unsent frame and waits up to a second for each cleanup write.
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
+- In a classic Windows console with QuickEdit on, clicking the window while a model loads no longer leaves the viewer blank until Esc is pressed. The viewer turns QuickEdit off from startup until exit, so Shift+drag no longer starts a selection that freezes the viewer. Edit > Mark in the window menu still selects text, and output pauses until the selection ends.
 - On Windows, keys pressed while a model loads are discarded when the viewer starts, as on POSIX. A `Q` pressed during a slow load no longer quits before the first frame.
 - On Windows, quitting with Ctrl+C or Ctrl+Break exits with status `0xC000013A` (`STATUS_CONTROL_C_EXIT`) instead of 0, so `rasterminal model.obj && next` no longer runs `next` after an interrupt. cmd and PowerShell report it as `-1073741510`.
 - Turning off backface culling no longer changes how double-sided surfaces are lit. Their back sides were lit as if they faced away from the viewer.

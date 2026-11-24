@@ -716,6 +716,38 @@ namespace
         return 0;
     }
 
+    // Holds QuickEdit off until the host's Ctrl+Break ends the process through the default handler.
+    int run_quick_edit_interrupt_child(int argc, char *argv[])
+    {
+        if (argc != 4)
+        {
+            return 40;
+        }
+        char *end = nullptr;
+        const unsigned long long raw_handle = std::strtoull(argv[3], &end, 10);
+        if (end == argv[3] || *end != '\0')
+        {
+            return 41;
+        }
+        ScopedWindowsHandle ready(reinterpret_cast<HANDLE>(static_cast<std::uintptr_t>(raw_handle)));
+        ScopedWindowsConsole console;
+        if (!console.valid)
+        {
+            return 42;
+        }
+        console.restore_state = false;
+
+        const platform::QuickEditGuard guard;
+        DWORD mode = 0;
+        if (GetConsoleMode(console.input, &mode) == 0 || (mode & ENABLE_QUICK_EDIT_MODE) != 0 ||
+            SetEvent(ready.value) == 0)
+        {
+            return 43;
+        }
+        Sleep(5000);
+        return 44;
+    }
+
     int run_console_cancel_read_child()
     {
         ScopedWindowsConsole console;
@@ -792,6 +824,10 @@ namespace platform_test
         if (argc >= 3 && std::strcmp(argv[2], "child") == 0)
         {
             return run_console_control_child(argc, argv);
+        }
+        if (argc >= 3 && std::strcmp(argv[2], "quick-edit") == 0)
+        {
+            return run_quick_edit_interrupt_child(argc, argv);
         }
         return 20;
     }
@@ -1308,6 +1344,114 @@ TEST(platform, discard_pending_input_falls_back_to_read_only_console_handle)
     ASSERT_TRUE(GetNumberOfConsoleInputEvents(restricted_input.value, &pending) != 0);
     ASSERT_EQ(pending, static_cast<DWORD>(0));
     ASSERT_TRUE(platform::detail::drain_console_input_records_nowait(restricted_input.value, 1));
+}
+
+// Conhost reports QuickEdit only with ENABLE_EXTENDED_FLAGS. A mode containing any private
+// flag makes conhost apply all of them from that mode and report them afterwards.
+constexpr DWORD QUICK_EDIT_FLAGS = ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE;
+
+TEST(platform, quick_edit_guard_clears_quick_edit_until_destroyed)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(SetConsoleMode(console.input, console.saved_input_mode | QUICK_EDIT_FLAGS | ENABLE_MOUSE_INPUT) != 0);
+    DWORD shell_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &shell_mode) != 0);
+    ASSERT_EQ(shell_mode & (QUICK_EDIT_FLAGS | ENABLE_MOUSE_INPUT), QUICK_EDIT_FLAGS | ENABLE_MOUSE_INPUT);
+
+    {
+        const platform::QuickEditGuard guard;
+        DWORD active_mode = 0;
+        ASSERT_TRUE(GetConsoleMode(console.input, &active_mode) != 0);
+        ASSERT_EQ(active_mode, shell_mode & ~static_cast<DWORD>(ENABLE_QUICK_EDIT_MODE | ENABLE_MOUSE_INPUT));
+    }
+
+    DWORD restored_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &restored_mode) != 0);
+    ASSERT_EQ(restored_mode, shell_mode);
+}
+
+// A mode reported without ENABLE_EXTENDED_FLAGS hides QuickEdit, so the guard cannot restore it.
+TEST(platform, quick_edit_guard_leaves_hidden_quick_edit_state)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    const DWORD private_flags = QUICK_EDIT_FLAGS | ENABLE_INSERT_MODE | ENABLE_AUTO_POSITION;
+    ASSERT_TRUE(SetConsoleMode(console.input, console.saved_input_mode & ~private_flags) != 0);
+    DWORD shell_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &shell_mode) != 0);
+    ASSERT_EQ(shell_mode & ENABLE_EXTENDED_FLAGS, static_cast<DWORD>(0));
+
+    {
+        const platform::QuickEditGuard guard;
+        DWORD active_mode = 0;
+        ASSERT_TRUE(GetConsoleMode(console.input, &active_mode) != 0);
+        ASSERT_EQ(active_mode, shell_mode);
+    }
+
+    DWORD restored_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &restored_mode) != 0);
+    ASSERT_EQ(restored_mode, shell_mode);
+}
+
+TEST(platform, quick_edit_interrupt_handler_restores_only_for_interrupts)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(SetConsoleMode(console.input, console.saved_input_mode | QUICK_EDIT_FLAGS) != 0);
+    DWORD shell_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &shell_mode) != 0);
+    const DWORD loading_mode = shell_mode & ~static_cast<DWORD>(ENABLE_QUICK_EDIT_MODE | ENABLE_MOUSE_INPUT);
+
+    const platform::QuickEditGuard guard;
+    DWORD mode = 0;
+    ASSERT_TRUE(platform::detail::restore_quick_edit_on_interrupt(CTRL_CLOSE_EVENT) == FALSE);
+    ASSERT_TRUE(GetConsoleMode(console.input, &mode) != 0);
+    ASSERT_EQ(mode, loading_mode);
+    // FALSE passes the event on, so the default handler still ends the process.
+    ASSERT_TRUE(platform::detail::restore_quick_edit_on_interrupt(CTRL_C_EVENT) == FALSE);
+    ASSERT_TRUE(GetConsoleMode(console.input, &mode) != 0);
+    ASSERT_EQ(mode, shell_mode);
+}
+
+// Wine ends the process without calling handlers, so this case needs real Windows.
+// Ctrl+C during loading reaches the default handler, which exits without running destructors.
+TEST(platform, quick_edit_guard_restores_quick_edit_on_default_interrupt)
+{
+    ScopedWindowsConsole console;
+    ASSERT_TRUE(console.valid);
+    ASSERT_TRUE(SetConsoleMode(console.input, console.saved_input_mode | QUICK_EDIT_FLAGS) != 0);
+    DWORD shell_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &shell_mode) != 0);
+
+    SECURITY_ATTRIBUTES security = {};
+    security.nLength = sizeof security;
+    security.bInheritHandle = TRUE;
+    ScopedWindowsHandle ready(CreateEventW(&security, TRUE, FALSE, nullptr));
+    ASSERT_TRUE(ready.value != nullptr);
+    std::wstring executable;
+    ASSERT_TRUE(executable_path(executable));
+    const std::wstring command = L"\"" + executable + L"\" --windows-console-control-helper quick-edit " +
+                                 std::to_wstring(reinterpret_cast<std::uintptr_t>(ready.value));
+    PROCESS_INFORMATION process = {};
+    ASSERT_TRUE(launch_process(command, CREATE_NEW_PROCESS_GROUP, true, process));
+    ScopedWindowsHandle process_handle(process.hProcess);
+    ScopedWindowsHandle thread_handle(process.hThread);
+
+    const bool child_ready = WaitForSingleObject(ready.value, 5000) == WAIT_OBJECT_0;
+    const bool interrupted = child_ready && GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, process.dwProcessId) != 0;
+    if (!interrupted || WaitForSingleObject(process.hProcess, 5000) != WAIT_OBJECT_0)
+    {
+        TerminateProcess(process.hProcess, 1);
+        WaitForSingleObject(process.hProcess, 1000);
+    }
+    ASSERT_TRUE(interrupted);
+    DWORD restored_mode = 0;
+    ASSERT_TRUE(GetConsoleMode(console.input, &restored_mode) != 0);
+    ASSERT_EQ(restored_mode, shell_mode);
+    DWORD exit_code = 0;
+    ASSERT_TRUE(GetExitCodeProcess(process.hProcess, &exit_code) != 0);
+    ASSERT_EQ(exit_code, STATUS_CONTROL_C_EXIT);
 }
 
 TEST(platform, console_cleanup_handles_control_events)

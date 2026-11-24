@@ -33,6 +33,29 @@ namespace platform
         using DiscardPendingInputFn = bool (*)() noexcept;
 
         inline bool discard_pending_standard_input() noexcept;
+
+        // Written before the handler is registered and never changed while it is.
+        inline HANDLE quick_edit_input = INVALID_HANDLE_VALUE;
+        inline DWORD quick_edit_mode = 0;
+        inline std::atomic_bool quick_edit_restore_pending = {};
+
+        inline void restore_quick_edit() noexcept
+        {
+            if (quick_edit_restore_pending.exchange(false))
+            {
+                SetConsoleMode(quick_edit_input, quick_edit_mode);
+            }
+        }
+
+        inline BOOL WINAPI restore_quick_edit_on_interrupt(DWORD event) noexcept
+        {
+            if (event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT)
+            {
+                restore_quick_edit();
+            }
+            // The default handler still terminates the process with STATUS_CONTROL_C_EXIT.
+            return FALSE;
+        }
     } // namespace detail
 #else
     namespace detail
@@ -40,6 +63,62 @@ namespace platform
         using TcflushFn = int (*)(int, int);
     } // namespace detail
 #endif
+
+    // A left click in a QuickEdit console starts a selection, and conhost holds every
+    // console write until the selection ends. Mouse tracking routes clicks to the viewer
+    // only after loading, so the guard clears QuickEdit from before loading until exit.
+    class QuickEditGuard
+    {
+      public:
+        QuickEditGuard() noexcept
+        {
+#ifdef _WIN32
+            const HANDLE input = GetStdHandle(STD_INPUT_HANDLE);
+            DWORD mode = 0;
+            // Without ENABLE_EXTENDED_FLAGS the reported mode hides QuickEdit, so it could not be restored.
+            constexpr DWORD quick_edit = ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE;
+            if (GetConsoleMode(input, &mode) == 0 || (mode & quick_edit) != quick_edit)
+            {
+                return;
+            }
+            detail::quick_edit_input = input;
+            detail::quick_edit_mode = mode;
+            detail::quick_edit_restore_pending.store(true);
+            // Register first so Ctrl+C during loading cannot exit with QuickEdit off.
+            if (SetConsoleCtrlHandler(detail::restore_quick_edit_on_interrupt, TRUE) == 0)
+            {
+                detail::quick_edit_restore_pending.store(false);
+                return;
+            }
+            m_installed = true;
+            // ConPTY asks its terminal for mouse reports while QuickEdit is off and
+            // ENABLE_MOUSE_INPUT is on, so clearing both leaves that request unchanged.
+            // Conhost can apply a mode and still fail, so the restore stays armed.
+            SetConsoleMode(input, mode & ~static_cast<DWORD>(ENABLE_QUICK_EDIT_MODE | ENABLE_MOUSE_INPUT));
+#endif
+        }
+
+        ~QuickEditGuard() noexcept
+        {
+#ifdef _WIN32
+            if (m_installed)
+            {
+                detail::restore_quick_edit();
+                SetConsoleCtrlHandler(detail::restore_quick_edit_on_interrupt, FALSE);
+            }
+#endif
+        }
+
+        QuickEditGuard(const QuickEditGuard &) = delete;
+        QuickEditGuard &operator=(const QuickEditGuard &) = delete;
+        QuickEditGuard(QuickEditGuard &&) = delete;
+        QuickEditGuard &operator=(QuickEditGuard &&) = delete;
+
+#ifdef _WIN32
+      private:
+        bool m_installed = false;
+#endif
+    };
 
     // Windows cannot restore console state after logoff or shutdown.
     class ConsoleStateGuard

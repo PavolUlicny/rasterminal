@@ -285,6 +285,8 @@ namespace
 
         // Interactive mode requires terminal input and output. --no-input still accepts Q.
         ColorMode color_mode = ColorMode::TrueColor;
+        // Declare before console_state: its snapshot has QuickEdit off, so this restore must run last.
+        std::optional<platform::QuickEditGuard> quick_edit;
         if (!bench_mode)
         {
             if (!platform::is_tty(1))
@@ -317,6 +319,8 @@ namespace
                 color_mode = tc == platform::TermColor::TrueColor ? ColorMode::TrueColor : ColorMode::Palette256;
                 break;
             }
+            // A click during loading must not start a console selection that blocks the first write.
+            quick_edit.emplace();
         }
 
         // Loading and rendering share one resolved thread count.
