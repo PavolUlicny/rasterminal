@@ -192,7 +192,7 @@ namespace sixel
 
         Histogram::Histogram() : m_count(CELLS), m_sum_r(CELLS), m_sum_g(CELLS), m_sum_b(CELLS), m_sum_sq(CELLS)
         {
-            m_occupied.reserve(static_cast<std::size_t>(MAX_SAMPLES));
+            m_occupied.reserve(CELLS);
         }
 
         void Histogram::clear() noexcept
@@ -208,10 +208,15 @@ namespace sixel
             m_occupied.clear();
         }
 
-        // Keys are 15-bit and the constructor reserves MAX_SAMPLES (32768), so push_back
-        // never reallocates.
+        // m_occupied holds at most one entry per cell and the constructor reserves CELLS, so
+        // push_back never reallocates. A zero count would leave the cell unoccupied and let
+        // a later add() push the same key again.
         void Histogram::add(uint32_t rgb, uint32_t n) noexcept // NOLINT(bugprone-exception-escape)
         {
+            if (n == 0)
+            {
+                return;
+            }
             const uint32_t r = rgb & 0xFFu;
             const uint32_t g = (rgb >> 8u) & 0xFFu;
             const uint32_t b = (rgb >> 16u) & 0xFFu;
