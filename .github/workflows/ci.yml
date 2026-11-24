@@ -160,6 +160,12 @@ jobs:
           cmake --build build --config ${{ matrix.build_type }} -j4
           --target rasterminal rasterminal_tests
 
+      # The long_paths tests skip without this machine policy, so set it here instead of
+      # depending on the runner image.
+      - name: Enable long paths
+        if: runner.os == 'Windows'
+        run: reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+
       - name: Test
         run: ctest --test-dir build -C ${{ matrix.build_type }} --output-on-failure
 
@@ -216,6 +222,12 @@ jobs:
             -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
           cmake --build build -j"$(nproc)" --target rasterminal rasterminal_tests
           ctest --test-dir build --output-on-failure
+
+      # The long_paths tests skip without this machine policy, so set it here instead of
+      # depending on the runner image.
+      - name: Enable long paths
+        if: matrix.kind == 'win32'
+        run: reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
 
       # The Visual Studio generator requires the configuration at build and test time.
       - name: Build + ctest (Win32)

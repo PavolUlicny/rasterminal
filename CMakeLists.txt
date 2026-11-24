@@ -280,8 +280,9 @@ if(NOT ipo_ok)
   message(STATUS "IPO/LTO not supported: ${ipo_msg}")
 endif()
 
-# Windows binaries embed a manifest that sets the process code page to UTF-8. CMake merges
-# .manifest sources only with MSVC-style linkers, so MinGW compiles a resource script instead.
+# Windows binaries embed a manifest that sets the process code page to UTF-8 and opts into long
+# paths. CMake merges .manifest sources only with MSVC-style linkers, so MinGW compiles a resource
+# script instead.
 set(RASTERMINAL_WINDOWS_MANIFEST "")
 if(MINGW)
   set(RASTERMINAL_WINDOWS_MANIFEST src/platform/rasterminal.rc)
@@ -400,7 +401,7 @@ if(RASTERMINAL_BUILD_TESTS)
     tests/loaders/test_gltf_webp.cpp
     tests/loaders/test_mesh_geometry.cpp
     tests/loaders/test_mesh_vcache.cpp
-    tests/loaders/test_non_ascii_paths.cpp
+    tests/loaders/test_model_paths.cpp
     tests/loaders/test_scoped_threads.cpp
     tests/texture/test_texture.cpp
     tests/texture/test_ktx2.cpp
