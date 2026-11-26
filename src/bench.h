@@ -32,6 +32,17 @@ struct PresentSamples
     void add(const Framebuffer::PresentStats &stats);
 };
 
+// The colours the viewer would draw a frame with, so --bench-graphics encodes what
+// a terminal receives. required is the colour the sixel palette must hold exactly.
+struct BenchColors
+{
+    Color background;
+    Color wireframe;
+    std::optional<Color> required;
+};
+
+[[nodiscard]] BenchColors bench_colors(const ParsedArgs &args);
+
 // Backend the bench presents through, or nullopt to measure rendering only
 // (no --bench-graphics). Kitty uses direct transport, the path remote sessions take.
 [[nodiscard]] std::optional<GraphicsConfig> bench_graphics(const ParsedArgs &args);

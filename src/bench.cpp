@@ -11,6 +11,7 @@
 #include "src/terminal/graphics.h"
 #include "src/terminal/sixel.h"
 #include "src/viewer/scene.h"
+#include "src/viewer/scene_colors.h"
 
 #include <algorithm>
 #include <chrono>
@@ -68,6 +69,19 @@ void PresentSamples::add(const Framebuffer::PresentStats &stats)
     }
     encode_ns.push_back(stats.encode_ns);
     bytes.push_back(static_cast<int64_t>(stats.bytes));
+}
+
+BenchColors bench_colors(const ParsedArgs &args)
+{
+    BenchColors colors;
+    colors.background = viewer::background_color(args.bg);
+    colors.wireframe = viewer::wireframe_color_of(args.wireframe_color);
+    // As in the viewer: thin lines can miss the palette's sample, so pin their colour.
+    if (args.shading == ShadingMode::Wireframe)
+    {
+        colors.required = colors.wireframe;
+    }
+    return colors;
 }
 
 std::optional<GraphicsConfig> bench_graphics(const ParsedArgs &args)
@@ -148,6 +162,9 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
     renderer.mode = args.shading;
     renderer.cull_backfaces = args.cull;
     renderer.show_texture = args.texture;
+    const BenchColors colors = bench_colors(args);
+    renderer.wireframe_color = colors.wireframe;
+    fb.set_required_color(colors.required);
 
     const int n_lights = viewer::light_count(args.lighting);
     const vec3 cur_ambient = viewer::lighting_ambient(args.lighting, scene.ambient);
@@ -167,7 +184,7 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
     for (int i = 0; i < n_warmup + n_measure; i++)
     {
         camera.spin_world_y(0.8f / 60.0f);
-        fb.clear({ 0, 0, 0 });
+        fb.clear(colors.background);
         auto t0 = clock::now();
         renderer.render(mesh, camera, scene.lights, n_lights, cur_ambient, fb);
         auto t1 = clock::now();

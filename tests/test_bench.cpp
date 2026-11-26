@@ -2,8 +2,12 @@
 #include "tests/test.h"
 
 #include "src/args.h"
+#include "src/render/renderer.h"
+#include "src/shading.h"
+#include "src/terminal/color.h"
 #include "src/terminal/framebuffer.h"
 #include "src/terminal/graphics.h"
+#include "src/viewer/scene_colors.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -132,4 +136,36 @@ TEST(bench, present_samples_count_empty_frames_apart)
     ASSERT_EQ(samples.encode_ns.size(), size_t{ 1 });
     ASSERT_EQ(samples.bytes.size(), size_t{ 1 });
     ASSERT_EQ(samples.empty, 2);
+}
+
+TEST(bench, default_colors_match_the_old_fixed_frame)
+{
+    // Black background and the renderer's own default wireframe colour: default
+    // bench frames are unchanged.
+    const BenchColors colors = bench_colors(ParsedArgs{});
+    ASSERT_TRUE(colors.background == (Color{ 0, 0, 0 }));
+    ASSERT_TRUE(colors.wireframe == Renderer(1).wireframe_color);
+    ASSERT_FALSE(colors.required.has_value());
+}
+
+TEST(bench, colors_follow_bg_and_wireframe_color)
+{
+    ParsedArgs args;
+    args.bg = Background::White;
+    args.wireframe_color = WireframeColor::Red;
+    const BenchColors colors = bench_colors(args);
+    ASSERT_TRUE(colors.background == viewer::background_color(Background::White));
+    ASSERT_TRUE(colors.wireframe == viewer::wireframe_color_of(WireframeColor::Red));
+    // Only wireframe shading pins the palette colour.
+    ASSERT_FALSE(colors.required.has_value());
+}
+
+TEST(bench, wireframe_shading_pins_the_wireframe_color)
+{
+    ParsedArgs args;
+    args.shading = ShadingMode::Wireframe;
+    args.wireframe_color = WireframeColor::Cyan;
+    const BenchColors colors = bench_colors(args);
+    ASSERT_TRUE(colors.required.has_value());
+    ASSERT_TRUE(*colors.required == viewer::wireframe_color_of(WireframeColor::Cyan));
 }
