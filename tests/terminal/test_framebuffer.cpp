@@ -12,6 +12,8 @@
 #include "miniz.h" // independent inflate for the kitty deflated-frame round trip
 
 #include <algorithm>
+#include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include <limits>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #ifndef _WIN32
@@ -2726,3 +2729,199 @@ TEST(framebuffer, kitty_staging_fill_recovers_from_an_incomplete_pool)
 
     ASSERT_TRUE(second_frame(2) == second_frame(1));
 }
+
+// Per-present stats: the input a slow-link controller reads.
+
+namespace
+{
+    // A slow link: every write call stalls before accepting all of its bytes.
+    constexpr std::chrono::milliseconds LINK_STALL{ 30 };
+    // Bytes slow_link_writer has accepted. Writers are plain function pointers, so the count lives here.
+    size_t &link_received()
+    {
+        static size_t received = 0;
+        return received;
+    }
+
+    int64_t slow_link_writer(const char * /*data*/, size_t size)
+    {
+        std::this_thread::sleep_for(LINK_STALL);
+        link_received() += size;
+        return static_cast<int64_t>(size);
+    }
+
+    int64_t failing_writer(const char * /*data*/, size_t /*size*/)
+    {
+        errno = EIO;
+        return -1;
+    }
+
+    GraphicsConfig stats_config(GraphicsBackend backend)
+    {
+        GraphicsConfig gfx;
+        gfx.backend = backend;
+        gfx.cols = 8;
+        gfx.rows = 4;
+        return gfx;
+    }
+
+    void paint_gradient(Framebuffer &fb, int seed)
+    {
+        fb.clear({ 0, 0, 0 });
+        for (int y = 0; y < fb.height(); y++)
+        {
+            for (int x = 0; x < fb.width(); x++)
+            {
+                const auto v = static_cast<uint8_t>((x * 7) + (y * 13) + seed);
+                fb.commit_pixel(x, y, 0.5f, Color{ v, static_cast<uint8_t>(255 - v), static_cast<uint8_t>(seed) });
+            }
+        }
+    }
+} // namespace
+
+TEST(framebuffer, present_stats_separate_write_time_from_encode_time)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend), false, slow_link_writer);
+        paint_gradient(fb, 1);
+        link_received() = 0;
+        const auto t0 = std::chrono::steady_clock::now();
+        fb.present();
+        const int64_t wall_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - t0).count();
+        const Framebuffer::PresentStats st = fb.last_present();
+        ASSERT_TRUE(st.bytes > 0);
+        // The writer saw exactly the bytes reported, in one or more calls.
+        ASSERT_EQ(st.bytes, link_received());
+        // The stall lands in the write.
+        ASSERT_TRUE(st.write_ns >= std::chrono::duration_cast<std::chrono::nanoseconds>(LINK_STALL).count());
+        ASSERT_TRUE(st.encode_ns >= 0);
+        // And only there: counted in the encode too, the two would exceed the whole present.
+        // Unlike comparing encode with write, this holds however slow the encode is.
+        ASSERT_TRUE(st.encode_ns + st.write_ns <= wall_ns);
+    }
+}
+
+TEST(framebuffer, present_stats_are_zero_when_nothing_is_written)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend), false, slow_link_writer);
+        paint_gradient(fb, 2);
+        fb.present();
+        ASSERT_TRUE(fb.last_present().bytes > 0);
+        // Unchanged pixels and no HUD: the frame is skipped, and so is its sample.
+        link_received() = 0;
+        fb.present();
+        ASSERT_EQ(link_received(), size_t{ 0 });
+        ASSERT_EQ(fb.last_present().bytes, size_t{ 0 });
+        ASSERT_EQ(fb.last_present().write_ns, int64_t{ 0 });
+        ASSERT_EQ(fb.last_present().encode_ns, int64_t{ 0 });
+    }
+}
+
+TEST(framebuffer, present_stats_are_zero_after_a_failed_write)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        // Recovery after the failure writes its cleanup to the real terminal.
+        CaptureStdout cap;
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend), false, failing_writer);
+        paint_gradient(fb, 3);
+        fb.present();
+        ASSERT_EQ(fb.last_present().bytes, size_t{ 0 });
+        ASSERT_EQ(fb.last_present().write_ns, int64_t{ 0 });
+        ASSERT_EQ(fb.last_present().encode_ns, int64_t{ 0 });
+    }
+}
+
+TEST(framebuffer, present_stats_are_zero_while_the_terminal_is_released)
+{
+    Framebuffer fb(
+        32, 16, /*headless=*/false, ColorMode::TrueColor, stats_config(GraphicsBackend::Kitty), false, slow_link_writer
+    );
+    paint_gradient(fb, 4);
+    link_received() = 0;
+    fb.present(); // never resumed: present() returns before composing anything
+    ASSERT_EQ(link_received(), size_t{ 0 });
+    ASSERT_EQ(fb.last_present().bytes, size_t{ 0 });
+}
+
+// Discarded output: what --bench-graphics measures with.
+
+TEST(framebuffer, discarded_output_composes_frames_without_writing)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend));
+        fb.discard_output();
+        paint_gradient(fb, 5);
+        fb.present();
+        const Framebuffer::PresentStats st = fb.last_present();
+        ASSERT_TRUE(st.bytes > 0);
+        ASSERT_TRUE(st.encode_ns >= 0);
+        ASSERT_EQ(st.write_ns, int64_t{ 0 });
+        // Nothing reached stdout: no frame, and no cleanup.
+        ASSERT_TRUE(cap.read().empty());
+        // An unchanged frame is still skipped, so it is still not a sample.
+        fb.present();
+        ASSERT_EQ(fb.last_present().bytes, size_t{ 0 });
+    }
+}
+
+TEST(framebuffer, discarded_output_matches_the_written_frame)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        Framebuffer written(
+            32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend), false, slow_link_writer
+        );
+        Framebuffer discarded(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend));
+        discarded.discard_output();
+        paint_gradient(written, 6);
+        paint_gradient(discarded, 6);
+        link_received() = 0;
+        written.present();
+        discarded.present();
+        // The bench reports the bytes a terminal would receive.
+        ASSERT_EQ(discarded.last_present().bytes, link_received());
+    }
+}
+
+#ifndef _WIN32
+TEST(framebuffer, discarded_output_ignores_a_closed_stdout)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend));
+        fb.discard_output();
+        paint_gradient(fb, 7);
+        // As `rasterminal --bench ... >&-` runs. A terminal write would fail here.
+        close(STDOUT_FILENO);
+        fb.present();
+        const Framebuffer::PresentStats st = fb.last_present();
+        ASSERT_TRUE(dup2(fileno(cap.tmp), STDOUT_FILENO) >= 0);
+        ASSERT_TRUE(st.bytes > 0);
+        ASSERT_TRUE(cap.read().empty());
+    }
+}
+
+TEST(framebuffer, discarded_output_is_not_canceled_by_pending_control)
+{
+    for (const GraphicsBackend backend : { GraphicsBackend::Blocks, GraphicsBackend::Kitty, GraphicsBackend::Sixel })
+    {
+        CaptureStdout cap;
+        Framebuffer fb(32, 16, /*headless=*/true, ColorMode::TrueColor, stats_config(backend));
+        fb.discard_output();
+        paint_gradient(fb, 8);
+        platform::detail::job_control_handler(SIGTSTP);
+        fb.present();
+        platform::detail::job_control_handler(SIGCONT);
+        ASSERT_TRUE(fb.last_present().bytes > 0);
+        ASSERT_TRUE(cap.read().empty());
+    }
+}
+#endif
