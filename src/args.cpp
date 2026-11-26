@@ -259,6 +259,18 @@ namespace
         );
     }
 
+    // The bench has no terminal to detect a backend from, so auto is not a value here.
+    bool parse_bench_graphics(const char *prog, const char *flag, const char *val, GraphicsChoice &out)
+    {
+        return parse_enum(
+            prog, flag, val,
+            { { "kitty", GraphicsChoice::Kitty },
+              { "sixel", GraphicsChoice::Sixel },
+              { "blocks", GraphicsChoice::Blocks } },
+            "kitty|sixel|blocks", out
+        );
+    }
+
     // auto (any case), N or MIN-MAX, each value a plain decimal in [2, MAX_REGISTERS], MIN <= MAX.
     bool parse_sixel_colors(const char *prog, const char *flag, const char *val, sixel::ColorRange &out)
     {
@@ -399,6 +411,7 @@ namespace
         bool bench_size = false;
         bool first_person_speed = false;
         bool bench_warmup = false;
+        bool bench_graphics = false;
     };
 
     using ValueHandler =
@@ -432,6 +445,12 @@ namespace
           {
               seen.bench_warmup = true;
               return parse_nonnegative_int(prog, flag, value, args.bench_warmup);
+          } },
+        { "--bench-graphics", '\0',
+          [](const char *prog, const char *flag, const char *value, ParsedArgs &args, SeenOptions &seen)
+          {
+              seen.bench_graphics = true;
+              return parse_bench_graphics(prog, flag, value, args.bench_graphics);
           } },
         { "--smooth-angle", '\0', parse_member_value<&ParsedArgs::smooth_angle, parse_angle> },
         { "--color", '\0', parse_member_value<&ParsedArgs::color, parse_color> },
@@ -629,6 +648,11 @@ namespace
             "                                  reports timing, fps and throughput to stderr\n"
             "          --bench-size WxH       Framebuffer size in pixels (default: 200x120)\n"
             "          --bench-warmup N       Bench warmup frames discarded (default: 20)\n"
+            "          --bench-graphics <b>   Also encode each frame for a backend\n"
+            "                                  kitty|sixel|blocks; reports encode time and\n"
+            "                                  bytes per frame; requires --bench\n"
+            "                                  blocks: a cell is 1x2 px, so a 240x62 cell\n"
+            "                                  terminal is --bench-size 240x124\n"
             "          --smooth-angle DEG     Crease angle for computed normals (default: 60)\n"
             "                                  0=faceted, 180=smooth\n"
             "                                  ignored when an OBJ authors smoothing groups\n"
@@ -861,6 +885,11 @@ ParseResult parse_args(int argc, char *argv[])
     if (seen.bench_warmup && args.bench < 1)
     {
         std::fprintf(stderr, "%s: --bench-warmup requires --bench\n", prog);
+        return fail(1);
+    }
+    if (seen.bench_graphics && args.bench < 1)
+    {
+        std::fprintf(stderr, "%s: --bench-graphics requires --bench\n", prog);
         return fail(1);
     }
 

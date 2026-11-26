@@ -200,6 +200,21 @@ Use
 to skip warmup. Requires
 .BR \-\-bench .
 .TP
+.BI \-\-bench\-graphics " backend"
+Also encode each measured frame for
+.BR kitty ", " sixel " or " blocks ,
+and add the encode time and bytes per frame to the report. The encoded frames
+are discarded. Kitty uses direct transport, the path a remote session takes.
+Blocks use truecolor unless
+.B \-\-color 256
+is given, and sixel uses
+.BR \-\-sixel\-colors .
+Each blocks cell is one pixel wide and two pixels tall, so to measure a
+terminal of 240 columns and 62 rows, pass
+.BR "\-\-bench\-size 240x124" .
+Without this option, only rendering is measured. Requires
+.BR \-\-bench .
+.TP
 .BI \-\-smooth\-angle " DEG"
 Crease angle in degrees, in
 .BR [0,\ 180] ,

@@ -6,7 +6,10 @@
 #include "src/render/camera.h"
 #include "src/render/renderer.h"
 #include "src/shading.h"
+#include "src/terminal/color.h"
 #include "src/terminal/framebuffer.h"
+#include "src/terminal/graphics.h"
+#include "src/terminal/sixel.h"
 #include "src/viewer/scene.h"
 
 #include <algorithm>
@@ -15,6 +18,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
+#include <optional>
 #include <ratio>
 #include <vector>
 
@@ -33,7 +38,61 @@ namespace
         }
         return "Unknown";
     }
+
+    constexpr const char *backend_name(GraphicsBackend backend) noexcept
+    {
+        switch (backend)
+        {
+        case GraphicsBackend::Kitty:
+            return "kitty, direct transport";
+        case GraphicsBackend::Sixel:
+            return "sixel";
+        case GraphicsBackend::Blocks:
+            return "blocks";
+        }
+        return "unknown";
+    }
+
+    // Kitty's placement keys need a cell count, but no terminal exists to
+    // report one. A nominal cell changes only those few digits of the frame.
+    constexpr int NOMINAL_CELL_W = 10;
+    constexpr int NOMINAL_CELL_H = 20;
 } // namespace
+
+void PresentSamples::add(const Framebuffer::PresentStats &stats)
+{
+    if (stats.bytes == 0)
+    {
+        empty++;
+        return;
+    }
+    encode_ns.push_back(stats.encode_ns);
+    bytes.push_back(static_cast<int64_t>(stats.bytes));
+}
+
+std::optional<GraphicsConfig> bench_graphics(const ParsedArgs &args)
+{
+    GraphicsConfig gfx;
+    switch (args.bench_graphics)
+    {
+    case GraphicsChoice::Auto:
+        return std::nullopt;
+    case GraphicsChoice::Kitty:
+        gfx.backend = GraphicsBackend::Kitty;
+        break;
+    case GraphicsChoice::Sixel:
+        gfx.backend = GraphicsBackend::Sixel;
+        break;
+    case GraphicsChoice::Blocks:
+        gfx.backend = GraphicsBackend::Blocks;
+        break;
+    }
+    gfx.shm = false;
+    gfx.cols = std::max(1, args.bench_width / NOMINAL_CELL_W);
+    gfx.rows = std::max(1, args.bench_height / NOMINAL_CELL_H);
+    gfx.sixel_colors = sixel::cap_to_registers(args.sixel_colors, sixel::MAX_REGISTERS);
+    return gfx;
+}
 
 BenchStats summarize_frames(std::vector<int64_t> &frame_ns)
 {
@@ -73,8 +132,19 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
     Camera camera = viewer::auto_fit_camera(mesh, args, /*first_person=*/false);
     const viewer::SceneLights scene = viewer::default_lights();
 
-    Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true);
+    const std::optional<GraphicsConfig> gfx = bench_graphics(args);
+    const ColorMode color_mode = args.color == ColorChoice::Palette256 ? ColorMode::Palette256 : ColorMode::TrueColor;
+    // Renderer must outlive Framebuffer because its borrowed runner captures it.
     Renderer renderer(n_threads);
+    Framebuffer fb(args.bench_width, args.bench_height, /*headless=*/true, color_mode, gfx.value_or(GraphicsConfig{}));
+    if (gfx)
+    {
+        // Compose frames without writing them: stdout is not the measured terminal.
+        fb.discard_output();
+        // Present as the interactive viewer does, on the idle render pool.
+        fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
+                                 renderer.worker_count() });
+    }
     renderer.mode = args.shading;
     renderer.cull_backfaces = args.cull;
     renderer.show_texture = args.texture;
@@ -86,6 +156,12 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
     const int n_measure = args.bench;
     std::vector<int64_t> frame_ns;
     frame_ns.reserve(static_cast<size_t>(n_measure));
+    PresentSamples present;
+    if (gfx)
+    {
+        present.encode_ns.reserve(static_cast<size_t>(n_measure));
+        present.bytes.reserve(static_cast<size_t>(n_measure));
+    }
 
     auto loop_t0 = clock::now();
     for (int i = 0; i < n_warmup + n_measure; i++)
@@ -95,9 +171,17 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
         auto t0 = clock::now();
         renderer.render(mesh, camera, scene.lights, n_lights, cur_ambient, fb);
         auto t1 = clock::now();
+        if (gfx)
+        {
+            fb.present();
+        }
         if (i >= n_warmup)
         {
             frame_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+            if (gfx)
+            {
+                present.add(fb.last_present());
+            }
         }
     }
     const double total_ms = std::chrono::duration<double, std::milli>(clock::now() - loop_t0).count();
@@ -127,5 +211,37 @@ void run_bench(const Mesh &mesh, const ParsedArgs &args, int n_threads, double l
     std::fprintf(stderr, "  p95     %.2f ms\n", ms(stats.p95_ns));
     std::fprintf(stderr, "  max     %.2f ms\n", ms(stats.max_ns));
     std::fprintf(stderr, "  stddev  %.2f ms\n", stats.stddev_ms);
-    std::fprintf(stderr, "  total   %.0f ms  %d frames including warmup\n", total_ms, n_warmup + n_measure);
+    // The parenthesis qualifies the time, not the frame count.
+    std::fprintf(
+        stderr, "  total   %.0f ms%s  %d frames including warmup\n", total_ms, gfx ? " (render and present)" : "",
+        n_warmup + n_measure
+    );
+
+    if (!gfx)
+    {
+        return;
+    }
+    std::fprintf(stderr, "present (%s):\n", backend_name(gfx->backend));
+    if (!present.encode_ns.empty())
+    {
+        const BenchStats enc = summarize_frames(present.encode_ns);
+        const BenchStats bytes = summarize_frames(present.bytes);
+        // Small frames, such as at the default bench size, would all print as 0.00 MB.
+        const bool in_mb = bytes.max_ns >= 1'000'000;
+        const double unit = in_mb ? 1e-6 : 1e-3;
+        const char *name = in_mb ? "MB" : "KB";
+        auto size = [unit](int64_t n) { return static_cast<double>(n) * unit; };
+        std::fprintf(
+            stderr, "  encode  median %.2f ms   p95 %.2f ms   max %.2f ms\n", ms(enc.median_ns), ms(enc.p95_ns),
+            ms(enc.max_ns)
+        );
+        std::fprintf(
+            stderr, "  bytes   median %.2f %s   min %.2f %s   max %.2f %s per frame\n", size(bytes.median_ns), name,
+            size(bytes.min_ns), name, size(bytes.max_ns), name
+        );
+    }
+    if (present.empty > 0)
+    {
+        std::fprintf(stderr, "  %d of %d frames had nothing to send\n", present.empty, n_measure);
+    }
 }

@@ -94,6 +94,9 @@ struct ParsedArgs
     bool first_person = false;
     // Initial first-person speed, relative to the model-scaled default.
     float first_person_speed = 1.0f;
+    // Backend --bench also encodes each frame for. Auto means the flag was not
+    // given, and the bench measures rendering only.
+    GraphicsChoice bench_graphics = GraphicsChoice::Auto;
 };
 
 // A failed result carries the process exit code; a successful one carries valid arguments.

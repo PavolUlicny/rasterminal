@@ -468,7 +468,7 @@ namespace
 
         const viewer::SceneLights scene = viewer::default_lights();
 
-        // Borrow the idle render pool for presentation; tests and bench remain serial.
+        // Borrow the idle render pool for presentation, as --bench does; tests remain serial.
         fb.set_parallel_runner({ [&renderer](const std::function<void(int, int)> &fn) { renderer.run_on_workers(fn); },
                                  renderer.worker_count() });
 

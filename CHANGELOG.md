@@ -12,6 +12,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - `--sixel-colors auto|N|MIN-MAX` sets the sixel palette size. A range lets each scene take a size within it; `auto`, the default, is 24 to 64 colors.
+- `--bench-graphics kitty|sixel|blocks` makes `--bench` also encode each frame for that backend and report the encode time and bytes per frame. Kitty uses direct transport, the path a remote session takes.
 
 ### Changed
 

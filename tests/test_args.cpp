@@ -1905,6 +1905,49 @@ TEST(args, bench_warmup_without_bench_is_error)
     ASSERT_EQ(r.exit_code, 1);
 }
 
+TEST(args, bench_graphics_default_is_off)
+{
+    ParseResult r = run({ "--bench", "50", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.bench_graphics, GraphicsChoice::Auto);
+}
+
+TEST(args, bench_graphics_values)
+{
+    ASSERT_EQ(run({ "--bench", "--bench-graphics", "kitty", "m.obj" }).args.bench_graphics, GraphicsChoice::Kitty);
+    ASSERT_EQ(run({ "--bench", "--bench-graphics", "Sixel", "m.obj" }).args.bench_graphics, GraphicsChoice::Sixel);
+    ASSERT_EQ(run({ "--bench", "--bench-graphics=blocks", "m.obj" }).args.bench_graphics, GraphicsChoice::Blocks);
+}
+
+TEST(args, bench_graphics_leaves_graphics_alone)
+{
+    ParseResult r = run({ "--bench", "--bench-graphics", "sixel", "m.obj" });
+    ASSERT_TRUE(r.ok);
+    ASSERT_EQ(r.args.graphics, GraphicsChoice::Auto);
+}
+
+TEST(args, bench_graphics_rejects_auto)
+{
+    // The bench has no terminal to detect a backend from.
+    ParseResult r = run({ "--bench", "--bench-graphics", "auto", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_graphics_invalid_value_is_error)
+{
+    ParseResult r = run({ "--bench", "--bench-graphics", "iterm2", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
+TEST(args, bench_graphics_without_bench_is_error)
+{
+    ParseResult r = run({ "--bench-graphics", "kitty", "m.obj" });
+    ASSERT_FALSE(r.ok);
+    ASSERT_EQ(r.exit_code, 1);
+}
+
 TEST(args, bench_size_x_leading_is_error)
 {
     // "x100" → sep == val (string starts with 'x') → error
