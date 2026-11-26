@@ -4,11 +4,14 @@
 .TH RASTERMINAL 1 "2026-09-08" "rasterminal 0.1.0-alpha.2" "User Commands"
 .\" ASCII fallbacks for the accented author name: groff's -Tascii table drops
 .\" u00FD (y-acute) entirely, so without these the name renders "Ulicn" (a
-.\" letter short). utf8/latin1 still use the real glyph where the device has it.
-.\" mandoc ignores .fchar (groff extension) and substitutes its own ASCII
-.\" transliteration, so the two "unsupported request" lint notices are expected.
-.fchar \[u010D] c
-.fchar \[u00FD] y
+.\" letter short). latin1 has y-acute but not c-caron; utf8 has both.
+.\" .fchar is a groff extension. mandoc treats \n(.g as true, but its .T string
+.\" never names a groff device, so these guards keep the requests from mandoc,
+.\" which transliterates on its own. Unguarded, macOS man warns that the page is
+.\" not compatible with mandoc.
+.if '\*[.T]'ascii' .fchar \[u010D] c
+.if '\*[.T]'ascii' .fchar \[u00FD] y
+.if '\*[.T]'latin1' .fchar \[u010D] c
 .SH NAME
 rasterminal \- render a 3D model in the terminal
 .SH SYNOPSIS
