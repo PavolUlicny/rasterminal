@@ -475,3 +475,8 @@ jobs:
           ./build/rasterminal --bench 500 --bench-warmup 50 bench/Stanford_Bunny.stl
           # The 1080p Duck frame exercises the tiled opaque path. Keep its sanitized frame count low.
           ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 1920x1080 bench/Duck.glb
+          # Encode each frame too, on the render pool: parallel kitty deflate and sixel bands.
+          # Blocks at 1920x1080 would be a 1920-column terminal; 240x124 is a real one.
+          ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 1920x1080 --bench-graphics kitty bench/Duck.glb
+          ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 1920x1080 --bench-graphics sixel bench/Duck.glb
+          ./build/rasterminal --bench 30 --bench-warmup 5 --bench-size 240x124 --bench-graphics blocks bench/Duck.glb

@@ -200,8 +200,25 @@ class Framebuffer
         return m_palette ? m_palette->generation() : 0u;
     }
 
+    // Cost of the latest present(). A present that wrote nothing, or whose write
+    // failed, reports zeros: it is not a throughput sample. With discard_output(),
+    // a composed frame reports its bytes and a zero write time.
+    struct PresentStats
+    {
+        int64_t encode_ns = 0; // from the start of present(), after any recovery, to the start of the write
+        int64_t write_ns = 0;  // the blocking terminal write; zero when output is discarded
+        size_t bytes = 0;      // bytes written, or composed when output is discarded
+    };
+
     // Flush the pixel buffer, retrying short writes until complete or interrupted.
     void present();
+
+    [[nodiscard]] const PresentStats &last_present() const noexcept { return m_stats; }
+
+    // Compose every frame but send it nowhere, for --bench. present() then never
+    // touches the terminal or stdout, cannot be canceled, and reports bytes with a
+    // zero write time.
+    void discard_output() noexcept { m_discard_output = true; }
 
   private:
     // Compile-time color mode keeps the blocks inner loop branch-free.
@@ -385,4 +402,8 @@ class Framebuffer
     // Rotate shm names so an unread frame cannot be overwritten.
     unsigned m_shm_seq = 0;
     ParallelRunner m_par;
+    // Steady-clock nanoseconds at the start of the present in progress, after any recovery.
+    int64_t m_present_start_ns = 0;
+    PresentStats m_stats;
+    bool m_discard_output = false;
 };

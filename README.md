@@ -221,6 +221,7 @@ String values are case-insensitive. Value flags accept `--flag value`, `--flag=v
 | `--bench [N]` | `-B [N]` | `200` | Headless benchmark over N frames; prints a startup/runtime report to stderr and exits |
 | `--bench-size` | none | `200x120` | Bench framebuffer size in pixels as `WxH`; requires `--bench` |
 | `--bench-warmup` | none | `20` | Warmup frames discarded before measurement; requires `--bench` |
+| `--bench-graphics` | none | none | `kitty`, `sixel` or `blocks`: also encode each frame for that backend and report encode time and bytes per frame. The frames are discarded, and kitty uses direct transport. Blocks use truecolor unless `--color 256` is given, and sixel uses `--sixel-colors`. Each blocks cell is one pixel wide and two pixels tall, so to measure a 240-column, 62-row terminal, pass `--bench-size 240x124`. Requires `--bench` |
 | `--help` | `-h` | none | Print usage and exit |
 | `--version` | `-V` | none | Print version and exit |
 

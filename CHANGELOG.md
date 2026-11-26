@@ -12,9 +12,11 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - `--sixel-colors auto|N|MIN-MAX` sets the sixel palette size. A range lets each scene take a size within it; `auto`, the default, is 24 to 64 colors.
+- `--bench-graphics kitty|sixel|blocks` makes `--bench` also encode each frame for that backend and report the encode time and bytes per frame. Kitty uses direct transport, the path a remote session takes.
 
 ### Changed
 
+- `--bench` draws frames with `--bg` and `--wireframe-color`, as the viewer does. It used to ignore both and always draw on black with a white wireframe. Render times are unaffected, but `--bench-graphics` now encodes the frame a terminal would receive.
 - Sixel images use a palette fitted to each frame instead of the fixed 240-color xterm palette. Colors are much closer to the rendered image, especially in dark and muted scenes, and only the palette's registers are sent. Frames are about the same size on average, because a color pass may also paint pixels that a later pass covers, which merges runs. Muted, detailed scenes such as Sponza are still larger, typically by about a quarter and at most about two and a half times, so they reach xterm's default `maxStringParse` limit at smaller windows.
 - The startup query asks for the terminal's sixel color register count, and the palette never uses more registers than the terminal reports.
 - Release builds no longer disable the compiler's stack-buffer and stack-clash protections.
@@ -29,6 +31,7 @@ Release versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Mouse motion reports in the same cell no longer corrupt the camera orientation after resuming from Ctrl+Z.
 - On Windows with long paths enabled, models and the files they reference open from paths of 260 characters or longer, such as deep OneDrive folders or nested extracted archives.
 - On Windows consoles that reject writes to the input queue, Ctrl+C no longer occasionally waits for a keypress before quitting.
+- On macOS, `man rasterminal` no longer warns that the page is not compatible with mandoc. Output from groff is unchanged.
 - In a classic Windows console with QuickEdit on, clicking the window while a model loads no longer leaves the viewer blank until Esc is pressed. The viewer turns QuickEdit off from startup until exit, so Shift+drag no longer starts a selection that freezes the viewer. Edit > Mark in the window menu still selects text, and output pauses until the selection ends.
 - On Windows, keys pressed while a model loads are discarded when the viewer starts, as on POSIX. A `Q` pressed during a slow load no longer quits before the first frame.
 - On Windows, quitting with Ctrl+C or Ctrl+Break exits with status `0xC000013A` (`STATUS_CONTROL_C_EXIT`) instead of 0, so `rasterminal model.obj && next` no longer runs `next` after an interrupt. cmd and PowerShell report it as `-1073741510`.

@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -96,6 +97,12 @@ namespace
 
 namespace
 {
+    int64_t steady_now_ns() noexcept
+    {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+    }
+
     // Rotate shm names to avoid overwriting normally in-flight frames. This is slack,
     // not backpressure; a stalled terminal may drop one frame before the next repaint.
     constexpr unsigned SHM_RING = 4;
@@ -402,7 +409,22 @@ void Framebuffer::end_frame()
         return;
     }
     m_buf += "\033[?2026l";
-    if (!platform::write_terminal(m_buf.data(), m_buf.size(), /*cancel_on_control=*/true, m_write_frame))
+    const int64_t write_start_ns = steady_now_ns();
+    if (m_discard_output)
+    {
+        m_stats.encode_ns = write_start_ns - m_present_start_ns;
+        m_stats.bytes = m_buf.size();
+        return;
+    }
+    const bool written =
+        platform::write_terminal(m_buf.data(), m_buf.size(), /*cancel_on_control=*/true, m_write_frame);
+    if (written)
+    {
+        m_stats.encode_ns = write_start_ns - m_present_start_ns;
+        m_stats.write_ns = steady_now_ns() - write_start_ns;
+        m_stats.bytes = m_buf.size();
+    }
+    else
     {
         m_output_recovery_pending = !recover_terminal_output();
         // SIGCONT can cancel a stop after output was abandoned. The next frame
@@ -435,6 +457,7 @@ bool Framebuffer::recover_terminal_output() noexcept
 
 void Framebuffer::present()
 {
+    m_stats = {};
     if (!m_headless && !m_terminal_active)
     {
         return;
@@ -447,6 +470,8 @@ void Framebuffer::present()
         }
         m_output_recovery_pending = false;
     }
+    // Start after recovery: its cleanup writes block on the link and are not encoding.
+    m_present_start_ns = steady_now_ns();
     if (m_gfx.backend == GraphicsBackend::Kitty)
     {
         present_kitty();
